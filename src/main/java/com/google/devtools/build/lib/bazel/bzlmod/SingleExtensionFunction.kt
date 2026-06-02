@@ -12,106 +12,100 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.devtools.build.lib.server.FailureDetails.ExternalDeps.Code;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Map.Entry;
-import javax.annotation.Nullable;
-import net.starlark.java.spelling.SpellChecker;
+import com.google.devtools.build.lib.server.FailureDetails.ExternalDeps.Code
 
 /**
- * Validates the result of {@link SingleExtensionEvalFunction}. This is done in a separate
+ * Validates the result of [SingleExtensionEvalFunction]. This is done in a separate
  * SkyFunction so that the unvalidated value can be cached, avoiding a re-evaluation of the
  * extension, even if the `use_repo` imports provided by the user are incorrect.
  */
-public class SingleExtensionFunction implements SkyFunction {
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws InterruptedException, SingleExtensionFunctionException {
-    ModuleExtensionId extensionId = (ModuleExtensionId) skyKey.argument();
-    SingleExtensionUsagesValue usagesValue =
-        (SingleExtensionUsagesValue) env.getValue(SingleExtensionUsagesValue.key(extensionId));
-    if (usagesValue == null) {
-      return null;
-    }
-    SingleExtensionValue evalOnlyValue =
-        (SingleExtensionValue) env.getValue(SingleExtensionValue.evalKey(extensionId));
-    if (evalOnlyValue == null) {
-      return null;
-    }
-
-    // SingleExtensionEvalFunction doesn't handle the fixup warning so that bazel mod tidy doesn't
-    // show it.
-    evalOnlyValue.fixup().ifPresent(fixup -> env.getListener().handle(fixup.warning()));
-
-    // Check that all imported repos have actually been generated.
-    for (ModuleExtensionUsage usage : usagesValue.getExtensionUsages().values()) {
-      for (ModuleExtensionUsage.Proxy proxy : usage.getProxies()) {
-        for (Entry<String, String> repoImport : proxy.getImports().entrySet()) {
-          if (!evalOnlyValue.generatedRepoSpecs().containsKey(repoImport.getValue())
-              && !usagesValue.getRepoOverrides().containsKey(repoImport.getValue())) {
-            throw new SingleExtensionFunctionException(
-                ExternalDepsException.withMessage(
-                    Code.INVALID_EXTENSION_IMPORT,
-                    "module extension %s does not generate repository \"%s\", yet"
-                        + " it is imported as \"%s\" in the usage at %s%s",
-                    extensionId,
-                    repoImport.getValue(),
-                    repoImport.getKey(),
-                    proxy.getLocation(),
-                    SpellChecker.didYouMean(
-                        repoImport.getValue(), evalOnlyValue.generatedRepoSpecs().keySet())),
-                Transience.PERSISTENT);
-          }
+class SingleExtensionFunction : SkyFunction {
+    @Throws(java.lang.InterruptedException::class, SingleExtensionFunctionException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val extensionId: ModuleExtensionId? = skyKey.argument() as ModuleExtensionId?
+        val usagesValue: SingleExtensionUsagesValue? =
+            env.getValue(SingleExtensionUsagesValue.Companion.key(extensionId)) as SingleExtensionUsagesValue?
+        if (usagesValue == null) {
+            return null
         }
-      }
-    }
-
-    // Check that repo overrides apply as declared.
-    for (ModuleExtensionUsage usage : usagesValue.getExtensionUsages().values()) {
-      for (var override : usage.getRepoOverrides().entrySet()) {
-        boolean repoExists = evalOnlyValue.generatedRepoSpecs().containsKey(override.getKey());
-        if (repoExists && !override.getValue().mustExist()) {
-          throw new SingleExtensionFunctionException(
-              ExternalDepsException.withMessage(
-                  Code.INVALID_EXTENSION_IMPORT,
-                  "module extension %s generates repository \"%s\", yet"
-                      + " it is injected via inject_repo() at %s. Use override_repo() instead to"
-                      + " override an existing repository.",
-                  extensionId,
-                  override.getKey(),
-                  override.getValue().location()),
-              Transience.PERSISTENT);
-        } else if (!repoExists && override.getValue().mustExist()) {
-          throw new SingleExtensionFunctionException(
-              ExternalDepsException.withMessage(
-                  Code.INVALID_EXTENSION_IMPORT,
-                  "module extension %s does not generate repository \"%s\", yet"
-                      + " it is overridden via override_repo() at %s. Use inject_repo() instead to"
-                      + " inject a new repository.",
-                  extensionId,
-                  override.getKey(),
-                  override.getValue().location()),
-              Transience.PERSISTENT);
+        val evalOnlyValue: SingleExtensionValue? =
+            env.getValue(SingleExtensionValue.Companion.evalKey(extensionId)) as SingleExtensionValue?
+        if (evalOnlyValue == null) {
+            return null
         }
-      }
+
+        // SingleExtensionEvalFunction doesn't handle the fixup warning so that bazel mod tidy doesn't
+        // show it.
+        evalOnlyValue.fixup.ifPresent(java.util.function.Consumer { fixup: RootModuleFileFixup? ->
+            env.getListener().handle(fixup.warning)
+        })
+
+        // Check that all imported repos have actually been generated.
+        for (usage in usagesValue.getExtensionUsages().values()) {
+            for (proxy in usage.getProxies()) {
+                for (repoImport in proxy.getImports().entrySet()) {
+                    if (!evalOnlyValue.generatedRepoSpecs.containsKey(repoImport.getValue())
+                        && !usagesValue.getRepoOverrides().containsKey(repoImport.getValue())
+                    ) {
+                        throw SingleExtensionFunctionException(
+                            ExternalDepsException.Companion.withMessage(
+                                Code.INVALID_EXTENSION_IMPORT,
+                                "module extension %s does not generate repository \"%s\", yet"
+                                        + " it is imported as \"%s\" in the usage at %s%s",
+                                extensionId,
+                                repoImport.getValue(),
+                                repoImport.getKey(),
+                                proxy.getLocation(),
+                                net.starlark.java.spelling.SpellChecker.didYouMean(
+                                    repoImport.getValue(), evalOnlyValue.generatedRepoSpecs.keySet()
+                                )
+                            ),
+                            Transience.PERSISTENT
+                        )
+                    }
+                }
+            }
+        }
+
+        // Check that repo overrides apply as declared.
+        for (usage in usagesValue.getExtensionUsages().values()) {
+            for (override in usage.getRepoOverrides().entrySet()) {
+                val repoExists: Boolean = evalOnlyValue.generatedRepoSpecs.containsKey(override.getKey())
+                if (repoExists && !override.getValue().mustExist) {
+                    throw SingleExtensionFunctionException(
+                        ExternalDepsException.Companion.withMessage(
+                            Code.INVALID_EXTENSION_IMPORT,
+                            ("module extension %s generates repository \"%s\", yet"
+                                    + " it is injected via inject_repo() at %s. Use override_repo() instead to"
+                                    + " override an existing repository."),
+                            extensionId,
+                            override.getKey(),
+                            override.getValue().location
+                        ),
+                        Transience.PERSISTENT
+                    )
+                } else if (!repoExists && override.getValue().mustExist) {
+                    throw SingleExtensionFunctionException(
+                        ExternalDepsException.Companion.withMessage(
+                            Code.INVALID_EXTENSION_IMPORT,
+                            ("module extension %s does not generate repository \"%s\", yet"
+                                    + " it is overridden via override_repo() at %s. Use inject_repo() instead to"
+                                    + " inject a new repository."),
+                            extensionId,
+                            override.getKey(),
+                            override.getValue().location
+                        ),
+                        Transience.PERSISTENT
+                    )
+                }
+            }
+        }
+
+        return evalOnlyValue
     }
 
-    return evalOnlyValue;
-  }
-
-  static final class SingleExtensionFunctionException extends SkyFunctionException {
-
-    SingleExtensionFunctionException(ExternalDepsException cause, Transience transience) {
-      super(cause, transience);
-    }
-  }
+    internal class SingleExtensionFunctionException(cause: ExternalDepsException?, transience: Transience?) :
+        SkyFunctionException(cause, transience)
 }

@@ -182,13 +182,13 @@ final class WorkerSpawnRunner implements SpawnRunner {
         for (ActionInput toolFile : spawn.getToolFiles().toList()) {
           if ((toolFile instanceof Artifact) && ((Artifact) toolFile).isRunfilesTree()) {
             runfilesTrees.add(
-                context.getInputMetadataProvider().getRunfilesMetadata(toolFile).getRunfilesTree());
+                context.inputMetadataProvider.getRunfilesMetadata(toolFile).getRunfilesTree());
           }
         }
         runfilesTreeUpdater.updateRunfiles(runfilesTrees);
       }
 
-      InputMetadataProvider inputFileCache = context.getInputMetadataProvider();
+      InputMetadataProvider inputFileCache = context.inputMetadataProvider;
 
       SandboxInputs inputFiles;
       try (SilentCloseable c1 =
@@ -212,7 +212,7 @@ final class WorkerSpawnRunner implements SpawnRunner {
           execInWorker(
               spawn, key, context, inputFiles, outputs, flagFiles, inputFileCache, spawnMetrics);
 
-      FileOutErr outErr = context.getFileOutErr();
+      FileOutErr outErr = context.fileOutErr;
       response.getOutputBytes().writeTo(outErr.getErrorStream());
     }
     Duration wallTime = Duration.between(startTime, Instant.now());
@@ -254,7 +254,7 @@ final class WorkerSpawnRunner implements SpawnRunner {
 
     List<ActionInput> inputs =
         InputMetadataProvider.expandArtifacts(
-            context.getInputMetadataProvider(),
+                context.inputMetadataProvider,
             spawn.getInputFiles(),
             /* keepEmptyTreeArtifacts= */ false,
             /* keepRunfilesTrees= */ false);
@@ -535,7 +535,7 @@ final class WorkerSpawnRunner implements SpawnRunner {
       // We consider `prepareExecution` to be also part of setup.
       Stopwatch prepareExecutionStopwatch = Stopwatch.createStarted();
       worker.prepareExecution(
-          inputFiles, outputs, key.getWorkerFilesWithDigests().keySet(), context.getClientEnv());
+          inputFiles, outputs, key.getWorkerFilesWithDigests().keySet(), context.clientEnv);
       initializeMetrics(key, worker);
       spawnMetrics.addSetupTime(prepareExecutionStopwatch.elapsed());
     } catch (IOException e) {

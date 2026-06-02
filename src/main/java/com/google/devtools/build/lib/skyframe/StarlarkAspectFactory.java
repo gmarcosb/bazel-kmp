@@ -83,7 +83,7 @@ public class StarlarkAspectFactory implements ConfiguredAspectFactory {
     if (ruleContext.hasErrors() && !allowAnalysisFailures) {
       return errorConfiguredAspect(ruleContext, requiredConfigFragments);
     } else if (aspectStarlarkObject instanceof Info info
-        && info.getProvider().getKey().equals(StructProvider.STRUCT.getKey())) {
+        && info.getProvider().getKey().equals(StructProvider.STRUCT.key)) {
       ruleContext.ruleError(
           "Returning a struct from an aspect implementation function is deprecated.");
     } else if (!(aspectStarlarkObject instanceof Iterable)

@@ -190,12 +190,12 @@ public class StarlarkOptionsParser {
       BuildSetting buildSetting =
           buildSettingTarget.getAssociatedRule().getRuleClassObject().getBuildSetting();
       // Do not recognize internal options, which are treated as if they did not exist.
-      if (!buildSetting.isFlag()) {
+      if (!buildSetting.isFlag) {
         throw new OptionsParsingException(
             String.format("Unrecognized option: %s=%s", loadedFlag, unparsedValue));
       }
       Type<?> type = buildSetting.getType();
-      if (buildSetting.isRepeatableFlag()) {
+      if (buildSetting.isRepeatableFlag) {
         type = Preconditions.checkNotNull(type.getListElementType());
       }
       Converter<?> converter = BUILD_SETTING_CONVERTERS.get(type);
@@ -209,7 +209,7 @@ public class StarlarkOptionsParser {
                 loadedFlag, unparsedValue, unparsedValue, type),
             e);
       }
-      if (buildSetting.allowsMultiple() || buildSetting.isRepeatableFlag()) {
+      if (buildSetting.allowsMultiple() || buildSetting.isRepeatableFlag) {
         Collection<Object> newValue;
         boolean hasLoadedFlag = buildSettingWithTargetAndValue.containsKey(loadedFlag);
         if (buildSetting.getType().equals(Types.STRING_SET)) {
@@ -485,7 +485,7 @@ public class StarlarkOptionsParser {
 
   public ImmutableSet<String> getStarlarkOptionsAllowingMultiple() {
     return parsedBuildSettings.entrySet().stream()
-        .filter(entry -> entry.getValue().allowsMultiple() || entry.getValue().isRepeatableFlag())
+        .filter(entry -> entry.getValue().allowsMultiple() || entry.getValue().isRepeatableFlag)
         .map(Map.Entry::getKey)
         .collect(toImmutableSet());
   }
@@ -504,7 +504,7 @@ public class StarlarkOptionsParser {
 
   public boolean checkIfParsedOptionAllowsMultiple(String option) {
     BuildSetting setting = parsedBuildSettings.get(option);
-    return setting.allowsMultiple() || setting.isRepeatableFlag();
+    return setting.allowsMultiple() || setting.isRepeatableFlag;
   }
 
   public Type<?> getParsedOptionType(String option) {

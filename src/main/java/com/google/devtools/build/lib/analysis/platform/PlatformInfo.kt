@@ -11,343 +11,330 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
+/** Provider for a platform, which is a group of constraints and values.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class PlatformInfo private constructor(
+    label: com.google.devtools.build.lib.cmdline.Label,
+    constraints: ConstraintCollection,
+    execProperties: com.google.devtools.build.lib.analysis.platform.PlatformProperties,
+    flags: com.google.common.collect.ImmutableList<String?>,
+    requiredSettings: com.google.common.collect.ImmutableList<ConfigMatchingProvider?>,
+    checkToolchainTypes: Boolean,
+    allowedToolchainTypes: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.cmdline.Label?>,
+    missingToolchainErrorMessage: String?
+) : NativeInfo(), PlatformInfoApi<ConstraintSettingInfo?, ConstraintValueInfo?> {
+    private val label: com.google.devtools.build.lib.cmdline.Label
+    private val constraints: ConstraintCollection
 
-import com.google.common.base.VerifyException;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
-import com.google.devtools.build.lib.analysis.platform.ConstraintCollection.DuplicateConstraintException;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.NativeInfo;
-import com.google.devtools.build.lib.starlarkbuildapi.platform.PlatformInfoApi;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import java.util.Objects;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+    private val execProperties: com.google.devtools.build.lib.analysis.platform.PlatformProperties
 
-/** Provider for a platform, which is a group of constraints and values. */
-@Immutable
-public class PlatformInfo extends NativeInfo
-    implements PlatformInfoApi<ConstraintSettingInfo, ConstraintValueInfo> {
+    private val flags: com.google.common.collect.ImmutableList<String?>
 
-  /** Name used in Starlark for accessing this provider. */
-  public static final String STARLARK_NAME = "PlatformInfo";
+    private val requiredSettings: com.google.common.collect.ImmutableList<ConfigMatchingProvider?>
 
-  /**
-   * Empty {@link PlatformInfo} instance for a invalid or empty (e.g. builtin) actions. See also
-   * src/main/starlark/builtins_bzl/platforms/BUILD#empty
-   */
-  public static final PlatformInfo EMPTY_PLATFORM_INFO;
+    private val checkToolchainTypes: Boolean
+    private val allowedToolchainTypes: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.cmdline.Label?>
 
-  static {
-    try {
-      EMPTY_PLATFORM_INFO =
-          PlatformInfo.builder().setLabel(PlatformConstants.INTERNAL_PLATFORM).build();
-    } catch (DuplicateConstraintException | ExecPropertiesException e) {
-      // This can never happen since we're not passing any values to the builder.
-      throw new VerifyException(e);
-    }
-  }
+    @kotlin.jvm.JvmField
+    val missingToolchainErrorMessage: String?
 
-  /** Provider singleton constant. */
-  public static final BuiltinProvider<PlatformInfo> PROVIDER =
-      new BuiltinProvider<PlatformInfo>(STARLARK_NAME, PlatformInfo.class) {};
-
-  private final Label label;
-  private final ConstraintCollection constraints;
-
-  private final PlatformProperties execProperties;
-
-  private final ImmutableList<String> flags;
-
-  private final ImmutableList<ConfigMatchingProvider> requiredSettings;
-
-  private final boolean checkToolchainTypes;
-  private final ImmutableList<Label> allowedToolchainTypes;
-
-  @Nullable private final String missingToolchainErrorMessage;
-
-  private PlatformInfo(
-      Label label,
-      ConstraintCollection constraints,
-      PlatformProperties execProperties,
-      ImmutableList<String> flags,
-      ImmutableList<ConfigMatchingProvider> requiredSettings,
-      boolean checkToolchainTypes,
-      ImmutableList<Label> allowedToolchainTypes,
-      String missingToolchainErrorMessage) {
-    this.label = label;
-    this.constraints = constraints;
-    this.execProperties = execProperties;
-    this.flags = flags;
-    this.requiredSettings = requiredSettings;
-    this.checkToolchainTypes = checkToolchainTypes;
-    this.allowedToolchainTypes = allowedToolchainTypes;
-    this.missingToolchainErrorMessage = missingToolchainErrorMessage;
-  }
-
-  @Override
-  public BuiltinProvider<PlatformInfo> getProvider() {
-    return PROVIDER;
-  }
-
-  @Override
-  public Label label() {
-    return label;
-  }
-
-  @Override
-  public ConstraintCollection constraints() {
-    return constraints;
-  }
-
-  public ImmutableMap<String, String> execProperties() {
-    return execProperties.properties();
-  }
-
-  public ImmutableList<String> flags() {
-    return flags;
-  }
-
-  public ImmutableList<ConfigMatchingProvider> requiredSettings() {
-    return requiredSettings;
-  }
-
-  public boolean checkToolchainTypes() {
-    return checkToolchainTypes;
-  }
-
-  public ImmutableList<Label> allowedToolchainTypes() {
-    return allowedToolchainTypes;
-  }
-
-  @Nullable
-  public String getMissingToolchainErrorMessage() {
-    return missingToolchainErrorMessage;
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append(String.format("PlatformInfo(%s, constraints=%s)", label, constraints));
-  }
-
-  /** Add this platform to the given fingerprint. */
-  public void addTo(Fingerprint fp) {
-    fp.addString(label.toString());
-    constraints.addToFingerprint(fp);
-    fp.addStringMap(execProperties.properties());
-    fp.addStrings(flags);
-    fp.addStrings(
-        requiredSettings.stream()
-            .map(ConfigMatchingProvider::label)
-            .map(Label::toString)
-            .collect(toImmutableList()));
-    fp.addStrings(allowedToolchainTypes.stream().map(Label::toString).collect(toImmutableList()));
-    fp.addBoolean(checkToolchainTypes);
-    fp.addNullableString(missingToolchainErrorMessage);
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (!(o instanceof PlatformInfo that)) {
-      return false;
-    }
-    return Objects.equals(label, that.label)
-        && Objects.equals(constraints, that.constraints)
-        && Objects.equals(execProperties, that.execProperties)
-        && Objects.equals(flags, that.flags)
-        && Objects.equals(requiredSettings, that.requiredSettings)
-        && (checkToolchainTypes == that.checkToolchainTypes)
-        && Objects.equals(allowedToolchainTypes, that.allowedToolchainTypes)
-        && Objects.equals(missingToolchainErrorMessage, that.missingToolchainErrorMessage);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(
-        label,
-        constraints,
-        execProperties,
-        flags,
-        requiredSettings,
-        checkToolchainTypes,
-        allowedToolchainTypes,
-        missingToolchainErrorMessage);
-  }
-
-  /** Returns a new {@link Builder} for creating a fresh {@link PlatformInfo} instance. */
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  /** Builder class to facilitate creating valid {@link PlatformInfo} instances. */
-  public static class Builder {
-
-    @Nullable private PlatformInfo parent = null;
-    private Label label;
-    private final ConstraintCollection.Builder constraints = ConstraintCollection.builder();
-    private final PlatformProperties.Builder execPropertiesBuilder = PlatformProperties.builder();
-    private final ImmutableList.Builder<String> flags = new ImmutableList.Builder<>();
-    private final ImmutableList.Builder<ConfigMatchingProvider> requiredSettings =
-        new ImmutableList.Builder<>();
-    private boolean checkToolchainTypes = false;
-    private final ImmutableList.Builder<Label> allowedToolchainTypes =
-        new ImmutableList.Builder<>();
-    @Nullable private String missingToolchainErrorMessage = null;
-
-    /**
-     * Sets the parent {@link PlatformInfo} that this platform inherits from. Constraint values set
-     * directly on this instance will be kept, but any other constraint settings will be found from
-     * the parent, if set.
-     *
-     * @param parent the platform that is the parent of this platform
-     * @return the {@link Builder} instance for method chaining
-     */
-    @CanIgnoreReturnValue
-    public Builder setParent(@Nullable PlatformInfo parent) {
-      this.parent = parent;
-      if (parent == null) {
-        this.constraints.parent(null);
-        this.execPropertiesBuilder.setParent(null);
-      } else {
-        this.constraints.parent(parent.constraints);
-        this.execPropertiesBuilder.setParent(parent.execProperties);
-      }
-      return this;
+    init {
+        this.label = label
+        this.constraints = constraints
+        this.execProperties = execProperties
+        this.flags = flags
+        this.requiredSettings = requiredSettings
+        this.checkToolchainTypes = checkToolchainTypes
+        this.allowedToolchainTypes = allowedToolchainTypes
+        this.missingToolchainErrorMessage = missingToolchainErrorMessage
     }
 
-    /**
-     * Sets the {@link Label} for this {@link PlatformInfo}.
-     *
-     * @param label the label identifying this platform
-     * @return the {@link Builder} instance for method chaining
-     */
-    @CanIgnoreReturnValue
-    public Builder setLabel(Label label) {
-      this.label = label;
-      return this;
+    val provider: BuiltinProvider<PlatformInfo?>
+        get() = com.google.devtools.build.lib.analysis.platform.PlatformInfo.Companion.PROVIDER
+
+    override fun label(): com.google.devtools.build.lib.cmdline.Label {
+        return label
     }
 
-    /**
-     * Adds the given constraint value to the constraints that define this {@link PlatformInfo}.
-     *
-     * @param constraint the constraint to add
-     * @return the {@link Builder} instance for method chaining
-     */
-    @CanIgnoreReturnValue
-    public Builder addConstraint(ConstraintValueInfo constraint) {
-      this.constraints.addConstraints(constraint);
-      return this;
+    override fun constraints(): ConstraintCollection {
+        return constraints
     }
 
-    /**
-     * Adds the given constraint values to the constraints that define this {@link PlatformInfo}.
-     *
-     * @param constraints the constraints to add
-     * @return the {@link Builder} instance for method chaining
-     */
-    @CanIgnoreReturnValue
-    public Builder addConstraints(Iterable<ConstraintValueInfo> constraints) {
-      this.constraints.addConstraints(constraints);
-      return this;
+    fun execProperties(): com.google.common.collect.ImmutableMap<String?, String?>? {
+        return execProperties.properties()
     }
 
-    /**
-     * Sets the execution properties.
-     *
-     * <p>If there is a parent {@link PlatformInfo} set, then all parent's properties will be
-     * inherited. Any properties included in both will use the child's value. Use the value of empty
-     * string to unset a property.
-     */
-    @CanIgnoreReturnValue
-    public Builder setExecProperties(@Nullable ImmutableMap<String, String> properties) {
-      this.execPropertiesBuilder.setProperties(properties);
-      return this;
+    fun flags(): com.google.common.collect.ImmutableList<String?> {
+        return flags
     }
 
-    /** Add the given flags to this {@link PlatformInfo}. */
-    @CanIgnoreReturnValue
-    public Builder addFlags(Iterable<String> flags) {
-      this.flags.addAll(flags);
-      return this;
+    fun requiredSettings(): com.google.common.collect.ImmutableList<ConfigMatchingProvider?> {
+        return requiredSettings
     }
 
-    /** Add the given settings to this {@link PlatformInfo}. */
-    @CanIgnoreReturnValue
-    public Builder addRequiredSettings(List<ConfigMatchingProvider> requiredSettings) {
-      this.requiredSettings.addAll(requiredSettings);
-      return this;
+    fun checkToolchainTypes(): Boolean {
+        return checkToolchainTypes
     }
 
-    @CanIgnoreReturnValue
-    public Builder checkToolchainTypes(boolean checkToolchainTypes) {
-      this.checkToolchainTypes = checkToolchainTypes;
-      return this;
+    fun allowedToolchainTypes(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.cmdline.Label?> {
+        return allowedToolchainTypes
     }
 
-    @CanIgnoreReturnValue
-    public Builder addAllowedToolchainTypes(List<Label> allowedToolchainTypes) {
-      this.allowedToolchainTypes.addAll(allowedToolchainTypes);
-      return this;
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append(String.format("PlatformInfo(%s, constraints=%s)", label, constraints))
     }
 
-    /**
-     * Sets an error message to display when a required toolchain cannot be resolved for this
-     * platform.
-     */
-    @CanIgnoreReturnValue
-    public Builder setMissingToolchainErrorMessage(@Nullable String message) {
-      if (message == null || message.isEmpty()) {
-        this.missingToolchainErrorMessage = null;
-      } else {
-        this.missingToolchainErrorMessage = message;
-      }
-      return this;
+    /** Add this platform to the given fingerprint.  */
+    fun addTo(fp: Fingerprint) {
+        fp.addString(label.toString())
+        constraints.addToFingerprint(fp)
+        fp.addStringMap(execProperties.properties())
+        fp.addStrings(flags)
+        fp.addStrings(
+            requiredSettings.stream()
+                .map<Any?>(ConfigMatchingProvider::label)
+                .map<R?> { obj: Any? -> obj.toString() }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>()))
+        fp.addStrings(
+            allowedToolchainTypes.stream()
+                .map<String?> { obj: com.google.devtools.build.lib.cmdline.Label? -> obj.toString() }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>()))
+        fp.addBoolean(checkToolchainTypes)
+        fp.addNullableString(missingToolchainErrorMessage)
     }
 
-    /**
-     * Returns the new {@link PlatformInfo} instance.
-     *
-     * @throws DuplicateConstraintException if more than one constraint value exists for the same
-     *     constraint setting
-     */
-    public PlatformInfo build() throws DuplicateConstraintException, ExecPropertiesException {
-      // Merge parent flags and this builder's flags. Parent flags always come first so that flags
-      // from this builder will override or combine, depending on the flag type.
-      ImmutableList.Builder<String> flagBuilder = new ImmutableList.Builder<>();
-      if (this.parent != null) {
-        flagBuilder.addAll(this.parent.flags);
-      }
-      flagBuilder.addAll(this.flags.build());
-
-      // Required settings are explicitly **not** inherited from the parent, so do not merge.
-      ImmutableList<ConfigMatchingProvider> settings = requiredSettings.build();
-
-      return new PlatformInfo(
-          label,
-          constraints.build(),
-          execPropertiesBuilder.build(),
-          flagBuilder.build(),
-          settings,
-          checkToolchainTypes,
-          allowedToolchainTypes.build(),
-          missingToolchainErrorMessage);
+    override fun equals(o: Any?): Boolean {
+        if (o !is PlatformInfo) {
+            return false
+        }
+        return label == o.label
+                && constraints == o.constraints
+                && execProperties == o.execProperties
+                && flags == o.flags
+                && requiredSettings == o.requiredSettings
+                && (checkToolchainTypes == o.checkToolchainTypes)
+                && allowedToolchainTypes == o.allowedToolchainTypes
+                && missingToolchainErrorMessage == o.missingToolchainErrorMessage
     }
-  }
 
-  /** Exception that indicates something is wrong in exec_properties configuration. */
-  public static class ExecPropertiesException extends Exception {
-    ExecPropertiesException(String message) {
-      super(message);
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(
+            label,
+            constraints,
+            execProperties,
+            flags,
+            requiredSettings,
+            checkToolchainTypes,
+            allowedToolchainTypes,
+            missingToolchainErrorMessage
+        )
     }
-  }
+
+    /** Builder class to facilitate creating valid [PlatformInfo] instances.  */
+    class Builder {
+        private var parent: PlatformInfo? = null
+        private var label: com.google.devtools.build.lib.cmdline.Label? = null
+        private val constraints: com.google.devtools.build.lib.analysis.platform.ConstraintCollection.Builder =
+            ConstraintCollection.Companion.builder()
+        private val execPropertiesBuilder: com.google.devtools.build.lib.analysis.platform.PlatformProperties.Builder =
+            com.google.devtools.build.lib.analysis.platform.PlatformProperties.Companion.builder()
+        private val flags: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.Builder<String?>()
+        private val requiredSettings: com.google.common.collect.ImmutableList.Builder<ConfigMatchingProvider?> =
+            com.google.common.collect.ImmutableList.Builder<ConfigMatchingProvider?>()
+        private var checkToolchainTypes = false
+        private val allowedToolchainTypes: com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.cmdline.Label?> =
+            com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.cmdline.Label?>()
+        private var missingToolchainErrorMessage: String? = null
+
+        /**
+         * Sets the parent [PlatformInfo] that this platform inherits from. Constraint values set
+         * directly on this instance will be kept, but any other constraint settings will be found from
+         * the parent, if set.
+         * 
+         * @param parent the platform that is the parent of this platform
+         * @return the [Builder] instance for method chaining
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setParent(parent: PlatformInfo?): Builder {
+            this.parent = parent
+            if (parent == null) {
+                this.constraints.parent(null)
+                this.execPropertiesBuilder.setParent(null)
+            } else {
+                this.constraints.parent(parent.constraints)
+                this.execPropertiesBuilder.setParent(parent.execProperties)
+            }
+            return this
+        }
+
+        /**
+         * Sets the [Label] for this [PlatformInfo].
+         * 
+         * @param label the label identifying this platform
+         * @return the [Builder] instance for method chaining
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setLabel(label: com.google.devtools.build.lib.cmdline.Label): Builder {
+            this.label = label
+            return this
+        }
+
+        /**
+         * Adds the given constraint value to the constraints that define this [PlatformInfo].
+         * 
+         * @param constraint the constraint to add
+         * @return the [Builder] instance for method chaining
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addConstraint(constraint: ConstraintValueInfo?): Builder {
+            this.constraints.addConstraints(constraint)
+            return this
+        }
+
+        /**
+         * Adds the given constraint values to the constraints that define this [PlatformInfo].
+         * 
+         * @param constraints the constraints to add
+         * @return the [Builder] instance for method chaining
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addConstraints(constraints: Iterable<ConstraintValueInfo?>?): Builder {
+            this.constraints.addConstraints(constraints)
+            return this
+        }
+
+        /**
+         * Sets the execution properties.
+         * 
+         * 
+         * If there is a parent [PlatformInfo] set, then all parent's properties will be
+         * inherited. Any properties included in both will use the child's value. Use the value of empty
+         * string to unset a property.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setExecProperties(properties: com.google.common.collect.ImmutableMap<String?, String?>?): Builder {
+            this.execPropertiesBuilder.setProperties(properties)
+            return this
+        }
+
+        /** Add the given flags to this [PlatformInfo].  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addFlags(flags: Iterable<String?>): Builder {
+            this.flags.addAll(flags)
+            return this
+        }
+
+        /** Add the given settings to this [PlatformInfo].  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addRequiredSettings(requiredSettings: MutableList<ConfigMatchingProvider?>): Builder {
+            this.requiredSettings.addAll(requiredSettings)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun checkToolchainTypes(checkToolchainTypes: Boolean): Builder {
+            this.checkToolchainTypes = checkToolchainTypes
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAllowedToolchainTypes(allowedToolchainTypes: MutableList<com.google.devtools.build.lib.cmdline.Label?>): Builder {
+            this.allowedToolchainTypes.addAll(allowedToolchainTypes)
+            return this
+        }
+
+        /**
+         * Sets an error message to display when a required toolchain cannot be resolved for this
+         * platform.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setMissingToolchainErrorMessage(message: String?): Builder {
+            if (message == null || message.isEmpty()) {
+                this.missingToolchainErrorMessage = null
+            } else {
+                this.missingToolchainErrorMessage = message
+            }
+            return this
+        }
+
+        /**
+         * Returns the new [PlatformInfo] instance.
+         * 
+         * @throws DuplicateConstraintException if more than one constraint value exists for the same
+         * constraint setting
+         */
+        @Throws(
+            com.google.devtools.build.lib.analysis.platform.ConstraintCollection.DuplicateConstraintException::class,
+            ExecPropertiesException::class
+        )
+        fun build(): PlatformInfo {
+            // Merge parent flags and this builder's flags. Parent flags always come first so that flags
+            // from this builder will override or combine, depending on the flag type.
+            val flagBuilder: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.Builder<String?>()
+            if (this.parent != null) {
+                flagBuilder.addAll(this.parent!!.flags)
+            }
+            flagBuilder.addAll(this.flags.build())
+
+            // Required settings are explicitly **not** inherited from the parent, so do not merge.
+            val settings: com.google.common.collect.ImmutableList<ConfigMatchingProvider?> = requiredSettings.build()
+
+            return com.google.devtools.build.lib.analysis.platform.PlatformInfo(
+                label,
+                constraints.build(),
+                execPropertiesBuilder.build(),
+                flagBuilder.build(),
+                settings,
+                checkToolchainTypes,
+                allowedToolchainTypes.build(),
+                missingToolchainErrorMessage
+            )
+        }
+    }
+
+    /** Exception that indicates something is wrong in exec_properties configuration.  */
+    class ExecPropertiesException internal constructor(message: String?) : java.lang.Exception(message)
+    companion object {
+        /** Name used in Starlark for accessing this provider.  */
+        const val STARLARK_NAME: String = "PlatformInfo"
+
+        /**
+         * Empty [PlatformInfo] instance for a invalid or empty (e.g. builtin) actions. See also
+         * src/main/starlark/builtins_bzl/platforms/BUILD#empty
+         */
+        @kotlin.jvm.JvmField
+        val EMPTY_PLATFORM_INFO: PlatformInfo
+
+        init {
+            try {
+                com.google.devtools.build.lib.analysis.platform.PlatformInfo.Companion.EMPTY_PLATFORM_INFO =
+                    com.google.devtools.build.lib.analysis.platform.PlatformInfo.Companion.builder()
+                        .setLabel(PlatformConstants.INTERNAL_PLATFORM).build()
+            } catch (e: com.google.devtools.build.lib.analysis.platform.ConstraintCollection.DuplicateConstraintException) {
+                // This can never happen since we're not passing any values to the builder.
+                throw com.google.common.base.VerifyException(e)
+            } catch (e: ExecPropertiesException) {
+                throw com.google.common.base.VerifyException(e)
+            }
+        }
+
+        /** Provider singleton constant.  */
+        @kotlin.jvm.JvmField
+        val PROVIDER: BuiltinProvider<PlatformInfo?> = object : BuiltinProvider<PlatformInfo?>(
+            com.google.devtools.build.lib.analysis.platform.PlatformInfo.Companion.STARLARK_NAME,
+            com.google.devtools.build.lib.analysis.platform.PlatformInfo::class.java
+        ) {}
+
+        /** Returns a new [Builder] for creating a fresh [PlatformInfo] instance.  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.analysis.platform.PlatformInfo.Builder()
+        }
+    }
 }

@@ -11,50 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import com.google.common.base.Ascii;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters.IntegerConverter;
-import com.google.devtools.common.options.OptionsParsingException;
+import com.google.devtools.build.lib.analysis.test.TestShardingStrategyForced
+import com.google.devtools.build.lib.analysis.test.TestShardingStrategyNotForced
 
-/** A strategy for running the same tests in many processes. */
-interface TestShardingStrategy {
-  int getNumberOfShards(int shardCountFromAttr);
+/** A strategy for running the same tests in many processes.  */
+internal interface TestShardingStrategy {
+    fun getNumberOfShards(shardCountFromAttr: Int): Int
 
-  /** Converts to {@link TestShardingStrategy}. */
-  final class ShardingStrategyConverter extends Converter.Contextless<TestShardingStrategy> {
-    private static final String FORCED_PREFIX = "forced=";
+    /** Converts to [TestShardingStrategy].  */
+    class ShardingStrategyConverter :
+        com.google.devtools.common.options.Converter.Contextless<TestShardingStrategy?>() {
+        val typeDescription: String
+            get() = "explicit, disabled or forced=k where k is the number of shards to enforce"
 
-    @Override
-    public String getTypeDescription() {
-      return "explicit, disabled or forced=k where k is the number of shards to enforce";
-    }
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): TestShardingStrategy {
+            for (value in TestShardingStrategyNotForced.entries) {
+                if (com.google.common.base.Ascii.equalsIgnoreCase(value.toString(), input)) {
+                    return value
+                }
+            }
 
-    @Override
-    public TestShardingStrategy convert(String input) throws OptionsParsingException {
-      for (TestShardingStrategy value : TestShardingStrategyNotForced.values()) {
-        if (Ascii.equalsIgnoreCase(value.toString(), input)) {
-          return value;
+            if (com.google.common.base.Ascii.toLowerCase(input).startsWith(FORCED_PREFIX)) {
+                val forcedShardsCount: Int =
+                    com.google.devtools.common.options.Converters.IntegerConverter()
+                        .convert(input.substring(FORCED_PREFIX.length))
+                if (forcedShardsCount < 0) {
+                    throw com.google.devtools.common.options.OptionsParsingException("Forced shards count cannot be negative.")
+                }
+
+                return TestShardingStrategyForced(forcedShardsCount)
+            }
+
+            throw com.google.devtools.common.options.OptionsParsingException(
+                ("Not a valid test sharding strategy: '"
+                        + input
+                        + "' (should be "
+                        + this.typeDescription
+                        + ")")
+            )
         }
-      }
 
-      if (Ascii.toLowerCase(input).startsWith(FORCED_PREFIX)) {
-        int forcedShardsCount =
-            new IntegerConverter().convert(input.substring(FORCED_PREFIX.length()));
-        if (forcedShardsCount < 0) {
-          throw new OptionsParsingException("Forced shards count cannot be negative.");
+        companion object {
+            private const val FORCED_PREFIX = "forced="
         }
-
-        return new TestShardingStrategyForced(forcedShardsCount);
-      }
-
-      throw new OptionsParsingException(
-          "Not a valid test sharding strategy: '"
-              + input
-              + "' (should be "
-              + getTypeDescription()
-              + ")");
     }
-  }
 }

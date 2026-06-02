@@ -11,59 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.analysis.test.TestRunnerAction;
+import com.google.devtools.build.lib.actions.Action
 
 /**
  * Class implements --check_???_up_to_date execution filter predicate
  * that prevents certain actions from being executed (thus aborting
  * the build if action is not up-to-date).
  */
-public final class CheckUpToDateFilter implements Predicate<Action> {
+class CheckUpToDateFilter private constructor(options: ExecutionOptions) : com.google.common.base.Predicate<Action?> {
+    private val allowBuildActionExecution: Boolean
+    private val allowTestActionExecution: Boolean
 
-  /**
-   * Determines an execution filter based on the --check_up_to_date and
-   * --check_tests_up_to_date options. Returns a singleton if possible.
-   */
-  public static Predicate<Action> fromOptions(ExecutionOptions options) {
-    if (!options.getTestCheckUpToDate() && !options.getCheckUpToDate()) {
-      return Predicates.alwaysTrue();
+    /**
+     * Creates new execution filter based on --check_up_to_date and
+     * --check_tests_up_to_date options.
+     */
+    init {
+        // If we want to check whether test is up-to-date, we should disallow
+        // test execution.
+        this.allowTestActionExecution = !options.getTestCheckUpToDate()
+
+        // Build action execution should be prohibited in two cases - if we are
+        // checking whether build is up-to-date or if we are checking that tests
+        // are up-to-date (and test execution is not allowed).
+        this.allowBuildActionExecution = allowTestActionExecution && !options.getCheckUpToDate()
     }
-    return new CheckUpToDateFilter(options);
-  }
 
-  private final boolean allowBuildActionExecution;
-  private final boolean allowTestActionExecution;
-
-  /**
-   * Creates new execution filter based on --check_up_to_date and
-   * --check_tests_up_to_date options.
-   */
-  private CheckUpToDateFilter(ExecutionOptions options) {
-    // If we want to check whether test is up-to-date, we should disallow
-    // test execution.
-    this.allowTestActionExecution = !options.getTestCheckUpToDate();
-
-    // Build action execution should be prohibited in two cases - if we are
-    // checking whether build is up-to-date or if we are checking that tests
-    // are up-to-date (and test execution is not allowed).
-    this.allowBuildActionExecution = allowTestActionExecution && !options.getCheckUpToDate();
-  }
-
-  /**
-   * @return true if actions' execution is allowed, false - otherwise
-   */
-  @Override
-  public boolean apply(Action action) {
-    if (action instanceof TestRunnerAction) {
-      return allowTestActionExecution;
-    } else {
-      return allowBuildActionExecution;
+    /**
+     * @return true if actions' execution is allowed, false - otherwise
+     */
+    override fun apply(action: Action?): Boolean {
+        if (action is TestRunnerAction) {
+            return allowTestActionExecution
+        } else {
+            return allowBuildActionExecution
+        }
     }
-  }
 
+    companion object {
+        /**
+         * Determines an execution filter based on the --check_up_to_date and
+         * --check_tests_up_to_date options. Returns a singleton if possible.
+         */
+        fun fromOptions(options: ExecutionOptions): com.google.common.base.Predicate<Action?> {
+            if (!options.getTestCheckUpToDate() && !options.getCheckUpToDate()) {
+                return com.google.common.base.Predicates.alwaysTrue<Action?>()
+            }
+            return CheckUpToDateFilter(options)
+        }
+    }
 }

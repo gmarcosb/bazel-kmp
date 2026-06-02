@@ -11,137 +11,129 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.exec.ExecutionOptions.TestOutputFormat;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.BufferedOutputStream;
-import java.io.FilterOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintStream;
+import com.google.devtools.build.lib.exec.ExecutionOptions.TestOutputFormat
+import java.io.BufferedOutputStream
+import java.io.FilterOutputStream
+import java.io.IOException
+import java.io.PrintStream
 
 /**
  * A helper class for test log handling. It determines whether the test log should be output and
  * formats the test log for console display.
  */
-public class TestLogHelper {
+object TestLogHelper {
+    @com.google.common.annotations.VisibleForTesting
+    const val HEADER_DELIMITER: String = "-----------------------------------------------------------------------------"
 
-  @VisibleForTesting
-  static final String HEADER_DELIMITER =
-      "-----------------------------------------------------------------------------";
+    /**
+     * Determines whether the test log should be output from the current outputMode and whether the
+     * test has passed or not.
+     */
+    fun shouldOutputTestLog(outputMode: TestOutputFormat?, hasPassed: Boolean): Boolean {
+        return (outputMode == TestOutputFormat.ALL)
+                || (!hasPassed && (outputMode == TestOutputFormat.ERRORS))
+    }
 
-  /**
-   * Determines whether the test log should be output from the current outputMode and whether the
-   * test has passed or not.
-   */
-  public static boolean shouldOutputTestLog(TestOutputFormat outputMode, boolean hasPassed) {
-    return (outputMode == TestOutputFormat.ALL)
-        || (!hasPassed && (outputMode == TestOutputFormat.ERRORS));
-  }
+    /**
+     * Streams the contents of testOutput file to the provided output, adding a new header and footer.
+     * The internal test header is elided. The test output is not emitted if its size is greater than
+     * the provided threshold.
+     * 
+     * @param maxTestOutputBytes Maximum test log size, including header, to output. Negative implies
+     * no limit.
+     */
+    @Throws(IOException::class)
+    fun writeTestLog(
+        testOutput: com.google.devtools.build.lib.vfs.Path,
+        testName: String?,
+        out: java.io.OutputStream?,
+        maxTestOutputBytes: Int
+    ) {
+        val printOut: PrintStream = PrintStream(BufferedOutputStream(out))
+        try {
+            printOut.print("==================== Test output for " + testName + ":\n")
+            printOut.flush()
 
-  /**
-   * Streams the contents of testOutput file to the provided output, adding a new header and footer.
-   * The internal test header is elided. The test output is not emitted if its size is greater than
-   * the provided threshold.
-   *
-   * @param maxTestOutputBytes Maximum test log size, including header, to output. Negative implies
-   *     no limit.
-   */
-  public static void writeTestLog(
-      Path testOutput, String testName, OutputStream out, int maxTestOutputBytes)
-      throws IOException {
-    PrintStream printOut = new PrintStream(new BufferedOutputStream(out));
-    try {
-      printOut.print("==================== Test output for " + testName + ":\n");
-      printOut.flush();
+            if (maxTestOutputBytes < 0) {
+                // No limit, print it all.
+                streamTestLog(testOutput, printOut)
+            } else {
+                val testOutputBytes: Long = testOutput.getFileSize()
+                if (testOutputBytes <= maxTestOutputBytes) {
+                    streamTestLog(testOutput, printOut)
+                } else {
+                    printOut.printf(
+                        "Test log too large (%s > %s), skipping...\n", testOutputBytes, maxTestOutputBytes
+                    )
+                }
+            }
 
-      if (maxTestOutputBytes < 0) {
-        // No limit, print it all.
-        streamTestLog(testOutput, printOut);
-      } else {
-        long testOutputBytes = testOutput.getFileSize();
-        if (testOutputBytes <= maxTestOutputBytes) {
-          streamTestLog(testOutput, printOut);
-        } else {
-          printOut.printf(
-              "Test log too large (%s > %s), skipping...\n", testOutputBytes, maxTestOutputBytes);
+            printOut.print(
+                "================================================================================\n"
+            )
+        } finally {
+            printOut.flush()
         }
-      }
-
-      printOut.print(
-          "================================================================================\n");
-    } finally {
-      printOut.flush();
-    }
-  }
-
-  /**
-   * Returns an output stream that doesn't write to original until it sees HEADER_DELIMITER by
-   * itself on a line.
-   */
-  public static FilterTestHeaderOutputStream getHeaderFilteringOutputStream(OutputStream original) {
-    return new FilterTestHeaderOutputStream(original);
-  }
-
-  private TestLogHelper() {
-    // Prevent Java from creating a public constructor.
-  }
-
-  /** Use this class to filter the streaming output of a test until we see the header delimiter. */
-  public static class FilterTestHeaderOutputStream extends FilterOutputStream {
-
-    private boolean seenDelimiter = false;
-    private StringBuilder lineBuilder = new StringBuilder();
-
-    private static final int NEWLINE = '\n';
-
-    public FilterTestHeaderOutputStream(OutputStream out) {
-      super(out);
     }
 
-    @Override
-    public void write(int b) throws IOException {
-      if (seenDelimiter) {
-        out.write(b);
-      } else if (b == NEWLINE) {
-        String line = lineBuilder.toString();
-        lineBuilder = new StringBuilder();
-        if (line.equals(TestLogHelper.HEADER_DELIMITER)) {
-          seenDelimiter = true;
+    /**
+     * Returns an output stream that doesn't write to original until it sees HEADER_DELIMITER by
+     * itself on a line.
+     */
+    fun getHeaderFilteringOutputStream(original: java.io.OutputStream?): FilterTestHeaderOutputStream {
+        return FilterTestHeaderOutputStream(original)
+    }
+
+    @Throws(IOException::class)
+    private fun streamTestLog(fromPath: com.google.devtools.build.lib.vfs.Path, out: PrintStream) {
+        val filteringOutputStream = getHeaderFilteringOutputStream(out)
+        fromPath.getInputStream().use { input ->
+            com.google.common.io.ByteStreams.copy(input, filteringOutputStream)
         }
-      } else if (lineBuilder.length() <= TestLogHelper.HEADER_DELIMITER.length()) {
-        lineBuilder.append((char) b);
-      }
+        if (!filteringOutputStream.foundHeader()) {
+            fromPath.getInputStream().use { inputAgain ->
+                com.google.common.io.ByteStreams.copy(inputAgain, out)
+            }
+        }
     }
 
-    @Override
-    public void write(byte[] b, int off, int len) throws IOException {
-      if (seenDelimiter) {
-        out.write(b, off, len);
-      } else {
-        super.write(b, off, len);
-      }
-    }
+    /** Use this class to filter the streaming output of a test until we see the header delimiter.  */
+    class FilterTestHeaderOutputStream(out: java.io.OutputStream?) : FilterOutputStream(out) {
+        private var seenDelimiter = false
+        private var lineBuilder: java.lang.StringBuilder = java.lang.StringBuilder()
 
-    public boolean foundHeader() {
-      return seenDelimiter;
-    }
-  }
+        @Throws(IOException::class)
+        override fun write(b: Int) {
+            if (seenDelimiter) {
+                out.write(b)
+            } else if (b == NEWLINE) {
+                val line = lineBuilder.toString()
+                lineBuilder = java.lang.StringBuilder()
+                if (line == HEADER_DELIMITER) {
+                    seenDelimiter = true
+                }
+            } else if (lineBuilder.length() <= HEADER_DELIMITER.length()) {
+                lineBuilder.append(b.toChar())
+            }
+        }
 
-  private static void streamTestLog(Path fromPath, PrintStream out) throws IOException {
-    FilterTestHeaderOutputStream filteringOutputStream = getHeaderFilteringOutputStream(out);
-    try (InputStream input = fromPath.getInputStream()) {
-      ByteStreams.copy(input, filteringOutputStream);
-    }
+        @Throws(IOException::class)
+        override fun write(b: ByteArray?, off: Int, len: Int) {
+            if (seenDelimiter) {
+                out.write(b, off, len)
+            } else {
+                super.write(b, off, len)
+            }
+        }
 
-    if (!filteringOutputStream.foundHeader()) {
-      try (InputStream inputAgain = fromPath.getInputStream()) {
-        ByteStreams.copy(inputAgain, out);
-      }
+        fun foundHeader(): Boolean {
+            return seenDelimiter
+        }
+
+        companion object {
+            private val NEWLINE: Int = '\n'.code
+        }
     }
-  }
 }

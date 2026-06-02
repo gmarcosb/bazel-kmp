@@ -467,7 +467,7 @@ public class StarlarkDocumentationTest {
         StarlarkDocumentationCollector.getAllDocPages(expander, ImmutableList.of())
             .get(Category.GLOBAL_FUNCTION)
             .stream()
-            .filter(p -> p.getTitle().equals(Environment.BZL.getTitle()))
+            .filter(p -> p.getTitle().equals(Environment.BZL.title))
             .findAny()
             .get();
 

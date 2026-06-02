@@ -112,8 +112,7 @@ public class PrepareDepsOfPatternValue implements SkyValue {
     for (TargetPatternKey targetPatternKey : combinedTargetPatternKeys) {
       if (targetPatternKey.isNegative()
           && !targetPatternKey
-              .getParsedPattern()
-              .getType()
+              .getParsedPattern().type
               .equals(TargetPattern.Type.TARGETS_BELOW_DIRECTORY)) {
         resultExceptionsBuilder.add(
             new PrepareDepsOfPatternSkyKeyException(

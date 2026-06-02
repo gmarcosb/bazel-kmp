@@ -89,7 +89,7 @@ public class BzlmodRepoCycleReporter implements CyclesReporter.SingleCycleReport
       if (repo instanceof RepositoryDirectoryValue.Key) {
         eventHandler.post(
             new RequestRepositoryInformationEvent(
-                ((RepositoryDirectoryValue.Key) repo).argument().getName()));
+                    ((RepositoryDirectoryValue.Key) repo).argument().name));
       }
     }
   }

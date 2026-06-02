@@ -120,7 +120,7 @@ public final class LabelInternerIntegrationTest extends SkyframeIntegrationTestB
     //  interned. Investigate why this is happening and how to resolve.
     LabelInterner.setGlobalPool(null);
     for (Label l : allPackageTargetsLabelInstances) {
-      Label duplicate = Label.createUnvalidated(l.getPackageIdentifier(), l.getName());
+      Label duplicate = Label.createUnvalidated(l.getPackageIdentifier(), l.name);
       assertThat(duplicate).isNotSameInstanceAs(l);
       labelInterner.removeWeak(duplicate);
     }
@@ -151,7 +151,7 @@ public final class LabelInternerIntegrationTest extends SkyframeIntegrationTestB
     // Expect `intern` a duplicate instance to return the canonical one stored in the pool.
     targetLabels.forEach(
         l ->
-            assertThat(Label.createUnvalidated(l.getPackageIdentifier(), l.getName()))
+            assertThat(Label.createUnvalidated(l.getPackageIdentifier(), l.name))
                 .isSameInstanceAs(l));
   }
 
@@ -183,7 +183,7 @@ public final class LabelInternerIntegrationTest extends SkyframeIntegrationTestB
     assertThat(graph.get(/* requestor= */ null, Reason.OTHER, packageKey)).isNull();
     targetLabels.forEach(
         l ->
-            assertThat(Label.createUnvalidated(l.getPackageIdentifier(), l.getName()))
+            assertThat(Label.createUnvalidated(l.getPackageIdentifier(), l.name))
                 .isSameInstanceAs(l));
   }
 

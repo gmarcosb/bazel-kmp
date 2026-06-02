@@ -11,66 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.aquery;
+package com.google.devtools.build.lib.query2.aquery
 
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Multimap;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.regex.Pattern;
+import com.google.devtools.build.lib.query2.aquery.AqueryActionFilter
 
-/** Encapsulate the action filters parsed from aquery command. */
-public class AqueryActionFilter {
-  // TODO(leba): Use Enum for list of filters.
-  private final ImmutableMultimap<String, Pattern> filterMap;
+/** Encapsulate the action filters parsed from aquery command.  */
+class AqueryActionFilter private constructor(builder: Builder) {
+    // TODO(leba): Use Enum for list of filters.
+    private val filterMap: com.google.common.collect.ImmutableMultimap<String?, java.util.regex.Pattern?>
 
-  private AqueryActionFilter(Builder builder) {
-    filterMap = ImmutableMultimap.copyOf(builder.filterMap);
-  }
-
-  public static AqueryActionFilter emptyInstance() {
-    return builder().build();
-  }
-
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  public boolean hasFilterForFunction(String function) {
-    return filterMap.containsKey(function);
-  }
-
-  /**
-   * Returns whether the input string matches ALL the filter patterns of a specific type parsed from
-   * aquery command.
-   *
-   * @param function the name of the aquery function (inputs, outputs, mnemonic)
-   * @param input the string to be matched against
-   */
-  public boolean matchesAllPatternsForFunction(String function, String input) {
-    if (!hasFilterForFunction(function)) {
-      return false;
+    init {
+        filterMap =
+            com.google.common.collect.ImmutableMultimap.copyOf<String?, java.util.regex.Pattern?>(builder.filterMap)
     }
 
-    return filterMap.get(function).stream().allMatch(pattern -> pattern.matcher(input).matches());
-  }
-
-  /** Builder class for {@code AqueryActionFilter} */
-  public static class Builder {
-    private final Multimap<String, Pattern> filterMap;
-
-    public Builder() {
-      filterMap = HashMultimap.create();
+    fun hasFilterForFunction(function: String?): Boolean {
+        return filterMap.containsKey(function)
     }
 
-    @CanIgnoreReturnValue
-    public Builder put(String key, Pattern value) {
-      filterMap.put(key, value);
-      return this;
+    /**
+     * Returns whether the input string matches ALL the filter patterns of a specific type parsed from
+     * aquery command.
+     * 
+     * @param function the name of the aquery function (inputs, outputs, mnemonic)
+     * @param input the string to be matched against
+     */
+    fun matchesAllPatternsForFunction(function: String?, input: String?): Boolean {
+        if (!hasFilterForFunction(function)) {
+            return false
+        }
+
+        return filterMap.get(function).stream()
+            .allMatch(java.util.function.Predicate { pattern: java.util.regex.Pattern? ->
+                pattern.matcher(input).matches()
+            })
     }
 
-    public AqueryActionFilter build() {
-      return new AqueryActionFilter(this);
+    /** Builder class for `AqueryActionFilter`  */
+    class Builder {
+        private val filterMap: com.google.common.collect.Multimap<String?, java.util.regex.Pattern?>
+
+        init {
+            filterMap = com.google.common.collect.HashMultimap.create<String?, java.util.regex.Pattern?>()
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun put(key: String?, value: java.util.regex.Pattern?): Builder {
+            filterMap.put(key, value)
+            return this
+        }
+
+        fun build(): AqueryActionFilter {
+            return AqueryActionFilter(this)
+        }
     }
-  }
+
+    companion object {
+        fun emptyInstance(): AqueryActionFilter {
+            return builder().build()
+        }
+
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.query2.aquery.AqueryActionFilter.Builder()
+        }
+    }
 }

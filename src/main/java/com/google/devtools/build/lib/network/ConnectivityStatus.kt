@@ -11,53 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.network
 
-package com.google.devtools.build.lib.network;
+/** Defines connectivity problem types and their short warning messages.  */
+class ConnectivityStatus
+/**
+ * Constructs a connectivity status with a service-specific warning.
+ * 
+ * @param serviceInfo service-specific information displayed or logged in addition to the status's
+ * short warning when this connectivityStatus is present.
+ */(
+    /** Generic category type for this status, which contains a generic warning.  */
+    val status: Status,
+    /** Service-specific information for this status.  */
+    var serviceInfo: String
+) {
+    /** Enumerates common connectivity statuses and their generic short warnings.  */
+    enum class Status(shortWarning: String) {
+        NO_CREDENTIALS("No credentials"),
+        NO_NETWORK("No internet connection"),
+        NOT_REACHABLE("Service not reachable"),
+        OK("");
 
-/** Defines connectivity problem types and their short warning messages. */
-public final class ConnectivityStatus {
-  /** Enumerates common connectivity statuses and their generic short warnings. */
-  public enum Status {
-    NO_CREDENTIALS("No credentials"),
-    NO_NETWORK("No internet connection"),
-    NOT_REACHABLE("Service not reachable"),
-    OK("");
+        /** Generic warning associated with this status.  */
+        val shortWarning: String?
 
-    /** Generic warning associated with this status. */
-    public final String shortWarning;
-
-    Status(String shortWarning) {
-      this.shortWarning = shortWarning;
+        init {
+            this.shortWarning = shortWarning
+        }
     }
-  }
 
-  /**
-   * A string containing the names of the failing statuses, so that places that refer to them in a
-   * static context (ie. help for options that take these values as inputs) can stay in sync if
-   * {@link Status} is changed.
-   */
-  public static final String FAILING_STATUSES =
-      "'NO_CREDENTIALS', 'NO_NETWORK', and 'NOT_REACHABLE'";
+    override fun toString(): String {
+        return (if (serviceInfo.isEmpty()) status.shortWarning else status.shortWarning + ": " + serviceInfo)!!
+    }
 
-  /** Service-specific information for this status. */
-  public String serviceInfo;
-
-  /** Generic category type for this status, which contains a generic warning. */
-  public final Status status;
-
-  @Override
-  public String toString() {
-    return serviceInfo.isEmpty() ? status.shortWarning : status.shortWarning + ": " + serviceInfo;
-  }
-
-  /**
-   * Constructs a connectivity status with a service-specific warning.
-   *
-   * @param serviceInfo service-specific information displayed or logged in addition to the status's
-   *     short warning when this connectivityStatus is present.
-   */
-  public ConnectivityStatus(Status status, String serviceInfo) {
-    this.status = status;
-    this.serviceInfo = serviceInfo;
-  }
+    companion object {
+        /**
+         * A string containing the names of the failing statuses, so that places that refer to them in a
+         * static context (ie. help for options that take these values as inputs) can stay in sync if
+         * [Status] is changed.
+         */
+        const val FAILING_STATUSES: String = "'NO_CREDENTIALS', 'NO_NETWORK', and 'NOT_REACHABLE'"
+    }
 }

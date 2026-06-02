@@ -53,12 +53,11 @@ public final class ToolchainContextUtil {
 
     var ruleClass = rule.getRuleClassObject();
     boolean useAutoExecGroups =
-        ruleClass
-            .getAutoExecGroupsMode()
+        ruleClass.autoExecGroupsMode
             .isEnabled(RawAttributeMapper.of(rule), coreOptions.getUseAutoExecGroups());
 
     ImmutableSet<ToolchainTypeRequirement> toolchainTypes = ruleClass.getToolchainTypes();
-    if (!ruleClass.isStarlark() && ruleClass.getName().equals("genrule")) {
+    if (!ruleClass.isStarlark && ruleClass.getName().equals("genrule")) {
       // Override the toolchain types based on the target-level "toolchains" attribute.
       toolchainTypes = updateToolchainTypesFromAttribute(rule, toolchainTypes);
     }

@@ -11,33 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
+import com.google.devtools.build.lib.remote.ExecutionStatusException
+import io.grpc.StatusException
+import io.grpc.StatusRuntimeException
 
-import io.grpc.Status;
-import io.grpc.StatusException;
-import io.grpc.StatusRuntimeException;
-
-/** Methods useful when using the {@link RemoteRetrier}. */
-public final class RemoteRetrierUtils {
-
-  public static boolean causedByStatus(Throwable e, Status.Code expected) {
-    if (e instanceof StatusRuntimeException statusRuntimeException) {
-      return statusRuntimeException.getStatus().getCode() == expected;
-    } else if (e instanceof StatusException statusException) {
-      return statusException.getStatus().getCode() == expected;
-    } else if (e.getCause() != null) {
-      return causedByStatus(e.getCause(), expected);
+/** Methods useful when using the [RemoteRetrier].  */
+object RemoteRetrierUtils {
+    fun causedByStatus(e: Throwable, expected: io.grpc.Status.Code?): Boolean {
+        if (e is StatusRuntimeException) {
+            return e.getStatus().getCode() == expected
+        } else if (e is StatusException) {
+            return e.getStatus().getCode() == expected
+        } else if (e.getCause() != null) {
+            return causedByStatus(e.getCause(), expected)
+        }
+        return false
     }
-    return false;
-  }
 
-  public static boolean causedByExecTimeout(Throwable e) {
-    if (e instanceof ExecutionStatusException executionStatusException) {
-      return executionStatusException.isExecutionTimeout();
-    } else if (e.getCause() != null) {
-      return causedByExecTimeout(e.getCause());
+    fun causedByExecTimeout(e: Throwable): Boolean {
+        if (e is ExecutionStatusException) {
+            return e.isExecutionTimeout()
+        } else if (e.getCause() != null) {
+            return causedByExecTimeout(e.getCause())
+        }
+        return false
     }
-    return false;
-  }
 }

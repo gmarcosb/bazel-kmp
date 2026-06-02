@@ -69,7 +69,7 @@ public class TypeCheckedTagTest {
             /* tagIndex= */ 0);
     assertThat(typeCheckedTag.getFieldNames()).containsExactly("foo");
     assertThat(getattr(typeCheckedTag, "foo")).isEqualTo(StarlarkInt.of(3));
-    assertThat(typeCheckedTag.isDevDependency()).isTrue();
+    assertThat(typeCheckedTag.isDevDependency).isTrue();
   }
 
   @Test
@@ -95,7 +95,7 @@ public class TypeCheckedTagTest {
                 Label.parseCanonicalUnchecked("@myrepo//mypkg:thing1"),
                 Label.parseCanonicalUnchecked("@myrepo//pkg:thing2"),
                 Label.parseCanonicalUnchecked("@other_repo//pkg:thing3")));
-    assertThat(typeCheckedTag.isDevDependency()).isFalse();
+    assertThat(typeCheckedTag.isDevDependency).isFalse();
   }
 
   @Test
@@ -113,7 +113,7 @@ public class TypeCheckedTagTest {
             /* tagIndex= */ 0);
     assertThat(typeCheckedTag.getFieldNames()).containsExactly("foo");
     assertThat(getattr(typeCheckedTag, "foo")).isEqualTo(Starlark.NONE);
-    assertThat(typeCheckedTag.isDevDependency()).isTrue();
+    assertThat(typeCheckedTag.isDevDependency).isTrue();
   }
 
   @Test
@@ -135,7 +135,7 @@ public class TypeCheckedTagTest {
             Dict.builder()
                 .put("key", StarlarkList.immutableOf("value1", "value2"))
                 .buildImmutable());
-    assertThat(typeCheckedTag.isDevDependency()).isFalse();
+    assertThat(typeCheckedTag.isDevDependency).isFalse();
   }
 
   @Test
@@ -159,7 +159,7 @@ public class TypeCheckedTagTest {
     assertThat(getattr(typeCheckedTag, "bar")).isEqualTo(StarlarkInt.of(3));
     assertThat(getattr(typeCheckedTag, "quux"))
         .isEqualTo(StarlarkList.immutableOf("quuxValue1", "quuxValue2"));
-    assertThat(typeCheckedTag.isDevDependency()).isFalse();
+    assertThat(typeCheckedTag.isDevDependency).isFalse();
   }
 
   @Test

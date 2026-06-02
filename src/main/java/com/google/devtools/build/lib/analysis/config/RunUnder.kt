@@ -11,53 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
-/** Components of the {@code --run_under} option. */
-public sealed interface RunUnder {
-  /**
-   * @return the whole value passed to --run_under option.
-   */
-  String value();
+/** Components of the `--run_under` option.  */
+interface RunUnder {
+    /**
+     * @return the whole value passed to --run_under option.
+     */
+    fun value(): String?
 
-  /**
-   * Returns everything except the first word (according to shell tokenization) passed to {@code
-   * --run_under}.
-   */
-  ImmutableList<String> options();
+    /**
+     * Returns everything except the first word (according to shell tokenization) passed to `--run_under`.
+     */
+    fun options(): com.google.common.collect.ImmutableList<String?>?
 
-  /**
-   * Returns a new instance that only retains the information that is relevant for the analysis of
-   * non-test targets.
-   */
-  @Nullable
-  static RunUnder trimForNonTestConfiguration(@Nullable RunUnder runUnder) {
-    return switch (runUnder) {
-      case LabelRunUnder labelRunUnder ->
-          new LabelRunUnder("", ImmutableList.of(), labelRunUnder.label());
-      case null, default -> null;
-    };
-  }
+    /**
+     * Represents a value of `--run_under` whose first word (according to shell tokenization)
+     * starts with `"//"` or `"@"`. It is treated as a label referencing a target that
+     * should be used as the `--run_under` executable.
+     */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    data class LabelRunUnder(
+        value: String?,
+        options: com.google.common.collect.ImmutableList<String?>?,
+        label: com.google.devtools.build.lib.cmdline.Label?
+    ) : RunUnder {
+        val value: String?
+        val options: com.google.common.collect.ImmutableList<String?>?
+        val label: com.google.devtools.build.lib.cmdline.Label?
 
-  /**
-   * Represents a value of {@code --run_under} whose first word (according to shell tokenization)
-   * starts with {@code "//"} or {@code "@"}. It is treated as a label referencing a target that
-   * should be used as the {@code --run_under} executable.
-   */
-  @AutoCodec
-  record LabelRunUnder(String value, ImmutableList<String> options, Label label)
-      implements RunUnder {}
+        init {
+            this.value = value
+            this.options = options
+            this.label = label
+        }
+    }
 
-  /**
-   * Represents a value of {@code --run_under} whose first word (according to shell tokenization)
-   * does not start with {@code "//"} or {@code "@"}. It is treated as a shell command.
-   */
-  @AutoCodec
-  record CommandRunUnder(String value, ImmutableList<String> options, String command)
-      implements RunUnder {}
+    /**
+     * Represents a value of `--run_under` whose first word (according to shell tokenization)
+     * does not start with `"//"` or `"@"`. It is treated as a shell command.
+     */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    data class CommandRunUnder(
+        value: String?,
+        options: com.google.common.collect.ImmutableList<String?>?,
+        command: String?
+    ) : RunUnder {
+        val value: String?
+        val options: com.google.common.collect.ImmutableList<String?>?
+        val command: String?
+
+        init {
+            this.value = value
+            this.options = options
+            this.command = command
+        }
+    }
+
+    companion object {
+        /**
+         * Returns a new instance that only retains the information that is relevant for the analysis of
+         * non-test targets.
+         */
+        @kotlin.jvm.JvmStatic
+        fun trimForNonTestConfiguration(runUnder: RunUnder?): RunUnder? {
+            return when (runUnder) {
+                -> LabelRunUnder("", com.google.common.collect.ImmutableList.of<String?>(), labelRunUnder.label)
+                null -> null
+            }
+        }
+    }
 }

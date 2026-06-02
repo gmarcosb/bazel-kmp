@@ -11,200 +11,179 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.grpc;
+package com.google.devtools.build.lib.remote.grpc
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import io.grpc.CallOptions;
-import io.grpc.ClientCall;
-import io.grpc.ForwardingClientCall.SimpleForwardingClientCall;
-import io.grpc.ForwardingClientCallListener.SimpleForwardingClientCallListener;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
-import io.grpc.Status;
-import io.netty.channel.unix.Errors;
-import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.disposables.Disposable;
-import io.reactivex.rxjava3.functions.Action;
-import io.reactivex.rxjava3.subjects.AsyncSubject;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+import com.google.common.annotations.VisibleForTesting
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+import io.grpc.ClientCall
+import io.grpc.Metadata
+import io.grpc.MethodDescriptor
+import io.grpc.Status
+import io.netty.channel.unix.Errors
+import io.reactivex.rxjava3.functions.Action
+import io.reactivex.rxjava3.functions.Consumer
+import io.reactivex.rxjava3.functions.Function
+import java.util.function.Predicate
+import javax.annotation.concurrent.GuardedBy
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
 
 /**
- * A {@link ConnectionPool} that creates one connection using provided {@link ConnectionFactory} and
- * shares the connection upto {@code maxConcurrency}.
- *
- * <p>This is useful if underlying connection maintains a connection pool internally. (such as
- * {@code Channel} in gRPC)
- *
- * <p>Connections must be closed with {@link Connection#close()} in order to be reused later.
+ * A [ConnectionPool] that creates one connection using provided [ConnectionFactory] and
+ * shares the connection upto `maxConcurrency`.
+ * 
+ * 
+ * This is useful if underlying connection maintains a connection pool internally. (such as
+ * `Channel` in gRPC)
+ * 
+ * 
+ * Connections must be closed with [Connection.close] in order to be reused later.
  */
 @ThreadSafe
-public class SharedConnectionFactory implements ConnectionPool {
-  private final TokenBucket<Integer> tokenBucket;
-  private final ConnectionFactory factory;
-  private final Predicate<Throwable> fatalErrorPredicate;
+class SharedConnectionFactory @VisibleForTesting internal constructor(
+    private val factory: ConnectionFactory,
+    maxConcurrency: Int,
+    fatalErrorPredicate: Predicate<Throwable?>
+) : ConnectionPool {
+    private val tokenBucket: TokenBucket<Int?>
+    private val fatalErrorPredicate: Predicate<Throwable?>
 
-  @Nullable
-  @GuardedBy("this")
-  private AsyncSubject<Connection> connectionAsyncSubject = null;
+    @GuardedBy("this")
+    private var connectionAsyncSubject: AsyncSubject<Connection?>? = null
 
-  private final AtomicReference<Disposable> connectionCreationDisposable =
-      new AtomicReference<>(null);
+    private val connectionCreationDisposable: AtomicReference<Disposable?> = AtomicReference<Disposable?>(null)
 
-  public SharedConnectionFactory(ConnectionFactory factory, int maxConcurrency) {
-    this(factory, maxConcurrency, SharedConnectionFactory::isFatalError);
-  }
+    constructor(factory: ConnectionFactory, maxConcurrency: Int) : this(
+        factory,
+        maxConcurrency,
+        Predicate { t: Throwable? -> isFatalError(t) })
 
-  @VisibleForTesting
-  SharedConnectionFactory(
-      ConnectionFactory factory, int maxConcurrency, Predicate<Throwable> fatalErrorPredicate) {
-    this.factory = factory;
-
-    List<Integer> initialTokens = new ArrayList<>(maxConcurrency);
-    for (int i = 0; i < maxConcurrency; ++i) {
-      initialTokens.add(i);
-    }
-    this.tokenBucket = new TokenBucket<>(initialTokens);
-    this.fatalErrorPredicate = fatalErrorPredicate;
-  }
-
-  @Override
-  public void close() throws IOException {
-    tokenBucket.close();
-
-    Disposable d = connectionCreationDisposable.getAndSet(null);
-    if (d != null && !d.isDisposed()) {
-      d.dispose();
+    init {
+        val initialTokens: MutableList<Int?> = ArrayList<Int?>(maxConcurrency)
+        for (i in 0..<maxConcurrency) {
+            initialTokens.add(i)
+        }
+        this.tokenBucket = TokenBucket<Int?>(initialTokens)
+        this.fatalErrorPredicate = fatalErrorPredicate
     }
 
-    synchronized (this) {
-      if (connectionAsyncSubject != null) {
-        Connection connection = connectionAsyncSubject.getValue();
-        if (connection != null) {
-          connection.close();
+    @Throws(IOException::class)
+    override fun close() {
+        tokenBucket.close()
+
+        val d: Disposable? = connectionCreationDisposable.getAndSet(null)
+        if (d != null && !d.isDisposed()) {
+            d.dispose()
         }
 
-        // If it still has observers, it means the subject hasn't completed. Complete it now.
-        if (connectionAsyncSubject.hasObservers()) {
-          connectionAsyncSubject.onError(new IllegalStateException("closed"));
-        }
-      }
-    }
-  }
-
-  private AsyncSubject<Connection> createUnderlyingConnectionIfNot() {
-    synchronized (this) {
-      if (connectionAsyncSubject == null || connectionAsyncSubject.hasThrowable()) {
-        connectionAsyncSubject =
-            factory
-                .create()
-                .doOnSubscribe(connectionCreationDisposable::set)
-                .toObservable()
-                .subscribeWith(AsyncSubject.create());
-      }
-
-      return connectionAsyncSubject;
-    }
-  }
-
-  private Single<? extends Connection> acquireConnection() {
-    return Single.fromObservable(createUnderlyingConnectionIfNot());
-  }
-
-  /**
-   * Reuses the underlying {@link Connection} and wait for it to be released if is exceeding {@code
-   * maxConcurrency}.
-   */
-  @Override
-  public Single<SharedConnection> create() {
-    return tokenBucket
-        .acquireToken()
-        .flatMap(
-            token ->
-                acquireConnection()
-                    .doOnError(ignored -> tokenBucket.addToken(token))
-                    .doOnDispose(() -> tokenBucket.addToken(token))
-                    .map(
-                        conn ->
-                            new SharedConnection(
-                                conn,
-                                /* onClose= */ () -> tokenBucket.addToken(token),
-                                fatalErrorPredicate,
-                                /* onFatalError= */ () -> {
-                                  synchronized (this) {
-                                    connectionAsyncSubject = null;
-                                  }
-                                })));
-  }
-
-  /** Returns current number of available connections. */
-  public int numAvailableConnections() {
-    return tokenBucket.size();
-  }
-
-  /** A {@link Connection} which wraps an underlying connection and is shared between consumers. */
-  public static class SharedConnection implements Connection {
-    private final Connection connection;
-    private final Action onClose;
-    private final Predicate<Throwable> fatalErrorPredicate;
-    private final Runnable onFatalError;
-
-    public SharedConnection(
-        Connection connection,
-        Action onClose,
-        Predicate<Throwable> fatalErrorPredicate,
-        Runnable onFatalError) {
-      this.connection = connection;
-      this.onClose = onClose;
-      this.fatalErrorPredicate = fatalErrorPredicate;
-      this.onFatalError = onFatalError;
-    }
-
-    @Override
-    public <ReqT, RespT> ClientCall<ReqT, RespT> call(
-        MethodDescriptor<ReqT, RespT> method, CallOptions options) {
-      return new SimpleForwardingClientCall<>(connection.call(method, options)) {
-        @Override
-        public void start(Listener<RespT> responseListener, Metadata headers) {
-          super.start(
-              new SimpleForwardingClientCallListener<>(responseListener) {
-                @Override
-                public void onClose(Status status, Metadata trailers) {
-                  if (fatalErrorPredicate.test(status.getCause())) {
-                    onFatalError.run();
-                  }
-                  super.onClose(status, trailers);
+        synchronized(this) {
+            if (connectionAsyncSubject != null) {
+                val connection = connectionAsyncSubject.getValue()
+                if (connection != null) {
+                    connection.close()
                 }
-              },
-              headers);
+
+                // If it still has observers, it means the subject hasn't completed. Complete it now.
+                if (connectionAsyncSubject.hasObservers()) {
+                    connectionAsyncSubject.onError(IllegalStateException("closed"))
+                }
+            }
         }
-      };
     }
 
-    @Override
-    public void close() throws IOException {
-      try {
-        onClose.run();
-      } catch (Throwable t) {
-        throw new IOException(t);
-      }
+    private fun createUnderlyingConnectionIfNot(): AsyncSubject<Connection?>? {
+        synchronized(this) {
+            if (connectionAsyncSubject == null || connectionAsyncSubject.hasThrowable()) {
+                connectionAsyncSubject =
+                    factory
+                        .create()
+                        .doOnSubscribe(Consumer { newValue: V? -> connectionCreationDisposable.set(newValue) })
+                        .toObservable()
+                        .subscribeWith<AsyncSubject<Connection?>>(AsyncSubject.create<Connection?>())
+            }
+            return connectionAsyncSubject
+        }
     }
 
-    /** Returns the underlying connection this shared connection built on */
-    public Connection getUnderlyingConnection() {
-      return connection;
+    private fun acquireConnection(): Single<out Connection?>? {
+        return Single.fromObservable<Connection?>(createUnderlyingConnectionIfNot())
     }
-  }
 
-  private static boolean isFatalError(@Nullable Throwable t) {
-    // A low-level netty error indicates that the connection is fundamentally broken
-    // and should not be reused for retries.
-    return t instanceof Errors.NativeIoException;
-  }
+    /**
+     * Reuses the underlying [Connection] and wait for it to be released if is exceeding `maxConcurrency`.
+     */
+    override fun create(): Single<SharedConnection?>? {
+        return tokenBucket
+            .acquireToken()
+            .flatMap<SharedConnection?>(
+                Function { token: Int? ->
+                    acquireConnection()
+                        .doOnError(Consumer { ignored: Throwable? -> tokenBucket.addToken(token) })
+                        .doOnDispose(Action { tokenBucket.addToken(token) })
+                        .map<SharedConnection?>(
+                            { conn: Connection? ->
+                                SharedConnection(
+                                    conn!!,  /* onClose= */
+                                    Action { tokenBucket.addToken(token) },
+                                    fatalErrorPredicate,  /* onFatalError= */
+                                    Runnable {
+                                        synchronized(this) {
+                                            connectionAsyncSubject = null
+                                        }
+                                    })
+                            })
+                })
+    }
+
+    /** Returns current number of available connections.  */
+    fun numAvailableConnections(): Int {
+        return tokenBucket.size()
+    }
+
+    /** A [Connection] which wraps an underlying connection and is shared between consumers.  */
+    class SharedConnection(
+        /** Returns the underlying connection this shared connection built on  */
+        val underlyingConnection: Connection,
+        private val onClose: Action,
+        private val fatalErrorPredicate: Predicate<Throwable?>,
+        private val onFatalError: Runnable
+    ) : Connection {
+        override fun <ReqT, RespT> call(
+            method: MethodDescriptor<ReqT?, RespT?>?, options: CallOptions?
+        ): ClientCall<ReqT?, RespT?> {
+            return object :
+                SimpleForwardingClientCall<ReqT?, RespT?>(underlyingConnection.call<ReqT?, RespT?>(method, options)) {
+                override fun start(responseListener: ClientCall.Listener<RespT?>?, headers: Metadata?) {
+                    super.start(
+                        object : SimpleForwardingClientCallListener<RespT?>(responseListener) {
+                            override fun onClose(status: Status, trailers: Metadata?) {
+                                if (fatalErrorPredicate.test(status.getCause())) {
+                                    onFatalError.run()
+                                }
+                                super.onClose(status, trailers)
+                            }
+                        },
+                        headers
+                    )
+                }
+            }
+        }
+
+        @Throws(IOException::class)
+        override fun close() {
+            try {
+                onClose.run()
+            } catch (t: Throwable) {
+                throw IOException(t)
+            }
+        }
+    }
+
+    companion object {
+        private fun isFatalError(t: Throwable?): Boolean {
+            // A low-level netty error indicates that the connection is fundamentally broken
+            // and should not be reused for retries.
+            return t is Errors.NativeIoException
+        }
+    }
 }

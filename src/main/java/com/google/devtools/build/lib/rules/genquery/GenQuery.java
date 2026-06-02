@@ -399,7 +399,7 @@ public class GenQuery implements RuleConfiguredTargetFactory {
 
     private static Target getExistingTarget(Label label, Map<PackageIdentifier, Package> packages) {
       try {
-        return packages.get(label.getPackageIdentifier()).getTarget(label.getName());
+        return packages.get(label.getPackageIdentifier()).getTarget(label.name);
       } catch (NoSuchTargetException e) {
         // Unexpected since the label was part of the TargetPatternValue.
         throw new IllegalStateException(e);
@@ -493,7 +493,7 @@ public class GenQuery implements RuleConfiguredTargetFactory {
 
     private static void checkValidPatternType(String pattern, TargetPattern.Parser parser)
         throws TargetParsingException {
-      TargetPattern.Type type = parser.parse(pattern).getType();
+      TargetPattern.Type type = parser.parse(pattern).type;
       if (type == TargetPattern.Type.PATH_AS_TARGET) {
         throw new TargetParsingException(
             String.format("couldn't determine target from filename '%s'", pattern),

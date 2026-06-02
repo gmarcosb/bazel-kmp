@@ -11,28 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.debug
 
-package com.google.devtools.build.lib.bazel.debug;
+import com.google.devtools.build.lib.util.OptionsUtils
+import com.google.devtools.build.lib.vfs.PathFragment
 
-import com.google.devtools.build.lib.util.OptionsUtils;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-
-/** Options for debugging and verbosity tools. */
-@OptionsClass
-public abstract class DebuggingOptions extends OptionsBase {
-  @Option(
-      name = "experimental_workspace_rules_log_file",
-      defaultValue = "null",
-      category = "verbosity",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      converter = OptionsUtils.PathFragmentConverter.class,
-      help =
-          "Log certain Workspace Rules events into this file as delimited WorkspaceEvent protos.")
-  public abstract PathFragment getWorkspaceRulesLogFile();
+/** Options for debugging and verbosity tools.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class DebuggingOptions : com.google.devtools.common.options.OptionsBase() {
+    @com.google.devtools.common.options.Option(
+        name = "experimental_workspace_rules_log_file",
+        defaultValue = "null",
+        category = "verbosity",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        converter = OptionsUtils.PathFragmentConverter::class,
+        help = "Log certain Workspace Rules events into this file as delimited WorkspaceEvent protos."
+    )
+    abstract fun getWorkspaceRulesLogFile(): PathFragment?
 }

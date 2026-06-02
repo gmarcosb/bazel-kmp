@@ -11,155 +11,155 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.buildjar.javac.statistics;
+package com.google.devtools.build.buildjar.javac.statistics
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.sun.tools.javac.util.Context;
-import java.time.Duration;
-import java.util.Optional;
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.google.auto.value.AutoValue
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import com.sun.tools.javac.util.Context
+import java.time.Duration
+import java.util.*
+import java.util.function.Function
 
 /**
- * A class representing statistics for an invocation of {@link
- * com.google.devtools.build.buildjar.javac.BlazeJavacMain#compile}.
- *
- * <p>This will generally include performance statistics (how long the process ran, how many times
+ * A class representing statistics for an invocation of [ ][com.google.devtools.build.buildjar.javac.BlazeJavacMain.compile].
+ * 
+ * 
+ * This will generally include performance statistics (how long the process ran, how many times
  * did an annotation processor run, how many Error Prone checks were checked, etc.).
  */
 @AutoValue
-public abstract class BlazeJavacStatistics {
+abstract class BlazeJavacStatistics {
+    abstract fun auxiliaryData(): ImmutableMap<AuxiliaryDataSource?, ByteArray?>?
 
-  // Weak refs to contexts we've init'ed into
-  private static final Cache<Context, Builder> contextsInitialized =
-      Caffeine.newBuilder().weakKeys().build();
+    abstract fun totalErrorProneTime(): Optional<Duration?>?
 
-  public static void preRegister(Context context) {
-    var unused =
-        contextsInitialized.get(
-            context,
-            c -> {
-              Builder instance = newBuilder();
-              c.put(Builder.class, instance);
-              return instance;
-            });
-  }
+    abstract fun errorProneInitializationTime(): Optional<Duration?>?
 
-  public static BlazeJavacStatistics empty() {
-    return newBuilder().build();
-  }
+    abstract fun bugpatternTiming(): ImmutableMap<String?, Duration?>?
 
-  private static Builder newBuilder() {
-    return new AutoValue_BlazeJavacStatistics.Builder()
-        .transitiveClasspathLength(0)
-        .reducedClasspathLength(0)
-        .minClasspathLength(0)
-        .transitiveClasspathFallback(false);
-  }
+    abstract fun totalProcessorTime(): Optional<Duration?>?
 
-  public abstract ImmutableMap<AuxiliaryDataSource, byte[]> auxiliaryData();
+    abstract fun processorTiming(): ImmutableMap<String?, Duration?>?
 
-  public abstract Optional<Duration> totalErrorProneTime();
+    abstract fun processors(): ImmutableSet<String?>?
 
-  public abstract Optional<Duration> errorProneInitializationTime();
+    abstract fun transitiveClasspathLength(): Int
 
-  public abstract ImmutableMap<String, Duration> bugpatternTiming();
+    abstract fun reducedClasspathLength(): Int
 
-  public abstract Optional<Duration> totalProcessorTime();
+    abstract fun minClasspathLength(): Int
 
-  public abstract ImmutableMap<String, Duration> processorTiming();
+    abstract fun transitiveClasspathFallback(): Boolean
 
-  public abstract ImmutableSet<String> processors();
-
-  public abstract int transitiveClasspathLength();
-
-  public abstract int reducedClasspathLength();
-
-  public abstract int minClasspathLength();
-
-  public abstract boolean transitiveClasspathFallback();
-
-  // TODO(glorioso): We really need to think out more about what data to collect/store here.
-
-  /**
-   * Known sources of additional data to add to the statistics. Each data source can put a single
-   * byte[] of serialized proto data into this statistics object with {@link
-   * Builder#addAuxiliaryData}
-   */
-  public enum AuxiliaryDataSource {
-    DAGGER,
-  }
-
-  public abstract Builder toBuilder();
-
-  /**
-   * Builder of {@link BlazeJavacStatistics} instances.
-   *
-   * <p>Normally available through a {@link Context} via: {@code context.getKey({@link
-   * BlazeJavacStatistics.Builder}.class} after {@link BlazeJavacStatistics#preRegister(Context)}
-   * has been called.
-   */
-  @AutoValue.Builder
-  public abstract static class Builder {
-
-    public abstract Builder totalErrorProneTime(Duration totalErrorProneTime);
-
-    public abstract Builder errorProneInitializationTime(Duration errorProneInitializationTime);
-
-    public abstract Builder totalProcessorTime(Duration totalProcessorTime);
-
-    abstract ImmutableMap.Builder<String, Duration> bugpatternTimingBuilder();
-
-    abstract ImmutableMap.Builder<String, Duration> processorTimingBuilder();
-
-    abstract ImmutableMap.Builder<AuxiliaryDataSource, byte[]> auxiliaryDataBuilder();
-
-    abstract ImmutableSet.Builder<String> processorsBuilder();
-
-    public abstract Builder transitiveClasspathLength(int length);
-
-    public abstract Builder reducedClasspathLength(int length);
-
-    public abstract Builder minClasspathLength(int length);
-
-    public abstract Builder transitiveClasspathFallback(boolean fallback);
-
-    @CanIgnoreReturnValue
-    public Builder addBugpatternTiming(String key, Duration value) {
-      bugpatternTimingBuilder().put(key, value);
-      return this;
+    // TODO(glorioso): We really need to think out more about what data to collect/store here.
+    /**
+     * Known sources of additional data to add to the statistics. Each data source can put a single
+     * byte[] of serialized proto data into this statistics object with [ ][Builder.addAuxiliaryData]
+     */
+    enum class AuxiliaryDataSource {
+        DAGGER,
     }
 
-    @CanIgnoreReturnValue
-    public Builder addProcessorTiming(String key, Duration value) {
-      processorTimingBuilder().put(key, value);
-      return this;
-    }
-
-    public abstract BlazeJavacStatistics build();
+    abstract fun toBuilder(): Builder?
 
     /**
-     * Add an auxiliary attachment of data to this statistics object. The data should be a proto
-     * serialization of a google.protobuf.Any protobuf.
-     *
-     * <p>Since this method is called across the boundaries of an annotation processorpath and the
-     * runtime classpath of the compiler, we want to reduce the number of classes mentioned, hence
-     * the byte[] data type. If we find a way to make this more safe, we would prefer to use a
-     * protobuf ByteString instead for its immutability.
+     * Builder of [BlazeJavacStatistics] instances.
+     * 
+     * 
+     * Normally available through a [Context] via: `context.getKey({ BlazeJavacStatistics.Builder}.class` after [BlazeJavacStatistics.preRegister]
+     * has been called.
      */
-    @CanIgnoreReturnValue
-    public Builder addAuxiliaryData(AuxiliaryDataSource key, byte[] serializedData) {
-      auxiliaryDataBuilder().put(key, serializedData.clone());
-      return this;
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun totalErrorProneTime(totalErrorProneTime: Duration?): Builder?
+
+        abstract fun errorProneInitializationTime(errorProneInitializationTime: Duration?): Builder?
+
+        abstract fun totalProcessorTime(totalProcessorTime: Duration?): Builder?
+
+        abstract fun bugpatternTimingBuilder(): ImmutableMap.Builder<String?, Duration?>?
+
+        abstract fun processorTimingBuilder(): ImmutableMap.Builder<String?, Duration?>?
+
+        abstract fun auxiliaryDataBuilder(): ImmutableMap.Builder<AuxiliaryDataSource?, ByteArray?>?
+
+        abstract fun processorsBuilder(): ImmutableSet.Builder<String?>?
+
+        abstract fun transitiveClasspathLength(length: Int): Builder?
+
+        abstract fun reducedClasspathLength(length: Int): Builder?
+
+        abstract fun minClasspathLength(length: Int): Builder?
+
+        abstract fun transitiveClasspathFallback(fallback: Boolean): Builder?
+
+        @CanIgnoreReturnValue
+        fun addBugpatternTiming(key: String?, value: Duration?): Builder {
+            bugpatternTimingBuilder()!!.put(key, value)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addProcessorTiming(key: String?, value: Duration?): Builder {
+            processorTimingBuilder()!!.put(key, value)
+            return this
+        }
+
+        abstract fun build(): BlazeJavacStatistics?
+
+        /**
+         * Add an auxiliary attachment of data to this statistics object. The data should be a proto
+         * serialization of a google.protobuf.Any protobuf.
+         * 
+         * 
+         * Since this method is called across the boundaries of an annotation processorpath and the
+         * runtime classpath of the compiler, we want to reduce the number of classes mentioned, hence
+         * the byte[] data type. If we find a way to make this more safe, we would prefer to use a
+         * protobuf ByteString instead for its immutability.
+         */
+        @CanIgnoreReturnValue
+        fun addAuxiliaryData(key: AuxiliaryDataSource?, serializedData: ByteArray): Builder {
+            auxiliaryDataBuilder()!!.put(key, serializedData.clone())
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addProcessor(processor: String?): Builder {
+            processorsBuilder()!!.add(processor)
+            return this
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder addProcessor(String processor) {
-      processorsBuilder().add(processor);
-      return this;
+    companion object {
+        // Weak refs to contexts we've init'ed into
+        private val contextsInitialized: Cache<Context?, Builder?> =
+            Caffeine.newBuilder().weakKeys().build<Context?, Builder?>()
+
+        fun preRegister(context: Context?) {
+            val unused: Builder? =
+                contextsInitialized.get(
+                    context,
+                    Function { c: Context? ->
+                        val instance: Builder = newBuilder()
+                        c.put<Builder?>(Builder::class.java, instance)
+                        instance
+                    })
+        }
+
+        fun empty(): BlazeJavacStatistics? {
+            return newBuilder().build()
+        }
+
+        private fun newBuilder(): Builder {
+            return Builder()
+                .transitiveClasspathLength(0)
+                .reducedClasspathLength(0)
+                .minClasspathLength(0)
+                .transitiveClasspathFallback(false)!!
+        }
     }
-  }
 }

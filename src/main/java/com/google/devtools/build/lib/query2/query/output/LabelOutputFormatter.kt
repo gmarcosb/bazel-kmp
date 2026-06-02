@@ -11,59 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query.output
 
-package com.google.devtools.build.lib.query2.query.output;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.engine.OutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.SynchronizedDelegatingOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.ThreadSafeOutputFormatterCallback;
-import java.io.IOException;
-import java.io.OutputStream;
+import com.google.devtools.build.lib.cmdline.Label
+import java.io.OutputStream
 
 /**
  * An output formatter that prints the labels of the resulting target set in
  * topological order, optionally with the target's kind.
  */
-class LabelOutputFormatter extends AbstractUnorderedFormatter {
+internal class LabelOutputFormatter(private val showKind: Boolean) : AbstractUnorderedFormatter() {
+    override fun getName(): String {
+        return if (showKind) "label_kind" else "label"
+    }
 
-  private final boolean showKind;
-
-  LabelOutputFormatter(boolean showKind) {
-    this.showKind = showKind;
-  }
-
-  @Override
-  public String getName() {
-    return showKind ? "label_kind" : "label";
-  }
-
-  @Override
-  public OutputFormatterCallback<Target> createPostFactoStreamCallback(
-      OutputStream out, final QueryOptions options, LabelPrinter labelPrinter) {
-    return new TextOutputFormatterCallback<>(out) {
-      @Override
-      public void processOutput(Iterable<Target> partialResult) throws IOException {
-        String lineTerm = options.getLineTerminator();
-        for (Target target : partialResult) {
-          if (showKind) {
-            writer.append(getKind(options, target));
-            writer.append(' ');
-          }
-          Label label = target.getLabel();
-          writer.append(labelPrinter.toString(label)).append(lineTerm);
+    override fun createPostFactoStreamCallback(
+        out: OutputStream?, options: QueryOptions, labelPrinter: LabelPrinter
+    ): OutputFormatterCallback<Target?> {
+        return object : TextOutputFormatterCallback<Target?>(out) {
+            @Throws(IOException::class)
+            override fun processOutput(partialResult: Iterable<Target>) {
+                val lineTerm = options.getLineTerminator()
+                for (target in partialResult) {
+                    if (showKind) {
+                        writer.append(AbstractUnorderedFormatter.Companion.getKind(options, target))
+                        writer.append(' ')
+                    }
+                    val label: Label? = target.getLabel()
+                    writer.append(labelPrinter.toString(label)).append(lineTerm)
+                }
+            }
         }
-      }
-    };
-  }
+    }
 
-  @Override
-  public ThreadSafeOutputFormatterCallback<Target> createStreamCallback(
-      OutputStream out, QueryOptions options, QueryEnvironment<?> env) {
-    return new SynchronizedDelegatingOutputFormatterCallback<>(
-        createPostFactoStreamCallback(out, options, env.getLabelPrinter()));
-  }
+    override fun createStreamCallback(
+        out: OutputStream?, options: QueryOptions, env: QueryEnvironment<*>
+    ): ThreadSafeOutputFormatterCallback<Target?> {
+        return SynchronizedDelegatingOutputFormatterCallback<Target?>(
+            createPostFactoStreamCallback(out, options, env.getLabelPrinter())
+        )
+    }
 }

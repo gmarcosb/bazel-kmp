@@ -11,19 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventstream;
+package com.google.devtools.build.lib.buildeventstream
 
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
-/** Interface for conversion of paths to URIs. */
-// TODO(lpino): This interface shouldn't exist since there's only trivial implementation of it.
+/** Interface for conversion of paths to URIs.  */ // TODO(lpino): This interface shouldn't exist since there's only trivial implementation of it.
 // However, it's really hard to move this class to the right package because of package boundaries.
-public interface ArtifactGroupNamer {
-  /**
-   * Return the name of a NestedSet of artifacts, identified by its Node. A {@link BuildEvent}
-   * should only assume that this function is defined if the corresponding {@link
-   * NestedSet<Artifact>} is declared via the {@link EventReportingArtifacts} interface. On
-   * undefined positions, the value null is returned.
-   */
-  BuildEventStreamProtos.BuildEventId.NamedSetOfFilesId apply(NestedSet.Node node);
+interface ArtifactGroupNamer {
+    /**
+     * Return the name of a NestedSet of artifacts, identified by its Node. A [BuildEvent]
+     * should only assume that this function is defined if the corresponding [ ][<] is declared via the [EventReportingArtifacts] interface. On
+     * undefined positions, the value null is returned.
+     */
+    fun apply(node: com.google.devtools.build.lib.collect.nestedset.NestedSet.Node?): BuildEventStreamProtos.BuildEventId.NamedSetOfFilesId?
 }

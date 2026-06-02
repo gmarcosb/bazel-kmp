@@ -11,21 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import static java.util.Objects.requireNonNull;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+class CoverageArtifactsKnownEvent(coverageArtifacts: com.google.common.collect.ImmutableSet<Artifact?>?) :
+    com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    val coverageArtifacts: com.google.common.collect.ImmutableSet<Artifact?>?
 
-public record CoverageArtifactsKnownEvent(ImmutableSet<Artifact> coverageArtifacts)
-    implements Postable {
-  public CoverageArtifactsKnownEvent {
-    requireNonNull(coverageArtifacts, "coverageArtifacts");
-  }
+    init {
+        this.coverageArtifacts = coverageArtifacts
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<Artifact?>?>(
+            coverageArtifacts,
+            "coverageArtifacts"
+        )
+    }
 
-  public static CoverageArtifactsKnownEvent create(ImmutableSet<Artifact> coverageArtifacts) {
-    return new CoverageArtifactsKnownEvent(coverageArtifacts);
-  }
+    companion object {
+        fun create(coverageArtifacts: com.google.common.collect.ImmutableSet<Artifact?>?): CoverageArtifactsKnownEvent {
+            return CoverageArtifactsKnownEvent(coverageArtifacts)
+        }
+    }
 }

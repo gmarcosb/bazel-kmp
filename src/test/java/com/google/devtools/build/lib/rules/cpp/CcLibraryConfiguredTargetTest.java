@@ -576,7 +576,7 @@ public class CcLibraryConfiguredTargetTest extends BuildViewTestCase {
             "cc_library(name = 'x', srcs = ['x.cc'])");
     assertThat(
             ActionsTestUtil.baseArtifactNames(
-                x.get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+                x.get(InstrumentedFilesInfo.provider)
                     .getInstrumentationMetadataFiles()))
         .containsExactly("x.pic.gcno");
   }

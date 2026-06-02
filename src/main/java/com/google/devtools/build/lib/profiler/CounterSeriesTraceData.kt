@@ -11,98 +11,99 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.gson.stream.JsonWriter;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.profiler.TraceData
+import com.google.gson.stream.JsonWriter
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /**
  * Used to inject a whole counter series (or even multiple) in one go in the JSON trace profile;
  * these could be used to represent CPU or memory usages over the course of an invocation (as
  * opposed to individual tasks such as executing an action).
  */
-final class CounterSeriesTraceData implements TraceData {
-  @VisibleForTesting static final long PROCESS_ID = 1;
-  private final Map<CounterSeriesTask, double[]> counterSeriesMap;
-  private final Duration profileStart;
-  private final Duration bucketDuration;
-  private final int len;
-  private final long threadId;
-  private String displayName;
+internal class CounterSeriesTraceData(
+    counterSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask, DoubleArray?>,
+    profileStart: java.time.Duration,
+    bucketDuration: java.time.Duration
+) : TraceData {
+    private val counterSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask, DoubleArray?>
+    private val profileStart: java.time.Duration
+    private val bucketDuration: java.time.Duration
+    private val len: Int
+    private val threadId: Long
+    private var displayName: String? = null
 
-  @Nullable private String colorName;
+    private var colorName: String? = null
 
-  /**
-   * If multiple series are passed: - they will be rendered as stacked chart; - we assume they all
-   * have the same length; - display name and color are picked from the first profile task in the
-   * map. However, colors the remaining series are picked arbitrarily by the Trace renderer.
-   */
-  CounterSeriesTraceData(
-      Map<CounterSeriesTask, double[]> counterSeriesMap,
-      Duration profileStart,
-      Duration bucketDuration) {
-    int len = -1;
-    for (var entry : counterSeriesMap.entrySet()) {
-      var task = entry.getKey();
-      if (len == -1) {
-        len = entry.getValue().length;
+    /**
+     * If multiple series are passed: - they will be rendered as stacked chart; - we assume they all
+     * have the same length; - display name and color are picked from the first profile task in the
+     * map. However, colors the remaining series are picked arbitrarily by the Trace renderer.
+     */
+    init {
+        var len = -1
+        for (entry in counterSeriesMap.entrySet()) {
+            val task: com.google.devtools.build.lib.profiler.CounterSeriesTask = entry.getKey()
+            if (len == -1) {
+                len = entry.getValue().length
 
-        this.displayName = task.laneName();
-        if (task.color() != null) {
-          this.colorName = task.color().value();
+                this.displayName = task.laneName()
+                if (task.color() != null) {
+                    this.colorName = task.color().value()
+                }
+            } else {
+                // Check that second and subsequent series have the same length as the first.
+                com.google.common.base.Preconditions.checkState(len == entry.getValue().length)
+            }
         }
-      } else {
-        // Check that second and subsequent series have the same length as the first.
-        Preconditions.checkState(len == entry.getValue().length);
-      }
+        this.len = len
+        this.threadId = java.lang.Thread.currentThread().getId()
+        this.counterSeriesMap = counterSeriesMap
+        this.profileStart = profileStart
+        this.bucketDuration = bucketDuration
     }
-    this.len = len;
-    this.threadId = Thread.currentThread().getId();
-    this.counterSeriesMap = counterSeriesMap;
-    this.profileStart = profileStart;
-    this.bucketDuration = bucketDuration;
-  }
 
-  @Override
-  public void writeTraceData(JsonWriter jsonWriter, long profileStartTimeNanos) throws IOException {
-    // See
-    // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview#heading=h.msg3086636uq
-    // for how counter series are represented in the Chrome Trace Event format.
-    boolean recorded = false;
-    for (int i = 0; i < len; i++) {
-      long timeNanos = profileStart.plus(bucketDuration.multipliedBy(i)).toNanos();
-      jsonWriter.setIndent("  ");
-      jsonWriter.beginObject();
-      jsonWriter.setIndent("");
-      jsonWriter.name("name").value(displayName);
-      jsonWriter.name("pid").value(PROCESS_ID);
-      jsonWriter.name("tid").value(threadId);
-      if (colorName != null) {
-        jsonWriter.name("cname").value(colorName);
-      }
-      jsonWriter.name("ph").value("C");
-      jsonWriter.name("ts").value(TimeUnit.NANOSECONDS.toMicros(timeNanos - profileStartTimeNanos));
-      jsonWriter.name("args");
+    @Throws(IOException::class)
+    override fun writeTraceData(jsonWriter: JsonWriter, profileStartTimeNanos: Long) {
+        // See
+        // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview#heading=h.msg3086636uq
+        // for how counter series are represented in the Chrome Trace Event format.
+        var recorded = false
+        for (i in 0..<len) {
+            val timeNanos: Long = profileStart.plus(bucketDuration.multipliedBy(i.toLong())).toNanos()
+            jsonWriter.setIndent("  ")
+            jsonWriter.beginObject()
+            jsonWriter.setIndent("")
+            jsonWriter.name("name").value(displayName)
+            jsonWriter.name("pid").value(PROCESS_ID)
+            jsonWriter.name("tid").value(threadId)
+            if (colorName != null) {
+                jsonWriter.name("cname").value(colorName)
+            }
+            jsonWriter.name("ph").value("C")
+            jsonWriter.name("ts").value(TimeUnit.NANOSECONDS.toMicros(timeNanos - profileStartTimeNanos))
+            jsonWriter.name("args")
 
-      jsonWriter.beginObject();
-      for (var task : counterSeriesMap.keySet()) {
-        double value = counterSeriesMap.get(task)[i];
-        // Skip counts equal to zero. They will show up as a thin line in the profile. Once we
-        // record the profile task we need to post it until the end.
-        if (Math.abs(value) > 0.00001 || recorded) {
-          jsonWriter.name(task.seriesName()).value(value);
-          recorded = true;
+            jsonWriter.beginObject()
+            for (task in counterSeriesMap.keySet()) {
+                val value = counterSeriesMap.get(task)!![i]
+                // Skip counts equal to zero. They will show up as a thin line in the profile. Once we
+                // record the profile task we need to post it until the end.
+                if (java.lang.Math.abs(value) > 0.00001 || recorded) {
+                    jsonWriter.name(task.seriesName()).value(value)
+                    recorded = true
+                }
+            }
+            jsonWriter.endObject()
+
+            jsonWriter.endObject()
         }
-      }
-      jsonWriter.endObject();
-
-      jsonWriter.endObject();
     }
-  }
+
+    companion object {
+        @com.google.common.annotations.VisibleForTesting
+        const val PROCESS_ID: Long = 1
+    }
 }

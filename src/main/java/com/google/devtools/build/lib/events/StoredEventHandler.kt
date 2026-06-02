@@ -11,75 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import java.util.ArrayList;
-import java.util.List;
+/** Stores error and warning events, and later replays them. Thread-safe.  */
+open class StoredEventHandler : com.google.devtools.build.lib.events.ExtendedEventHandler {
+    private val events: MutableList<com.google.devtools.build.lib.events.Event?> =
+        java.util.ArrayList<com.google.devtools.build.lib.events.Event?>()
+    private val posts: MutableList<com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?> =
+        java.util.ArrayList<com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?>()
+    private var hasErrors = false
 
-/** Stores error and warning events, and later replays them. Thread-safe. */
-public class StoredEventHandler implements ExtendedEventHandler {
+    @get:kotlin.jvm.Synchronized
+    val andClearEvents: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.events.Event?>
+        /** Returns the events and clears the internal storage.  */
+        get() {
+            val eventsCopy: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.events.Event?> =
+                com.google.common.collect.ImmutableList.copyOf<com.google.devtools.build.lib.events.Event?>(events)
+            clear()
+            return eventsCopy
+        }
 
-  private final List<Event> events = new ArrayList<>();
-  private final List<Postable> posts = new ArrayList<>();
-  private boolean hasErrors;
+    @kotlin.jvm.Synchronized
+    fun getEvents(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.events.Event?> {
+        return com.google.common.collect.ImmutableList.copyOf<com.google.devtools.build.lib.events.Event?>(events)
+    }
 
-  /** Returns the events and clears the internal storage. */
-  public synchronized ImmutableList<Event> getAndClearEvents() {
-    ImmutableList<Event> eventsCopy = ImmutableList.copyOf(events);
-    clear();
-    return eventsCopy;
-  }
+    @kotlin.jvm.Synchronized
+    fun getPosts(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?> {
+        return com.google.common.collect.ImmutableList.copyOf<com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?>(
+            posts
+        )
+    }
 
-  public synchronized ImmutableList<Event> getEvents() {
-    return ImmutableList.copyOf(events);
-  }
+    @get:kotlin.jvm.Synchronized
+    val isEmpty: Boolean
+        /** Returns true if there are no stored events.  */
+        get() = events.isEmpty() && posts.isEmpty()
 
-  public synchronized ImmutableList<Postable> getPosts() {
-    return ImmutableList.copyOf(posts);
-  }
+    @kotlin.jvm.Synchronized
+    override fun handle(e: com.google.devtools.build.lib.events.Event) {
+        hasErrors = hasErrors or (e.getKind() == com.google.devtools.build.lib.events.EventKind.ERROR)
+        events.add(e)
+    }
 
-  /** Returns true if there are no stored events. */
-  public synchronized boolean isEmpty() {
-    return events.isEmpty() && posts.isEmpty();
-  }
+    @kotlin.jvm.Synchronized
+    override fun post(e: com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?) {
+        posts.add(e)
+    }
 
-  @Override
-  public synchronized void handle(Event e) {
-    hasErrors |= e.getKind() == EventKind.ERROR;
-    events.add(e);
-  }
+    /** Replay all events stored in this object on the given eventHandler, in the same order.  */
+    @kotlin.jvm.Synchronized
+    fun replayOn(eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?) {
+        com.google.devtools.build.lib.events.Event.Companion.replayEventsOn(eventHandler, events)
+        com.google.devtools.build.lib.events.ExtendedEventHandler.Postable.Companion.replayPostsOn(eventHandler, posts)
+    }
 
-  @Override
-  public synchronized void post(Postable e) {
-    posts.add(e);
-  }
+    /** Returns whether any of the events on this objects were errors.  */
+    @kotlin.jvm.Synchronized
+    fun hasErrors(): Boolean {
+        return hasErrors
+    }
 
-  /** Replay all events stored in this object on the given eventHandler, in the same order. */
-  public synchronized void replayOn(ExtendedEventHandler eventHandler) {
-    Event.replayEventsOn(eventHandler, events);
-    Postable.replayPostsOn(eventHandler, posts);
-  }
+    @kotlin.jvm.Synchronized
+    fun clear() {
+        events.clear()
+        posts.clear()
+        hasErrors = false
+    }
 
-  /** Returns whether any of the events on this objects were errors. */
-  public synchronized boolean hasErrors() {
-    return hasErrors;
-  }
-
-  public synchronized void clear() {
-    events.clear();
-    posts.clear();
-    hasErrors = false;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("events", events)
-        .add("posts", posts)
-        .add("hasErrors", hasErrors)
-        .toString();
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("events", events)
+            .add("posts", posts)
+            .add("hasErrors", hasErrors)
+            .toString()
+    }
 }

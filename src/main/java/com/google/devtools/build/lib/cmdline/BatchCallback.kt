@@ -11,42 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.cmdline;
-
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
+package com.google.devtools.build.lib.cmdline
 
 /**
  * Callback to be invoked when part of a result has been computed. Allows a client interested in the
  * result to process it as it is computed, for instance by streaming it, if it is too big to fit in
  * memory.
  */
-@ThreadSafe
-public interface BatchCallback<T, E extends Exception & QueryExceptionMarkerInterface> {
-  /**
-   * Called when part of a result has been computed.
-   *
-   * <p>Note that this method can be called several times for a single {@code BatchCallback}.
-   * Implementations should assume that multiple calls can happen.
-   *
-   * @param partialResult Part of the result. May contain duplicates, either in the same call or
-   * across calls.
-   */
-  void process(Iterable<T> partialResult) throws E, InterruptedException;
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+interface BatchCallback<T, E> where E : java.lang.Exception?, E : com.google.devtools.build.lib.cmdline.QueryExceptionMarkerInterface? {
+    /**
+     * Called when part of a result has been computed.
+     * 
+     * 
+     * Note that this method can be called several times for a single `BatchCallback`.
+     * Implementations should assume that multiple calls can happen.
+     * 
+     * @param partialResult Part of the result. May contain duplicates, either in the same call or
+     * across calls.
+     */
+    @Throws(E::class, java.lang.InterruptedException::class)
+    fun process(partialResult: Iterable<T?>?)
 
-  /** {@link BatchCallback} that doesn't throw. */
-  interface SafeBatchCallback<T>
-      extends BatchCallback<T, QueryExceptionMarkerInterface.MarkerRuntimeException> {}
+    /** [BatchCallback] that doesn't throw.  */
+    interface SafeBatchCallback<T>
+        : BatchCallback<T?, com.google.devtools.build.lib.cmdline.QueryExceptionMarkerInterface.MarkerRuntimeException?>
 
-  /** {@link SafeBatchCallback} that does precisely nothing. */
-  class NullCallback<T> implements SafeBatchCallback<T> {
-    private static final NullCallback<Object> INSTANCE = new NullCallback<>();
+    /** [SafeBatchCallback] that does precisely nothing.  */
+    class NullCallback<T> : SafeBatchCallback<T?> {
+        override fun process(partialResult: Iterable<T?>?) {}
 
-    @Override
-    public void process(Iterable<T> partialResult) {}
+        companion object {
+            private val INSTANCE: NullCallback<Any?> =
+                com.google.devtools.build.lib.cmdline.BatchCallback.NullCallback<Any?>()
 
-    @SuppressWarnings("unchecked")
-    public static <T> NullCallback<T> instance() {
-      return (NullCallback<T>) INSTANCE;
+            @kotlin.jvm.JvmStatic
+            fun <T> instance(): NullCallback<T?>? {
+                return com.google.devtools.build.lib.cmdline.BatchCallback.NullCallback.Companion.INSTANCE as NullCallback<T?>?
+            }
+        }
     }
-  }
 }

@@ -43,22 +43,22 @@ public class RepositoryOptionsTest {
   @Test
   public void testOverrideConverter() throws Exception {
     RepositoryOverride actual = converter.convert("foo=/bar");
-    assertThat(actual.repositoryName()).isEqualTo("foo");
-    assertThat(PathFragment.create(actual.path())).isEqualTo(PathFragment.create("/bar"));
+    assertThat(actual.repositoryName).isEqualTo("foo");
+    assertThat(PathFragment.create(actual.path)).isEqualTo(PathFragment.create("/bar"));
   }
 
   @Test
   public void testOverridePathWithEqualsSign() throws Exception {
     RepositoryOverride actual = converter.convert("foo=/bar=/baz");
-    assertThat(actual.repositoryName()).isEqualTo("foo");
-    assertThat(PathFragment.create(actual.path())).isEqualTo(PathFragment.create("/bar=/baz"));
+    assertThat(actual.repositoryName).isEqualTo("foo");
+    assertThat(PathFragment.create(actual.path)).isEqualTo(PathFragment.create("/bar=/baz"));
   }
 
   @Test
   public void testOverridePathWithTilde() throws Exception {
     RepositoryOverride actual = converter.convert("foo=~/bar");
-    assertThat(actual.repositoryName()).isEqualTo("foo");
-    assertThat(PathFragment.create(actual.path()))
+    assertThat(actual.repositoryName).isEqualTo("foo");
+    assertThat(PathFragment.create(actual.path))
         .isEqualTo(PathFragment.create(USER_HOME.value() + "/bar"));
   }
 
@@ -66,7 +66,7 @@ public class RepositoryOptionsTest {
   public void testModuleOverridePathWithTilde() throws Exception {
     var converter = new ModuleOverrideConverter();
     ModuleOverride actual = converter.convert("foo=~/bar");
-    assertThat(PathFragment.create(actual.path()))
+    assertThat(PathFragment.create(actual.path))
         .isEqualTo(PathFragment.create(USER_HOME.value() + "/bar"));
   }
 
@@ -74,9 +74,9 @@ public class RepositoryOptionsTest {
   public void testModuleOverrideRelativePath() throws Exception {
     var converter = new ModuleOverrideConverter();
     ModuleOverride actual = converter.convert("foo=%workspace%/bar");
-    assertThat(actual.path()).isEqualTo("%workspace%/bar");
+    assertThat(actual.path).isEqualTo("%workspace%/bar");
     actual = converter.convert("foo=../../bar");
-    assertThat(actual.path()).isEqualTo("../../bar");
+    assertThat(actual.path).isEqualTo("../../bar");
   }
 
   @Test

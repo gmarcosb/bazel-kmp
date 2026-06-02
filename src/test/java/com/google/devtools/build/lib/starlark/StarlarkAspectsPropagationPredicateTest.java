@@ -637,7 +637,7 @@ public final class StarlarkAspectsPropagationPredicateTest extends AnalysisTestC
     for (Map.Entry<AspectKey, ConfiguredAspect> entry : aspectsMap.entrySet()) {
       AspectClass aspectClass = entry.getKey().getAspectClass();
       if (aspectClass instanceof StarlarkAspectClass starlarkAspectClass) {
-        String aspectExportedName = starlarkAspectClass.getExportedName();
+        String aspectExportedName = starlarkAspectClass.exportedName;
         if (aspectExportedName.equals(aspectName)
             && (targetLabel == null || entry.getKey().getLabel().toString().equals(targetLabel))) {
           return getStarlarkProvider(entry.getValue(), "//test:defs.bzl", providerName)

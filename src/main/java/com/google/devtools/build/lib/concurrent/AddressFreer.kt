@@ -11,26 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.devtools.build.lib.unsafe.UnsafeProvider.unsafe;
+import com.google.devtools.build.lib.unsafe.UnsafeProvider
 
-
-import java.lang.ref.Cleaner;
-import sun.misc.Unsafe;
-
-/** Used to cleanup memory allocated by {@link Unsafe#allocateMemory} using {@link Cleaner}. */
-@SuppressWarnings("SunApi") // TODO: b/359688989 - clean this up
-final class AddressFreer implements Runnable {
-  private final long address;
-
-  AddressFreer(long address) {
-    this.address = address;
-  }
-
-  // TODO: b/386384684 - remove Unsafe usage
-  @Override
-  public void run() {
-    unsafe().freeMemory(address);
-  }
+/** Used to cleanup memory allocated by [Unsafe.allocateMemory] using [Cleaner].  */
+internal  // TODO: b/359688989 - clean this up
+class AddressFreer(private val address: Long) : java.lang.Runnable {
+    // TODO: b/386384684 - remove Unsafe usage
+    override fun run() {
+        UnsafeProvider.unsafe().freeMemory(address)
+    }
 }

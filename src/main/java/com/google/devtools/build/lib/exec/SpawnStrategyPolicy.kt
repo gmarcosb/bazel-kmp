@@ -11,83 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
+import com.google.devtools.build.lib.runtime.proto.MnemonicPolicy
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.runtime.proto.MnemonicPolicy;
-import com.google.devtools.build.lib.runtime.proto.StrategiesForMnemonic;
-import java.util.List;
+/** Policy for filtering spawn strategies.  */
+interface SpawnStrategyPolicy {
+    /** Returns result of applying policy to per-mnemonic strategies.  */
+    fun apply(mnemonic: String?, strategies: MutableList<String?>?): com.google.common.collect.ImmutableList<String?>?
 
-/** Policy for filtering spawn strategies. */
-public interface SpawnStrategyPolicy {
+    /** Returns result of applying default policy to strategies.  */
+    fun apply(strategies: MutableList<String?>?): com.google.common.collect.ImmutableList<String?>?
 
-  /** Returns result of applying policy to per-mnemonic strategies. */
-  ImmutableList<String> apply(String mnemonic, List<String> strategies);
+    /** Allows all strategies - effectively a no-op strategy.  */
+    class AllowAllStrategiesPolicy private constructor() : SpawnStrategyPolicy {
+        override fun apply(
+            mnemonic: String?,
+            strategies: MutableList<String?>
+        ): com.google.common.collect.ImmutableList<String?> {
+            return com.google.common.collect.ImmutableList.copyOf<String?>(strategies)
+        }
 
-  /** Returns result of applying default policy to strategies. */
-  ImmutableList<String> apply(List<String> strategies);
-
-  /** Creates new policy from proto descriptor. Empty proto policy implies everything allowed. */
-  static SpawnStrategyPolicy create(MnemonicPolicy policy) {
-    if (MnemonicPolicy.getDefaultInstance().equals(policy)) {
-      return new AllowAllStrategiesPolicy();
+        override fun apply(strategies: MutableList<String?>): com.google.common.collect.ImmutableList<String?> {
+            return com.google.common.collect.ImmutableList.copyOf<String?>(strategies)
+        }
     }
 
-    ImmutableMap.Builder<String, ImmutableSet<String>> perMnemonicAllowList =
-        ImmutableMap.builder();
-    for (StrategiesForMnemonic strategiesForMnemonic : policy.getStrategyAllowlistList()) {
-      perMnemonicAllowList.put(
-          strategiesForMnemonic.getMnemonic(),
-          ImmutableSet.copyOf(strategiesForMnemonic.getStrategyList()));
-    }
-    return new SpawnStrategyPolicyImpl(
-        perMnemonicAllowList.buildKeepingLast(),
-        ImmutableSet.copyOf(policy.getDefaultAllowlistList()));
-  }
+    /** Enforces a real strategy policy based on provided config.  */
+    class SpawnStrategyPolicyImpl private constructor(
+        perMnemonicAllowList: com.google.common.collect.ImmutableMap<String?, com.google.common.collect.ImmutableSet<String?>?>,
+        defaultAllowList: com.google.common.collect.ImmutableSet<String?>
+    ) : SpawnStrategyPolicy {
+        private val perMnemonicAllowList: com.google.common.collect.ImmutableMap<String?, com.google.common.collect.ImmutableSet<String?>?>
+        private val defaultAllowList: com.google.common.collect.ImmutableSet<String?>
 
-  /** Allows all strategies - effectively a no-op strategy. */
-  class AllowAllStrategiesPolicy implements SpawnStrategyPolicy {
+        init {
+            this.perMnemonicAllowList = perMnemonicAllowList
+            this.defaultAllowList = defaultAllowList
+        }
 
-    private AllowAllStrategiesPolicy() {}
+        override fun apply(
+            mnemonic: String?,
+            strategies: MutableList<String?>
+        ): com.google.common.collect.ImmutableList<String?> {
+            val allowList: com.google.common.collect.ImmutableSet<String?>? =
+                perMnemonicAllowList.getOrDefault(mnemonic, defaultAllowList)
+            return strategies.stream()
+                .filter(java.util.function.Predicate { `object`: String? -> allowList.contains(`object`) })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+        }
 
-    @Override
-    public ImmutableList<String> apply(String mnemonic, List<String> strategies) {
-      return ImmutableList.copyOf(strategies);
-    }
-
-    @Override
-    public ImmutableList<String> apply(List<String> strategies) {
-      return ImmutableList.copyOf(strategies);
-    }
-  }
-
-  /** Enforces a real strategy policy based on provided config. */
-  class SpawnStrategyPolicyImpl implements SpawnStrategyPolicy {
-
-    private final ImmutableMap<String, ImmutableSet<String>> perMnemonicAllowList;
-    private final ImmutableSet<String> defaultAllowList;
-
-    private SpawnStrategyPolicyImpl(
-        ImmutableMap<String, ImmutableSet<String>> perMnemonicAllowList,
-        ImmutableSet<String> defaultAllowList) {
-      this.perMnemonicAllowList = perMnemonicAllowList;
-      this.defaultAllowList = defaultAllowList;
+        override fun apply(strategies: MutableList<String?>): com.google.common.collect.ImmutableList<String?> {
+            return strategies.stream()
+                .filter(java.util.function.Predicate { `object`: String? -> defaultAllowList.contains(`object`) })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+        }
     }
 
-    @Override
-    public ImmutableList<String> apply(String mnemonic, List<String> strategies) {
-      ImmutableSet<String> allowList =
-          perMnemonicAllowList.getOrDefault(mnemonic, defaultAllowList);
-      return strategies.stream().filter(allowList::contains).collect(toImmutableList());
-    }
+    companion object {
+        /** Creates new policy from proto descriptor. Empty proto policy implies everything allowed.  */
+        fun create(policy: MnemonicPolicy): SpawnStrategyPolicy {
+            if (MnemonicPolicy.getDefaultInstance().equals(policy)) {
+                return AllowAllStrategiesPolicy()
+            }
 
-    @Override
-    public ImmutableList<String> apply(List<String> strategies) {
-      return strategies.stream().filter(defaultAllowList::contains).collect(toImmutableList());
+            val perMnemonicAllowList: com.google.common.collect.ImmutableMap.Builder<String?, com.google.common.collect.ImmutableSet<String?>?> =
+                com.google.common.collect.ImmutableMap.builder<String?, com.google.common.collect.ImmutableSet<String?>?>()
+            for (strategiesForMnemonic in policy.getStrategyAllowlistList()) {
+                perMnemonicAllowList.put(
+                    strategiesForMnemonic.getMnemonic(),
+                    com.google.common.collect.ImmutableSet.copyOf(strategiesForMnemonic.getStrategyList())
+                )
+            }
+            return SpawnStrategyPolicyImpl(
+                perMnemonicAllowList.buildKeepingLast(),
+                com.google.common.collect.ImmutableSet.copyOf(policy.getDefaultAllowlistList())
+            )
+        }
     }
-  }
 }

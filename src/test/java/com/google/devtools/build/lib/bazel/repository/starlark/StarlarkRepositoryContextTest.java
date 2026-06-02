@@ -367,7 +367,7 @@ public final class StarlarkRepositoryContextTest {
     context.createFile(
         context.getPath("my.patch"), "--- foo\n+++ foo\n" + ONE_LINE_PATCH, false, true, thread);
     context.patch(patchFile, StarlarkInt.of(0), "auto", thread);
-    testOutputFile(foo.getPath(), "line one\nline two\n");
+    testOutputFile(foo.path, "line one\nline two\n");
   }
 
   @Test
@@ -499,9 +499,9 @@ public final class StarlarkRepositoryContextTest {
             /* environment= */ ImmutableMap.of(),
             /* workingDirectory= */ "",
             /* timeout= */ Duration.ofSeconds(10));
-    assertThat(starlarkExecutionResult.getReturnCode()).isEqualTo(0);
-    assertThat(starlarkExecutionResult.getStdout()).isEqualTo("test-stdout");
-    assertThat(starlarkExecutionResult.getStderr()).isEqualTo("test-stderr");
+    assertThat(starlarkExecutionResult.returnCode).isEqualTo(0);
+    assertThat(starlarkExecutionResult.stdout).isEqualTo("test-stdout");
+    assertThat(starlarkExecutionResult.stderr).isEqualTo("test-stderr");
   }
 
   @Test
@@ -596,7 +596,7 @@ public final class StarlarkRepositoryContextTest {
   @Test
   public void testWorkspaceRoot() throws Exception {
     setUpRepo("test");
-    assertThat(context.getWorkspaceRoot().getPath()).isEqualTo(root.asPath());
+    assertThat(context.getWorkspaceRoot().path).isEqualTo(root.asPath());
   }
 
   @Test

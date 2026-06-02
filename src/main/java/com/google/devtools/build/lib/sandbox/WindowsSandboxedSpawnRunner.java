@@ -73,7 +73,7 @@ final class WindowsSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
       writablePaths.add(execRoot.getRelative(output.getExecPath()));
     }
 
-    Duration timeout = context.getTimeout();
+    Duration timeout = context.timeout;
 
     if (!readablePaths.getSymlinks().isEmpty()) {
       throw new IOException(

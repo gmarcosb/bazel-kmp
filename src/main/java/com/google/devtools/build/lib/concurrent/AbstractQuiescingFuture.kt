@@ -11,115 +11,130 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
-
-import com.google.common.util.concurrent.AbstractFuture;
-import com.google.errorprone.annotations.ForOverride;
-import com.google.errorprone.annotations.Keep;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.util.concurrent.Executor;
+package com.google.devtools.build.lib.concurrent
 
 /**
  * A base class for futures that track in-flight tasks and complete when the tasks quiesce or an
  * error occurs.
  */
-public abstract class AbstractQuiescingFuture<T> extends AbstractFuture<T> implements Runnable {
-  /**
-   * Handle for {@link #taskCount}.
-   *
-   * <p>This uses less memory than {@link java.util.concurrent.AtomicInteger}.
-   */
-  private static final VarHandle TASK_COUNT_HANDLE;
+abstract class AbstractQuiescingFuture<T> protected constructor(
+    getValueExecutor: java.util.concurrent.Executor,
+    taskCount: Int
+) : com.google.common.util.concurrent.AbstractFuture<T?>(), java.lang.Runnable {
+    private val getValueExecutor: java.util.concurrent.Executor
 
-  private static final VarHandle ERROR_COUNT_HANDLE;
+    /**
+     * Count of in-flight tasks.
+     * 
+     * 
+     * This is initialized to 1 to support the "pre-increment" pattern, which prevents premature
+     * completion during initialization.
+     * 
+     * 
+     * Use [.TASK_COUNT_HANDLE] for atomic operations.
+     */
+    @com.google.errorprone.annotations.Keep // used via TASK_COUNT_HANDLE
+    @kotlin.concurrent.Volatile
+    private var taskCount: Int
 
-  private final Executor getValueExecutor;
+    @com.google.errorprone.annotations.Keep // used via ERROR_COUNT_HANDLE
+    @kotlin.concurrent.Volatile
+    private var errorCount = 0
 
-  /**
-   * Count of in-flight tasks.
-   *
-   * <p>This is initialized to 1 to support the "pre-increment" pattern, which prevents premature
-   * completion during initialization.
-   *
-   * <p>Use {@link #TASK_COUNT_HANDLE} for atomic operations.
-   */
-  @Keep // used via TASK_COUNT_HANDLE
-  private volatile int taskCount;
-
-  @Keep // used via ERROR_COUNT_HANDLE
-  private volatile int errorCount = 0;
-
-  /**
-   * Constructor.
-   *
-   * @param getValueExecutor runner for running {@link #getValue} or {@link #doneWithError}.
-   * @param taskCount initial task count.
-   */
-  protected AbstractQuiescingFuture(Executor getValueExecutor, int taskCount) {
-    this.getValueExecutor = getValueExecutor;
-    this.taskCount = taskCount;
-  }
-
-  /** Increments the task count. */
-  protected final void increment() {
-    TASK_COUNT_HANDLE.getAndAdd(this, 1);
-  }
-
-  /** Decrements the task count. */
-  protected final void decrement() {
-    int countBeforeDecrement = (int) TASK_COUNT_HANDLE.getAndAdd(this, -1);
-    if (countBeforeDecrement == 1) {
-      getValueExecutor.execute(this);
+    /** Increments the task count.  */
+    fun increment() {
+        com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture.Companion.TASK_COUNT_HANDLE.getAndAdd(this, 1)
     }
-  }
 
-  /**
-   * Sets the future as failing with {@code t}.
-   *
-   * <p>If the client calls this, it should not call {@link #decrement} for the same task. It's
-   * already called.
-   */
-  protected final void notifyException(Throwable t) {
-    setException(t);
-    ERROR_COUNT_HANDLE.getAndAdd(this, 1);
-    decrement();
-  }
-
-  final void handleQuiescence() {
-    if ((int) ERROR_COUNT_HANDLE.getAcquire(this) > 0) {
-      doneWithError();
-    } else {
-      set(getValue());
+    /** Decrements the task count.  */
+    fun decrement() {
+        val countBeforeDecrement =
+            com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture.Companion.TASK_COUNT_HANDLE.getAndAdd(
+                this,
+                -1
+            ) as Int
+        if (countBeforeDecrement == 1) {
+            getValueExecutor.execute(this)
+        }
     }
-  }
 
-  /**
-   * The resulting value of this future.
-   *
-   * <p>Called after the final decrement. Implementations must guarantee that the value is ready at
-   * that time. Not called if there were any errors.
-   */
-  @ForOverride
-  protected abstract T getValue();
-
-  /**
-   * Called if there was an error, after all the associated tasks complete.
-   *
-   * <p>Allows clients to perform cleanup work if there is an error.
-   */
-  @ForOverride
-  protected void doneWithError() {}
-
-  static {
-    MethodHandles.Lookup lookup = MethodHandles.lookup();
-    try {
-      TASK_COUNT_HANDLE =
-          lookup.findVarHandle(AbstractQuiescingFuture.class, "taskCount", int.class);
-      ERROR_COUNT_HANDLE =
-          lookup.findVarHandle(AbstractQuiescingFuture.class, "errorCount", int.class);
-    } catch (ReflectiveOperationException e) {
-      throw new ExceptionInInitializerError(e);
+    /**
+     * Sets the future as failing with `t`.
+     * 
+     * 
+     * If the client calls this, it should not call [.decrement] for the same task. It's
+     * already called.
+     */
+    fun notifyException(t: Throwable) {
+        setException(t)
+        com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture.Companion.ERROR_COUNT_HANDLE.getAndAdd(this, 1)
+        decrement()
     }
-  }
+
+    fun handleQuiescence() {
+        if (com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture.Companion.ERROR_COUNT_HANDLE.getAcquire(
+                this
+            ) as Int > 0
+        ) {
+            doneWithError()
+        } else {
+            set(this.value)
+        }
+    }
+
+    @get:com.google.errorprone.annotations.ForOverride
+    protected abstract val value: T?
+
+    /**
+     * Called if there was an error, after all the associated tasks complete.
+     * 
+     * 
+     * Allows clients to perform cleanup work if there is an error.
+     */
+    @com.google.errorprone.annotations.ForOverride
+    protected open fun doneWithError() {
+    }
+
+    /**
+     * Constructor.
+     * 
+     * @param getValueExecutor runner for running [.getValue] or [.doneWithError].
+     * @param taskCount initial task count.
+     */
+    init {
+        this.getValueExecutor = getValueExecutor
+        this.taskCount = taskCount
+    }
+
+    companion object {
+        /**
+         * Handle for [.taskCount].
+         * 
+         * 
+         * This uses less memory than [java.util.concurrent.AtomicInteger].
+         */
+        private val TASK_COUNT_HANDLE: java.lang.invoke.VarHandle
+
+        private val ERROR_COUNT_HANDLE: java.lang.invoke.VarHandle
+
+        init {
+            val lookup: java.lang.invoke.MethodHandles.Lookup = java.lang.invoke.MethodHandles.lookup()
+            try {
+                com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture.Companion.TASK_COUNT_HANDLE =
+                    lookup.findVarHandle(
+                        com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture::class.java,
+                        "taskCount",
+                        Int::class.javaPrimitiveType
+                    )
+                com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture.Companion.ERROR_COUNT_HANDLE =
+                    lookup.findVarHandle(
+                        com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture::class.java,
+                        "errorCount",
+                        Int::class.javaPrimitiveType
+                    )
+            } catch (e: java.lang.ReflectiveOperationException) {
+                throw java.lang.ExceptionInInitializerError(e)
+            }
+        }
+    }
 }

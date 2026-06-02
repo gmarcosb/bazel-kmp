@@ -11,10 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.repository.starlark;
+package com.google.devtools.build.lib.bazel.repository.starlark
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler
 
-/** Event reporting about the place where a Starlark repository rule was defined. */
-public record StarlarkRepositoryDefinitionLocationEvent(String name, String definitionInformation)
-    implements Postable {}
+/** Event reporting about the place where a Starlark repository rule was defined.  */
+@kotlin.jvm.JvmRecord
+data class StarlarkRepositoryDefinitionLocationEvent(val name: String?, val definitionInformation: String?) :
+    ExtendedEventHandler.Postable

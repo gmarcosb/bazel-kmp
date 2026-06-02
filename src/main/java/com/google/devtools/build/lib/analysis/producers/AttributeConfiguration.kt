@@ -11,76 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.auto.value.AutoOneOf;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.packages.PackageGroup;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
+import com.google.auto.value.AutoOneOf
+import com.google.devtools.build.lib.analysis.producers.AttributeConfiguration
+import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey
 
-@AutoOneOf(AttributeConfiguration.Kind.class)
-abstract class AttributeConfiguration {
-  enum Kind {
-    /**
-     * This is a visibility dependency.
-     *
-     * <p>Visibility dependencies have null configuration as they are not configurable. Once the
-     * target is known, it should be verified to be a {@link PackageGroup}.
-     */
-    VISIBILITY,
-    /**
-     * The configuration is null.
-     *
-     * <p>This is only applied when the dependency is in the same package as the parent and it is
-     * not configurable. The value in this case stores any transition keys.
-     */
-    NULL_TRANSITION_KEYS,
-    /**
-     * There is a single configuration.
-     *
-     * <p>This can be the result of a patch transition or no transition at all.
-     */
-    UNARY,
-    /**
-     * There is a split transition.
-     *
-     * <p>It's possible for there to be only one entry.
-     */
-    SPLIT
-  }
+@AutoOneOf(com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind::class)
+internal abstract class AttributeConfiguration {
+    internal enum class Kind {
+        /**
+         * This is a visibility dependency.
+         * 
+         * 
+         * Visibility dependencies have null configuration as they are not configurable. Once the
+         * target is known, it should be verified to be a [PackageGroup].
+         */
+        VISIBILITY,
 
-  abstract Kind kind();
+        /**
+         * The configuration is null.
+         * 
+         * 
+         * This is only applied when the dependency is in the same package as the parent and it is
+         * not configurable. The value in this case stores any transition keys.
+         */
+        NULL_TRANSITION_KEYS,
 
-  abstract void visibility();
+        /**
+         * There is a single configuration.
+         * 
+         * 
+         * This can be the result of a patch transition or no transition at all.
+         */
+        UNARY,
 
-  abstract ImmutableList<String> nullTransitionKeys();
+        /**
+         * There is a split transition.
+         * 
+         * 
+         * It's possible for there to be only one entry.
+         */
+        SPLIT
+    }
 
-  abstract BuildConfigurationKey unary();
+    abstract fun kind(): Kind?
 
-  abstract ImmutableMap<String, BuildConfigurationKey> split();
+    abstract fun visibility()
 
-  public int count() {
-    return switch (kind()) {
-      case VISIBILITY, NULL_TRANSITION_KEYS, UNARY -> 1;
-      case SPLIT -> split().size();
-    };
-  }
+    abstract fun nullTransitionKeys(): com.google.common.collect.ImmutableList<String?>?
 
-  static AttributeConfiguration ofVisibility() {
-    return AutoOneOf_AttributeConfiguration.visibility();
-  }
+    abstract fun unary(): BuildConfigurationKey?
 
-  static AttributeConfiguration ofNullTransitionKeys(ImmutableList<String> transitionKeys) {
-    return AutoOneOf_AttributeConfiguration.nullTransitionKeys(transitionKeys);
-  }
+    abstract fun split(): com.google.common.collect.ImmutableMap<String?, BuildConfigurationKey?>?
 
-  static AttributeConfiguration ofUnary(BuildConfigurationKey key) {
-    return AutoOneOf_AttributeConfiguration.unary(key);
-  }
+    fun count(): Int {
+        return when (kind()) {
+            com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.VISIBILITY, com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.NULL_TRANSITION_KEYS, com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.UNARY -> 1
+            com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.SPLIT -> split().size
+        }
+    }
 
-  static AttributeConfiguration ofSplit(
-      ImmutableMap<String, BuildConfigurationKey> configurations) {
-    return AutoOneOf_AttributeConfiguration.split(configurations);
-  }
+    companion object {
+        fun ofVisibility(): AttributeConfiguration {
+            return AutoOneOf_AttributeConfiguration.visibility()
+        }
+
+        fun ofNullTransitionKeys(transitionKeys: com.google.common.collect.ImmutableList<String?>?): AttributeConfiguration {
+            return AutoOneOf_AttributeConfiguration.nullTransitionKeys(transitionKeys)
+        }
+
+        fun ofUnary(key: BuildConfigurationKey?): AttributeConfiguration {
+            return AutoOneOf_AttributeConfiguration.unary(key)
+        }
+
+        fun ofSplit(
+            configurations: com.google.common.collect.ImmutableMap<String?, BuildConfigurationKey?>?
+        ): AttributeConfiguration {
+            return AutoOneOf_AttributeConfiguration.split(configurations)
+        }
+    }
 }

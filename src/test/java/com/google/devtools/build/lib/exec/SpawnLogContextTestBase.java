@@ -163,7 +163,7 @@ public abstract class SpawnLogContextTestBase {
 
     externalSourceRoot =
         ArtifactRoot.asExternalSourceRoot(
-            Root.fromPath(externalRoot.getChild(externalRepo.getName())));
+            Root.fromPath(externalRoot.getChild(externalRepo.name)));
     externalOutputDir = configuration.getBinDirectory(externalRepo);
     storedEventHandler = new StoredEventHandler();
   }

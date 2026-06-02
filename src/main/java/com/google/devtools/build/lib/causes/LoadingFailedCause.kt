@@ -11,18 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.causes;
+package com.google.devtools.build.lib.causes
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.cmdline.Label
+import com.google.devtools.build.lib.util.DetailedExitCode
 
 /**
- * Failure due to something associated with a label. The difference between this class and {@link
- * LabelCause} is that instances of this class get posted to the EventBus as {@link
- * com.google.devtools.build.lib.pkgcache.LoadingFailureEvent}.
+ * Failure due to something associated with a label. The difference between this class and [ ] is that instances of this class get posted to the EventBus as [ ].
  */
-public class LoadingFailedCause extends LabelCause {
-  public LoadingFailedCause(Label label, DetailedExitCode detailedExitCode) {
-    super(label, detailedExitCode);
-  }
-}
+class LoadingFailedCause(label: Label?, detailedExitCode: DetailedExitCode?) : LabelCause(label, detailedExitCode)

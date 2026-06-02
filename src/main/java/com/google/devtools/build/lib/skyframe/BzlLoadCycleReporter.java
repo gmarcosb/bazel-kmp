@@ -56,7 +56,7 @@ public class BzlLoadCycleReporter implements CyclesReporter.SingleCycleReporter 
       if (repo instanceof RepositoryDirectoryValue.Key) {
         eventHandler.post(
             new RequestRepositoryInformationEvent(
-                ((RepositoryDirectoryValue.Key) repo).argument().getName()));
+                    ((RepositoryDirectoryValue.Key) repo).argument().name));
       }
     }
   }

@@ -11,85 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import java.util.AbstractQueue;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.concurrent.BlockingDeque;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.TimeUnit;
-import javax.annotation.Nullable;
+import java.util.AbstractQueue
+import java.util.concurrent.BlockingDeque
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.LinkedBlockingDeque
+import java.util.concurrent.TimeUnit
 
-/** A {@link BlockingQueue} with LIFO (last-in-first-out) ordering. */
-public class BlockingStack<E> extends AbstractQueue<E> implements BlockingQueue<E> {
-  // We just restrict to only using the *First methods on the deque, turning it into a stack.
-  private final BlockingDeque<E> deque;
+/** A [BlockingQueue] with LIFO (last-in-first-out) ordering.  */
+class BlockingStack<E> : AbstractQueue<E?>(), BlockingQueue<E?> {
+    // We just restrict to only using the *First methods on the deque, turning it into a stack.
+    private val deque: BlockingDeque<E?>
 
-  public BlockingStack() {
-    this.deque = new LinkedBlockingDeque<>();
-  }
+    init {
+        this.deque = LinkedBlockingDeque<E?>()
+    }
 
-  @Override
-  public Iterator<E> iterator() {
-    return deque.iterator();
-  }
+    override fun iterator(): MutableIterator<E?>? {
+        return deque.iterator()
+    }
 
-  @Override
-  public int size() {
-    return deque.size();
-  }
+    override fun size(): Int {
+        return deque.size()
+    }
 
-  @Override
-  public void put(E e) throws InterruptedException {
-    deque.putFirst(e);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun put(e: E?) {
+        deque.putFirst(e)
+    }
 
-  @Override
-  public boolean offer(E e, long timeout, TimeUnit unit) throws InterruptedException {
-    return deque.offerFirst(e, timeout, unit);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun offer(e: E?, timeout: Long, unit: TimeUnit?): Boolean {
+        return deque.offerFirst(e, timeout, unit)
+    }
 
-  @Override
-  public boolean offer(E e) {
-    return deque.offerFirst(e);
-  }
+    override fun offer(e: E?): Boolean {
+        return deque.offerFirst(e)
+    }
 
-  @Override
-  public E take() throws InterruptedException {
-    return deque.takeFirst();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun take(): E? {
+        return deque.takeFirst()
+    }
 
-  @Override
-  public E poll(long timeout, TimeUnit unit) throws InterruptedException {
-    return deque.pollFirst(timeout, unit);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun poll(timeout: Long, unit: TimeUnit?): E? {
+        return deque.pollFirst(timeout, unit)
+    }
 
-  @Override
-  @Nullable
-  public E poll() {
-    return deque.pollFirst();
-  }
+    override fun poll(): E? {
+        return deque.pollFirst()
+    }
 
-  @Override
-  public int remainingCapacity() {
-    return deque.remainingCapacity();
-  }
+    override fun remainingCapacity(): Int {
+        return deque.remainingCapacity()
+    }
 
-  @Override
-  public int drainTo(Collection<? super E> c) {
-    return deque.drainTo(c);
-  }
+    override fun drainTo(c: MutableCollection<in E?>?): Int {
+        return deque.drainTo(c)
+    }
 
-  @Override
-  public int drainTo(Collection<? super E> c, int maxElements) {
-    return deque.drainTo(c, maxElements);
-  }
+    override fun drainTo(c: MutableCollection<in E?>?, maxElements: Int): Int {
+        return deque.drainTo(c, maxElements)
+    }
 
-  @Override
-  @Nullable
-  public E peek() {
-    return deque.peekFirst();
-  }
+    override fun peek(): E? {
+        return deque.peekFirst()
+    }
 }

@@ -11,21 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.causes;
+package com.google.devtools.build.lib.causes
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
 
-/** Interface for classes identifying root causes for a target to fail to build. */
-public interface Cause {
+/** Interface for classes identifying root causes for a target to fail to build.  */
+interface Cause {
+    /** Return the label associated with the failure.  */
+    @kotlin.jvm.JvmField
+    val label: Label?
 
-  /** Return the label associated with the failure. */
-  Label getLabel();
+    /** Return the event id for the cause in the format of the build event protocol.  */
+    @kotlin.jvm.JvmField
+    val idProto: BuildEventStreamProtos.BuildEventId?
 
-  /** Return the event id for the cause in the format of the build event protocol. */
-  BuildEventStreamProtos.BuildEventId getIdProto();
-
-  /** Return details describing the failure. */
-  DetailedExitCode getDetailedExitCode();
+    /** Return details describing the failure.  */
+    @kotlin.jvm.JvmField
+    val detailedExitCode: DetailedExitCode?
 }

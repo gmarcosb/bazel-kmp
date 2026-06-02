@@ -11,23 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
+import com.google.devtools.build.lib.analysis.test.TestShardingStrategy
 
-final class TestShardingStrategyForced implements TestShardingStrategy {
-  private final int forcedShardsCount;
+internal class TestShardingStrategyForced(private val forcedShardsCount: Int) : TestShardingStrategy {
+    override fun getNumberOfShards(shardCountFromAttr: Int): Int {
+        return forcedShardsCount
+    }
 
-  TestShardingStrategyForced(int forcedShardsCount) {
-    this.forcedShardsCount = forcedShardsCount;
-  }
-
-  @Override
-  public int getNumberOfShards(int shardCountFromAttr) {
-    return forcedShardsCount;
-  }
-
-  @Override
-  public String toString() {
-    return "forced=" + forcedShardsCount;
-  }
+    override fun toString(): String {
+        return "forced=" + forcedShardsCount
+    }
 }

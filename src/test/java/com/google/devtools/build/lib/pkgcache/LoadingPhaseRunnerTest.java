@@ -258,7 +258,7 @@ public final class LoadingPhaseRunnerTest {
         .contains(
             "invalid package name 'foo//bar': package names may not contain '//' path separators");
     ParsingFailedEvent err = tester.findPostOnce(ParsingFailedEvent.class);
-    assertThat(err.getPattern()).isEqualTo("foo//bar:missing");
+    assertThat(err.pattern).isEqualTo("foo//bar:missing");
   }
 
   @Test
@@ -274,7 +274,7 @@ public final class LoadingPhaseRunnerTest {
     tester.assertContainsError(
         "invalid package name 'foo//bar': package names may not contain '//' path separators");
     ParsingFailedEvent err = tester.findPostOnce(ParsingFailedEvent.class);
-    assertThat(err.getPattern()).isEqualTo("foo//bar:missing");
+    assertThat(err.pattern).isEqualTo("foo//bar:missing");
   }
 
   @Test
@@ -403,7 +403,7 @@ public final class LoadingPhaseRunnerTest {
     tester.assertContainsError(
         "no such package 'base': Package is considered deleted due to --deleted_packages");
     ParsingFailedEvent err = tester.findPostOnce(ParsingFailedEvent.class);
-    assertThat(err.getPattern()).isEqualTo("//base");
+    assertThat(err.pattern).isEqualTo("//base");
   }
 
   private void writeBuildFilesForTestFiltering() throws Exception {
@@ -1095,8 +1095,8 @@ public final class LoadingPhaseRunnerTest {
     TargetPatternPhaseValue loadingResult = tester.loadKeepGoing("//does_not_exist");
     assertThat(loadingResult.hasError()).isTrue();
     ParsingFailedEvent event = tester.findPostOnce(ParsingFailedEvent.class);
-    assertThat(event.getPattern()).isEqualTo("//does_not_exist");
-    assertThat(event.getMessage()).contains("BUILD file not found");
+    assertThat(event.pattern).isEqualTo("//does_not_exist");
+    assertThat(event.message).contains("BUILD file not found");
   }
 
   @Test

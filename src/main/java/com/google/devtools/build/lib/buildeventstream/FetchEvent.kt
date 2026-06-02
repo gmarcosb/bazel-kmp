@@ -11,39 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.FetchId.Downloader;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import java.util.Collection;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
 /**
- * A {@link BuildEvent} reporting that an external resource was fetched.
- *
- * <p>Events of this class will only be generated in builds that do the actual fetch, not in ones
+ * A [BuildEvent] reporting that an external resource was fetched.
+ * 
+ * 
+ * Events of this class will only be generated in builds that do the actual fetch, not in ones
  * that use a cached copy of the resource to download. In way, these events allow keeping track of
  * the access of external resources.
  */
-public record FetchEvent(String url, Downloader downloader, boolean success)
-    implements BuildEvent, ExtendedEventHandler.Postable {
+class FetchEvent(val url: String?, downloader: Downloader?, success: Boolean) : BuildEvent,
+    com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.fetchId(url, downloader)
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.fetchId(url, downloader);
-  }
+    val childrenEvents: MutableCollection<BuildEventId>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        val fetch: BuildEventStreamProtos.Fetch? =
+            BuildEventStreamProtos.Fetch.newBuilder().setSuccess(success).build()
+        return GenericBuildEvent.Companion.protoChaining(this).setFetch(fetch).build()
+    }
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.Fetch fetch =
-        BuildEventStreamProtos.Fetch.newBuilder().setSuccess(success).build();
-    return GenericBuildEvent.protoChaining(this).setFetch(fetch).build();
-  }
+    val downloader: Downloader?
+    val success: Boolean
+
+    init {
+        this.downloader = downloader
+        this.success = success
+    }
 }

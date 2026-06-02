@@ -11,17 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
-
-import com.google.devtools.build.lib.vfs.Path;
-import javax.annotation.Nullable;
+package com.google.devtools.build.lib.remote.common
 
 /**
- * An interface to mark {@link java.io.OutputStream}s that may be known to write to an associated
- * {@link Path}.
+ * An interface to mark [java.io.OutputStream]s that may be known to write to an associated
+ * [Path].
  */
-public interface MaybePathBacked {
-  /** If this stream is backed by a Path, returns that Path. Otherwise, returns null. */
-  @Nullable
-  Path maybeGetPath();
+interface MaybePathBacked {
+    /** If this stream is backed by a Path, returns that Path. Otherwise, returns null.  */
+    fun maybeGetPath(): com.google.devtools.build.lib.vfs.Path?
 }

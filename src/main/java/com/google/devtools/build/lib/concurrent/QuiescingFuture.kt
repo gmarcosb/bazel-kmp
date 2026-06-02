@@ -11,65 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
-
-import com.google.errorprone.annotations.DoNotCall;
-import java.util.concurrent.Executor;
+package com.google.devtools.build.lib.concurrent
 
 /**
  * A future that tracks in-flight tasks and completes when the tasks quiesce or an error occurs.
- *
- * <p>It uses the <em>pre-increment</em> pattern (initializing {@code taskCount} to 1), which is
+ * 
+ * 
+ * It uses the *pre-increment* pattern (initializing `taskCount` to 1), which is
  * useful in cases where the task count can transiently hit zero during setup or if there are cases
- * where no tasks are created at all. The caller should call {@link #decrement} one additional time
+ * where no tasks are created at all. The caller should call [.decrement] one additional time
  * after initialization to offset the pre-increment.
- *
- * <p>Contrast this with {@link QuiescingFutureTask}, which handles this offset automatically. In
- * this class, the manual call to {@link #decrement} is <b>mandatory</b>. Typical usage looks like
+ * 
+ * 
+ * Contrast this with [QuiescingFutureTask], which handles this offset automatically. In
+ * this class, the manual call to [.decrement] is **mandatory**. Typical usage looks like
  * the following.
- *
- * <ol>
- *   <li>Create a {@link QuiescingFuture}. Once created, the future may be used freely, for example,
- *       to chain other tasks.
- *   <li>Start tasks, instrumented with calls to {@link #increment} on creation and {@link
- *       #decrement} on completion. The tasks may recursively create more instrumented tasks. If a
- *       task recursively creates child tasks, it must {@link #increment} for child tasks before
- *       calling {@link #decrement} to mark its own completion to avoid premature completion.
- *   <li>Call {@link #decrement} once to offset the <em>pre-increment</em>.
- *   <li>The future completes once all the tasks complete (but not before step 3 above).
- * </ol>
+ * 
+ * 
+ *  1. Create a [QuiescingFuture]. Once created, the future may be used freely, for example,
+ * to chain other tasks.
+ *  1. Start tasks, instrumented with calls to [.increment] on creation and [       ][.decrement] on completion. The tasks may recursively create more instrumented tasks. If a
+ * task recursively creates child tasks, it must [.increment] for child tasks before
+ * calling [.decrement] to mark its own completion to avoid premature completion.
+ *  1. Call [.decrement] once to offset the *pre-increment*.
+ *  1. The future completes once all the tasks complete (but not before step 3 above).
+ * 
  */
-public abstract class QuiescingFuture<T> extends AbstractQuiescingFuture<T> {
-  /**
-   * Constructor.
-   *
-   * @param getValueExecutor runner for running {@link #getValue} or {@link #doneWithError}.
-   */
-  public QuiescingFuture(Executor getValueExecutor) {
-    super(getValueExecutor, /* taskCount= */ 1);
-  }
+abstract class QuiescingFuture<T> : com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture<T?> {
+    /**
+     * Constructor.
+     * 
+     * @param getValueExecutor runner for running [.getValue] or [.doneWithError].
+     */
+    constructor(getValueExecutor: java.util.concurrent.Executor?) : super(getValueExecutor,  /* taskCount= */1)
 
-  /**
-   * Direct constructor.
-   *
-   * <p>This is useful when the total number of tasks is known in advance.
-   *
-   * @param getValueExecutor runner for running {@link #getValue} or {@link #doneWithError}.
-   * @param taskCount initial task count, <i>no pre-increment</i> is applied
-   */
-  public QuiescingFuture(Executor getValueExecutor, int taskCount) {
-    super(getValueExecutor, taskCount);
-  }
+    /**
+     * Direct constructor.
+     * 
+     * 
+     * This is useful when the total number of tasks is known in advance.
+     * 
+     * @param getValueExecutor runner for running [.getValue] or [.doneWithError].
+     * @param taskCount initial task count, *no pre-increment* is applied
+     */
+    constructor(getValueExecutor: java.util.concurrent.Executor?, taskCount: Int) : super(getValueExecutor, taskCount)
 
-  /**
-   * Called when all tasks are complete.
-   *
-   * @deprecated only for {@link #decrement}
-   */
-  @Deprecated
-  @Override
-  @DoNotCall
-  public final void run() {
-    handleQuiescence();
-  }
+    /**
+     * Called when all tasks are complete.
+     * 
+     */
+    @com.google.errorprone.annotations.DoNotCall
+    @Deprecated("only for {@link #decrement}")
+    override fun run() {
+        handleQuiescence()
+    }
 }

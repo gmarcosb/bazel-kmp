@@ -11,25 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
 /**
  * This event is fired after the execution phase is complete.
  */
-public class ExecutionPhaseCompleteEvent {
-  private final long timeInMs;
-
-  /**
-   * Construct the event.
-   *
-   * @param timeInMs time for execution phase in milliseconds.
-   */
-  public ExecutionPhaseCompleteEvent(long timeInMs) {
-    this.timeInMs = timeInMs;
-  }
-
-  public long getTimeInMs() {
-    return timeInMs;
-  }
-}
+class ExecutionPhaseCompleteEvent
+/**
+ * Construct the event.
+ * 
+ * @param timeInMs time for execution phase in milliseconds.
+ */(@kotlin.jvm.JvmField val timeInMs: Long)

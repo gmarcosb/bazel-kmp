@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
+/** An object that can record time statistics about an object.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface StatRecorder {
+    /** Add a new time statistic for the object `obj`.  */
+    fun addStat(duration: Int, obj: Any?)
 
-/** An object that can record time statistics about an object. */
-@SkybridgeInterface
-public interface StatRecorder {
-
-  /** Add a new time statistic for the object {@code obj}. */
-  void addStat(int duration, Object obj);
-
-  /** True if it has not recorded any statistic */
-  boolean isEmpty();
+    /** True if it has not recorded any statistic  */
+    fun isEmpty(): Boolean
 }

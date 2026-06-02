@@ -64,7 +64,7 @@ public record RepositoryMappingValue(
       RepositoryMappingValue.createSpecial(
           RepositoryMapping.create(
               ImmutableMap.of(
-                  RepositoryName.BUILTINS.getName(),
+                      RepositoryName.BUILTINS.name,
                   RepositoryName.BUILTINS,
                   "",
                   RepositoryName.MAIN),

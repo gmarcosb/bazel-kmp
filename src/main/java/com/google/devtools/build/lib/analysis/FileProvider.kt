@@ -11,58 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.starlarkbuildapi.FileProviderApi;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkThread;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * A representation of the concept "this transitive info provider builds these files".
- *
- * <p>Every transitive info collection contains at least this provider.
+ * 
+ * 
+ * Every transitive info collection contains at least this provider.
  */
-@Immutable
-public final class FileProvider implements TransitiveInfoProvider, FileProviderApi {
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class FileProvider private constructor(filesToBuild: NestedSet<Artifact?>) :
+    com.google.devtools.build.lib.analysis.TransitiveInfoProvider, FileProviderApi {
+    private val filesToBuild: NestedSet<Artifact?>
 
-  public static final FileProvider EMPTY =
-      new FileProvider(NestedSetBuilder.emptySet(Order.STABLE_ORDER));
+    init {
+        this.filesToBuild = filesToBuild
+    }
 
-  public static FileProvider of(NestedSet<Artifact> filesToBuild) {
-    return filesToBuild.isEmpty() ? EMPTY : new FileProvider(filesToBuild);
-  }
+    override fun isImmutable(): Boolean {
+        return true // immutable and Starlark-hashable
+    }
 
-  private final NestedSet<Artifact> filesToBuild;
+    override fun  /*<Artifact>*/getFilesToBuildForStarlark(): Depset? {
+        return Depset.of<Artifact?>(Artifact::class.java, filesToBuild)
+    }
 
-  private FileProvider(NestedSet<Artifact> filesToBuild) {
-    this.filesToBuild = filesToBuild;
-  }
+    override fun debugPrint(printer: net.starlark.java.eval.Printer, thread: net.starlark.java.eval.StarlarkThread?) {
+        printer.append("FileProvider(files_to_build = ")
+        printer.debugPrint(getFilesToBuildForStarlark(), thread)
+        printer.append(")")
+    }
 
-  @Override
-  public boolean isImmutable() {
-    return true; // immutable and Starlark-hashable
-  }
+    fun getFilesToBuild(): NestedSet<Artifact?> {
+        return filesToBuild
+    }
 
-  @Override
-  public Depset /*<Artifact>*/ getFilesToBuildForStarlark() {
-    return Depset.of(Artifact.class, filesToBuild);
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val EMPTY: FileProvider =
+            FileProvider(NestedSetBuilder.emptySet<Artifact?>(com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER))
 
-  @Override
-  public void debugPrint(Printer printer, StarlarkThread thread) {
-    printer.append("FileProvider(files_to_build = ");
-    printer.debugPrint(getFilesToBuildForStarlark(), thread);
-    printer.append(")");
-  }
-
-  public NestedSet<Artifact> getFilesToBuild() {
-    return filesToBuild;
-  }
+        fun of(filesToBuild: NestedSet<Artifact?>): FileProvider? {
+            return if (filesToBuild.isEmpty()) EMPTY else FileProvider(filesToBuild)
+        }
+    }
 }

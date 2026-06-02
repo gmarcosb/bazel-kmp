@@ -11,195 +11,191 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import build.bazel.remote.execution.v2.RequestMetadata;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.exec.SpawnRunner;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import javax.annotation.Nullable;
+import build.bazel.remote.execution.v2.RequestMetadata
 
 /**
- * A context providing remote execution related information for executing a {@link RemoteAction}.
- *
- * <p>Terminology note: "action" is used here in the remote execution protocol sense, which is
+ * A context providing remote execution related information for executing a [RemoteAction].
+ * 
+ * 
+ * Terminology note: "action" is used here in the remote execution protocol sense, which is
  * equivalent to a Bazel "spawn" (a Bazel "action" being a higher-level concept).
  */
-public class RemoteActionExecutionContext {
-  /** Determines whether to read/write remote cache, disk cache or both. */
-  public enum CachePolicy {
-    NO_CACHE,
-    REMOTE_CACHE_ONLY,
-    DISK_CACHE_ONLY,
-    ANY_CACHE;
+class RemoteActionExecutionContext private constructor(
+    spawn: Spawn?,
+    spawnExecutionContext: SpawnExecutionContext?,
+    requestMetadata: RequestMetadata?,
+    networkTime: NetworkTime?,
+    writeCachePolicy: CachePolicy?,
+    readCachePolicy: CachePolicy?
+) {
+    /** Determines whether to read/write remote cache, disk cache or both.  */
+    enum class CachePolicy {
+        NO_CACHE,
+        REMOTE_CACHE_ONLY,
+        DISK_CACHE_ONLY,
+        ANY_CACHE;
 
-    public static CachePolicy create(boolean allowRemoteCache, boolean allowDiskCache) {
-      if (allowRemoteCache && allowDiskCache) {
-        return ANY_CACHE;
-      } else if (allowRemoteCache) {
-        return REMOTE_CACHE_ONLY;
-      } else if (allowDiskCache) {
-        return DISK_CACHE_ONLY;
-      } else {
-        return NO_CACHE;
-      }
+        fun allowAnyCache(): Boolean {
+            return this != CachePolicy.NO_CACHE
+        }
+
+        fun allowRemoteCache(): Boolean {
+            return this == CachePolicy.REMOTE_CACHE_ONLY || this == CachePolicy.ANY_CACHE
+        }
+
+        fun allowDiskCache(): Boolean {
+            return this == CachePolicy.DISK_CACHE_ONLY || this == CachePolicy.ANY_CACHE
+        }
+
+        fun addRemoteCache(): CachePolicy {
+            if (this == CachePolicy.DISK_CACHE_ONLY || this == CachePolicy.ANY_CACHE) {
+                return CachePolicy.ANY_CACHE
+            }
+
+            return CachePolicy.REMOTE_CACHE_ONLY
+        }
+
+        companion object {
+            fun create(allowRemoteCache: Boolean, allowDiskCache: Boolean): CachePolicy {
+                if (allowRemoteCache && allowDiskCache) {
+                    return CachePolicy.ANY_CACHE
+                } else if (allowRemoteCache) {
+                    return CachePolicy.REMOTE_CACHE_ONLY
+                } else if (allowDiskCache) {
+                    return CachePolicy.DISK_CACHE_ONLY
+                } else {
+                    return CachePolicy.NO_CACHE
+                }
+            }
+        }
     }
 
-    public boolean allowAnyCache() {
-      return this != NO_CACHE;
-    }
+    private val spawn: Spawn?
+    private val spawnExecutionContext: SpawnExecutionContext?
+    private val requestMetadata: RequestMetadata?
+    private val networkTime: NetworkTime?
+    val writeCachePolicy: CachePolicy?
+    val readCachePolicy: CachePolicy?
 
-    public boolean allowRemoteCache() {
-      return this == REMOTE_CACHE_ONLY || this == ANY_CACHE;
-    }
-
-    public boolean allowDiskCache() {
-      return this == DISK_CACHE_ONLY || this == ANY_CACHE;
-    }
-
-    public CachePolicy addRemoteCache() {
-      if (this == DISK_CACHE_ONLY || this == ANY_CACHE) {
-        return ANY_CACHE;
-      }
-
-      return REMOTE_CACHE_ONLY;
-    }
-  }
-
-  @Nullable private final Spawn spawn;
-  @Nullable private final SpawnExecutionContext spawnExecutionContext;
-  private final RequestMetadata requestMetadata;
-  private final NetworkTime networkTime;
-  private final CachePolicy writeCachePolicy;
-  private final CachePolicy readCachePolicy;
-
-  private RemoteActionExecutionContext(
-      @Nullable Spawn spawn,
-      @Nullable SpawnRunner.SpawnExecutionContext spawnExecutionContext,
-      RequestMetadata requestMetadata,
-      NetworkTime networkTime) {
-    this(
+    private constructor(
+        spawn: Spawn?,
+        spawnExecutionContext: SpawnRunner.SpawnExecutionContext?,
+        requestMetadata: RequestMetadata?,
+        networkTime: NetworkTime?
+    ) : this(
         spawn,
         spawnExecutionContext,
         requestMetadata,
         networkTime,
         CachePolicy.ANY_CACHE,
-        CachePolicy.ANY_CACHE);
-  }
+        CachePolicy.ANY_CACHE
+    )
 
-  private RemoteActionExecutionContext(
-      @Nullable Spawn spawn,
-      @Nullable SpawnExecutionContext spawnExecutionContext,
-      RequestMetadata requestMetadata,
-      NetworkTime networkTime,
-      CachePolicy writeCachePolicy,
-      CachePolicy readCachePolicy) {
-    this.spawn = spawn;
-    this.spawnExecutionContext = spawnExecutionContext;
-    this.requestMetadata = requestMetadata;
-    this.networkTime = networkTime;
-    this.writeCachePolicy = writeCachePolicy;
-    this.readCachePolicy = readCachePolicy;
-  }
-
-  public RemoteActionExecutionContext withWriteCachePolicy(CachePolicy writeCachePolicy) {
-    return new RemoteActionExecutionContext(
-        spawn,
-        spawnExecutionContext,
-        requestMetadata,
-        networkTime,
-        writeCachePolicy,
-        readCachePolicy);
-  }
-
-  public RemoteActionExecutionContext withReadCachePolicy(CachePolicy readCachePolicy) {
-    return new RemoteActionExecutionContext(
-        spawn,
-        spawnExecutionContext,
-        requestMetadata,
-        networkTime,
-        writeCachePolicy,
-        readCachePolicy);
-  }
-
-  /**
-   * Returns the {@link Spawn} of the {@link RemoteAction} being executed, or {@code null} if it has
-   * no associated {@link Spawn}.
-   */
-  @Nullable
-  public Spawn getSpawn() {
-    return spawn;
-  }
-
-  /**
-   * Returns the {@link SpawnExecutionContext} of the {@link RemoteAction} being executed, or {@code
-   * null} if it has no associated {@link Spawn}.
-   */
-  @Nullable
-  public SpawnExecutionContext getSpawnExecutionContext() {
-    return spawnExecutionContext;
-  }
-
-  /** Returns the {@link RequestMetadata} for the action being executed. */
-  public RequestMetadata getRequestMetadata() {
-    return requestMetadata;
-  }
-
-  /**
-   * Returns the {@link NetworkTime} instance used to measure the network time during the action
-   * execution.
-   */
-  public NetworkTime getNetworkTime() {
-    return networkTime;
-  }
-
-  @Nullable
-  public ActionExecutionMetadata getSpawnOwner() {
-    Spawn spawn = getSpawn();
-    if (spawn == null) {
-      return null;
+    init {
+        this.spawn = spawn
+        this.spawnExecutionContext = spawnExecutionContext
+        this.requestMetadata = requestMetadata
+        this.networkTime = networkTime
+        this.writeCachePolicy = writeCachePolicy
+        this.readCachePolicy = readCachePolicy
     }
 
-    return spawn.getResourceOwner();
-  }
+    fun withWriteCachePolicy(writeCachePolicy: CachePolicy?): RemoteActionExecutionContext {
+        return RemoteActionExecutionContext(
+            spawn,
+            spawnExecutionContext,
+            requestMetadata,
+            networkTime,
+            writeCachePolicy,
+            readCachePolicy
+        )
+    }
 
-  public CachePolicy getWriteCachePolicy() {
-    return writeCachePolicy;
-  }
+    fun withReadCachePolicy(readCachePolicy: CachePolicy?): RemoteActionExecutionContext {
+        return RemoteActionExecutionContext(
+            spawn,
+            spawnExecutionContext,
+            requestMetadata,
+            networkTime,
+            writeCachePolicy,
+            readCachePolicy
+        )
+    }
 
-  public CachePolicy getReadCachePolicy() {
-    return readCachePolicy;
-  }
+    /**
+     * Returns the [Spawn] of the [RemoteAction] being executed, or `null` if it has
+     * no associated [Spawn].
+     */
+    fun getSpawn(): Spawn? {
+        return spawn
+    }
 
-  /** Creates a {@link RemoteActionExecutionContext} with given {@link RequestMetadata}. */
-  public static RemoteActionExecutionContext create(RequestMetadata metadata) {
-    return new RemoteActionExecutionContext(
-        /* spawn= */ null, /* spawnExecutionContext= */ null, metadata, new NetworkTime());
-  }
+    /**
+     * Returns the [SpawnExecutionContext] of the [RemoteAction] being executed, or `null` if it has no associated [Spawn].
+     */
+    fun getSpawnExecutionContext(): SpawnExecutionContext? {
+        return spawnExecutionContext
+    }
 
-  /**
-   * Creates a {@link RemoteActionExecutionContext} with given {@link Spawn} and {@link
-   * RequestMetadata}.
-   */
-  public static RemoteActionExecutionContext create(
-      Spawn spawn, SpawnExecutionContext spawnExecutionContext, RequestMetadata metadata) {
-    return new RemoteActionExecutionContext(
-        spawn, spawnExecutionContext, metadata, new NetworkTime());
-  }
+    /** Returns the [RequestMetadata] for the action being executed.  */
+    fun getRequestMetadata(): RequestMetadata? {
+        return requestMetadata
+    }
 
-  public static RemoteActionExecutionContext create(
-      Spawn spawn,
-      SpawnExecutionContext spawnExecutionContext,
-      RequestMetadata requestMetadata,
-      CachePolicy writeCachePolicy,
-      CachePolicy readCachePolicy) {
-    return new RemoteActionExecutionContext(
-        spawn,
-        spawnExecutionContext,
-        requestMetadata,
-        new NetworkTime(),
-        writeCachePolicy,
-        readCachePolicy);
-  }
+    /**
+     * Returns the [NetworkTime] instance used to measure the network time during the action
+     * execution.
+     */
+    fun getNetworkTime(): NetworkTime? {
+        return networkTime
+    }
+
+    val spawnOwner: ActionExecutionMetadata?
+        get() {
+            val spawn: Spawn? = getSpawn()
+            if (spawn == null) {
+                return null
+            }
+
+            return spawn.getResourceOwner()
+        }
+
+    companion object {
+        /** Creates a [RemoteActionExecutionContext] with given [RequestMetadata].  */
+        fun create(metadata: RequestMetadata?): RemoteActionExecutionContext {
+            return RemoteActionExecutionContext( /* spawn= */
+                null,  /* spawnExecutionContext= */null, metadata, NetworkTime()
+            )
+        }
+
+        /**
+         * Creates a [RemoteActionExecutionContext] with given [Spawn] and [ ].
+         */
+        fun create(
+            spawn: Spawn?, spawnExecutionContext: SpawnExecutionContext?, metadata: RequestMetadata?
+        ): RemoteActionExecutionContext {
+            return RemoteActionExecutionContext(
+                spawn, spawnExecutionContext, metadata, NetworkTime()
+            )
+        }
+
+        fun create(
+            spawn: Spawn?,
+            spawnExecutionContext: SpawnExecutionContext?,
+            requestMetadata: RequestMetadata?,
+            writeCachePolicy: CachePolicy?,
+            readCachePolicy: CachePolicy?
+        ): RemoteActionExecutionContext {
+            return RemoteActionExecutionContext(
+                spawn,
+                spawnExecutionContext,
+                requestMetadata,
+                NetworkTime(),
+                writeCachePolicy,
+                readCachePolicy
+            )
+        }
+    }
 }

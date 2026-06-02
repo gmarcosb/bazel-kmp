@@ -11,12 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.vfs.Root;
+import com.google.devtools.build.lib.vfs.Root
 
-/** Supplies the roots corresponding to {@code --package_path} for use during serialization. */
-public interface PackagePathCodecDependencies {
-  ImmutableList<Root> getPackageRoots();
+/** Supplies the roots corresponding to `--package_path` for use during serialization.  */
+interface PackagePathCodecDependencies {
+    fun getPackageRoots(): com.google.common.collect.ImmutableList<Root?>?
 }

@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.io;
+package com.google.devtools.build.lib.io
 
-import java.io.IOException;
+import java.io.IOException
 
 /**
  * Used to indicate a filesystem inconsistency, e.g. file 'a/b' exists but directory 'a' doesn't
  * exist. This generally means the result of the build is undefined but we shouldn't crash hard.
  */
-public class InconsistentFilesystemException extends IOException {
-  public InconsistentFilesystemException(String inconsistencyMessage) {
-    super(
-        "Inconsistent filesystem operations. "
+class InconsistentFilesystemException(inconsistencyMessage: String?) : IOException(
+    ("Inconsistent filesystem operations. "
             + inconsistencyMessage
             + " The results of the "
             + "build are not guaranteed to be correct. You should probably run 'bazel clean' and "
             + "investigate the filesystem inconsistency (likely due to filesystem updates "
-            + "concurrent with the build)");
-  }
-}
+            + "concurrent with the build)")
+)

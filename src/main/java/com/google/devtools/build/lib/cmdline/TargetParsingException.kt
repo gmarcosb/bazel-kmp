@@ -11,69 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.cmdline;
+package com.google.devtools.build.lib.cmdline
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.TargetPatterns;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.server.FailureDetails
 
-/** An exception indicating a target label that cannot be parsed. */
-public class TargetParsingException extends Exception implements DetailedException {
+/** An exception indicating a target label that cannot be parsed.  */
+class TargetParsingException : java.lang.Exception, DetailedException {
+    private val detailedExitCode: DetailedExitCode
 
-  private final DetailedExitCode detailedExitCode;
+    constructor(
+        message: String?,
+        code: TargetPatterns.Code?
+    ) : super(com.google.common.base.Preconditions.checkNotNull<String?>(message)) {
+        this.detailedExitCode = DetailedExitCode.of(createFailureDetail(message, code))
+    }
 
-  public TargetParsingException(String message, TargetPatterns.Code code) {
-    super(Preconditions.checkNotNull(message));
-    this.detailedExitCode = DetailedExitCode.of(createFailureDetail(message, code));
-  }
+    constructor(
+        message: String?,
+        cause: Throwable?,
+        code: TargetPatterns.Code?
+    ) : super(com.google.common.base.Preconditions.checkNotNull<String?>(message), cause) {
+        this.detailedExitCode = DetailedExitCode.of(createFailureDetail(message, code))
+    }
 
-  public TargetParsingException(String message, Throwable cause, TargetPatterns.Code code) {
-    super(Preconditions.checkNotNull(message), cause);
-    this.detailedExitCode = DetailedExitCode.of(createFailureDetail(message, code));
-  }
+    constructor(
+        message: String?,
+        cause: Throwable?,
+        detailedExitCode: DetailedExitCode?
+    ) : super(com.google.common.base.Preconditions.checkNotNull<String?>(message), cause) {
+        this.detailedExitCode = com.google.common.base.Preconditions.checkNotNull<DetailedExitCode>(detailedExitCode)
+    }
 
-  public TargetParsingException(
-      String message, Throwable cause, DetailedExitCode detailedExitCode) {
-    super(Preconditions.checkNotNull(message), cause);
-    this.detailedExitCode = Preconditions.checkNotNull(detailedExitCode);
-  }
+    constructor(
+        message: String?,
+        detailedExitCode: DetailedExitCode?
+    ) : super(com.google.common.base.Preconditions.checkNotNull<String?>(message)) {
+        this.detailedExitCode = com.google.common.base.Preconditions.checkNotNull<DetailedExitCode>(detailedExitCode)
+    }
 
-  public TargetParsingException(String message, DetailedExitCode detailedExitCode) {
-    super(Preconditions.checkNotNull(message));
-    this.detailedExitCode = Preconditions.checkNotNull(detailedExitCode);
-  }
+    constructor(cause: InconsistentFilesystemException) : super(cause.getMessage(), cause) {
+        this.detailedExitCode =
+            DetailedExitCode.of(
+                FailureDetails.FailureDetail.newBuilder()
+                    .setPackageLoading(
+                        FailureDetails.PackageLoading.newBuilder()
+                            .setCode(
+                                FailureDetails.PackageLoading.Code
+                                    .TRANSIENT_INCONSISTENT_FILESYSTEM_ERROR
+                            )
+                    )
+                    .setMessage(getMessage())
+                    .build()
+            )
+    }
 
-  public TargetParsingException(InconsistentFilesystemException cause) {
-    super(cause.getMessage(), cause);
-    this.detailedExitCode =
-        DetailedExitCode.of(
-            FailureDetails.FailureDetail.newBuilder()
-                .setPackageLoading(
-                    FailureDetails.PackageLoading.newBuilder()
-                        .setCode(
-                            FailureDetails.PackageLoading.Code
-                                .TRANSIENT_INCONSISTENT_FILESYSTEM_ERROR))
-                .setMessage(getMessage())
-                .build());
-  }
+    /**
+     * Returns the detailed exit code that contains the failure detail associated with the error
+     * during parsing.
+     */
+    override fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
 
-  private static FailureDetail createFailureDetail(String message, TargetPatterns.Code code) {
-    return FailureDetail.newBuilder()
-        .setMessage(message)
-        .setTargetPatterns(TargetPatterns.newBuilder().setCode(code).build())
-        .build();
-  }
-
-  /**
-   * Returns the detailed exit code that contains the failure detail associated with the error
-   * during parsing.
-   */
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    companion object {
+        private fun createFailureDetail(message: String?, code: TargetPatterns.Code?): FailureDetail {
+            return FailureDetail.newBuilder()
+                .setMessage(message)
+                .setTargetPatterns(TargetPatterns.newBuilder().setCode(code).build())
+                .build()
+        }
+    }
 }

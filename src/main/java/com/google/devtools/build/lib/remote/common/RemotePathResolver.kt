@@ -11,219 +11,199 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.SortedMap;
-import java.util.concurrent.ConcurrentHashMap;
+import com.google.devtools.build.lib.actions.ActionInput
 
 /**
- * A {@link RemotePathResolver} is used to resolve input/output paths for remote execution from
+ * A [RemotePathResolver] is used to resolve input/output paths for remote execution from
  * Bazel's internal path, or vice versa.
  */
-public interface RemotePathResolver {
+interface RemotePathResolver {
+    /**
+     * Returns the `workingDirectory` for a remote action. Empty if working directory is the
+     * input root.
+     */
+    val workingDirectory: PathFragment?
 
-  /**
-   * Returns the {@code workingDirectory} for a remote action. Empty if working directory is the
-   * input root.
-   */
-  PathFragment getWorkingDirectory();
-
-  /**
-   * Returns a {@link SortedMap} which maps from input paths for remote action to {@link
-   * ActionInput}.
-   */
-  default SortedMap<PathFragment, ActionInput> getInputMapping(
-      SpawnExecutionContext context, boolean willAccessRepeatedly) {
-    return context.getInputMapping(getWorkingDirectory(), willAccessRepeatedly);
-  }
-
-  /** Resolves the output path relative to input root for the given {@link Path}. */
-  String localPathToOutputPath(Path path);
-
-  /**
-   * Resolves the output path relative to input root for the given {@link PathFragment}.
-   *
-   * @param execPath a path fragment relative to {@code execRoot}.
-   */
-  String localPathToOutputPath(PathFragment execPath);
-
-  /** Resolves the output path relative to input root for the {@link ActionInput}. */
-  default String localPathToOutputPath(ActionInput actionInput) {
-    return localPathToOutputPath(actionInput.getExecPath());
-  }
-
-  /**
-   * Resolves the local {@link Path} of an output file.
-   *
-   * @param outputPath the return value of {@link #localPathToOutputPath(PathFragment)}.
-   */
-  Path outputPathToLocalPath(String outputPath);
-
-  /** Returns the exec path for the given local path. */
-  PathFragment localPathToExecPath(PathFragment localPath);
-
-  /** Creates the default {@link RemotePathResolver}. */
-  static RemotePathResolver createDefault(Path execRoot) {
-    return new DefaultRemotePathResolver(execRoot);
-  }
-
-  /**
-   * The default {@link RemotePathResolver} which use {@code execRoot} as input root and do NOT set
-   * {@code workingDirectory} for remote actions.
-   */
-  class DefaultRemotePathResolver implements RemotePathResolver {
-
-    private final Path execRoot;
-
-    public DefaultRemotePathResolver(Path execRoot) {
-      this.execRoot = execRoot;
+    /**
+     * Returns a [SortedMap] which maps from input paths for remote action to [ ].
+     */
+    fun getInputMapping(
+        context: SpawnExecutionContext, willAccessRepeatedly: Boolean
+    ): SortedMap<PathFragment?, ActionInput?> {
+        return context.getInputMapping(this.workingDirectory, willAccessRepeatedly)
     }
 
-    @Override
-    public PathFragment getWorkingDirectory() {
-      return PathFragment.EMPTY_FRAGMENT;
+    /** Resolves the output path relative to input root for the given [Path].  */
+    fun localPathToOutputPath(path: com.google.devtools.build.lib.vfs.Path?): String?
+
+    /**
+     * Resolves the output path relative to input root for the given [PathFragment].
+     * 
+     * @param execPath a path fragment relative to `execRoot`.
+     */
+    fun localPathToOutputPath(execPath: PathFragment?): String?
+
+    /** Resolves the output path relative to input root for the [ActionInput].  */
+    fun localPathToOutputPath(actionInput: ActionInput): String? {
+        return localPathToOutputPath(actionInput.getExecPath())
     }
 
-    @Override
-    public String localPathToOutputPath(Path path) {
-      return path.relativeTo(execRoot).getPathString();
+    /**
+     * Resolves the local [Path] of an output file.
+     * 
+     * @param outputPath the return value of [.localPathToOutputPath].
+     */
+    fun outputPathToLocalPath(outputPath: String?): com.google.devtools.build.lib.vfs.Path?
+
+    /** Returns the exec path for the given local path.  */
+    fun localPathToExecPath(localPath: PathFragment?): PathFragment?
+
+    /**
+     * The default [RemotePathResolver] which use `execRoot` as input root and do NOT set
+     * `workingDirectory` for remote actions.
+     */
+    class DefaultRemotePathResolver(execRoot: com.google.devtools.build.lib.vfs.Path) : RemotePathResolver {
+        private val execRoot: com.google.devtools.build.lib.vfs.Path
+
+        init {
+            this.execRoot = execRoot
+        }
+
+        override fun getWorkingDirectory(): PathFragment {
+            return PathFragment.EMPTY_FRAGMENT
+        }
+
+        override fun localPathToOutputPath(path: com.google.devtools.build.lib.vfs.Path): String? {
+            return path.relativeTo(execRoot).getPathString()
+        }
+
+        override fun localPathToOutputPath(execPath: PathFragment): String? {
+            return execPath.getPathString()
+        }
+
+        override fun outputPathToLocalPath(outputPath: String?): com.google.devtools.build.lib.vfs.Path? {
+            return execRoot.getRelative(outputPath)
+        }
+
+        override fun localPathToExecPath(localPath: PathFragment): PathFragment? {
+            return localPath.relativeTo(execRoot.asFragment())
+        }
     }
 
-    @Override
-    public String localPathToOutputPath(PathFragment execPath) {
-      return execPath.getPathString();
+    /**
+     * A [RemotePathResolver] used when `--experimental_sibling_repository_layout` is set.
+     * Use parent directory of `execRoot` and set `workingDirectory` to the base name of
+     * `execRoot`.
+     * 
+     * 
+     * The paths of outputs are relative to `workingDirectory`.
+     */
+    class SiblingRepositoryLayoutResolver(execRoot: com.google.devtools.build.lib.vfs.Path) : RemotePathResolver {
+        private val execRoot: com.google.devtools.build.lib.vfs.Path
+        private val workingDirectory: PathFragment?
+
+        init {
+            this.execRoot = execRoot
+            // The "root directory" of the action from the point of view of RBE is the parent directory of
+            // the execroot locally. This is so that paths of artifacts in external repositories don't
+            // start with an uplevel reference.
+            this.workingDirectory =
+                PathFragment.create(com.google.common.base.Preconditions.checkNotNull<String?>(execRoot.getBaseName()))
+        }
+
+        override fun getWorkingDirectory(): PathFragment? {
+            return workingDirectory
+        }
+
+        private val base: com.google.devtools.build.lib.vfs.Path
+            get() = execRoot
+
+        override fun localPathToOutputPath(path: com.google.devtools.build.lib.vfs.Path): String? {
+            return path.relativeTo(this.base).getPathString()
+        }
+
+        override fun localPathToOutputPath(execPath: PathFragment?): String? {
+            return localPathToOutputPath(execRoot.getRelative(execPath))
+        }
+
+        override fun outputPathToLocalPath(outputPath: String?): com.google.devtools.build.lib.vfs.Path? {
+            return this.base.getRelative(outputPath)
+        }
+
+        override fun localPathToExecPath(localPath: PathFragment): PathFragment? {
+            return localPath.relativeTo(this.base.asFragment())
+        }
     }
 
-    @Override
-    public Path outputPathToLocalPath(String outputPath) {
-      return execRoot.getRelative(outputPath);
+    companion object {
+        /** Creates the default [RemotePathResolver].  */
+        fun createDefault(execRoot: com.google.devtools.build.lib.vfs.Path): RemotePathResolver {
+            return DefaultRemotePathResolver(execRoot)
+        }
+
+        /**
+         * Adapts a given base [RemotePathResolver] to also apply a [PathMapper] to map (and
+         * inverse map) paths.
+         */
+        fun createMapped(
+            base: RemotePathResolver, execRoot: com.google.devtools.build.lib.vfs.Path, pathMapper: PathMapper
+        ): RemotePathResolver? {
+            if (pathMapper.isNoop()) {
+                return base
+            }
+            return object : RemotePathResolver {
+                private val inverse: ConcurrentHashMap<PathFragment?, PathFragment?> =
+                    ConcurrentHashMap<PathFragment?, PathFragment?>()
+
+                override fun getWorkingDirectory(): PathFragment? {
+                    return base.workingDirectory
+                }
+
+                override fun getInputMapping(
+                    context: SpawnExecutionContext, willAccessRepeatedly: Boolean
+                ): SortedMap<PathFragment?, ActionInput?> {
+                    return base.getInputMapping(context, willAccessRepeatedly)
+                }
+
+                override fun localPathToOutputPath(path: com.google.devtools.build.lib.vfs.Path): String? {
+                    return localPathToOutputPath(path.relativeTo(execRoot))
+                }
+
+                override fun localPathToOutputPath(execPath: PathFragment?): String? {
+                    return base.localPathToOutputPath(map(execPath))
+                }
+
+                override fun outputPathToLocalPath(outputPath: String?): com.google.devtools.build.lib.vfs.Path? {
+                    return execRoot.getRelative(
+                        inverseMap(base.outputPathToLocalPath(outputPath).relativeTo(execRoot))
+                    )
+                }
+
+                override fun localPathToExecPath(localPath: PathFragment?): PathFragment? {
+                    return base.localPathToExecPath(localPath)
+                }
+
+                fun map(path: PathFragment?): PathFragment? {
+                    val mappedPath: PathFragment? = pathMapper.map(path)
+                    val previousPath: PathFragment? = inverse.put(mappedPath, path)
+                    com.google.common.base.Preconditions.checkState(
+                        previousPath == null || previousPath == path,
+                        "Two different paths %s and %s map to the same path %s",
+                        previousPath,
+                        path,
+                        mappedPath
+                    )
+                    return mappedPath
+                }
+
+                fun inverseMap(path: PathFragment?): PathFragment {
+                    return com.google.common.base.Preconditions.checkNotNull<PathFragment>(
+                        inverse.get(path), "Failed to find original path for mapped path %s", path
+                    )
+                }
+            }
+        }
     }
-
-    @Override
-    public PathFragment localPathToExecPath(PathFragment localPath) {
-      return localPath.relativeTo(execRoot.asFragment());
-    }
-  }
-
-  /**
-   * A {@link RemotePathResolver} used when {@code --experimental_sibling_repository_layout} is set.
-   * Use parent directory of {@code execRoot} and set {@code workingDirectory} to the base name of
-   * {@code execRoot}.
-   *
-   * <p>The paths of outputs are relative to {@code workingDirectory}.
-   */
-  class SiblingRepositoryLayoutResolver implements RemotePathResolver {
-
-    private final Path execRoot;
-    private final PathFragment workingDirectory;
-
-    public SiblingRepositoryLayoutResolver(Path execRoot) {
-      this.execRoot = execRoot;
-      // The "root directory" of the action from the point of view of RBE is the parent directory of
-      // the execroot locally. This is so that paths of artifacts in external repositories don't
-      // start with an uplevel reference.
-      this.workingDirectory = PathFragment.create(checkNotNull(execRoot.getBaseName()));
-    }
-
-    @Override
-    public PathFragment getWorkingDirectory() {
-      return workingDirectory;
-    }
-
-    private Path getBase() {
-      return execRoot;
-    }
-
-    @Override
-    public String localPathToOutputPath(Path path) {
-      return path.relativeTo(getBase()).getPathString();
-    }
-
-    @Override
-    public String localPathToOutputPath(PathFragment execPath) {
-      return localPathToOutputPath(execRoot.getRelative(execPath));
-    }
-
-    @Override
-    public Path outputPathToLocalPath(String outputPath) {
-      return getBase().getRelative(outputPath);
-    }
-
-    @Override
-    public PathFragment localPathToExecPath(PathFragment localPath) {
-      return localPath.relativeTo(getBase().asFragment());
-    }
-  }
-
-  /**
-   * Adapts a given base {@link RemotePathResolver} to also apply a {@link PathMapper} to map (and
-   * inverse map) paths.
-   */
-  static RemotePathResolver createMapped(
-      RemotePathResolver base, Path execRoot, PathMapper pathMapper) {
-    if (pathMapper.isNoop()) {
-      return base;
-    }
-    return new RemotePathResolver() {
-      private final ConcurrentHashMap<PathFragment, PathFragment> inverse =
-          new ConcurrentHashMap<>();
-
-      @Override
-      public PathFragment getWorkingDirectory() {
-        return base.getWorkingDirectory();
-      }
-
-      @Override
-      public SortedMap<PathFragment, ActionInput> getInputMapping(
-          SpawnExecutionContext context, boolean willAccessRepeatedly) {
-        return base.getInputMapping(context, willAccessRepeatedly);
-      }
-
-      @Override
-      public String localPathToOutputPath(Path path) {
-        return localPathToOutputPath(path.relativeTo(execRoot));
-      }
-
-      @Override
-      public String localPathToOutputPath(PathFragment execPath) {
-        return base.localPathToOutputPath(map(execPath));
-      }
-
-      @Override
-      public Path outputPathToLocalPath(String outputPath) {
-        return execRoot.getRelative(
-            inverseMap(base.outputPathToLocalPath(outputPath).relativeTo(execRoot)));
-      }
-
-      @Override
-      public PathFragment localPathToExecPath(PathFragment localPath) {
-        return base.localPathToExecPath(localPath);
-      }
-
-      private PathFragment map(PathFragment path) {
-        PathFragment mappedPath = pathMapper.map(path);
-        PathFragment previousPath = inverse.put(mappedPath, path);
-        Preconditions.checkState(
-            previousPath == null || previousPath.equals(path),
-            "Two different paths %s and %s map to the same path %s",
-            previousPath,
-            path,
-            mappedPath);
-        return mappedPath;
-      }
-
-      private PathFragment inverseMap(PathFragment path) {
-        return Preconditions.checkNotNull(
-            inverse.get(path), "Failed to find original path for mapped path %s", path);
-      }
-    };
-  }
 }

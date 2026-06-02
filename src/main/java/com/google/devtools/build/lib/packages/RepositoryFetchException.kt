@@ -11,21 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import java.io.IOException;
+/** Exception indicating an attempt to access a package which is not found or does not exist.  */
+class RepositoryFetchException : NoSuchPackageException {
+    constructor(packageIdentifier: PackageIdentifier?, message: String?) : super(packageIdentifier, message)
 
-/** Exception indicating an attempt to access a package which is not found or does not exist. */
-public class RepositoryFetchException extends NoSuchPackageException {
-
-  public RepositoryFetchException(PackageIdentifier packageIdentifier, String message) {
-    super(packageIdentifier, message);
-  }
-
-  public RepositoryFetchException(
-      PackageIdentifier packageIdentifier, String message, IOException cause) {
-    super(packageIdentifier, message, cause);
-  }
+    constructor(packageIdentifier: PackageIdentifier?, message: String?, cause: IOException?) : super(
+        packageIdentifier,
+        message,
+        cause
+    )
 }

@@ -11,138 +11,140 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.util.Locale;
-import java.util.OptionalLong;
-import java.util.concurrent.atomic.AtomicLong;
-import javax.annotation.WillCloseWhenClosed;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.clock.Clock
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import com.google.devtools.build.lib.events.Event
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import java.io.IOException
+import java.io.InputStream
+import java.lang.String
+import java.net.URI
+import java.util.*
+import java.util.concurrent.atomic.AtomicLong
+import javax.annotation.WillCloseWhenClosed
+import kotlin.ByteArray
+import kotlin.Int
+import kotlin.Long
 
 /**
  * Input stream that reports progress on total bytes read as the download progresses.
- *
- * <p>This class is not thread safe, but it is safe to message pass its objects between threads.
+ * 
+ * 
+ * This class is not thread safe, but it is safe to message pass its objects between threads.
  */
-@ThreadCompatible
-final class ProgressInputStream extends InputStream {
-
-  private static final long PROGRESS_INTERVAL_MS = 200;
-
-  /** Factory for {@link ProgressInputStream}. */
-  @ThreadSafe
-  static class Factory {
-    private final Locale locale;
-    private final Clock clock;
-    private final ExtendedEventHandler eventHandler;
-
-    Factory(Locale locale, Clock clock, ExtendedEventHandler eventHandler) {
-      this.locale = locale;
-      this.clock = clock;
-      this.eventHandler = eventHandler;
+@ThreadSafety.ThreadCompatible
+internal class ProgressInputStream(
+    locale: Locale?,
+    clock: Clock,
+    eventHandler: ExtendedEventHandler,
+    intervalMs: Long,
+    delegate: InputStream,
+    url: URI,
+    originalUrl: URI,
+    totalBytes: OptionalLong?
+) : InputStream() {
+    /** Factory for [ProgressInputStream].  */
+    @ThreadSafety.ThreadSafe
+    internal class Factory(
+        private val locale: Locale?,
+        private val clock: Clock,
+        private val eventHandler: ExtendedEventHandler
+    ) {
+        fun create(
+            @WillCloseWhenClosed delegate: InputStream,
+            url: URI,
+            originalUrl: URI,
+            totalBytes: OptionalLong?
+        ): InputStream {
+            return ProgressInputStream(
+                locale,
+                clock,
+                eventHandler,
+                PROGRESS_INTERVAL_MS,
+                delegate,
+                url,
+                originalUrl,
+                totalBytes
+            )
+        }
     }
 
-    InputStream create(
-        @WillCloseWhenClosed InputStream delegate,
-        URI url,
-        URI originalUrl,
-        OptionalLong totalBytes) {
-      return new ProgressInputStream(
-          locale,
-          clock,
-          eventHandler,
-          PROGRESS_INTERVAL_MS,
-          delegate,
-          url,
-          originalUrl,
-          totalBytes);
+    private val locale: Locale?
+    private val clock: Clock
+    private val eventHandler: ExtendedEventHandler
+    private val delegate: InputStream
+    private val intervalMs: Long
+    private val url: URI
+    private val originalUrl: URI
+    private val totalBytes: OptionalLong?
+    private val toto = AtomicLong()
+    private val nextEvent: AtomicLong
+
+    init {
+        Preconditions.checkArgument(intervalMs >= 0)
+        this.locale = locale
+        this.clock = clock
+        this.eventHandler = eventHandler
+        this.intervalMs = intervalMs
+        this.delegate = delegate
+        this.url = url
+        this.originalUrl = originalUrl
+        this.totalBytes = totalBytes
+        this.nextEvent = AtomicLong(clock.currentTimeMillis() + intervalMs)
+        eventHandler.post(DownloadProgressEvent(originalUrl, url, 0, totalBytes, false))
     }
-  }
 
-  private final Locale locale;
-  private final Clock clock;
-  private final ExtendedEventHandler eventHandler;
-  private final InputStream delegate;
-  private final long intervalMs;
-  private final URI url;
-  private final URI originalUrl;
-  private final OptionalLong totalBytes;
-  private final AtomicLong toto = new AtomicLong();
-  private final AtomicLong nextEvent;
-
-  ProgressInputStream(
-      Locale locale,
-      Clock clock,
-      ExtendedEventHandler eventHandler,
-      long intervalMs,
-      InputStream delegate,
-      URI url,
-      URI originalUrl,
-      OptionalLong totalBytes) {
-    Preconditions.checkArgument(intervalMs >= 0);
-    this.locale = locale;
-    this.clock = clock;
-    this.eventHandler = eventHandler;
-    this.intervalMs = intervalMs;
-    this.delegate = delegate;
-    this.url = url;
-    this.originalUrl = originalUrl;
-    this.totalBytes = totalBytes;
-    this.nextEvent = new AtomicLong(clock.currentTimeMillis() + intervalMs);
-    eventHandler.post(new DownloadProgressEvent(originalUrl, url, 0, totalBytes, false));
-  }
-
-  @Override
-  public int read() throws IOException {
-    int result = delegate.read();
-    if (result != -1) {
-      reportProgress(toto.incrementAndGet());
+    @Throws(IOException::class)
+    override fun read(): Int {
+        val result = delegate.read()
+        if (result != -1) {
+            reportProgress(toto.incrementAndGet())
+        }
+        return result
     }
-    return result;
-  }
 
-  @Override
-  public int read(byte[] buffer, int offset, int length) throws IOException {
-    int amount = delegate.read(buffer, offset, length);
-    if (amount > 0) {
-      reportProgress(toto.addAndGet(amount));
+    @Throws(IOException::class)
+    override fun read(buffer: ByteArray?, offset: Int, length: Int): Int {
+        val amount = delegate.read(buffer, offset, length)
+        if (amount > 0) {
+            reportProgress(toto.addAndGet(amount.toLong()))
+        }
+        return amount
     }
-    return amount;
-  }
 
-  @Override
-  public int available() throws IOException {
-    return delegate.available();
-  }
-
-  @Override
-  public void close() throws IOException {
-    delegate.close();
-    eventHandler.post(new DownloadProgressEvent(originalUrl, url, toto.get(), totalBytes, true));
-  }
-
-  private void reportProgress(long bytesRead) {
-    long now = clock.currentTimeMillis();
-    if (now < nextEvent.get()) {
-      return;
+    @Throws(IOException::class)
+    override fun available(): Int {
+        return delegate.available()
     }
-    String via = "";
-    if (url.getHost() != null && !url.getHost().equals(originalUrl.getHost())) {
-      via = " via " + url.getHost();
+
+    @Throws(IOException::class)
+    override fun close() {
+        delegate.close()
+        eventHandler.post(DownloadProgressEvent(originalUrl, url, toto.get(), totalBytes, true))
     }
-    eventHandler.post(new DownloadProgressEvent(originalUrl, url, bytesRead, totalBytes, false));
-    eventHandler.handle(
-        Event.progress(
-            String.format(locale, "Downloading %s%s: %,d bytes", originalUrl, via, bytesRead)));
-    nextEvent.set(now + intervalMs);
-  }
+
+    private fun reportProgress(bytesRead: Long) {
+        val now = clock.currentTimeMillis()
+        if (now < nextEvent.get()) {
+            return
+        }
+        var via = ""
+        if (url.getHost() != null && url.getHost() != originalUrl.getHost()) {
+            via = " via " + url.getHost()
+        }
+        eventHandler.post(DownloadProgressEvent(originalUrl, url, bytesRead, totalBytes, false))
+        eventHandler.handle(
+            Event.progress(
+                String.format(locale, "Downloading %s%s: %,d bytes", originalUrl, via, bytesRead)
+            )
+        )
+        nextEvent.set(now + intervalMs)
+    }
+
+    companion object {
+        private const val PROGRESS_INTERVAL_MS: Long = 200
+    }
 }

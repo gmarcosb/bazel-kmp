@@ -11,88 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.docgen.annot.GlobalMethods;
-import com.google.devtools.build.docgen.annot.GlobalMethods.Environment;
-import java.util.Map;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkThread;
+import com.google.devtools.build.lib.packages.PackageArgs
 
 /**
- * Utility class encapsulating the standard definition of the {@code package()} function of BUILD
+ * Utility class encapsulating the standard definition of the `package()` function of BUILD
  * files.
  */
-@GlobalMethods(environment = Environment.BUILD)
-public class PackageCallable {
+@com.google.devtools.build.docgen.annot.GlobalMethods(environment = com.google.devtools.build.docgen.annot.GlobalMethods.Environment.BUILD)
+class PackageCallable protected constructor() {
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "package",
+        doc = ("Declares metadata that applies to every rule in the package. It must be called at "
+                + "most once within a package (BUILD file). If called, it should be the first call "
+                + "in the BUILD file, right after the <code>load()</code> statements."),
+        extraKeywords = net.starlark.java.annot.Param(
+            name = "kwargs", doc = "See the <a href=\"\${link functions}#package\"><code>package()</code></a> "
+                    + "function in the Build Encyclopedia for applicable arguments."
+        ),
+        useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun packageCallable(kwargs: MutableMap<String?, Any?>, thread: net.starlark.java.eval.StarlarkThread?): Any? {
+        // TODO(bazel-team): we should properly ban package() in legacy macros
+        val pkgBuilder: com.google.devtools.build.lib.packages.Package.AbstractBuilder
+        try {
+            pkgBuilder =
+                com.google.devtools.build.lib.packages.Package.AbstractBuilder.Companion.fromOrFailAllowBuildOnly(
+                    thread,
+                    "package()"
+                )
+        } catch (unused: net.starlark.java.eval.EvalException) {
+            // The eval exception thrown by fromOrFailAllowBuildOnly() advises the user that using
+            // package() in legacy macros is ok. We don't want to give that advice.
+            throw net.starlark.java.eval.Starlark.errorf("package() can only be used while evaluating a BUILD file")
+        }
+        if (pkgBuilder.isPackageFunctionUsed()) {
+            throw net.starlark.java.eval.EvalException("'package' can only be used once per BUILD file")
+        }
+        pkgBuilder.setPackageFunctionUsed()
 
-  protected PackageCallable() {}
+        if (kwargs.isEmpty()) {
+            throw net.starlark.java.eval.EvalException("at least one argument must be given to the 'package' function")
+        }
 
-  public static final PackageCallable INSTANCE = new PackageCallable();
-
-  @StarlarkMethod(
-      name = "package",
-      doc =
-          "Declares metadata that applies to every rule in the package. It must be called at "
-              + "most once within a package (BUILD file). If called, it should be the first call "
-              + "in the BUILD file, right after the <code>load()</code> statements.",
-      extraKeywords =
-          @Param(
-              name = "kwargs",
-              doc =
-                  "See the <a href=\"${link functions}#package\"><code>package()</code></a> "
-                      + "function in the Build Encyclopedia for applicable arguments."),
-      useStarlarkThread = true)
-  public Object packageCallable(Map<String, Object> kwargs, StarlarkThread thread)
-      throws EvalException {
-    // TODO(bazel-team): we should properly ban package() in legacy macros
-    Package.AbstractBuilder pkgBuilder;
-    try {
-      pkgBuilder = Package.AbstractBuilder.fromOrFailAllowBuildOnly(thread, "package()");
-    } catch (EvalException unused) {
-      // The eval exception thrown by fromOrFailAllowBuildOnly() advises the user that using
-      // package() in legacy macros is ok. We don't want to give that advice.
-      throw Starlark.errorf("package() can only be used while evaluating a BUILD file");
+        val pkgArgsBuilder: com.google.devtools.build.lib.packages.PackageArgs.Builder = PackageArgs.Companion.builder()
+        for (kwarg in kwargs.entrySet()) {
+            val name: String = kwarg.getKey()
+            val rawValue: Any? = kwarg.getValue()
+            processParam(name, rawValue, pkgBuilder, pkgArgsBuilder)
+        }
+        pkgBuilder.mergePackageArgsFrom(pkgArgsBuilder)
+        return net.starlark.java.eval.Starlark.NONE
     }
-    if (pkgBuilder.isPackageFunctionUsed()) {
-      throw new EvalException("'package' can only be used once per BUILD file");
+
+    /**
+     * Handles one parameter. Subclasses can add new parameters by overriding this method and falling
+     * back on the super method when the parameter does not match.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    protected fun processParam(
+        name: String,
+        rawValue: Any?,
+        pkgBuilder: com.google.devtools.build.lib.packages.Package.AbstractBuilder,
+        pkgArgsBuilder: com.google.devtools.build.lib.packages.PackageArgs.Builder?
+    ) {
+        PackageArgs.Companion.processParam(
+            name,
+            rawValue,
+            "package() argument '" + name + "'",
+            pkgBuilder.getLabelConverter(),
+            pkgArgsBuilder
+        )
     }
-    pkgBuilder.setPackageFunctionUsed();
 
-    if (kwargs.isEmpty()) {
-      throw new EvalException("at least one argument must be given to the 'package' function");
+    companion object {
+        val INSTANCE: PackageCallable = PackageCallable()
     }
-
-    PackageArgs.Builder pkgArgsBuilder = PackageArgs.builder();
-    for (Map.Entry<String, Object> kwarg : kwargs.entrySet()) {
-      String name = kwarg.getKey();
-      Object rawValue = kwarg.getValue();
-      processParam(name, rawValue, pkgBuilder, pkgArgsBuilder);
-    }
-    pkgBuilder.mergePackageArgsFrom(pkgArgsBuilder);
-    return Starlark.NONE;
-  }
-
-  /**
-   * Handles one parameter. Subclasses can add new parameters by overriding this method and falling
-   * back on the super method when the parameter does not match.
-   */
-  protected void processParam(
-      String name,
-      Object rawValue,
-      Package.AbstractBuilder pkgBuilder,
-      PackageArgs.Builder pkgArgsBuilder)
-      throws EvalException {
-
-    PackageArgs.processParam(
-        name,
-        rawValue,
-        "package() argument '" + name + "'",
-        pkgBuilder.getLabelConverter(),
-        pkgArgsBuilder);
-  }
 }

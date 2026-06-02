@@ -11,50 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.events
 
-package com.google.devtools.build.lib.events;
+import com.google.devtools.build.lib.util.StringEncoding
 
-import com.google.devtools.build.lib.util.StringEncoding;
-import java.util.regex.Pattern;
+/** An output filter for warnings.  */
+interface OutputFilter {
+    /** Returns true iff the given tag matches the output filter.  */
+    fun showOutput(tag: String?): Boolean
 
-/** An output filter for warnings. */
-public interface OutputFilter {
+    /** An output filter using regular expression matching.  */
+    class RegexOutputFilter private constructor(pattern: java.util.regex.Pattern) : OutputFilter {
+        private val pattern: java.util.regex.Pattern
 
-  /** An output filter that matches everything. */
-  OutputFilter OUTPUT_EVERYTHING = tag -> true;
+        init {
+            this.pattern = pattern
+        }
 
-  /** An output filter that matches nothing. */
-  OutputFilter OUTPUT_NOTHING = tag -> false;
+        override fun showOutput(tag: String?): Boolean {
+            return pattern.matcher(StringEncoding.internalToUnicode(tag)).find()
+        }
 
-  /** Returns true iff the given tag matches the output filter. */
-  boolean showOutput(String tag);
+        override fun toString(): String {
+            return pattern.toString()
+        }
 
-  /** An output filter using regular expression matching. */
-  final class RegexOutputFilter implements OutputFilter {
-    /** Returns an output filter for the given regex (by compiling it). */
-    public static OutputFilter forRegex(String regex) {
-      return new RegexOutputFilter(Pattern.compile(regex));
+        companion object {
+            /** Returns an output filter for the given regex (by compiling it).  */
+            @kotlin.jvm.JvmStatic
+            fun forRegex(regex: String?): OutputFilter {
+                return com.google.devtools.build.lib.events.OutputFilter.RegexOutputFilter(
+                    java.util.regex.Pattern.compile(
+                        regex
+                    )
+                )
+            }
+
+            /** Returns an output filter for the given pattern.  */
+            fun forPattern(pattern: java.util.regex.Pattern): OutputFilter {
+                return com.google.devtools.build.lib.events.OutputFilter.RegexOutputFilter(pattern)
+            }
+        }
     }
 
-    /** Returns an output filter for the given pattern. */
-    public static OutputFilter forPattern(Pattern pattern) {
-      return new RegexOutputFilter(pattern);
-    }
+    companion object {
+        /** An output filter that matches everything.  */
+        @kotlin.jvm.JvmField
+        val OUTPUT_EVERYTHING: OutputFilter = com.google.devtools.build.lib.events.OutputFilter { tag: String? -> true }
 
-    private final Pattern pattern;
-
-    private RegexOutputFilter(Pattern pattern) {
-      this.pattern = pattern;
+        /** An output filter that matches nothing.  */
+        @kotlin.jvm.JvmField
+        val OUTPUT_NOTHING: OutputFilter = com.google.devtools.build.lib.events.OutputFilter { tag: String? -> false }
     }
-
-    @Override
-    public boolean showOutput(String tag) {
-      return pattern.matcher(StringEncoding.internalToUnicode(tag)).find();
-    }
-
-    @Override
-    public String toString() {
-      return pattern.toString();
-    }
-  }
 }

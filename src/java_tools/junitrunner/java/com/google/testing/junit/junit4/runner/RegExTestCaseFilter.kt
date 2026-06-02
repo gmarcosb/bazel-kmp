@@ -11,66 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.junit4.runner
 
-package com.google.testing.junit.junit4.runner;
-
-import java.util.regex.Pattern;
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+import org.junit.runner.Description
+import org.junit.runner.manipulation.Filter
+import java.util.regex.Pattern
 
 /**
  * Filter that filters out test cases that either matches or does not match a specified regular
  * expression.
  */
-public final class RegExTestCaseFilter extends Filter {
-  private static final String TEST_NAME_FORMAT = "%s#%s";
+class RegExTestCaseFilter private constructor(regularExpression: String?, private val isNegated: Boolean) : Filter() {
+    private val pattern: Pattern
 
-  private final Pattern pattern;
-  private final boolean isNegated;
-
-  /**
-   * Returns a filter that evaluates to {@code true} if the test case description matches
-   * specified regular expression. Otherwise, returns {@code false}.
-   */
-  public static RegExTestCaseFilter include(String regularExpression) {
-    return new RegExTestCaseFilter(regularExpression, false);
-  }
-
- /**
-   * Returns a filter that evaluates to {@code false} if the test case description matches
-   * specified regular expression. Otherwise, returns {@code true}.
-   */
-  public static RegExTestCaseFilter exclude(String regularExpression) {
-    return new RegExTestCaseFilter(regularExpression, true);
-  }
-
-  private RegExTestCaseFilter(String regularExpression, boolean isNegated) {
-    this.isNegated = isNegated;
-    this.pattern = Pattern.compile(regularExpression);
-  }
-
-  @Override
-  public boolean shouldRun(Description description) {
-    if (description.isSuite()) {
-      return true;
+    init {
+        this.pattern = Pattern.compile(regularExpression)
     }
 
-    boolean match = pattern.matcher(formatDescriptionName(description)).find();
-    return isNegated ? !match : match;
-  }
+    override fun shouldRun(description: Description): Boolean {
+        if (description.isSuite()) {
+            return true
+        }
 
-  @Override
-  public String describe() {
-    return String.format("%sRegEx[%s]", isNegated ? "NOT " : "", pattern.toString());
-  }
-
-  private static String formatDescriptionName(Description description) {
-    String methodName = (description.getMethodName() == null) ? "" : description.getMethodName();
-
-    String className = (description.getClassName() == null) ? "" : description.getClassName();
-    if (methodName.trim().isEmpty() || className.trim().isEmpty()) {
-      return description.getDisplayName();
+        val match = pattern.matcher(formatDescriptionName(description)).find()
+        return if (isNegated) !match else match
     }
-    return String.format(TEST_NAME_FORMAT, className, methodName);
-  }
+
+    override fun describe(): String? {
+        return String.format("%sRegEx[%s]", if (isNegated) "NOT " else "", pattern.toString())
+    }
+
+    companion object {
+        private const val TEST_NAME_FORMAT = "%s#%s"
+
+        /**
+         * Returns a filter that evaluates to `true` if the test case description matches
+         * specified regular expression. Otherwise, returns `false`.
+         */
+        fun include(regularExpression: String?): RegExTestCaseFilter {
+            return RegExTestCaseFilter(regularExpression, false)
+        }
+
+        /**
+         * Returns a filter that evaluates to `false` if the test case description matches
+         * specified regular expression. Otherwise, returns `true`.
+         */
+        fun exclude(regularExpression: String?): RegExTestCaseFilter {
+            return RegExTestCaseFilter(regularExpression, true)
+        }
+
+        private fun formatDescriptionName(description: Description): String? {
+            val methodName = if (description.getMethodName() == null) "" else description.getMethodName()
+
+            val className = if (description.getClassName() == null) "" else description.getClassName()
+            if (methodName.trim { it <= ' ' }.isEmpty() || className.trim { it <= ' ' }.isEmpty()) {
+                return description.getDisplayName()
+            }
+            return String.format(TEST_NAME_FORMAT, className, methodName)
+        }
+    }
 }

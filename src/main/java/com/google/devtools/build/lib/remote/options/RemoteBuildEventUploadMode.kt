@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.options;
+package com.google.devtools.build.lib.remote.options
 
-/** Describes how to upload local files referenced in BEP to remote cache. */
-public enum RemoteBuildEventUploadMode {
-  // Uploads all local files to remote cache.
-  ALL,
-  // Only upload important local files (e.g. test logs, timing profile) to remote cache.
-  MINIMAL,
+/** Describes how to upload local files referenced in BEP to remote cache.  */
+enum class RemoteBuildEventUploadMode {
+    // Uploads all local files to remote cache.
+    ALL,
+
+    // Only upload important local files (e.g. test logs, timing profile) to remote cache.
+    MINIMAL,
 }

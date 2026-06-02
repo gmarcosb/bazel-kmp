@@ -11,104 +11,99 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.metrics;
+package com.google.devtools.build.lib.packages.metrics
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
+import com.google.common.collect.ImmutableCollection
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Maps
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics
+import java.util.function.Function
+import javax.annotation.concurrent.GuardedBy
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics.BzlFileMetrics;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.protobuf.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.concurrent.GuardedBy;
+/** PackageMetricsRecorder that records all available metrics for all package loads.  */
+internal class CompletePackageMetricsRecorder : PackageMetricsRecorder {
+    @GuardedBy("this")
+    private val metrics: HashMap<PackageIdentifier?, PackageLoadMetrics?> =
+        HashMap<PackageIdentifier?, PackageLoadMetrics?>()
 
-/** PackageMetricsRecorder that records all available metrics for all package loads. */
-final class CompletePackageMetricsRecorder implements PackageMetricsRecorder {
+    @GuardedBy("this")
+    private val bzlMetrics: MutableList<BzlFileMetrics?> = ArrayList<BzlFileMetrics?>()
 
-  @GuardedBy("this")
-  private final HashMap<PackageIdentifier, PackageLoadMetrics> metrics = new HashMap<>();
+    @kotlin.jvm.Synchronized
+    override fun recordMetrics(pkgId: PackageIdentifier?, metrics: PackageLoadMetrics?) {
+        this.metrics.put(pkgId, metrics)
+    }
 
-  @GuardedBy("this")
-  private final List<BzlFileMetrics> bzlMetrics = new ArrayList<>();
+    @kotlin.jvm.Synchronized
+    override fun recordBzlMetrics(metrics: BzlFileMetrics?) {
+        bzlMetrics.add(metrics)
+    }
 
-  CompletePackageMetricsRecorder() {}
+    @kotlin.jvm.Synchronized
+    override fun getLoadTimes(): MutableMap<PackageIdentifier?, Duration?> {
+        return Maps.transformValues(metrics, PackageLoadMetrics::getLoadDuration)
+    }
 
-  @Override
-  public synchronized void recordMetrics(PackageIdentifier pkgId, PackageLoadMetrics metrics) {
-    this.metrics.put(pkgId, metrics);
-  }
+    @kotlin.jvm.Synchronized
+    override fun getGlobFilesystemOperationCost(): MutableMap<PackageIdentifier?, Long?> {
+        return Maps.transformValues(metrics, PackageLoadMetrics::getGlobFilesystemOperationCost)
+    }
 
-  @Override
-  public synchronized void recordBzlMetrics(BzlFileMetrics metrics) {
-    bzlMetrics.add(metrics);
-  }
+    @kotlin.jvm.Synchronized
+    override fun getComputationSteps(): MutableMap<PackageIdentifier?, Long?> {
+        return Maps.transformValues(metrics, PackageLoadMetrics::getComputationSteps)
+    }
 
-  @Override
-  public synchronized Map<PackageIdentifier, Duration> getLoadTimes() {
-    return Maps.transformValues(metrics, PackageLoadMetrics::getLoadDuration);
-  }
+    @kotlin.jvm.Synchronized
+    override fun getNumTargets(): MutableMap<PackageIdentifier?, Long?> {
+        return Maps.transformValues(metrics, PackageLoadMetrics::getNumTargets)
+    }
 
-  @Override
-  public synchronized Map<PackageIdentifier, Long> getGlobFilesystemOperationCost() {
-    return Maps.transformValues(metrics, PackageLoadMetrics::getGlobFilesystemOperationCost);
-  }
+    @kotlin.jvm.Synchronized
+    override fun getNumTransitiveLoads(): MutableMap<PackageIdentifier?, Long?> {
+        return Maps.transformValues(metrics, PackageLoadMetrics::getNumTransitiveLoads)
+    }
 
-  @Override
-  public synchronized Map<PackageIdentifier, Long> getComputationSteps() {
-    return Maps.transformValues(metrics, PackageLoadMetrics::getComputationSteps);
-  }
+    @kotlin.jvm.Synchronized
+    override fun getPackageOverhead(): MutableMap<PackageIdentifier?, Long?> {
+        return Maps.transformValues(
+            Maps.filterValues(metrics, PackageLoadMetrics::hasPackageOverhead),
+            PackageLoadMetrics::getPackageOverhead
+        )
+    }
 
-  @Override
-  public synchronized Map<PackageIdentifier, Long> getNumTargets() {
-    return Maps.transformValues(metrics, PackageLoadMetrics::getNumTargets);
-  }
+    @kotlin.jvm.Synchronized
+    override fun clear() {
+        metrics.clear()
+        bzlMetrics.clear()
+    }
 
-  @Override
-  public synchronized Map<PackageIdentifier, Long> getNumTransitiveLoads() {
-    return Maps.transformValues(metrics, PackageLoadMetrics::getNumTransitiveLoads);
-  }
+    override fun loadingFinished() {
+        clear()
+    }
 
-  @Override
-  public synchronized Map<PackageIdentifier, Long> getPackageOverhead() {
-    return Maps.transformValues(
-        Maps.filterValues(metrics, PackageLoadMetrics::hasPackageOverhead),
-        PackageLoadMetrics::getPackageOverhead);
-  }
+    override fun getRecorderType(): PackageMetricsRecorder.Type {
+        return PackageMetricsRecorder.Type.ALL
+    }
 
-  @Override
-  public synchronized void clear() {
-    metrics.clear();
-    bzlMetrics.clear();
-  }
+    @kotlin.jvm.Synchronized
+    override fun getPackageLoadMetrics(): ImmutableCollection<PackageLoadMetrics?> {
+        // lazily set the pkgName when requested.
+        return metrics.entrySet().stream()
+            .map<Any?>(Function { e: MutableMap.MutableEntry<PackageIdentifier?, PackageLoadMetrics?>? ->
+                e.getValue().toBuilder().setName(e.getKey().toString()).build()
+            })
+            .collect(ImmutableList.toImmutableList<Any?>())
+    }
 
-  @Override
-  public void loadingFinished() {
-    clear();
-  }
-
-  @Override
-  public Type getRecorderType() {
-    return PackageMetricsRecorder.Type.ALL;
-  }
-
-  @Override
-  public synchronized ImmutableCollection<PackageLoadMetrics> getPackageLoadMetrics() {
-    // lazily set the pkgName when requested.
-    return metrics.entrySet().stream()
-        .map(e -> e.getValue().toBuilder().setName(e.getKey().toString()).build())
-        .collect(toImmutableList());
-  }
-
-  @Override
-  public synchronized BzlMetrics getBzlMetrics() {
-    return BzlMetrics.newBuilder()
-        .setBzlFileCount(bzlMetrics.size())
-        .addAllBzlFileMetrics(bzlMetrics)
-        .build();
-  }
+    @kotlin.jvm.Synchronized
+    override fun getBzlMetrics(): BzlMetrics {
+        return BzlMetrics.newBuilder()
+            .setBzlFileCount(bzlMetrics.size())
+            .addAllBzlFileMetrics(bzlMetrics)
+            .build()
+    }
 }

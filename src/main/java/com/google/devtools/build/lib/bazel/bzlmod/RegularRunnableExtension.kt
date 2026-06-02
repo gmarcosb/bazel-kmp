@@ -12,370 +12,369 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static com.google.common.base.StandardSystemProperty.OS_ARCH;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager;
-import com.google.devtools.build.lib.bazel.repository.starlark.NeedsSkyframeRestartException;
-import com.google.devtools.build.lib.cmdline.BazelModuleContext;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelConstants;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.runtime.ProcessWrapper;
-import com.google.devtools.build.lib.runtime.RepositoryRemoteExecutor;
-import com.google.devtools.build.lib.server.FailureDetails.ExternalDeps;
-import com.google.devtools.build.lib.server.FailureDetails.ExternalDeps.Code;
-import com.google.devtools.build.lib.skyframe.BzlLoadFailedException;
-import com.google.devtools.build.lib.skyframe.BzlLoadFunction;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.WorkerSkyKeyComputeState;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Map.Entry;
-import java.util.Optional;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutionException;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.SymbolGenerator;
-import net.starlark.java.spelling.SpellChecker;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
- * A regular module extension defined with {@code module_extension} and used with {@code
- * use_extension}.
+ * A regular module extension defined with `module_extension` and used with `use_extension`.
  */
-final class RegularRunnableExtension implements RunnableExtension {
-  private final BzlLoadValue bzlLoadValue;
-  private final ModuleExtension extension;
-  private final ImmutableMap<String, Optional<String>> staticEnvVars;
-  private final BlazeDirectories directories;
-  private final ImmutableMap<String, String> repoEnv;
-  private final ImmutableMap<String, String> nonstrictRepoEnv;
-  private final double timeoutScaling;
-  @Nullable private final ProcessWrapper processWrapper;
-  @Nullable private final RepositoryRemoteExecutor repositoryRemoteExecutor;
-  @Nullable private final DownloadManager downloadManager;
+internal class RegularRunnableExtension(
+    bzlLoadValue: BzlLoadValue,
+    extension: ModuleExtension,
+    staticEnvVars: com.google.common.collect.ImmutableMap<String?, java.util.Optional<String?>?>?,
+    directories: BlazeDirectories,
+    repoEnv: com.google.common.collect.ImmutableMap<String?, String?>?,
+    nonstrictRepoEnv: com.google.common.collect.ImmutableMap<String?, String?>?,
+    timeoutScaling: Double,
+    processWrapper: ProcessWrapper?,
+    repositoryRemoteExecutor: RepositoryRemoteExecutor?,
+    downloadManager: DownloadManager?
+) : RunnableExtension {
+    private val bzlLoadValue: BzlLoadValue
+    private val extension: ModuleExtension
+    private val staticEnvVars: com.google.common.collect.ImmutableMap<String?, java.util.Optional<String?>?>?
+    private val directories: BlazeDirectories
+    private val repoEnv: com.google.common.collect.ImmutableMap<String?, String?>?
+    private val nonstrictRepoEnv: com.google.common.collect.ImmutableMap<String?, String?>?
+    private val timeoutScaling: Double
+    private val processWrapper: ProcessWrapper?
+    private val repositoryRemoteExecutor: RepositoryRemoteExecutor?
+    private val downloadManager: DownloadManager?
 
-  RegularRunnableExtension(
-      BzlLoadValue bzlLoadValue,
-      ModuleExtension extension,
-      ImmutableMap<String, Optional<String>> staticEnvVars,
-      BlazeDirectories directories,
-      ImmutableMap<String, String> repoEnv,
-      ImmutableMap<String, String> nonstrictRepoEnv,
-      double timeoutScaling,
-      @Nullable ProcessWrapper processWrapper,
-      @Nullable RepositoryRemoteExecutor repositoryRemoteExecutor,
-      @Nullable DownloadManager downloadManager) {
-    this.bzlLoadValue = bzlLoadValue;
-    this.extension = extension;
-    this.staticEnvVars = staticEnvVars;
-    this.directories = directories;
-    this.repoEnv = repoEnv;
-    this.nonstrictRepoEnv = nonstrictRepoEnv;
-    this.timeoutScaling = timeoutScaling;
-    this.processWrapper = processWrapper;
-    this.repositoryRemoteExecutor = repositoryRemoteExecutor;
-    this.downloadManager = downloadManager;
-  }
-
-  private static BzlLoadValue loadBzlFile(
-      Label bzlFileLabel,
-      Location sampleUsageLocation,
-      StarlarkSemantics starlarkSemantics,
-      Environment env)
-      throws ExternalDepsException, InterruptedException {
-    // Check that the .bzl label isn't crazy.
-    try {
-      BzlLoadFunction.checkValidLoadLabel(bzlFileLabel, starlarkSemantics);
-    } catch (LabelSyntaxException e) {
-      throw ExternalDepsException.withCauseAndMessage(
-          Code.BAD_MODULE, e, "invalid module extension label");
+    init {
+        this.bzlLoadValue = bzlLoadValue
+        this.extension = extension
+        this.staticEnvVars = staticEnvVars
+        this.directories = directories
+        this.repoEnv = repoEnv
+        this.nonstrictRepoEnv = nonstrictRepoEnv
+        this.timeoutScaling = timeoutScaling
+        this.processWrapper = processWrapper
+        this.repositoryRemoteExecutor = repositoryRemoteExecutor
+        this.downloadManager = downloadManager
     }
 
-    // Load the .bzl file pointed to by the label.
-    BzlLoadValue bzlLoadValue;
-    try {
-      bzlLoadValue =
-          (BzlLoadValue)
-              env.getValueOrThrow(
-                  BzlLoadValue.keyForBzlmod(bzlFileLabel), BzlLoadFailedException.class);
-    } catch (BzlLoadFailedException e) {
-      throw ExternalDepsException.withCauseAndMessage(
-          Code.BAD_MODULE,
-          e,
-          "Error loading '%s' for module extensions, requested by %s: %s",
-          bzlFileLabel,
-          sampleUsageLocation,
-          e.getMessage());
-    }
-    return bzlLoadValue;
-  }
+    val evalFactors: ModuleExtensionEvalFactors
+        get() = ModuleExtensionEvalFactors.Companion.create(
+            if (extension.osDependent) com.google.devtools.build.lib.util.OS.getCurrent().toString() else "",
+            if (extension.archDependent) com.google.common.base.StandardSystemProperty.OS_ARCH.value() else ""
+        )
 
-  /** Returns null if a Skyframe restart is required. */
-  @Nullable
-  static RegularRunnableExtension load(
-      ModuleExtensionId extensionId,
-      SingleExtensionUsagesValue usagesValue,
-      StarlarkSemantics starlarkSemantics,
-      Environment env,
-      BlazeDirectories directories,
-      ImmutableMap<String, String> repoEnv,
-      ImmutableMap<String, String> nonstrictRepoEnv,
-      double timeoutScaling,
-      @Nullable ProcessWrapper processWrapper,
-      @Nullable RepositoryRemoteExecutor repositoryRemoteExecutor,
-      @Nullable DownloadManager downloadManager)
-      throws InterruptedException, ExternalDepsException {
-    ModuleExtensionUsage sampleUsage = usagesValue.getExtensionUsages().values().iterator().next();
-    Location sampleUsageLocation = sampleUsage.getProxies().getFirst().getLocation();
-    BzlLoadValue bzlLoadValue =
-        loadBzlFile(extensionId.bzlFileLabel(), sampleUsageLocation, starlarkSemantics, env);
-    if (bzlLoadValue == null) {
-      return null;
-    }
-    // TODO(wyv): Consider whether there's a need to check .bzl load visibility
-    // (BzlLoadFunction#checkLoadVisibilities).
-    // TODO(wyv): Consider refactoring to use PackageFunction#loadBzlModules, or the simpler API
-    // that may be created by b/237658764.
+    val bzlTransitiveDigest: ByteArray?
+        get() = BazelModuleContext.of(bzlLoadValue.getModule()).bzlTransitiveDigest()
 
-    // Check that the .bzl file actually exports a module extension by our name.
-    Object exported = bzlLoadValue.getModule().getGlobal(extensionId.extensionName());
-    if (!(exported instanceof ModuleExtension extension)) {
-      ImmutableSet<String> exportedExtensions =
-          bzlLoadValue.getModule().getGlobals().entrySet().stream()
-              .filter(e -> e.getValue() instanceof ModuleExtension)
-              .map(Entry::getKey)
-              .collect(toImmutableSet());
-      throw ExternalDepsException.withMessage(
-          Code.BAD_MODULE,
-          "%s does not export a module extension called %s, yet its use is requested at %s%s",
-          extensionId.bzlFileLabel(),
-          extensionId.extensionName(),
-          sampleUsageLocation,
-          SpellChecker.didYouMean(extensionId.extensionName(), exportedExtensions));
+    val factsVersion: Int
+        get() = extension.factsVersion
+
+    @Throws(java.lang.InterruptedException::class, ExternalDepsException::class)
+    override fun run(
+        env: SkyFunction.Environment,
+        usagesValue: SingleExtensionUsagesValue,
+        starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?,
+        extensionId: ModuleExtensionId,
+        mainRepositoryMapping: com.google.devtools.build.lib.cmdline.RepositoryMapping?,
+        facts: Facts?
+    ): RunModuleExtensionResult? {
+        // See below (the `catch CancellationException` clause) for why there's a `while` loop here.
+        while (true) {
+            val state: WorkerSkyKeyComputeState<RunModuleExtensionResult?> =
+                env.getState<WorkerSkyKeyComputeState<RunModuleExtensionResult?>>(java.util.function.Supplier { WorkerSkyKeyComputeState<Any?>() })
+            try {
+                return state.startOrContinueWork(
+                    env,
+                    "module-extension-" + extensionId,
+                    WorkerCallable { workerEnv: SkyFunction.Environment? ->
+                        runInternal(
+                            workerEnv,
+                            usagesValue,
+                            starlarkSemantics,
+                            extensionId,
+                            mainRepositoryMapping,
+                            facts
+                        )
+                    })
+            } catch (e: ExecutionException) {
+                com.google.common.base.Throwables.throwIfInstanceOf<ExternalDepsException?>(
+                    e.getCause(),
+                    ExternalDepsException::class.java
+                )
+                com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                    e.getCause(),
+                    java.lang.InterruptedException::class.java
+                )
+                com.google.common.base.Throwables.throwIfUnchecked(e.getCause())
+                throw java.lang.IllegalStateException(
+                    "unexpected exception type: " + e.getCause().getClass(), e.getCause()
+                )
+            } catch (e: CancellationException) {
+                // This can only happen if the state object was invalidated due to memory pressure, in
+                // which case we can simply reattempt eval.
+            }
+        }
     }
 
-    ImmutableMap<String, Optional<String>> staticEnvVars =
-        RepoEnvironmentFunction.getEnvironmentView(
-            env, ImmutableSet.copyOf(extension.envVariables()));
-    if (staticEnvVars == null) {
-      return null;
+    @Throws(java.lang.InterruptedException::class, ExternalDepsException::class)
+    private fun runInternal(
+        env: SkyFunction.Environment,
+        usagesValue: SingleExtensionUsagesValue,
+        starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?,
+        extensionId: ModuleExtensionId,
+        mainRepositoryMapping: com.google.devtools.build.lib.cmdline.RepositoryMapping?,
+        facts: Facts?
+    ): RunModuleExtensionResult? {
+        env.getListener().post(ModuleExtensionEvaluationProgress.Companion.ongoing(extensionId, "starting"))
+        val threadContext: ModuleExtensionEvalStarlarkThreadContext =
+            ModuleExtensionEvalStarlarkThreadContext(
+                extensionId,
+                usagesValue.getExtensionUniqueName() + "+",
+                extensionId.bzlFileLabel.getPackageIdentifier(),
+                BazelModuleContext.of(bzlLoadValue.getModule()).repoMapping(),
+                usagesValue.getRepoOverrides(),
+                mainRepositoryMapping,
+                env.getListener()
+            )
+        val moduleExtensionMetadata: ModuleExtensionMetadata?
+        try {
+            net.starlark.java.eval.Mutability.create("module extension", usagesValue.getExtensionUniqueName())
+                .use { mu ->
+                    createContext(
+                        env,
+                        usagesValue,
+                        starlarkSemantics,
+                        extensionId,
+                        facts,
+                        bzlLoadValue
+                    ).use { moduleContext ->
+                        val thread: net.starlark.java.eval.StarlarkThread =
+                            net.starlark.java.eval.StarlarkThread.create(
+                                mu,
+                                starlarkSemantics,
+                                "module extension " + extensionId,
+                                net.starlark.java.eval.SymbolGenerator.create<ModuleExtensionId?>(extensionId)
+                            )
+                        thread.setPrintHandler(com.google.devtools.build.lib.events.Event.makeDebugPrintHandler(env.getListener()))
+                        threadContext.storeInThread(thread)
+                        moduleContext.storeRepoMappingRecorderInThread(thread)
+                        try {
+                            com.google.devtools.build.lib.profiler.Profiler.instance()
+                                .profile(
+                                    com.google.devtools.build.lib.profiler.ProfilerTask.BZLMOD,
+                                    java.util.function.Supplier { "evaluate module extension: " + extensionId })
+                                .use { c ->
+                                    val returnValue: Any =
+                                        net.starlark.java.eval.Starlark.positionalOnlyCall(
+                                            thread,
+                                            extension.implementation,
+                                            moduleContext
+                                        )
+                                    if (returnValue !== net.starlark.java.eval.Starlark.NONE && returnValue !is ModuleExtensionMetadata) {
+                                        throw ExternalDepsException.Companion.withMessage(
+                                            ExternalDeps.Code.EXTENSION_EVAL_ERROR,
+                                            "expected module extension %s to return None or extension_metadata, got %s",
+                                            extensionId,
+                                            net.starlark.java.eval.Starlark.type(returnValue)
+                                        )
+                                    }
+                                    if (returnValue is ModuleExtensionMetadata) {
+                                        moduleExtensionMetadata = returnValue
+                                    } else {
+                                        moduleExtensionMetadata = ModuleExtensionMetadata.Companion.DEFAULT
+                                    }
+                                }
+                        } catch (e: NeedsSkyframeRestartException) {
+                            // Restart by returning null.
+                            return null
+                        }
+                        moduleContext.markSuccessful()
+                        env.getListener().post(ModuleExtensionEvaluationProgress.Companion.finished(extensionId))
+                        return RunModuleExtensionResult(
+                            moduleContext.getRecordedInputs(), threadContext.createRepos(), moduleExtensionMetadata
+                        )
+                    }
+                }
+        } catch (e: net.starlark.java.eval.EvalException) {
+            if (e.getCause() !is ExternalDepsException) {
+                // ExternalDepsException events should already have been reported.
+                env.getListener().handle(
+                    com.google.devtools.build.lib.events.Event.error(
+                        e.getInnermostLocation(),
+                        e.getMessageWithStack()
+                    )
+                )
+            }
+            throw withMessage(
+                ExternalDeps.Code.EXTENSION_EVAL_ERROR,
+                "error evaluating module extension %s",
+                extensionId
+            )
+        } catch (e: IOException) {
+            throw ExternalDepsException.Companion.withCauseAndMessage(
+                ExternalDeps.Code.EXTERNAL_DEPS_UNKNOWN,
+                e,
+                "Failed to clean up module context directory"
+            )
+        }
     }
-    return new RegularRunnableExtension(
-        bzlLoadValue,
-        extension,
-        staticEnvVars,
-        directories,
-        repoEnv,
-        nonstrictRepoEnv,
-        timeoutScaling,
-        processWrapper,
-        repositoryRemoteExecutor,
-        downloadManager);
-  }
 
-  @Override
-  public ModuleExtensionEvalFactors getEvalFactors() {
-    return ModuleExtensionEvalFactors.create(
-        extension.osDependent() ? OS.getCurrent().toString() : "",
-        extension.archDependent() ? OS_ARCH.value() : "");
-  }
-
-  @Override
-  public byte[] getBzlTransitiveDigest() {
-    return BazelModuleContext.of(bzlLoadValue.getModule()).bzlTransitiveDigest();
-  }
-
-  @Override
-  public int getFactsVersion() {
-    return extension.factsVersion();
-  }
-
-  @Nullable
-  @Override
-  public RunModuleExtensionResult run(
-      Environment env,
-      SingleExtensionUsagesValue usagesValue,
-      StarlarkSemantics starlarkSemantics,
-      ModuleExtensionId extensionId,
-      RepositoryMapping mainRepositoryMapping,
-      Facts facts)
-      throws InterruptedException, ExternalDepsException {
-    // See below (the `catch CancellationException` clause) for why there's a `while` loop here.
-    while (true) {
-      var state = env.getState(WorkerSkyKeyComputeState<RunModuleExtensionResult>::new);
-      try {
-        return state.startOrContinueWork(
+    @Throws(ExternalDepsException::class)
+    private fun createContext(
+        env: SkyFunction.Environment?,
+        usagesValue: SingleExtensionUsagesValue,
+        starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?,
+        extensionId: ModuleExtensionId?,
+        facts: Facts?,
+        bzlLoadValue: BzlLoadValue
+    ): ModuleExtensionContext {
+        val staticRepoMappingRecorder: SimpleRepoMappingRecorder = SimpleRepoMappingRecorder()
+        staticRepoMappingRecorder.record(bzlLoadValue.getRecordedRepoMappings())
+        val workingDirectory: com.google.devtools.build.lib.vfs.Path? =
+            directories
+                .getOutputBase()
+                .getRelative(LabelConstants.MODULE_EXTENSION_WORKING_DIRECTORY_LOCATION)
+                .getRelative(usagesValue.getExtensionUniqueName())
+        val modules: java.util.ArrayList<StarlarkBazelModule?> = java.util.ArrayList<StarlarkBazelModule?>()
+        val abridgedModules: com.google.common.collect.ImmutableList<AbridgedModule> = usagesValue.getAbridgedModules()
+        for (i in abridgedModules.indices) {
+            val abridgedModule: AbridgedModule = abridgedModules.get(i)
+            val moduleKey: ModuleKey? = abridgedModule.getKey()
+            modules.add(
+                StarlarkBazelModule.Companion.create(
+                    abridgedModule,
+                    extension,
+                    usagesValue.getRepoMappings().get(moduleKey),
+                    usagesValue.getExtensionUsages().get(moduleKey),
+                    staticRepoMappingRecorder,
+                    i
+                )
+            )
+        }
+        val rootUsage: ModuleExtensionUsage? = usagesValue.getExtensionUsages().get(ModuleKey.Companion.ROOT)
+        val rootModuleHasNonDevDependency =
+            rootUsage != null && rootUsage.getHasNonDevUseExtension()
+        return ModuleExtensionContext(
+            workingDirectory,
+            directories,
             env,
-            "module-extension-" + extensionId,
-            (workerEnv) ->
-                runInternal(
-                    workerEnv,
-                    usagesValue,
-                    starlarkSemantics,
-                    extensionId,
-                    mainRepositoryMapping,
-                    facts));
-      } catch (ExecutionException e) {
-        Throwables.throwIfInstanceOf(e.getCause(), ExternalDepsException.class);
-        Throwables.throwIfInstanceOf(e.getCause(), InterruptedException.class);
-        Throwables.throwIfUnchecked(e.getCause());
-        throw new IllegalStateException(
-            "unexpected exception type: " + e.getCause().getClass(), e.getCause());
-      } catch (CancellationException e) {
-        // This can only happen if the state object was invalidated due to memory pressure, in
-        // which case we can simply reattempt eval.
-      }
-    }
-  }
-
-  @Nullable
-  private RunModuleExtensionResult runInternal(
-      Environment env,
-      SingleExtensionUsagesValue usagesValue,
-      StarlarkSemantics starlarkSemantics,
-      ModuleExtensionId extensionId,
-      RepositoryMapping mainRepositoryMapping,
-      Facts facts)
-      throws InterruptedException, ExternalDepsException {
-    env.getListener().post(ModuleExtensionEvaluationProgress.ongoing(extensionId, "starting"));
-    ModuleExtensionEvalStarlarkThreadContext threadContext =
-        new ModuleExtensionEvalStarlarkThreadContext(
+            repoEnv,
+            nonstrictRepoEnv,
+            downloadManager,
+            timeoutScaling,
+            processWrapper,
+            starlarkSemantics,
+            repositoryRemoteExecutor,
             extensionId,
-            usagesValue.getExtensionUniqueName() + "+",
-            extensionId.bzlFileLabel().getPackageIdentifier(),
-            BazelModuleContext.of(bzlLoadValue.getModule()).repoMapping(),
-            usagesValue.getRepoOverrides(),
-            mainRepositoryMapping,
-            env.getListener());
-    ModuleExtensionMetadata moduleExtensionMetadata;
-    try (Mutability mu =
-            Mutability.create("module extension", usagesValue.getExtensionUniqueName());
-        ModuleExtensionContext moduleContext =
-            createContext(env, usagesValue, starlarkSemantics, extensionId, facts, bzlLoadValue)) {
-      StarlarkThread thread =
-          StarlarkThread.create(
-              mu,
-              starlarkSemantics,
-              "module extension " + extensionId,
-              SymbolGenerator.create(extensionId));
-      thread.setPrintHandler(Event.makeDebugPrintHandler(env.getListener()));
-      threadContext.storeInThread(thread);
-      moduleContext.storeRepoMappingRecorderInThread(thread);
-      try (SilentCloseable c =
-          Profiler.instance()
-              .profile(ProfilerTask.BZLMOD, () -> "evaluate module extension: " + extensionId)) {
-        Object returnValue =
-            Starlark.positionalOnlyCall(thread, extension.implementation(), moduleContext);
-        if (returnValue != Starlark.NONE && !(returnValue instanceof ModuleExtensionMetadata)) {
-          throw ExternalDepsException.withMessage(
-              ExternalDeps.Code.EXTENSION_EVAL_ERROR,
-              "expected module extension %s to return None or extension_metadata, got %s",
-              extensionId,
-              Starlark.type(returnValue));
-        }
-        if (returnValue instanceof ModuleExtensionMetadata retMetadata) {
-          moduleExtensionMetadata = retMetadata;
-        } else {
-          moduleExtensionMetadata = ModuleExtensionMetadata.DEFAULT;
-        }
-      } catch (NeedsSkyframeRestartException e) {
-        // Restart by returning null.
-        return null;
-      }
-      moduleContext.markSuccessful();
-      env.getListener().post(ModuleExtensionEvaluationProgress.finished(extensionId));
-      return new RunModuleExtensionResult(
-          moduleContext.getRecordedInputs(), threadContext.createRepos(), moduleExtensionMetadata);
-    } catch (EvalException e) {
-      if (!(e.getCause() instanceof ExternalDepsException)) {
-        // ExternalDepsException events should already have been reported.
-        env.getListener().handle(Event.error(e.getInnermostLocation(), e.getMessageWithStack()));
-      }
-      throw ExternalDepsException.withMessage(
-          ExternalDeps.Code.EXTENSION_EVAL_ERROR,
-          "error evaluating module extension %s",
-          extensionId);
-    } catch (IOException e) {
-      throw ExternalDepsException.withCauseAndMessage(
-          ExternalDeps.Code.EXTERNAL_DEPS_UNKNOWN,
-          e,
-          "Failed to clean up module context directory");
+            net.starlark.java.eval.StarlarkList.immutableCopyOf<StarlarkBazelModule?>(modules),
+            facts,
+            rootModuleHasNonDevDependency,
+            staticEnvVars,
+            staticRepoMappingRecorder.recordedEntries()
+        )
     }
-  }
 
-  private ModuleExtensionContext createContext(
-      Environment env,
-      SingleExtensionUsagesValue usagesValue,
-      StarlarkSemantics starlarkSemantics,
-      ModuleExtensionId extensionId,
-      Facts facts,
-      BzlLoadValue bzlLoadValue)
-      throws ExternalDepsException {
-    var staticRepoMappingRecorder = new Label.SimpleRepoMappingRecorder();
-    staticRepoMappingRecorder.record(bzlLoadValue.getRecordedRepoMappings());
-    Path workingDirectory =
-        directories
-            .getOutputBase()
-            .getRelative(LabelConstants.MODULE_EXTENSION_WORKING_DIRECTORY_LOCATION)
-            .getRelative(usagesValue.getExtensionUniqueName());
-    ArrayList<StarlarkBazelModule> modules = new ArrayList<>();
-    ImmutableList<AbridgedModule> abridgedModules = usagesValue.getAbridgedModules();
-    for (int i = 0; i < abridgedModules.size(); i++) {
-      var abridgedModule = abridgedModules.get(i);
-      var moduleKey = abridgedModule.getKey();
-      modules.add(
-          StarlarkBazelModule.create(
-              abridgedModule,
-              extension,
-              usagesValue.getRepoMappings().get(moduleKey),
-              usagesValue.getExtensionUsages().get(moduleKey),
-              staticRepoMappingRecorder,
-              i));
+    companion object {
+        @Throws(ExternalDepsException::class, java.lang.InterruptedException::class)
+        private fun loadBzlFile(
+            bzlFileLabel: com.google.devtools.build.lib.cmdline.Label?,
+            sampleUsageLocation: net.starlark.java.syntax.Location?,
+            starlarkSemantics: net.starlark.java.eval.StarlarkSemantics,
+            env: SkyFunction.Environment
+        ): BzlLoadValue? {
+            // Check that the .bzl label isn't crazy.
+            try {
+                BzlLoadFunction.checkValidLoadLabel(bzlFileLabel, starlarkSemantics)
+            } catch (e: LabelSyntaxException) {
+                throw ExternalDepsException.Companion.withCauseAndMessage(
+                    Code.BAD_MODULE, e, "invalid module extension label"
+                )
+            }
+
+            // Load the .bzl file pointed to by the label.
+            val bzlLoadValue: BzlLoadValue?
+            try {
+                bzlLoadValue =
+                    env.getValueOrThrow<BzlLoadFailedException?>(
+                        BzlLoadValue.keyForBzlmod(bzlFileLabel), BzlLoadFailedException::class.java
+                    ) as BzlLoadValue?
+            } catch (e: BzlLoadFailedException) {
+                throw ExternalDepsException.Companion.withCauseAndMessage(
+                    Code.BAD_MODULE,
+                    e,
+                    "Error loading '%s' for module extensions, requested by %s: %s",
+                    bzlFileLabel,
+                    sampleUsageLocation,
+                    e.getMessage()
+                )
+            }
+            return bzlLoadValue
+        }
+
+        /** Returns null if a Skyframe restart is required.  */
+        @Throws(java.lang.InterruptedException::class, ExternalDepsException::class)
+        fun load(
+            extensionId: ModuleExtensionId,
+            usagesValue: SingleExtensionUsagesValue,
+            starlarkSemantics: net.starlark.java.eval.StarlarkSemantics,
+            env: SkyFunction.Environment,
+            directories: BlazeDirectories,
+            repoEnv: com.google.common.collect.ImmutableMap<String?, String?>?,
+            nonstrictRepoEnv: com.google.common.collect.ImmutableMap<String?, String?>?,
+            timeoutScaling: Double,
+            processWrapper: ProcessWrapper?,
+            repositoryRemoteExecutor: RepositoryRemoteExecutor?,
+            downloadManager: DownloadManager?
+        ): RegularRunnableExtension? {
+            val sampleUsage: ModuleExtensionUsage = usagesValue.getExtensionUsages().values().iterator().next()
+            val sampleUsageLocation: net.starlark.java.syntax.Location? =
+                sampleUsage.getProxies().getFirst().getLocation()
+            val bzlLoadValue: BzlLoadValue? =
+                loadBzlFile(extensionId.bzlFileLabel, sampleUsageLocation, starlarkSemantics, env)
+            if (bzlLoadValue == null) {
+                return null
+            }
+
+            // TODO(wyv): Consider whether there's a need to check .bzl load visibility
+            // (BzlLoadFunction#checkLoadVisibilities).
+            // TODO(wyv): Consider refactoring to use PackageFunction#loadBzlModules, or the simpler API
+            // that may be created by b/237658764.
+
+            // Check that the .bzl file actually exports a module extension by our name.
+            val exported: Any? = bzlLoadValue.getModule().getGlobal(extensionId.extensionName)
+            if (exported !is ModuleExtension) {
+                val exportedExtensions: com.google.common.collect.ImmutableSet<String?> =
+                    bzlLoadValue.getModule().getGlobals().entrySet().stream()
+                        .filter(java.util.function.Predicate { e: MutableMap.MutableEntry<String?, Any?>? -> e.getValue() is ModuleExtension })
+                        .map<String?>(java.util.function.Function { obj: MutableMap.MutableEntry<String?, Any?>? -> obj.getKey() })
+                        .collect(com.google.common.collect.ImmutableSet.toImmutableSet<String?>())
+                throw ExternalDepsException.Companion.withMessage(
+                    Code.BAD_MODULE,
+                    "%s does not export a module extension called %s, yet its use is requested at %s%s",
+                    extensionId.bzlFileLabel,
+                    extensionId.extensionName,
+                    sampleUsageLocation,
+                    net.starlark.java.spelling.SpellChecker.didYouMean(extensionId.extensionName, exportedExtensions)
+                )
+            }
+
+            val staticEnvVars: com.google.common.collect.ImmutableMap<String?, java.util.Optional<String?>?>? =
+                RepoEnvironmentFunction.getEnvironmentView(
+                    env, com.google.common.collect.ImmutableSet.copyOf<String?>(exported.envVariables)
+                )
+            if (staticEnvVars == null) {
+                return null
+            }
+            return RegularRunnableExtension(
+                bzlLoadValue,
+                exported,
+                staticEnvVars,
+                directories,
+                repoEnv,
+                nonstrictRepoEnv,
+                timeoutScaling,
+                processWrapper,
+                repositoryRemoteExecutor,
+                downloadManager
+            )
+        }
     }
-    ModuleExtensionUsage rootUsage = usagesValue.getExtensionUsages().get(ModuleKey.ROOT);
-    boolean rootModuleHasNonDevDependency =
-        rootUsage != null && rootUsage.getHasNonDevUseExtension();
-    return new ModuleExtensionContext(
-        workingDirectory,
-        directories,
-        env,
-        repoEnv,
-        nonstrictRepoEnv,
-        downloadManager,
-        timeoutScaling,
-        processWrapper,
-        starlarkSemantics,
-        repositoryRemoteExecutor,
-        extensionId,
-        StarlarkList.immutableCopyOf(modules),
-        facts,
-        rootModuleHasNonDevDependency,
-        staticEnvVars,
-        staticRepoMappingRecorder.recordedEntries());
-  }
 }

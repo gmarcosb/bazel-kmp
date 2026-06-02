@@ -11,70 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.options;
+package com.google.devtools.build.lib.remote.options
 
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.Converters.RegexPatternConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.RegexPatternOption;
-import java.time.Duration;
-import java.util.List;
-import java.util.regex.Pattern;
+import com.google.devtools.common.options.*
+import java.time.Duration
+import java.util.regex.Pattern
 
-/** Options for remote execution and distributed caching that shared between Bazel and Blaze. */
+/** Options for remote execution and distributed caching that shared between Bazel and Blaze.  */
 @OptionsClass
-public abstract class CommonRemoteOptions extends OptionsBase {
-  @Option(
-      name = "remote_download_regex",
-      oldName = "experimental_remote_download_regex",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.REMOTE,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      converter = RegexPatternConverter.class,
-      help =
-          "Force remote build outputs whose path matches this pattern to be downloaded,"
-              + " irrespective of --remote_download_outputs. Multiple patterns may be specified by"
-              + " repeating this flag.")
-  public abstract List<RegexPatternOption> getRemoteDownloadRegex();
+abstract class CommonRemoteOptions : OptionsBase() {
+    @get:Option(
+        name = "remote_download_regex",
+        oldName = "experimental_remote_download_regex",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = OptionDocumentationCategory.REMOTE,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        converter = Converters.RegexPatternConverter::class,
+        help = ("Force remote build outputs whose path matches this pattern to be downloaded,"
+                + " irrespective of --remote_download_outputs. Multiple patterns may be specified by"
+                + " repeating this flag.")
+    )
+    abstract val remoteDownloadRegex: MutableList<RegexPatternOption?>?
 
-  @Option(
-      name = "experimental_remote_cache_ttl",
-      defaultValue = "3h",
-      documentationCategory = OptionDocumentationCategory.REMOTE,
-      effectTags = {OptionEffectTag.EXECUTION},
-      converter = RemoteDurationConverter.class,
-      help =
-          "The guaranteed minimal TTL of blobs in the remote cache after their digests are recently"
-              + " referenced e.g. by an ActionResult or FindMissingBlobs. Bazel does several"
-              + " optimizations based on the blobs' TTL e.g. doesn't repeatedly call"
-              + " GetActionResult in an incremental build. The value should be set slightly less"
-              + " than the real TTL since there is a gap between when the server returns the"
-              + " digests and when Bazel receives them.")
-  public abstract Duration getRemoteCacheTtl();
+    @get:Option(
+        name = "experimental_remote_cache_ttl",
+        defaultValue = "3h",
+        documentationCategory = OptionDocumentationCategory.REMOTE,
+        effectTags = [OptionEffectTag.EXECUTION],
+        converter = RemoteDurationConverter::class,
+        help = ("The guaranteed minimal TTL of blobs in the remote cache after their digests are recently"
+                + " referenced e.g. by an ActionResult or FindMissingBlobs. Bazel does several"
+                + " optimizations based on the blobs' TTL e.g. doesn't repeatedly call"
+                + " GetActionResult in an incremental build. The value should be set slightly less"
+                + " than the real TTL since there is a gap between when the server returns the"
+                + " digests and when Bazel receives them.")
+    )
+    abstract val remoteCacheTtl: Duration?
 
-  /** Returns the specified duration. Assumes seconds if unitless. */
-  public static class RemoteDurationConverter extends Converter.Contextless<Duration> {
+    /** Returns the specified duration. Assumes seconds if unitless.  */
+    class RemoteDurationConverter : Converter.Contextless<Duration?>() {
+        @Throws(OptionsParsingException::class)
+        override fun convert(input: String?): Duration? {
+            var input = input
+            if (UNITLESS_REGEX.matcher(input).matches()) {
+                input += "s"
+            }
+            return Converters.DurationConverter().convert(input,  /* conversionContext= */null)
+        }
 
-    private static final Pattern UNITLESS_REGEX = Pattern.compile("^[0-9]+$");
+        override fun getTypeDescription(): String {
+            return "An immutable length of time."
+        }
 
-    @Override
-    public Duration convert(String input) throws OptionsParsingException {
-      if (UNITLESS_REGEX.matcher(input).matches()) {
-        input += "s";
-      }
-      return new Converters.DurationConverter().convert(input, /* conversionContext= */ null);
+        companion object {
+            private val UNITLESS_REGEX: Pattern = Pattern.compile("^[0-9]+$")
+        }
     }
-
-    @Override
-    public String getTypeDescription() {
-      return "An immutable length of time.";
-    }
-  }
 }

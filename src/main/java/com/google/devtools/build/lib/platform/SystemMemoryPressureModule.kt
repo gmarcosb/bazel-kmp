@@ -11,36 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Responsible for registering the current reporter with the SystemMemoryPressureMonitor.  */
+class SystemMemoryPressureModule : BlazeModule() {
+    override fun workspaceInit(
+        runtime: BlazeRuntime, directories: BlazeDirectories?, builder: WorkspaceBuilder?
+    ) {
+        SystemMemoryPressureMonitor.Companion.getInstance()
+            .registerJniService(
+                com.google.common.base.Preconditions.checkNotNull<PlatformNativeDepsService?>(
+                    runtime.getBlazeService<PlatformNativeDepsService?>(
+                        PlatformNativeDepsService::class.java
+                    )
+                )
+            )
+    }
 
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
+    @kotlin.jvm.Synchronized
+    override fun beforeCommand(env: CommandEnvironment) {
+        SystemMemoryPressureMonitor.Companion.getInstance().setReporter(env.getReporter())
+    }
 
-/** Responsible for registering the current reporter with the SystemMemoryPressureMonitor. */
-public final class SystemMemoryPressureModule extends BlazeModule {
-
-  public SystemMemoryPressureModule() {}
-
-  @Override
-  public void workspaceInit(
-      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {
-    SystemMemoryPressureMonitor.getInstance()
-        .registerJniService(checkNotNull(runtime.getBlazeService(PlatformNativeDepsService.class)));
-  }
-
-  @Override
-  public synchronized void beforeCommand(CommandEnvironment env) {
-    SystemMemoryPressureMonitor.getInstance().setReporter(env.getReporter());
-  }
-
-  @Override
-  public synchronized void afterCommand() {
-    SystemMemoryPressureMonitor.getInstance().setReporter(null);
-  }
+    @kotlin.jvm.Synchronized
+    override fun afterCommand() {
+        SystemMemoryPressureMonitor.Companion.getInstance().setReporter(null)
+    }
 }

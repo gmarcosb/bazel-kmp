@@ -11,105 +11,106 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.base.Ascii;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import java.util.Collection;
+import com.google.common.base.Ascii
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
 /**
  * Base class for expressions in the Blaze query language, revision 2.
- *
- * <p>All queries return a subgraph of the dependency graph, represented
+ * 
+ * 
+ * All queries return a subgraph of the dependency graph, represented
  * as a set of target nodes.
- *
- * <p>All queries must ensure that sufficient graph edges are created in the
+ * 
+ * 
+ * All queries must ensure that sufficient graph edges are created in the
  * QueryEnvironment so that all nodes in the result are correctly ordered
  * according to the type of query.  For example, "deps" queries require that
  * all the nodes in the transitive closure of its argument set are correctly
  * ordered w.r.t. each other; "somepath" queries require that the order of the
  * nodes on the resulting path are correctly ordered; algebraic set operations
  * such as intersect and union are inherently unordered.
- *
+ * 
  * <h2>Package overview</h2>
- *
- * <p>This package consists of two basic class hierarchies.  The first, {@code
- * QueryExpression}, is the set of different query expressions in the language,
- * and the {@link #eval} method of each defines the semantics.  The result of
- * evaluating a query is set of Blaze {@code Target}s (a file or rule).  The
+ * 
+ * 
+ * This package consists of two basic class hierarchies.  The first, `QueryExpression`, is the set of different query expressions in the language,
+ * and the [.eval] method of each defines the semantics.  The result of
+ * evaluating a query is set of Blaze `Target`s (a file or rule).  The
  * set may be interpreted as either a set or as nodes of a DAG, depending on
  * the context.
- *
- * <p>The second hierarchy is {@code OutputFormatter}.  Its subclasses define
- * different ways of printing out the result of a query.  Each accepts a {@code
- * Digraph} of {@code Target}s, and an output stream.
+ * 
+ * 
+ * The second hierarchy is `OutputFormatter`.  Its subclasses define
+ * different ways of printing out the result of a query.  Each accepts a `Digraph` of `Target`s, and an output stream.
  */
 @ThreadSafe
-public abstract class QueryExpression {
+abstract class QueryExpression protected constructor() {
+    /**
+     * Returns a [QueryTaskFuture] representing the asynchronous evaluation of this query in the
+     * specified environment, notifying the callback with a result. Note that it is allowed to notify
+     * the callback with partial results instead of just one final result.
+     * 
+     * 
+     * Failures resulting from evaluation of an ill-formed query cause QueryException to be thrown.
+     * 
+     * 
+     * The reporting of failures arising from errors in BUILD files depends on the --keep_going
+     * flag. If enabled (the default), then QueryException is thrown. If disabled, evaluation will
+     * stumble on to produce a (possibly inaccurate) result, but a result nonetheless.
+     */
+    abstract fun <T> eval(
+        env: QueryEnvironment<T?>?, context: QueryExpressionContext<T?>?, callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>?
 
-  private static final int MAX_QUERY_EXPRESSION_LOG_CHARS = 1000;
+    /**
+     * Collects all target patterns that are referenced anywhere within this query expression and adds
+     * them to the given collection, which must be mutable.
+     */
+    abstract fun collectTargetPatterns(literals: MutableCollection<String?>?)
 
-  /** Scan and parse the specified query expression. */
-  public static QueryExpression parse(String query, QueryEnvironment<?> env)
-      throws QuerySyntaxException {
-    return QueryParser.parse(query, env);
-  }
+    /** Implementations should just be `return visitor.visit(this, context)`.  */
+    abstract fun <T, C> accept(visitor: QueryExpressionVisitor<T?, C?>?, context: C?): T?
 
-  protected QueryExpression() {}
+    fun <T> accept(visitor: QueryExpressionVisitor<T?, Void?>?): T? {
+        return accept<T?, Void?>(visitor,  /*context=*/null)
+    }
 
-  /**
-   * Returns a {@link QueryTaskFuture} representing the asynchronous evaluation of this query in the
-   * specified environment, notifying the callback with a result. Note that it is allowed to notify
-   * the callback with partial results instead of just one final result.
-   *
-   * <p>Failures resulting from evaluation of an ill-formed query cause QueryException to be thrown.
-   *
-   * <p>The reporting of failures arising from errors in BUILD files depends on the --keep_going
-   * flag. If enabled (the default), then QueryException is thrown. If disabled, evaluation will
-   * stumble on to produce a (possibly inaccurate) result, but a result nonetheless.
-   */
-  public abstract <T> QueryTaskFuture<Void> eval(
-      QueryEnvironment<T> env, QueryExpressionContext<T> context, Callback<T> callback);
+    /** Returns this query expression pretty-printed.  */
+    abstract override fun toString(): String
 
-  /**
-   * Collects all target patterns that are referenced anywhere within this query expression and adds
-   * them to the given collection, which must be mutable.
-   */
-  public abstract void collectTargetPatterns(Collection<String> literals);
+    /**
+     * Returns this query expression pretty-printed, and truncated to a max of 1000 characters.
+     * 
+     * 
+     * Helpful for preparing text for logging or human-readable display, because query expressions
+     * may be very long.
+     */
+    fun toTrunctatedString(): String {
+        return truncate(toString())
+    }
 
-  /** Implementations should just be {@code return visitor.visit(this, context)}. */
-  public abstract <T, C> T accept(QueryExpressionVisitor<T, C> visitor, C context);
+    val isTopLevelSomePathFunction: Boolean
+        /** Checks if this QueryExpression has a SomePathFunction at its top level.  */
+        get() = this is FunctionExpression
+                && "somepath" == functionExpression.getFunction().getName()
 
-  public final <T> T accept(QueryExpressionVisitor<T, Void> visitor) {
-    return accept(visitor, /*context=*/ null);
-  }
+    companion object {
+        private const val MAX_QUERY_EXPRESSION_LOG_CHARS = 1000
 
-  /** Returns this query expression pretty-printed. */
-  @Override
-  public abstract String toString();
+        /** Scan and parse the specified query expression.  */
+        @Throws(QuerySyntaxException::class)
+        fun parse(query: String?, env: QueryEnvironment<*>): QueryExpression? {
+            return QueryParser.Companion.parse(query, env)
+        }
 
-  /**
-   * Returns this query expression pretty-printed, and truncated to a max of 1000 characters.
-   *
-   * <p>Helpful for preparing text for logging or human-readable display, because query expressions
-   * may be very long.
-   */
-  public final String toTrunctatedString() {
-    return truncate(toString());
-  }
-
-  /**
-   * Truncates the provided string to a max of 1000 characters, in the fashion of {@link
-   * #toTrunctatedString()}.
-   */
-  public static String truncate(String expr) {
-    return Ascii.truncate(expr, MAX_QUERY_EXPRESSION_LOG_CHARS, "[truncated]");
-  }
-
-  /** Checks if this QueryExpression has a SomePathFunction at its top level. */
-  public boolean isTopLevelSomePathFunction() {
-    return this instanceof FunctionExpression functionExpression
-        && "somepath".equals(functionExpression.getFunction().getName());
-  }
+        /**
+         * Truncates the provided string to a max of 1000 characters, in the fashion of [ ][.toTrunctatedString].
+         */
+        @kotlin.jvm.JvmStatic
+        fun truncate(expr: String): String {
+            return Ascii.truncate(expr, MAX_QUERY_EXPRESSION_LOG_CHARS, "[truncated]")
+        }
+    }
 }

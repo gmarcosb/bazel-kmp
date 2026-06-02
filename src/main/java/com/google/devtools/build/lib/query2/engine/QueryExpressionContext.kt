@@ -11,77 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Map;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSetMultimap
+import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 
 /**
- * An immutable context, including variable bindings for variables introduced by {@link
- * LetExpression}s.
+ * An immutable context, including variable bindings for variables introduced by [ ]s.
  */
 @Immutable
 @ThreadSafe
-public class QueryExpressionContext<T> {
-  protected final ImmutableMap<String, Set<T>> context;
-
-  protected QueryExpressionContext(ImmutableMap<String, Set<T>> context) {
-    this.context = context;
-  }
-
-  /**
-   * Returns the value bound to the specified variable given by {@code name}, or {@code null} if
-   * there is no such binding.
-   */
-  @Nullable
-  Set<T> get(String name) {
-    return context.get(name);
-  }
-
-  /** Returns a {@link QueryExpressionContext} with no variables defined. */
-  public static <T> QueryExpressionContext<T> empty() {
-    return new QueryExpressionContext<>(ImmutableMap.<String, Set<T>>of());
-  }
-  /**
-   * Returns a {@link QueryExpressionContext} that has all the same bindings as the given {@code
-   * variableContext} and also the binding of {@code name} to {@code value}.
-   */
-  protected QueryExpressionContext<T> with(String name, Set<T> value) {
-    return new QueryExpressionContext<>(withNewVariable(name, value));
-  }
-
-  protected final ImmutableMap<String, Set<T>> withNewVariable(String name, Set<T> value) {
-    ImmutableMap.Builder<String, Set<T>> newContextBuilder = ImmutableMap.builder();
-    for (Map.Entry<String, Set<T>> entry : context.entrySet()) {
-      if (!entry.getKey().equals(name)) {
-        // The binding of 'name' to 'value' should override any existing binding of name in
-        // 'variableContext'. These are the semantics we want in order for nested let-expressions
-        // to have the semantics we want.
-        newContextBuilder.put(entry);
-      }
+class QueryExpressionContext<T> protected constructor(protected val context: ImmutableMap<String?, MutableSet<T?>?>) {
+    /**
+     * Returns the value bound to the specified variable given by `name`, or `null` if
+     * there is no such binding.
+     */
+    fun get(name: String?): MutableSet<T?>? {
+        return context.get(name)
     }
-    newContextBuilder.put(name, value);
-    return newContextBuilder.buildOrThrow();
-  }
 
-  /**
-   * A globally defined map of extra dependency edges. If `//a -> //b` is an entry in this map, then
-   * any dependency evaluation of the graph should behave as if `//a` depends on `//b`.
-   */
-  public ImmutableSetMultimap<SkyKey, SkyKey> extraGlobalDeps() {
-    // Only subclasses of this class support extra global deps.
-    return ImmutableSetMultimap.<SkyKey, SkyKey>of();
-  }
+    /**
+     * Returns a [QueryExpressionContext] that has all the same bindings as the given `variableContext` and also the binding of `name` to `value`.
+     */
+    fun with(name: String?, value: MutableSet<T?>?): QueryExpressionContext<T?> {
+        return QueryExpressionContext<T?>(withNewVariable(name, value))
+    }
 
-  @Override
-  public String toString() {
-    return "QueryExpressionContext: " + context;
-  }
+    protected fun withNewVariable(name: String?, value: MutableSet<T?>?): ImmutableMap<String?, MutableSet<T?>?> {
+        val newContextBuilder = ImmutableMap.builder<String?, MutableSet<T?>?>()
+        for (entry in context.entries) {
+            if (entry.key != name) {
+                // The binding of 'name' to 'value' should override any existing binding of name in
+                // 'variableContext'. These are the semantics we want in order for nested let-expressions
+                // to have the semantics we want.
+                newContextBuilder.put(entry)
+            }
+        }
+        newContextBuilder.put(name, value)
+        return newContextBuilder.buildOrThrow()
+    }
+
+    /**
+     * A globally defined map of extra dependency edges. If `//a -> //b` is an entry in this map, then
+     * any dependency evaluation of the graph should behave as if `//a` depends on `//b`.
+     */
+    fun extraGlobalDeps(): ImmutableSetMultimap<SkyKey?, SkyKey?> {
+        // Only subclasses of this class support extra global deps.
+        return ImmutableSetMultimap.of<SkyKey?, SkyKey?>()
+    }
+
+    override fun toString(): String {
+        return "QueryExpressionContext: " + context
+    }
+
+    companion object {
+        /** Returns a [QueryExpressionContext] with no variables defined.  */
+        fun <T> empty(): QueryExpressionContext<T?> {
+            return QueryExpressionContext<T?>(ImmutableMap.of<String?, MutableSet<T?>?>())
+        }
+    }
 }
 

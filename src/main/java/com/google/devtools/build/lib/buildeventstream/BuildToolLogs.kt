@@ -11,109 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventstream;
+package com.google.devtools.build.lib.buildeventstream
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.protobuf.ByteString;
-import java.util.Collection;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
-/** Event reporting on statistics about the build. */
-public class BuildToolLogs implements BuildEventWithOrderConstraint {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+/** Event reporting on statistics about the build.  */
+class BuildToolLogs(
+    directValues: MutableList<com.google.devtools.build.lib.util.Pair<String?, ByteString?>>,
+    futureUris: MutableList<com.google.devtools.build.lib.util.Pair<String?, com.google.common.util.concurrent.ListenableFuture<String?>?>>,
+    logFiles: MutableList<LogFileEntry>
+) : BuildEventWithOrderConstraint {
+    /** These values are posted as byte strings to the BEP.  */
+    private val directValues: MutableList<com.google.devtools.build.lib.util.Pair<String?, ByteString?>>
 
-  /** These values are posted as byte strings to the BEP. */
-  private final List<Pair<String, ByteString>> directValues;
+    /** These values are posted as Future URIs to the BEP.  */
+    private val futureUris: MutableList<com.google.devtools.build.lib.util.Pair<String?, com.google.common.util.concurrent.ListenableFuture<String?>?>>
 
-  /** These values are posted as Future URIs to the BEP. */
-  private final List<Pair<String, ListenableFuture<String>>> futureUris;
+    /**
+     * These values are local files that are uploaded if required, and turned into URIs as part of the
+     * process.
+     */
+    private val logFiles: MutableList<LogFileEntry>
 
-  /**
-   * These values are local files that are uploaded if required, and turned into URIs as part of the
-   * process.
-   */
-  private final List<LogFileEntry> logFiles;
-
-  public BuildToolLogs(
-      List<Pair<String, ByteString>> directValues,
-      List<Pair<String, ListenableFuture<String>>> futureUris,
-      List<LogFileEntry> logFiles) {
-    this.directValues = directValues;
-    this.futureUris = futureUris;
-    this.logFiles = logFiles;
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.buildToolLogs();
-  }
-
-  @Override
-  public ImmutableList<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
-
-  @Override
-  public List<LocalFile> referencedLocalFiles() {
-    return Lists.transform(logFiles, LogFileEntry::localFile);
-  }
-
-  @Override
-  public List<ListenableFuture<String>> remoteUploads() {
-    return Lists.transform(futureUris, Pair::getSecond);
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.BuildToolLogs.Builder toolLogs =
-        BuildEventStreamProtos.BuildToolLogs.newBuilder();
-    for (Pair<String, ByteString> direct : directValues) {
-      toolLogs.addLog(
-          BuildEventStreamProtos.File.newBuilder()
-              .setName(direct.getFirst())
-              .setContents(direct.getSecond())
-              .build());
+    init {
+        this.directValues = directValues
+        this.futureUris = futureUris
+        this.logFiles = logFiles
     }
-    for (Pair<String, ListenableFuture<String>> directFuturePair : futureUris) {
-      String name = directFuturePair.getFirst();
-      ListenableFuture<String> directFuture = directFuturePair.getSecond();
-      try {
-        String uri =
-            directFuture.isDone() && !directFuture.isCancelled()
-                ? Futures.getDone(directFuture)
-                : null;
-        if (uri != null) {
-          toolLogs.addLog(
-              BuildEventStreamProtos.File.newBuilder().setName(name).setUri(uri).build());
-        } else {
-          logger.atInfo().log("Dropped unfinished upload: %s (%s)", name, directFuture);
+
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.buildToolLogs()
+
+    val childrenEvents: com.google.common.collect.ImmutableList<BuildEventId?>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
+
+    override fun referencedLocalFiles(): MutableList<LocalFile?> {
+        return com.google.common.collect.Lists.transform<LogFileEntry?, LocalFile?>(logFiles, LogFileEntry::localFile)
+    }
+
+    override fun remoteUploads(): MutableList<com.google.common.util.concurrent.ListenableFuture<String?>?> {
+        return com.google.common.collect.Lists.transform<com.google.devtools.build.lib.util.Pair<String?, com.google.common.util.concurrent.ListenableFuture<String?>?>?, com.google.common.util.concurrent.ListenableFuture<String?>?>(
+            futureUris,
+            com.google.common.base.Function { obj: com.google.devtools.build.lib.util.Pair<kotlin.String?, com.google.common.util.concurrent.ListenableFuture<kotlin.String?>?>? -> obj.getSecond() })
+    }
+
+    override fun asStreamProto(converters: BuildEventContext): BuildEvent {
+        val toolLogs: BuildEventStreamProtos.BuildToolLogs.Builder =
+            BuildEventStreamProtos.BuildToolLogs.newBuilder()
+        for (direct in directValues) {
+            toolLogs.addLog(
+                BuildEventStreamProtos.File.newBuilder()
+                    .setName(direct.getFirst())
+                    .setContents(direct.getSecond())
+                    .build()
+            )
         }
-      } catch (ExecutionException e) {
-        logger.atWarning().withCause(e).log("Skipping build tool log upload %s", name);
-      }
+        for (directFuturePair in futureUris) {
+            val name: String? = directFuturePair.getFirst()
+            val directFuture: com.google.common.util.concurrent.ListenableFuture<String?>? =
+                directFuturePair.getSecond()
+            try {
+                val uri: String? =
+                    if (directFuture.isDone() && !directFuture.isCancelled())
+                        com.google.common.util.concurrent.Futures.getDone<String?>(directFuture)
+                    else
+                        null
+                if (uri != null) {
+                    toolLogs.addLog(
+                        BuildEventStreamProtos.File.newBuilder().setName(name).setUri(uri).build()
+                    )
+                } else {
+                    logger.atInfo().log("Dropped unfinished upload: %s (%s)", name, directFuture)
+                }
+            } catch (e: ExecutionException) {
+                logger.atWarning().withCause(e).log("Skipping build tool log upload %s", name)
+            }
+        }
+        for (logFile in logFiles) {
+            val uri: String? = converters.pathConverter().apply(logFile.localFile.path)
+            if (uri != null) {
+                toolLogs.addLog(
+                    BuildEventStreamProtos.File.newBuilder().setName(logFile.name).setUri(uri).build()
+                )
+            }
+        }
+        return GenericBuildEvent.Companion.protoChaining(this).setBuildToolLogs(toolLogs.build()).build()
     }
-    for (LogFileEntry logFile : logFiles) {
-      String uri = converters.pathConverter().apply(logFile.localFile.path);
-      if (uri != null) {
-        toolLogs.addLog(
-            BuildEventStreamProtos.File.newBuilder().setName(logFile.name).setUri(uri).build());
-      }
+
+    override fun postedAfter(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<BuildEventId?>(BuildEventIdUtil.buildFinished())
     }
-    return GenericBuildEvent.protoChaining(this).setBuildToolLogs(toolLogs.build()).build();
-  }
 
-  @Override
-  public Collection<BuildEventId> postedAfter() {
-    return ImmutableList.of(BuildEventIdUtil.buildFinished());
-  }
+    /** A local log file.  */
+    class LogFileEntry(val name: String?, localFile: LocalFile?) {
+        val localFile: LocalFile?
 
-  /** A local log file. */
-  public record LogFileEntry(String name, LocalFile localFile) {}
+        init {
+            this.localFile = localFile
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

@@ -1260,7 +1260,7 @@ public class RewindingTestsHelper {
       ActionLookupData actionLookupData, String labelName, int index) {
     Label label = actionLookupData.getLabel();
     return label != null
-        && label.getName().equals(labelName)
+        && label.name.equals(labelName)
         && actionLookupData.getActionIndex() == index;
   }
 

@@ -11,49 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
-
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import java.util.Collection;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
 /**
- * Class for a generic {@link BuildEvent}.
- *
- * <p>This class implements a basic {@link BuildEvent}. The main purpose of this class is to provide
+ * Class for a generic [BuildEvent].
+ * 
+ * 
+ * This class implements a basic [BuildEvent]. The main purpose of this class is to provide
  * the common infrastructure for the infrastructural events.
  */
-public class GenericBuildEvent implements BuildEvent {
-  private final BuildEventId id;
-  private final Collection<BuildEventId> children;
+open class GenericBuildEvent(id: BuildEventId?, children: MutableCollection<BuildEventId?>?) : BuildEvent {
+    private val id: BuildEventId?
+    private val children: MutableCollection<BuildEventId?>?
 
-  public GenericBuildEvent(BuildEventId id, Collection<BuildEventId> children) {
-    this.id = id;
-    this.children = children;
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return id;
-  }
-
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return children;
-  }
-
-  public static BuildEventStreamProtos.BuildEvent.Builder protoChaining(ChainableEvent event) {
-    BuildEventStreamProtos.BuildEvent.Builder builder =
-        BuildEventStreamProtos.BuildEvent.newBuilder();
-    builder.setId(event.getEventId());
-    for (BuildEventId childId : event.getChildrenEvents()) {
-      builder.addChildren(childId);
+    init {
+        this.id = id
+        this.children = children
     }
-    return builder;
-  }
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    return protoChaining(this).build();
-  }
+    val eventId: BuildEventId?
+        get() = id
+
+    val childrenEvents: MutableCollection<BuildEventId>?
+        get() = children
+
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        return protoChaining(this).build()
+    }
+
+    companion object {
+        fun protoChaining(event: ChainableEvent): BuildEventStreamProtos.BuildEvent.Builder {
+            val builder: BuildEventStreamProtos.BuildEvent.Builder =
+                BuildEventStreamProtos.BuildEvent.newBuilder()
+            builder.setId(event.getEventId())
+            for (childId in event.getChildrenEvents()) {
+                builder.addChildren(childId)
+            }
+            return builder
+        }
+    }
 }

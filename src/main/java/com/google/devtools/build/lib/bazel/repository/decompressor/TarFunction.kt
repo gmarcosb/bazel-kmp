@@ -11,21 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import java.io.BufferedInputStream
+import java.io.InputStream
 
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import java.io.BufferedInputStream;
-import java.io.InputStream;
+/** Creates a repository by unarchiving a plain .tar file.  */
+class TarFunction private constructor() : CompressedTarFunction() {
+    override fun getDecompressorStream(compressedInputStream: BufferedInputStream?): InputStream? {
+        return compressedInputStream
+    }
 
-/** Creates a repository by unarchiving a plain .tar file. */
-public class TarFunction extends CompressedTarFunction {
-  public static final Decompressor INSTANCE = new TarFunction();
-
-  private TarFunction() {}
-
-  @Override
-  protected InputStream getDecompressorStream(BufferedInputStream compressedInputStream) {
-    return compressedInputStream;
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: DecompressorValue.Decompressor = TarFunction()
+    }
 }

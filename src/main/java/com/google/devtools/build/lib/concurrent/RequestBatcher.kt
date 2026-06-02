@@ -11,44 +11,340 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.devtools.build.lib.concurrent.PaddedAddresses.createPaddedBaseAddress;
-import static com.google.devtools.build.lib.concurrent.PaddedAddresses.getAlignedAddress;
-import static java.lang.Math.min;
-import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.concurrent.RequestBatching.BatchExecutionStrategy;
-import com.google.devtools.build.lib.concurrent.RequestBatching.CallbackMultiplexer;
-import com.google.devtools.build.lib.concurrent.RequestBatching.FutureMultiplexer;
-import com.google.devtools.build.lib.concurrent.RequestBatching.Multiplexer;
-import com.google.devtools.build.lib.concurrent.RequestBatching.Operation;
-import com.google.devtools.build.lib.unsafe.UnsafeProvider;
-
-import java.lang.ref.Cleaner;
-import java.util.concurrent.Executor;
-import sun.misc.Unsafe;
+import com.google.devtools.build.lib.unsafe.UnsafeProvider
+import java.util.concurrent.Executors
 
 /**
  * Provides a unary request-response interface but implements batching.
- *
- * <p>Clients should provide a {@link Multiplexer} implementation that performs the actual batched
+ * 
+ * 
+ * Clients should provide a [Multiplexer] implementation that performs the actual batched
  * operations.
- *
- * <p>This class is thread-safe.
- *
- * <p>Non-final for mockability.
+ * 
+ * 
+ * This class is thread-safe.
+ * 
+ * 
+ * Non-final for mockability.
  */
-@SuppressWarnings("SunApi") // TODO: b/359688989 - clean this up
-public class RequestBatcher<RequestT, ResponseT> {
-  /* This class employs concurrent workers that perform the following cycle:
+// TODO: b/359688989 - clean this up
+class RequestBatcher<RequestT, ResponseT> @com.google.common.annotations.VisibleForTesting internal constructor(
+    queueDrainingExecutor: java.util.concurrent.Executor,
+    batchExecutionStrategy: com.google.devtools.build.lib.concurrent.RequestBatching.BatchExecutionStrategy<RequestT?, ResponseT?>,
+    maxBatchSize: Int,
+    maxConcurrentRequests: Int,
+    countersAddress: Long,
+    queue: com.google.devtools.build.lib.concurrent.ConcurrentFifo<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>
+) {
+    /**
+     * Executor dedicated to draining the queue, specifically the [ ][.continueToNextBatchOrBecomeIdle] method.
+     * 
+     * 
+     * **Purpose of Isolation:** This executor is isolated to prevent potential deadlocks. The
+     * [.submit] method can block if the task queue is full. If all threads in the client's
+     * executor become blocked waiting to submit tasks, only [.continueToNextBatchOrBecomeIdle]
+     * can free up space in the queue. Scheduling this continuation logic on the same, potentially
+     * blocked, client executor would lead to a deadlock.
+     * 
+     * 
+     * **Deadlock Avoidance:** As long as [.continueToNextBatchOrBecomeIdle] does not
+     * contain blocking operations (which is true in the current implementation), using a separate
+     * executor is sufficient to prevent this specific deadlock scenario.
+     */
+    private val queueDrainingExecutor: java.util.concurrent.Executor
+
+    private val batchExecutionStrategy: com.google.devtools.build.lib.concurrent.RequestBatching.BatchExecutionStrategy<RequestT?, ResponseT?>
+
+    /**
+     * Reads this many at a time when constructing a batch.
+     * 
+     * 
+     * Note that since [.populateBatch] always begins with 1 pair, the resulting batch size
+     * is one more than this.
+     */
+    private val maxBatchSize: Int
+
+    /** Number of active workers to target.  */
+    private val maxConcurrentRequests: Int
+
+    /**
+     * Address of an integer containing two counters.
+     * 
+     * 
+     * Having two counters in the same integer enables simultaneous, atomic updates of both values.
+     * 
+     * 
+     *  * **request-responses count**: the lower 20-bits (occupying the bits of [       ][.REQUEST_COUNT_MASK]) contain a lower bound of request-responses in [.queue]. This
+     * is incremented after successful enqueuing and decremented before dequeuing. This counter
+     * value is never more than the size of the queue so it can be used to guarantee that the
+     * number of calls to [ConcurrentFifo.take] do not exceed the number of successful
+     * [ConcurrentFifo.tryAppend] calls.
+     *  * **active-workers count**: the upper 12-bits (starting from [       ][.ACTIVE_WORKERS_COUNT_BIT_OFFSET]) contain the number of active workers.
+     * 
+     */
+    private val countersAddress: Long
+
+    private val queue: com.google.devtools.build.lib.concurrent.ConcurrentFifo<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>
+
+    /**
+     * Submits a request, subject to batching.
+     * 
+     * 
+     * This method *blocks* when the queue is full.
+     * 
+     * 
+     * Callers should consider processing the response on a different executor if processing is
+     * expensive to avoid delaying work pending other responses in the batch.
+     */
+    // TODO: b/386384684 - remove Unsafe usage
+    fun submit(request: RequestT?): com.google.common.util.concurrent.ListenableFuture<ResponseT?> {
+        val requestResponse: com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?> =
+            com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>(request)
+
+        // Tries to start a worker as long as the active worker count is less than
+        // `maxConcurrentRequests`.
+        while (true) {
+            val snapshot: Int = com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.getIntVolatile(
+                null,
+                countersAddress
+            )
+            val activeWorkers =
+                snapshot ushr com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ACTIVE_WORKERS_COUNT_BIT_OFFSET
+            if (activeWorkers >= maxConcurrentRequests) {
+                break
+            }
+            if (com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.compareAndSwapInt(
+                    null,
+                    countersAddress,
+                    snapshot,
+                    snapshot + com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ONE_ACTIVE_WORKER
+                )
+            ) {
+                // An active worker was reserved. Starts the worker by executing a batch.
+                executeBatch(requestResponse)
+                return requestResponse
+            }
+        }
+
+        while (!queue.tryAppend(requestResponse)) {
+            // As of 09/11/2024, this class is only used for remote cache interactions (see
+            // b/358347099#comment18). Here, the queue filling up is primarily caused by insufficient
+            // network bandwidth. Experiments show that sleeping here improves overall system throughput,
+            // even more than increasing the buffer size.
+            try {
+                java.lang.Thread.sleep(com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.QUEUE_FULL_SLEEP_MS)
+            } catch (e: java.lang.InterruptedException) {
+                return com.google.common.util.concurrent.Futures.immediateFailedFuture<ResponseT?>(e)
+            }
+        }
+
+        // Enqueuing succeeded.
+        while (true) {
+            val snapshot: Int = com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.getIntVolatile(
+                null,
+                countersAddress
+            ) // pessimistic read
+            val activeWorkers =
+                snapshot ushr com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ACTIVE_WORKERS_COUNT_BIT_OFFSET
+            if (activeWorkers >= maxConcurrentRequests) {
+                // Increments the request-responses count.
+                if (com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.compareAndSwapInt(
+                        null,
+                        countersAddress,
+                        snapshot,
+                        snapshot + com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ONE_REQUEST
+                    )
+                ) {
+                    // This must not be reached if `activeWorkers` is 0. Guaranteed by the enclosing check.
+                    return requestResponse
+                }
+            } else {
+                // This is a less common case where the task was enqueued, but the number of active workers
+                // immediately dipped below `targetWorkersCount`. Starts a worker.
+                if (com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.compareAndSwapInt(
+                        null,
+                        countersAddress,
+                        snapshot,
+                        snapshot + com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ONE_ACTIVE_WORKER
+                    )
+                ) {
+                    // Usually, decrementing the request-responses count must precede taking from the queue.
+                    // Here, a request-response was just enqueued and the count has not yet been incremented.
+                    executeBatch(queue.take())
+                    return requestResponse
+                }
+            }
+        }
+    }
+
+    fun maxConcurrentRequests(): Int {
+        return maxConcurrentRequests
+    }
+
+    // TODO: b/386384684 - remove Unsafe usage
+    override fun toString(): String {
+        val snapshot: Int = com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.getIntVolatile(
+            null,
+            countersAddress
+        )
+        return java.lang.String.format(
+            "activeWorkers=%d, requestCount=%d\nqueue=%s\n",
+            snapshot ushr com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ACTIVE_WORKERS_COUNT_BIT_OFFSET,
+            snapshot and com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.REQUEST_COUNT_MASK,
+            queue
+        )
+    }
+
+    /**
+     * Constructs a batch by polling elements from the queue until it is empty, then executes it.
+     * 
+     * 
+     * After the batch is executed, arranges follow-up work by calling `#continueToNextBatchOrBecomeIdle`.
+     * 
+     * @param requestResponse a single element to be included in the batch. This ensures the batch is
+     * non-empty.
+     */
+    private fun executeBatch(requestResponse: com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>) {
+        val batch: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>> =
+            populateBatch(requestResponse)
+        val batchFuture: com.google.common.util.concurrent.ListenableFuture<*>
+        try {
+            batchFuture =
+                batchExecutionStrategy.executeBatch(
+                    com.google.common.collect.Lists.transform<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?, RequestT?>(
+                        batch,
+                        com.google.common.base.Function { obj: com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>? -> obj.request() }),
+                    batch
+                )
+        } catch (t: Throwable) {
+            // Guard against synchronous exceptions from the multiplexer. Fail the batch's futures and
+            // schedule continuation to prevent leaking worker slots.
+            for (operation in batch) {
+                operation.acceptFailure(t)
+            }
+            queueDrainingExecutor.execute(java.lang.Runnable { this.continueToNextBatchOrBecomeIdle() })
+            return
+        }
+        batchFuture.addListener(java.lang.Runnable { this.continueToNextBatchOrBecomeIdle() }, queueDrainingExecutor)
+    }
+
+    /**
+     * Polls at most [.maxBatchSize] elements from the [.queue] and creates a batch.
+     * 
+     * @param requestResponse an element to add to the batch.
+     */
+    // TODO: b/386384684 - remove Unsafe usage
+    private fun populateBatch(
+        requestResponse: com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>
+    ): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>> {
+        val accumulator: com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?> =
+            com.google.common.collect.ImmutableList.builder<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>()
+                .add(requestResponse)
+        while (true) {
+            val snapshot: Int = com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.getIntVolatile(
+                null,
+                countersAddress
+            )
+            val requestCount =
+                snapshot and com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.REQUEST_COUNT_MASK
+            if (requestCount == 0) {
+                break
+            }
+            val toRead: Int = java.lang.Math.min(maxBatchSize, requestCount)
+            if (!com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.compareAndSwapInt(
+                    null,
+                    countersAddress,
+                    snapshot,
+                    snapshot - toRead
+                )
+            ) {
+                continue
+            }
+            for (i in 0..<toRead) {
+                accumulator.add(queue.take())
+            }
+            break
+        }
+        return accumulator.build()
+    }
+
+    /**
+     * Either processes the next batch or releases the held token.
+     * 
+     * 
+     * Tries to process the next batch if enqueued requests are available. Otherwise, stops working
+     * and decrements the active worker count.
+     */
+    // TODO: b/386384684 - remove Unsafe usage
+    private fun continueToNextBatchOrBecomeIdle() {
+        while (true) {
+            val snapshot: Int = com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.getIntVolatile(
+                null,
+                countersAddress
+            )
+            if ((snapshot and com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.REQUEST_COUNT_MASK) == 0) {
+                // There are no enqueued requests. Tries to become idle.
+                if (com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.compareAndSwapInt(
+                        null,
+                        countersAddress,
+                        snapshot,
+                        snapshot - com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ONE_ACTIVE_WORKER
+                    )
+                ) {
+                    return
+                }
+            } else {
+                // Tries to reserve an enqueued request-response to begin another batch.
+                if (com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.compareAndSwapInt(
+                        null,
+                        countersAddress,
+                        snapshot,
+                        snapshot - com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ONE_REQUEST
+                    )
+                ) {
+                    executeBatch(queue.take())
+                    return
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Low-level constructor.
+     * 
+     * 
+     * Caller owns memory addresses used by `queue` and cleanup of memory at `countersAddress`.
+     */
+    // TODO: b/386384684 - remove Unsafe usage
+    init {
+        com.google.common.base.Preconditions.checkArgument(
+            maxConcurrentRequests > 0,
+            "maxConcurrentRequests=%s < 1",
+            maxConcurrentRequests
+        )
+        com.google.common.base.Preconditions.checkArgument(
+            maxConcurrentRequests <= com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ACTIVE_WORKERS_COUNT_MAX,
+            "maxConcurrentRequests=%s > %s",
+            maxConcurrentRequests,
+            com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ACTIVE_WORKERS_COUNT_MAX
+        )
+        com.google.common.base.Preconditions.checkArgument(maxBatchSize > 0)
+        this.queueDrainingExecutor = queueDrainingExecutor
+        this.batchExecutionStrategy = batchExecutionStrategy
+        this.maxBatchSize = maxBatchSize
+        this.maxConcurrentRequests = maxConcurrentRequests
+        this.countersAddress = countersAddress
+        this.queue = queue
+
+        // Initializes memory at countersAddress.
+        com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.UNSAFE.putInt(null, countersAddress, 0)
+    }
+
+    companion object {
+        /* This class employs concurrent workers that perform the following cycle:
    *
    *   1. Collect all available request-response pairs from the queue up to `maxBatchSize`.
    *   2. Execute the collected pairs as a batch.
@@ -94,345 +390,139 @@ public class RequestBatcher<RequestT, ResponseT> {
    * `maxConcurrentRequests` > 0, there's always at least one active worker to handle the
    * request-response.
    */
+        /**
+         * A common cleaner shared by all instances.
+         * 
+         * 
+         * Used to free memory allocated by [PaddedAddresses].
+         */
+        private val cleaner: java.lang.ref.Cleaner = java.lang.ref.Cleaner.create()
 
-  /**
-   * A common cleaner shared by all instances.
-   *
-   * <p>Used to free memory allocated by {@link PaddedAddresses}.
-   */
-  private static final Cleaner cleaner = Cleaner.create();
+        private const val QUEUE_FULL_SLEEP_MS: Long = 100
 
-  private static final long QUEUE_FULL_SLEEP_MS = 100;
-
-  /**
-   * Executor dedicated to draining the queue, specifically the {@link
-   * #continueToNextBatchOrBecomeIdle} method.
-   *
-   * <p><b>Purpose of Isolation:</b> This executor is isolated to prevent potential deadlocks. The
-   * {@link #submit} method can block if the task queue is full. If all threads in the client's
-   * executor become blocked waiting to submit tasks, only {@link #continueToNextBatchOrBecomeIdle}
-   * can free up space in the queue. Scheduling this continuation logic on the same, potentially
-   * blocked, client executor would lead to a deadlock.
-   *
-   * <p><b>Deadlock Avoidance:</b> As long as {@link #continueToNextBatchOrBecomeIdle} does not
-   * contain blocking operations (which is true in the current implementation), using a separate
-   * executor is sufficient to prevent this specific deadlock scenario.
-   */
-  private final Executor queueDrainingExecutor;
-
-  private final BatchExecutionStrategy<RequestT, ResponseT> batchExecutionStrategy;
-
-  /**
-   * Reads this many at a time when constructing a batch.
-   *
-   * <p>Note that since {@link #populateBatch} always begins with 1 pair, the resulting batch size
-   * is one more than this.
-   */
-  private final int maxBatchSize;
-
-  /** Number of active workers to target. */
-  private final int maxConcurrentRequests;
-
-  /**
-   * Address of an integer containing two counters.
-   *
-   * <p>Having two counters in the same integer enables simultaneous, atomic updates of both values.
-   *
-   * <ul>
-   *   <li><b>request-responses count</b>: the lower 20-bits (occupying the bits of {@link
-   *       #REQUEST_COUNT_MASK}) contain a lower bound of request-responses in {@link #queue}. This
-   *       is incremented after successful enqueuing and decremented before dequeuing. This counter
-   *       value is never more than the size of the queue so it can be used to guarantee that the
-   *       number of calls to {@link ConcurrentFifo#take} do not exceed the number of successful
-   *       {@link ConcurrentFifo#tryAppend} calls.
-   *   <li><b>active-workers count</b>: the upper 12-bits (starting from {@link
-   *       #ACTIVE_WORKERS_COUNT_BIT_OFFSET}) contain the number of active workers.
-   * </ul>
-   */
-  private final long countersAddress;
-
-  private final ConcurrentFifo<Operation<RequestT, ResponseT>> queue;
-
-  /**
-   * Creates a batcher that uses a standard {@link Multiplexer}, where a single batch request
-   * returns a single future containing a list of all responses positionally aligned with the
-   * requests.
-   */
-  public static <RequestT, ResponseT> RequestBatcher<RequestT, ResponseT> create(
-      Multiplexer<RequestT, ResponseT> multiplexer,
-      Executor responseDistributionExecutor,
-      int maxBatchSize,
-      int maxConcurrentRequests) {
-    return createWithStrategy(
-        RequestBatching.createBatchExecutionStrategy(multiplexer, responseDistributionExecutor),
-        maxBatchSize,
-        maxConcurrentRequests);
-  }
-
-  /**
-   * Creates a batcher that uses a {@link CallbackMultiplexer}, where the implementation pushes
-   * results asynchronously to individual {@link ResponseSink} callbacks for each request in the
-   * batch.
-   */
-  public static <RequestT, ResponseT>
-      RequestBatcher<RequestT, ResponseT> createWithCallbackMultiplexer(
-          CallbackMultiplexer<RequestT, ResponseT> multiplexer,
-          int maxBatchSize,
-          int maxConcurrentRequests) {
-    return createWithStrategy(
-        RequestBatching.createCallbackBatchExecutionStrategy(multiplexer),
-        maxBatchSize,
-        maxConcurrentRequests);
-  }
-
-  /**
-   * Creates a batcher that uses a {@link FutureMultiplexer}, where the implementation populates
-   * individual response futures for each request in the batch.
-   */
-  public static <RequestT, ResponseT>
-      RequestBatcher<RequestT, ResponseT> createWithFutureMultiplexer(
-          FutureMultiplexer<RequestT, ResponseT> multiplexer,
-          int maxBatchSize,
-          int maxConcurrentRequests) {
-    return createWithStrategy(
-        RequestBatching.createFutureBatchExecutionStrategy(multiplexer),
-        maxBatchSize,
-        maxConcurrentRequests);
-  }
-
-  static <RequestT, ResponseT> RequestBatcher<RequestT, ResponseT> createWithStrategy(
-      BatchExecutionStrategy<RequestT, ResponseT> batchExecutionStrategy,
-      int maxBatchSize,
-      int maxConcurrentRequests) {
-    long baseAddress = createPaddedBaseAddress(4);
-    long countersAddress = getAlignedAddress(baseAddress, /* offset= */ 0);
-
-    var queue =
-        new ConcurrentFifo<Operation<RequestT, ResponseT>>(
-            Operation.class,
-            /* sizeAddress= */ getAlignedAddress(baseAddress, /* offset= */ 1),
-            /* appendIndexAddress= */ getAlignedAddress(baseAddress, /* offset= */ 2),
-            /* takeIndexAddress= */ getAlignedAddress(baseAddress, /* offset= */ 3));
-
-    var batcher =
-        new RequestBatcher<RequestT, ResponseT>(
-            /* queueDrainingExecutor= */ newVirtualThreadPerTaskExecutor(),
-            batchExecutionStrategy,
-            maxBatchSize,
-            maxConcurrentRequests,
-            countersAddress,
-            queue);
-
-    cleaner.register(batcher, new AddressFreer(baseAddress));
-
-    return batcher;
-  }
-
-  /**
-   * Low-level constructor.
-   *
-   * <p>Caller owns memory addresses used by {@code queue} and cleanup of memory at {@code
-   * countersAddress}.
-   */
-  // TODO: b/386384684 - remove Unsafe usage
-  @VisibleForTesting
-  RequestBatcher(
-      Executor queueDrainingExecutor,
-      BatchExecutionStrategy<RequestT, ResponseT> batchExecutionStrategy,
-      int maxBatchSize,
-      int maxConcurrentRequests,
-      long countersAddress,
-      ConcurrentFifo<Operation<RequestT, ResponseT>> queue) {
-    checkArgument(maxConcurrentRequests > 0, "maxConcurrentRequests=%s < 1", maxConcurrentRequests);
-    checkArgument(
-        maxConcurrentRequests <= ACTIVE_WORKERS_COUNT_MAX,
-        "maxConcurrentRequests=%s > %s",
-        maxConcurrentRequests,
-        ACTIVE_WORKERS_COUNT_MAX);
-    checkArgument(maxBatchSize > 0);
-    this.queueDrainingExecutor = queueDrainingExecutor;
-    this.batchExecutionStrategy = batchExecutionStrategy;
-    this.maxBatchSize = maxBatchSize;
-    this.maxConcurrentRequests = maxConcurrentRequests;
-    this.countersAddress = countersAddress;
-    this.queue = queue;
-
-    // Initializes memory at countersAddress.
-    UNSAFE.putInt(null, countersAddress, 0);
-  }
-
-  /**
-   * Submits a request, subject to batching.
-   *
-   * <p>This method <em>blocks</em> when the queue is full.
-   *
-   * <p>Callers should consider processing the response on a different executor if processing is
-   * expensive to avoid delaying work pending other responses in the batch.
-   */
-  // TODO: b/386384684 - remove Unsafe usage
-  public ListenableFuture<ResponseT> submit(RequestT request) {
-    var requestResponse = new Operation<RequestT, ResponseT>(request);
-
-    // Tries to start a worker as long as the active worker count is less than
-    // `maxConcurrentRequests`.
-    while (true) {
-      int snapshot = UNSAFE.getIntVolatile(null, countersAddress);
-      int activeWorkers = snapshot >>> ACTIVE_WORKERS_COUNT_BIT_OFFSET;
-      if (activeWorkers >= maxConcurrentRequests) {
-        break;
-      }
-      if (UNSAFE.compareAndSwapInt(null, countersAddress, snapshot, snapshot + ONE_ACTIVE_WORKER)) {
-        // An active worker was reserved. Starts the worker by executing a batch.
-        executeBatch(requestResponse);
-        return requestResponse;
-      }
-    }
-
-    while (!queue.tryAppend(requestResponse)) {
-      // As of 09/11/2024, this class is only used for remote cache interactions (see
-      // b/358347099#comment18). Here, the queue filling up is primarily caused by insufficient
-      // network bandwidth. Experiments show that sleeping here improves overall system throughput,
-      // even more than increasing the buffer size.
-      try {
-        Thread.sleep(QUEUE_FULL_SLEEP_MS);
-      } catch (InterruptedException e) {
-        return immediateFailedFuture(e);
-      }
-    }
-    // Enqueuing succeeded.
-
-    while (true) {
-      int snapshot = UNSAFE.getIntVolatile(null, countersAddress); // pessimistic read
-      int activeWorkers = snapshot >>> ACTIVE_WORKERS_COUNT_BIT_OFFSET;
-      if (activeWorkers >= maxConcurrentRequests) {
-        // Increments the request-responses count.
-        if (UNSAFE.compareAndSwapInt(null, countersAddress, snapshot, snapshot + ONE_REQUEST)) {
-          // This must not be reached if `activeWorkers` is 0. Guaranteed by the enclosing check.
-          return requestResponse;
+        /**
+         * Creates a batcher that uses a standard [Multiplexer], where a single batch request
+         * returns a single future containing a list of all responses positionally aligned with the
+         * requests.
+         */
+        fun <RequestT, ResponseT> create(
+            multiplexer: com.google.devtools.build.lib.concurrent.RequestBatching.Multiplexer<RequestT?, ResponseT?>?,
+            responseDistributionExecutor: java.util.concurrent.Executor?,
+            maxBatchSize: Int,
+            maxConcurrentRequests: Int
+        ): RequestBatcher<RequestT?, ResponseT?> {
+            return com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.createWithStrategy<RequestT?, ResponseT?>(
+                com.google.devtools.build.lib.concurrent.RequestBatching.createBatchExecutionStrategy<RequestT?, ResponseT?>(
+                    multiplexer,
+                    responseDistributionExecutor
+                ),
+                maxBatchSize,
+                maxConcurrentRequests
+            )
         }
-      } else {
-        // This is a less common case where the task was enqueued, but the number of active workers
-        // immediately dipped below `targetWorkersCount`. Starts a worker.
-        if (UNSAFE.compareAndSwapInt(
-            null, countersAddress, snapshot, snapshot + ONE_ACTIVE_WORKER)) {
-          // Usually, decrementing the request-responses count must precede taking from the queue.
-          // Here, a request-response was just enqueued and the count has not yet been incremented.
-          executeBatch(queue.take());
-          return requestResponse;
+
+        /**
+         * Creates a batcher that uses a [CallbackMultiplexer], where the implementation pushes
+         * results asynchronously to individual [ResponseSink] callbacks for each request in the
+         * batch.
+         */
+        fun <RequestT, ResponseT>
+                createWithCallbackMultiplexer(
+            multiplexer: com.google.devtools.build.lib.concurrent.RequestBatching.CallbackMultiplexer<RequestT?, ResponseT?>?,
+            maxBatchSize: Int,
+            maxConcurrentRequests: Int
+        ): RequestBatcher<RequestT?, ResponseT?> {
+            return com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.createWithStrategy<RequestT?, ResponseT?>(
+                com.google.devtools.build.lib.concurrent.RequestBatching.createCallbackBatchExecutionStrategy<RequestT?, ResponseT?>(
+                    multiplexer
+                ),
+                maxBatchSize,
+                maxConcurrentRequests
+            )
         }
-      }
-    }
-  }
 
-  public int maxConcurrentRequests() {
-    return maxConcurrentRequests;
-  }
-
-  // TODO: b/386384684 - remove Unsafe usage
-  @Override
-  public String toString() {
-    int snapshot = UNSAFE.getIntVolatile(null, countersAddress);
-    return String.format(
-        "activeWorkers=%d, requestCount=%d\nqueue=%s\n",
-        snapshot >>> ACTIVE_WORKERS_COUNT_BIT_OFFSET, snapshot & REQUEST_COUNT_MASK, queue);
-  }
-
-  /**
-   * Constructs a batch by polling elements from the queue until it is empty, then executes it.
-   *
-   * <p>After the batch is executed, arranges follow-up work by calling {@code
-   * #continueToNextBatchOrBecomeIdle}.
-   *
-   * @param requestResponse a single element to be included in the batch. This ensures the batch is
-   *     non-empty.
-   */
-  private void executeBatch(Operation<RequestT, ResponseT> requestResponse) {
-    ImmutableList<Operation<RequestT, ResponseT>> batch = populateBatch(requestResponse);
-    ListenableFuture<?> batchFuture;
-    try {
-      batchFuture =
-          batchExecutionStrategy.executeBatch(Lists.transform(batch, Operation::request), batch);
-    } catch (Throwable t) {
-      // Guard against synchronous exceptions from the multiplexer. Fail the batch's futures and
-      // schedule continuation to prevent leaking worker slots.
-      for (Operation<RequestT, ResponseT> operation : batch) {
-        operation.acceptFailure(t);
-      }
-      queueDrainingExecutor.execute(this::continueToNextBatchOrBecomeIdle);
-      return;
-    }
-    batchFuture.addListener(this::continueToNextBatchOrBecomeIdle, queueDrainingExecutor);
-  }
-
-  /**
-   * Polls at most {@link #maxBatchSize} elements from the {@link #queue} and creates a batch.
-   *
-   * @param requestResponse an element to add to the batch.
-   */
-  // TODO: b/386384684 - remove Unsafe usage
-  private ImmutableList<Operation<RequestT, ResponseT>> populateBatch(
-      Operation<RequestT, ResponseT> requestResponse) {
-    var accumulator = ImmutableList.<Operation<RequestT, ResponseT>>builder().add(requestResponse);
-    while (true) {
-      int snapshot = UNSAFE.getIntVolatile(null, countersAddress);
-      int requestCount = snapshot & REQUEST_COUNT_MASK;
-      if (requestCount == 0) {
-        break;
-      }
-      int toRead = min(maxBatchSize, requestCount);
-      if (!UNSAFE.compareAndSwapInt(null, countersAddress, snapshot, snapshot - toRead)) {
-        continue;
-      }
-      for (int i = 0; i < toRead; i++) {
-        accumulator.add(queue.take());
-      }
-      break;
-    }
-    return accumulator.build();
-  }
-
-  /**
-   * Either processes the next batch or releases the held token.
-   *
-   * <p>Tries to process the next batch if enqueued requests are available. Otherwise, stops working
-   * and decrements the active worker count.
-   */
-  // TODO: b/386384684 - remove Unsafe usage
-  private void continueToNextBatchOrBecomeIdle() {
-    while (true) {
-      int snapshot = UNSAFE.getIntVolatile(null, countersAddress);
-      if ((snapshot & REQUEST_COUNT_MASK) == 0) {
-        // There are no enqueued requests. Tries to become idle.
-        if (UNSAFE.compareAndSwapInt(
-            null, countersAddress, snapshot, snapshot - ONE_ACTIVE_WORKER)) {
-          return;
+        /**
+         * Creates a batcher that uses a [FutureMultiplexer], where the implementation populates
+         * individual response futures for each request in the batch.
+         */
+        fun <RequestT, ResponseT>
+                createWithFutureMultiplexer(
+            multiplexer: com.google.devtools.build.lib.concurrent.RequestBatching.FutureMultiplexer<RequestT?, ResponseT?>?,
+            maxBatchSize: Int,
+            maxConcurrentRequests: Int
+        ): RequestBatcher<RequestT?, ResponseT?> {
+            return com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.createWithStrategy<RequestT?, ResponseT?>(
+                com.google.devtools.build.lib.concurrent.RequestBatching.createFutureBatchExecutionStrategy<RequestT?, ResponseT?>(
+                    multiplexer
+                ),
+                maxBatchSize,
+                maxConcurrentRequests
+            )
         }
-      } else {
-        // Tries to reserve an enqueued request-response to begin another batch.
-        if (UNSAFE.compareAndSwapInt(null, countersAddress, snapshot, snapshot - ONE_REQUEST)) {
-          executeBatch(queue.take());
-          return;
+
+        fun <RequestT, ResponseT> createWithStrategy(
+            batchExecutionStrategy: com.google.devtools.build.lib.concurrent.RequestBatching.BatchExecutionStrategy<RequestT?, ResponseT?>,
+            maxBatchSize: Int,
+            maxConcurrentRequests: Int
+        ): RequestBatcher<RequestT?, ResponseT?> {
+            val baseAddress: Long = com.google.devtools.build.lib.concurrent.PaddedAddresses.createPaddedBaseAddress(4)
+            val countersAddress: Long =
+                com.google.devtools.build.lib.concurrent.PaddedAddresses.getAlignedAddress(baseAddress,  /* offset= */0)
+
+            val queue: com.google.devtools.build.lib.concurrent.ConcurrentFifo<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?> =
+                com.google.devtools.build.lib.concurrent.ConcurrentFifo<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>(
+                    com.google.devtools.build.lib.concurrent.RequestBatching.Operation::class.java,  /* sizeAddress= */
+                    com.google.devtools.build.lib.concurrent.PaddedAddresses.getAlignedAddress(
+                        baseAddress,  /* offset= */
+                        1
+                    ),  /* appendIndexAddress= */
+                    com.google.devtools.build.lib.concurrent.PaddedAddresses.getAlignedAddress(
+                        baseAddress,  /* offset= */
+                        2
+                    ),  /* takeIndexAddress= */
+                    com.google.devtools.build.lib.concurrent.PaddedAddresses.getAlignedAddress(
+                        baseAddress,  /* offset= */
+                        3
+                    )
+                )
+
+            val batcher: RequestBatcher<RequestT?, ResponseT?> =
+                com.google.devtools.build.lib.concurrent.RequestBatcher<RequestT?, ResponseT?>( /* queueDrainingExecutor= */
+                    Executors.newVirtualThreadPerTaskExecutor(),
+                    batchExecutionStrategy,
+                    maxBatchSize,
+                    maxConcurrentRequests,
+                    countersAddress,
+                    queue
+                )
+
+            com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.cleaner.register(
+                batcher,
+                com.google.devtools.build.lib.concurrent.AddressFreer(baseAddress)
+            )
+
+            return batcher
         }
-      }
+
+        private const val REQUEST_COUNT_MASK = 0x0000FFFF
+        private const val ONE_REQUEST = 1
+
+        private const val ACTIVE_WORKERS_COUNT_BIT_OFFSET = 20
+        private val ONE_ACTIVE_WORKER =
+            1 shl com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ACTIVE_WORKERS_COUNT_BIT_OFFSET
+        private const val ACTIVE_WORKERS_COUNT_MAX = 0x00000FFF
+
+        init {
+            com.google.common.base.Preconditions.checkState(
+                com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.REQUEST_COUNT_MASK == com.google.devtools.build.lib.concurrent.ConcurrentFifo.Companion.CAPACITY_MASK,
+                "Request Count Constants inconsistent with ConcurrentFifo"
+            )
+            com.google.common.base.Preconditions.checkState(
+                com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.ONE_REQUEST == (com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.REQUEST_COUNT_MASK and -com.google.devtools.build.lib.concurrent.RequestBatcher.Companion.REQUEST_COUNT_MASK),
+                "Inconsistent Request Count Constants"
+            )
+        }
+
+        private val UNSAFE: sun.misc.Unsafe = UnsafeProvider.unsafe()
     }
-  }
-
-
-  private static final int REQUEST_COUNT_MASK = 0x0000_FFFF;
-  private static final int ONE_REQUEST = 1;
-
-  private static final int ACTIVE_WORKERS_COUNT_BIT_OFFSET = 20;
-  private static final int ONE_ACTIVE_WORKER = 1 << ACTIVE_WORKERS_COUNT_BIT_OFFSET;
-  private static final int ACTIVE_WORKERS_COUNT_MAX = 0x0000_0FFF;
-
-  static {
-    checkState(
-        REQUEST_COUNT_MASK == ConcurrentFifo.CAPACITY_MASK,
-        "Request Count Constants inconsistent with ConcurrentFifo");
-    checkState(
-        ONE_REQUEST == (REQUEST_COUNT_MASK & -REQUEST_COUNT_MASK),
-        "Inconsistent Request Count Constants");
-  }
-
-  private static final Unsafe UNSAFE = UnsafeProvider.unsafe();
 }

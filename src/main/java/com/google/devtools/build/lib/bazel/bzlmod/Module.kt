@@ -12,112 +12,113 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleBase
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
+import com.google.devtools.build.lib.cmdline.RepositoryName
 
 /**
  * Represents a node in the external dependency graph.
- *
- * <p>In particular, it represents a specific version of a module; there can be multiple {@link
- * Module}s in a dependency graph with the same name but with different versions (when there's a
+ * 
+ * 
+ * In particular, it represents a specific version of a module; there can be multiple [ ]s in a dependency graph with the same name but with different versions (when there's a
  * multiple_version_override in play).
- *
- * <p>For the intermediate type used during module resolution, see {@link InterimModule}.
+ * 
+ * 
+ * For the intermediate type used during module resolution, see [InterimModule].
  */
 @AutoValue
-public abstract class Module extends ModuleBase {
+abstract class Module : ModuleBase() {
+    /**
+     * The resolved direct dependencies of this module. The key type is the repo name of the dep, and
+     * the value type is the ModuleKey ([.getKey]) of the dep.
+     */
+    abstract fun getDeps(): com.google.common.collect.ImmutableMap<String?, ModuleKey?>?
 
-  /**
-   * The resolved direct dependencies of this module. The key type is the repo name of the dep, and
-   * the value type is the ModuleKey ({@link #getKey()}) of the dep.
-   */
-  public abstract ImmutableMap<String, ModuleKey> getDeps();
-
-  /**
-   * Returns a {@link RepositoryMapping} with only Bazel module repos and no repos from module
-   * extensions. For the full mapping, see {@link BazelDepGraphValue#getFullRepoMapping}.
-   */
-  public final RepositoryMapping getRepoMappingWithBazelDepsOnly(
-      ImmutableMap<ModuleKey, RepositoryName> moduleKeyToRepositoryNames) {
-    ImmutableMap.Builder<String, RepositoryName> mapping = ImmutableMap.builder();
-    // If this is the root module, then the main repository should be visible as `@`.
-    if (getKey().equals(ModuleKey.ROOT)) {
-      mapping.put("", RepositoryName.MAIN);
-    }
-    // Every module should be able to reference itself as @<module repo name>.
-    // If this is the root module, this perfectly falls into @<module repo name> => @
-    RepositoryName owner = moduleKeyToRepositoryNames.get(getKey());
-    if (!getRepoName().isEmpty()) {
-      mapping.put(getRepoName(), owner);
-    }
-    for (Map.Entry<String, ModuleKey> dep : getDeps().entrySet()) {
-      // Special note: if `dep` is actually the root module, its ModuleKey would be ROOT whose
-      // canonicalRepoName is the empty string. This perfectly maps to the main repo ("@").
-      mapping.put(dep.getKey(), moduleKeyToRepositoryNames.get(dep.getValue()));
-    }
-    return RepositoryMapping.create(mapping.buildOrThrow(), owner);
-  }
-
-  /**
-   * The repo spec for this module (information about the attributes of its repository rule). This
-   * is only non-null for modules coming from registries (i.e. without non-registry overrides).
-   */
-  @Nullable
-  public abstract RepoSpec getRepoSpec();
-
-  /** Returns a new, empty {@link Builder}. */
-  public static Builder builder() {
-    return new AutoValue_Module.Builder();
-  }
-
-  /** Builder type for {@link Module}. */
-  @AutoValue.Builder
-  public abstract static class Builder {
-    public abstract Builder setName(String value);
-
-    public abstract Builder setVersion(Version value);
-
-    public abstract Builder setKey(ModuleKey value);
-
-    public abstract Builder setRepoName(String value);
-
-    public abstract Builder setExecutionPlatformsToRegister(ImmutableList<String> value);
-
-    public abstract Builder setToolchainsToRegister(ImmutableList<String> value);
-
-    public abstract Builder setDeps(ImmutableMap<String, ModuleKey> value);
-
-    abstract ImmutableMap.Builder<String, ModuleKey> depsBuilder();
-
-    public abstract Builder setFlagAliases(ImmutableMap<String, String> value);
-
-    @CanIgnoreReturnValue
-    public Builder addDep(String depRepoName, ModuleKey depKey) {
-      depsBuilder().put(depRepoName, depKey);
-      return this;
+    /**
+     * Returns a [RepositoryMapping] with only Bazel module repos and no repos from module
+     * extensions. For the full mapping, see [BazelDepGraphValue.getFullRepoMapping].
+     */
+    fun getRepoMappingWithBazelDepsOnly(
+        moduleKeyToRepositoryNames: com.google.common.collect.ImmutableMap<ModuleKey?, RepositoryName?>
+    ): com.google.devtools.build.lib.cmdline.RepositoryMapping {
+        val mapping: com.google.common.collect.ImmutableMap.Builder<String?, RepositoryName?> =
+            com.google.common.collect.ImmutableMap.builder<String?, RepositoryName?>()
+        // If this is the root module, then the main repository should be visible as `@`.
+        if (getKey() == ModuleKey.Companion.ROOT) {
+            mapping.put("", RepositoryName.MAIN)
+        }
+        // Every module should be able to reference itself as @<module repo name>.
+        // If this is the root module, this perfectly falls into @<module repo name> => @
+        val owner: RepositoryName? = moduleKeyToRepositoryNames.get(getKey())
+        if (!getRepoName().isEmpty()) {
+            mapping.put(getRepoName(), owner)
+        }
+        for (dep in getDeps().entrySet()) {
+            // Special note: if `dep` is actually the root module, its ModuleKey would be ROOT whose
+            // canonicalRepoName is the empty string. This perfectly maps to the main repo ("@").
+            mapping.put(dep.getKey(), moduleKeyToRepositoryNames.get(dep.getValue()))
+        }
+        return com.google.devtools.build.lib.cmdline.RepositoryMapping.create(mapping.buildOrThrow(), owner)
     }
 
-    public abstract Builder setRepoSpec(RepoSpec value);
+    /**
+     * The repo spec for this module (information about the attributes of its repository rule). This
+     * is only non-null for modules coming from registries (i.e. without non-registry overrides).
+     */
+    abstract fun getRepoSpec(): RepoSpec?
 
-    public abstract Builder setExtensionUsages(ImmutableList<ModuleExtensionUsage> value);
+    /** Builder type for [Module].  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun setName(value: String?): Builder?
 
-    abstract ImmutableList.Builder<ModuleExtensionUsage> extensionUsagesBuilder();
+        abstract fun setVersion(value: com.google.devtools.build.lib.bazel.bzlmod.Version?): Builder?
 
-    @CanIgnoreReturnValue
-    public Builder addExtensionUsage(ModuleExtensionUsage value) {
-      extensionUsagesBuilder().add(value);
-      return this;
+        abstract fun setKey(value: ModuleKey?): Builder?
+
+        abstract fun setRepoName(value: String?): Builder?
+
+        abstract fun setExecutionPlatformsToRegister(value: com.google.common.collect.ImmutableList<String?>?): Builder?
+
+        abstract fun setToolchainsToRegister(value: com.google.common.collect.ImmutableList<String?>?): Builder?
+
+        abstract fun setDeps(value: com.google.common.collect.ImmutableMap<String?, ModuleKey?>?): Builder?
+
+        abstract fun depsBuilder(): com.google.common.collect.ImmutableMap.Builder<String?, ModuleKey?>?
+
+        abstract fun setFlagAliases(value: com.google.common.collect.ImmutableMap<String?, String?>?): Builder?
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addDep(depRepoName: String?, depKey: ModuleKey?): Builder {
+            depsBuilder().put(depRepoName, depKey)
+            return this
+        }
+
+        abstract fun setRepoSpec(value: RepoSpec?): Builder?
+
+        abstract fun setExtensionUsages(value: com.google.common.collect.ImmutableList<ModuleExtensionUsage?>?): Builder?
+
+        abstract fun extensionUsagesBuilder(): com.google.common.collect.ImmutableList.Builder<ModuleExtensionUsage?>?
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExtensionUsage(value: ModuleExtensionUsage): Builder {
+            extensionUsagesBuilder().add(value)
+            return this
+        }
+
+        abstract fun build(): Module?
     }
 
-    public abstract Module build();
-  }
+    companion object {
+        /** Returns a new, empty [Builder].  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return Builder()
+        }
+    }
 }

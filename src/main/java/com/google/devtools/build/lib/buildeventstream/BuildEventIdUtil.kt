@@ -11,307 +11,328 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
-
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ActionCompletedId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ConfigurationId;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.List;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
+import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationIdMessage
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
 /**
- * Utilities for working with {@link BuildEventId}.
- *
- * <p>Since event identifiers need to be created before the actual event, the event IDs are highly
+ * Utilities for working with [BuildEventId].
+ * 
+ * 
+ * Since event identifiers need to be created before the actual event, the event IDs are highly
  * structured so that equal identifiers can easily be generated. The main way of pregenerating event
  * identifiers that do not accidentally coincide is by providing a target or a target pattern;
  * therefore, those (if provided) are made specially visible.
  */
-@Immutable
-public final class BuildEventIdUtil {
-  private static final ConfigurationId NULL_CONFIGURATION_ID_MESSAGE =
-      configurationIdMessage("none");
-  private static final BuildEventId NULL_CONFIGURATION_ID =
-      configurationId(NULL_CONFIGURATION_ID_MESSAGE);
+@javax.annotation.concurrent.Immutable
+object BuildEventIdUtil {
+    private val NULL_CONFIGURATION_ID_MESSAGE: ConfigurationId = BuildEventIdUtil.configurationIdMessage("none")
+    private val NULL_CONFIGURATION_ID: BuildEventId = BuildEventIdUtil.configurationId(NULL_CONFIGURATION_ID_MESSAGE)
 
-  private BuildEventIdUtil() {}
-
-  public static BuildEventId unknownBuildEventId(String details) {
-    BuildEventId.UnknownBuildEventId id =
-        BuildEventId.UnknownBuildEventId.newBuilder().setDetails(details).build();
-    return BuildEventId.newBuilder().setUnknown(id).build();
-  }
-
-  public static BuildEventId progressId(int count) {
-    BuildEventId.ProgressId id = BuildEventId.ProgressId.newBuilder().setOpaqueCount(count).build();
-    return BuildEventId.newBuilder().setProgress(id).build();
-  }
-
-  public static BuildEventId buildStartedId() {
-    BuildEventId.BuildStartedId startedId = BuildEventId.BuildStartedId.getDefaultInstance();
-    return BuildEventId.newBuilder().setStarted(startedId).build();
-  }
-
-  public static BuildEventId unstructuredCommandlineId() {
-    BuildEventId.UnstructuredCommandLineId commandLineId =
-        BuildEventId.UnstructuredCommandLineId.getDefaultInstance();
-    return BuildEventId.newBuilder().setUnstructuredCommandLine(commandLineId).build();
-  }
-
-  public static BuildEventId structuredCommandlineId(String commandLineLabel) {
-    BuildEventId.StructuredCommandLineId commandLineId =
-        BuildEventId.StructuredCommandLineId.newBuilder()
-            .setCommandLineLabel(commandLineLabel)
-            .build();
-    return BuildEventId.newBuilder().setStructuredCommandLine(commandLineId).build();
-  }
-
-  public static BuildEventId optionsParsedId() {
-    BuildEventId.OptionsParsedId optionsParsedId =
-        BuildEventId.OptionsParsedId.getDefaultInstance();
-    return BuildEventId.newBuilder().setOptionsParsed(optionsParsedId).build();
-  }
-
-  public static BuildEventId workspaceStatusId() {
-    return BuildEventId.newBuilder()
-        .setWorkspaceStatus(BuildEventId.WorkspaceStatusId.getDefaultInstance())
-        .build();
-  }
-
-  public static BuildEventId buildMetadataId() {
-    BuildEventId.BuildMetadataId buildMetadataId =
-        BuildEventId.BuildMetadataId.getDefaultInstance();
-    return BuildEventId.newBuilder().setBuildMetadata(buildMetadataId).build();
-  }
-
-  public static BuildEventId workspaceConfigId() {
-    BuildEventId.WorkspaceConfigId workspaceConfigId =
-        BuildEventId.WorkspaceConfigId.getDefaultInstance();
-    return BuildEventId.newBuilder().setWorkspace(workspaceConfigId).build();
-  }
-
-  static BuildEventId fetchId(String url, BuildEventId.FetchId.Downloader downloader) {
-    BuildEventId.FetchId fetchId =
-        BuildEventId.FetchId.newBuilder().setUrl(url).setDownloader(downloader).build();
-    return BuildEventId.newBuilder().setFetch(fetchId).build();
-  }
-
-  public static BuildEventId configurationId(@Nullable BuildConfigurationKey key) {
-    return configurationId(configurationIdMessage(key));
-  }
-
-  private static BuildEventId configurationId(ConfigurationId id) {
-    return BuildEventId.newBuilder().setConfiguration(id).build();
-  }
-
-  public static BuildEventId configurationId(String id) {
-    return configurationId(configurationIdMessage(id));
-  }
-
-  public static ConfigurationId configurationIdMessage(@Nullable BuildConfigurationKey key) {
-    return key == null
-        ? nullConfigurationIdMessage()
-        : configurationIdMessage(key.getOptions().checksum());
-  }
-
-  public static ConfigurationId configurationIdMessage(String checksum) {
-    return ConfigurationId.newBuilder().setId(checksum).build();
-  }
-
-  public static BuildEventId execRequestId() {
-    return BuildEventId.newBuilder()
-        .setExecRequest(BuildEventId.ExecRequestId.getDefaultInstance())
-        .build();
-  }
-
-  public static BuildEventId nullConfigurationId() {
-    return NULL_CONFIGURATION_ID;
-  }
-
-  public static ConfigurationId nullConfigurationIdMessage() {
-    return NULL_CONFIGURATION_ID_MESSAGE;
-  }
-
-  private static BuildEventId targetPatternExpanded(List<String> targetPattern, boolean skipped) {
-    BuildEventId.PatternExpandedId patternId =
-        BuildEventId.PatternExpandedId.newBuilder().addAllPattern(targetPattern).build();
-    BuildEventId.Builder builder = BuildEventId.newBuilder();
-    if (skipped) {
-      builder.setPatternSkipped(patternId);
-    } else {
-      builder.setPattern(patternId);
+    @kotlin.jvm.JvmStatic
+    fun unknownBuildEventId(details: String?): BuildEventId {
+        val id: BuildEventId.UnknownBuildEventId? =
+            BuildEventId.UnknownBuildEventId.newBuilder().setDetails(details).build()
+        return BuildEventId.newBuilder().setUnknown(id).build()
     }
-    return builder.build();
-  }
 
-  public static BuildEventId targetPatternExpanded(List<String> targetPattern) {
-    return targetPatternExpanded(targetPattern, false);
-  }
-
-  public static BuildEventId targetPatternSkipped(List<String> targetPattern) {
-    return targetPatternExpanded(targetPattern, true);
-  }
-
-  public static BuildEventId targetConfigured(Label label) {
-    BuildEventId.TargetConfiguredId configuredId =
-        BuildEventId.TargetConfiguredId.newBuilder().setLabel(label.toString()).build();
-    return BuildEventId.newBuilder().setTargetConfigured(configuredId).build();
-  }
-
-  public static BuildEventId aspectConfigured(Label label, String aspect) {
-    BuildEventId.TargetConfiguredId configuredId =
-        BuildEventId.TargetConfiguredId.newBuilder()
-            .setLabel(label.toString())
-            .setAspect(aspect)
-            .build();
-    return BuildEventId.newBuilder().setTargetConfigured(configuredId).build();
-  }
-
-  public static BuildEventId targetCompleted(Label target, BuildEventId configuration) {
-    BuildEventId.ConfigurationId configId = configuration.getConfiguration();
-    BuildEventId.TargetCompletedId targetId =
-        BuildEventId.TargetCompletedId.newBuilder()
-            .setLabel(target.toString())
-            .setConfiguration(configId)
-            .build();
-    return BuildEventId.newBuilder().setTargetCompleted(targetId).build();
-  }
-
-  public static BuildEventId configuredLabelId(
-      Label label, BuildEventId.ConfigurationId configurationId) {
-    BuildEventId.ConfiguredLabelId labelId =
-        BuildEventId.ConfiguredLabelId.newBuilder()
-            .setLabel(label.toString())
-            .setConfiguration(configurationId)
-            .build();
-    return BuildEventId.newBuilder().setConfiguredLabel(labelId).build();
-  }
-
-  public static BuildEventId unconfiguredLabelId(Label label) {
-    BuildEventId.UnconfiguredLabelId labelId =
-        BuildEventId.UnconfiguredLabelId.newBuilder().setLabel(label.toString()).build();
-    return BuildEventId.newBuilder().setUnconfiguredLabel(labelId).build();
-  }
-
-  public static BuildEventId aspectCompleted(
-      Label target, BuildEventId configuration, String aspect) {
-    BuildEventId.ConfigurationId configId = configuration.getConfiguration();
-    BuildEventId.TargetCompletedId targetId =
-        BuildEventId.TargetCompletedId.newBuilder()
-            .setLabel(target.toString())
-            .setConfiguration(configId)
-            .setAspect(aspect)
-            .build();
-    return BuildEventId.newBuilder().setTargetCompleted(targetId).build();
-  }
-
-  public static BuildEventId actionCompleted(PathFragment path) {
-    return actionCompleted(path, null, null);
-  }
-
-  public static BuildEventId actionCompleted(
-      PathFragment path, @Nullable Label label, @Nullable String configurationChecksum) {
-    ActionCompletedId.Builder actionId =
-        ActionCompletedId.newBuilder().setPrimaryOutput(path.toString());
-    if (label != null) {
-      actionId.setLabel(label.toString());
+    @kotlin.jvm.JvmStatic
+    fun progressId(count: Int): BuildEventId {
+        val id: BuildEventId.ProgressId? = BuildEventId.ProgressId.newBuilder().setOpaqueCount(count).build()
+        return BuildEventId.newBuilder().setProgress(id).build()
     }
-    if (configurationChecksum != null) {
-      actionId.setConfiguration(ConfigurationId.newBuilder().setId(configurationChecksum));
+
+    @kotlin.jvm.JvmStatic
+    fun buildStartedId(): BuildEventId {
+        val startedId: BuildEventId.BuildStartedId? = BuildEventId.BuildStartedId.getDefaultInstance()
+        return BuildEventId.newBuilder().setStarted(startedId).build()
     }
-    return BuildEventId.newBuilder().setActionCompleted(actionId).build();
-  }
 
-  public static BuildEventId fromArtifactGroupName(String name) {
-    BuildEventId.NamedSetOfFilesId namedSetId =
-        BuildEventId.NamedSetOfFilesId.newBuilder().setId(name).build();
-    return BuildEventId.newBuilder().setNamedSet(namedSetId).build();
-  }
+    @kotlin.jvm.JvmStatic
+    fun unstructuredCommandlineId(): BuildEventId {
+        val commandLineId: BuildEventId.UnstructuredCommandLineId? =
+            BuildEventId.UnstructuredCommandLineId.getDefaultInstance()
+        return BuildEventId.newBuilder().setUnstructuredCommandLine(commandLineId).build()
+    }
 
-  public static BuildEventId testResult(
-      Label target, int run, int shard, int attempt, BuildEventId configuration) {
-    BuildEventId.ConfigurationId configId = configuration.getConfiguration();
-    BuildEventId.TestResultId resultId =
-        BuildEventId.TestResultId.newBuilder()
-            .setLabel(target.toString())
-            .setConfiguration(configId)
-            .setRun(run + 1)
-            .setShard(shard + 1)
-            .setAttempt(attempt)
-            .build();
-    return BuildEventId.newBuilder().setTestResult(resultId).build();
-  }
+    @kotlin.jvm.JvmStatic
+    fun structuredCommandlineId(commandLineLabel: String?): BuildEventId {
+        val commandLineId: BuildEventId.StructuredCommandLineId? =
+            BuildEventId.StructuredCommandLineId.newBuilder()
+                .setCommandLineLabel(commandLineLabel)
+                .build()
+        return BuildEventId.newBuilder().setStructuredCommandLine(commandLineId).build()
+    }
 
-  public static BuildEventId testResult(
-      Label target, int run, int shard, BuildEventId configuration) {
-    return testResult(target, run, shard, 1, configuration);
-  }
+    @kotlin.jvm.JvmStatic
+    fun optionsParsedId(): BuildEventId {
+        val optionsParsedId: BuildEventId.OptionsParsedId? =
+            BuildEventId.OptionsParsedId.getDefaultInstance()
+        return BuildEventId.newBuilder().setOptionsParsed(optionsParsedId).build()
+    }
 
-  public static BuildEventId testProgressId(
-      String label,
-      BuildEventId.ConfigurationId configId,
-      int run,
-      int shard,
-      int attempt,
-      int opaqueCount) {
-    return BuildEventId.newBuilder()
-        .setTestProgress(
-            BuildEventId.TestProgressId.newBuilder()
-                .setLabel(label)
+    fun workspaceStatusId(): BuildEventId {
+        return BuildEventId.newBuilder()
+            .setWorkspaceStatus(BuildEventId.WorkspaceStatusId.getDefaultInstance())
+            .build()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun buildMetadataId(): BuildEventId {
+        val buildMetadataId: BuildEventId.BuildMetadataId? =
+            BuildEventId.BuildMetadataId.getDefaultInstance()
+        return BuildEventId.newBuilder().setBuildMetadata(buildMetadataId).build()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun workspaceConfigId(): BuildEventId {
+        val workspaceConfigId: BuildEventId.WorkspaceConfigId? =
+            BuildEventId.WorkspaceConfigId.getDefaultInstance()
+        return BuildEventId.newBuilder().setWorkspace(workspaceConfigId).build()
+    }
+
+    fun fetchId(url: String?, downloader: Downloader?): BuildEventId {
+        val fetchId: BuildEventId.FetchId? =
+            BuildEventId.FetchId.newBuilder().setUrl(url).setDownloader(downloader).build()
+        return BuildEventId.newBuilder().setFetch(fetchId).build()
+    }
+
+    fun configurationId(key: BuildConfigurationKey?): BuildEventId {
+        return BuildEventIdUtil.configurationId(BuildEventIdUtil.configurationIdMessage(key))
+    }
+
+    private fun configurationId(id: ConfigurationId?): BuildEventId {
+        return BuildEventId.newBuilder().setConfiguration(id).build()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun configurationId(id: String?): BuildEventId {
+        return BuildEventIdUtil.configurationId(BuildEventIdUtil.configurationIdMessage(id))
+    }
+
+    fun configurationIdMessage(key: BuildConfigurationKey?): ConfigurationId? {
+        return if (key == null)
+            nullConfigurationIdMessage()
+        else
+            configurationIdMessage(key.getOptions().checksum())
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun configurationIdMessage(checksum: String?): ConfigurationId {
+        return ConfigurationId.newBuilder().setId(checksum).build()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun execRequestId(): BuildEventId {
+        return BuildEventId.newBuilder()
+            .setExecRequest(BuildEventId.ExecRequestId.getDefaultInstance())
+            .build()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun nullConfigurationId(): BuildEventId {
+        return NULL_CONFIGURATION_ID
+    }
+
+    fun nullConfigurationIdMessage(): ConfigurationId {
+        return NULL_CONFIGURATION_ID_MESSAGE
+    }
+
+    private fun targetPatternExpanded(targetPattern: MutableList<String?>?, skipped: Boolean): BuildEventId {
+        val patternId: BuildEventId.PatternExpandedId? =
+            BuildEventId.PatternExpandedId.newBuilder().addAllPattern(targetPattern).build()
+        val builder: BuildEventId.Builder = BuildEventId.newBuilder()
+        if (skipped) {
+            builder.setPatternSkipped(patternId)
+        } else {
+            builder.setPattern(patternId)
+        }
+        return builder.build()
+    }
+
+    fun targetPatternExpanded(targetPattern: MutableList<String?>?): BuildEventId {
+        return targetPatternExpanded(targetPattern, false)
+    }
+
+    fun targetPatternSkipped(targetPattern: MutableList<String?>?): BuildEventId {
+        return targetPatternExpanded(targetPattern, true)
+    }
+
+    fun targetConfigured(label: com.google.devtools.build.lib.cmdline.Label): BuildEventId {
+        val configuredId: BuildEventId.TargetConfiguredId? =
+            BuildEventId.TargetConfiguredId.newBuilder().setLabel(label.toString()).build()
+        return BuildEventId.newBuilder().setTargetConfigured(configuredId).build()
+    }
+
+    fun aspectConfigured(label: com.google.devtools.build.lib.cmdline.Label, aspect: String?): BuildEventId {
+        val configuredId: BuildEventId.TargetConfiguredId? =
+            BuildEventId.TargetConfiguredId.newBuilder()
+                .setLabel(label.toString())
+                .setAspect(aspect)
+                .build()
+        return BuildEventId.newBuilder().setTargetConfigured(configuredId).build()
+    }
+
+    fun targetCompleted(
+        target: com.google.devtools.build.lib.cmdline.Label,
+        configuration: BuildEventId
+    ): BuildEventId {
+        val configId: BuildEventId.ConfigurationId? = configuration.getConfiguration()
+        val targetId: BuildEventId.TargetCompletedId? =
+            BuildEventId.TargetCompletedId.newBuilder()
+                .setLabel(target.toString())
                 .setConfiguration(configId)
-                .setRun(run)
-                .setShard(shard)
+                .build()
+        return BuildEventId.newBuilder().setTargetCompleted(targetId).build()
+    }
+
+    fun configuredLabelId(
+        label: com.google.devtools.build.lib.cmdline.Label, configurationId: BuildEventId.ConfigurationId?
+    ): BuildEventId {
+        val labelId: BuildEventId.ConfiguredLabelId? =
+            BuildEventId.ConfiguredLabelId.newBuilder()
+                .setLabel(label.toString())
+                .setConfiguration(configurationId)
+                .build()
+        return BuildEventId.newBuilder().setConfiguredLabel(labelId).build()
+    }
+
+    fun unconfiguredLabelId(label: com.google.devtools.build.lib.cmdline.Label): BuildEventId {
+        val labelId: BuildEventId.UnconfiguredLabelId? =
+            BuildEventId.UnconfiguredLabelId.newBuilder().setLabel(label.toString()).build()
+        return BuildEventId.newBuilder().setUnconfiguredLabel(labelId).build()
+    }
+
+    fun aspectCompleted(
+        target: com.google.devtools.build.lib.cmdline.Label, configuration: BuildEventId, aspect: String?
+    ): BuildEventId {
+        val configId: BuildEventId.ConfigurationId? = configuration.getConfiguration()
+        val targetId: BuildEventId.TargetCompletedId? =
+            BuildEventId.TargetCompletedId.newBuilder()
+                .setLabel(target.toString())
+                .setConfiguration(configId)
+                .setAspect(aspect)
+                .build()
+        return BuildEventId.newBuilder().setTargetCompleted(targetId).build()
+    }
+
+    fun actionCompleted(path: PathFragment): BuildEventId {
+        return actionCompleted(path, null, null)
+    }
+
+    fun actionCompleted(
+        path: PathFragment, label: com.google.devtools.build.lib.cmdline.Label?, configurationChecksum: String?
+    ): BuildEventId {
+        val actionId: ActionCompletedId.Builder =
+            ActionCompletedId.newBuilder().setPrimaryOutput(path.toString())
+        if (label != null) {
+            actionId.setLabel(label.toString())
+        }
+        if (configurationChecksum != null) {
+            actionId.setConfiguration(ConfigurationId.newBuilder().setId(configurationChecksum))
+        }
+        return BuildEventId.newBuilder().setActionCompleted(actionId).build()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun fromArtifactGroupName(name: String?): BuildEventId {
+        val namedSetId: BuildEventId.NamedSetOfFilesId? =
+            BuildEventId.NamedSetOfFilesId.newBuilder().setId(name).build()
+        return BuildEventId.newBuilder().setNamedSet(namedSetId).build()
+    }
+
+    fun testResult(
+        target: com.google.devtools.build.lib.cmdline.Label,
+        run: Int,
+        shard: Int,
+        attempt: Int,
+        configuration: BuildEventId
+    ): BuildEventId {
+        val configId: BuildEventId.ConfigurationId? = configuration.getConfiguration()
+        val resultId: BuildEventId.TestResultId? =
+            BuildEventId.TestResultId.newBuilder()
+                .setLabel(target.toString())
+                .setConfiguration(configId)
+                .setRun(run + 1)
+                .setShard(shard + 1)
                 .setAttempt(attempt)
-                .setOpaqueCount(opaqueCount))
-        .build();
-  }
+                .build()
+        return BuildEventId.newBuilder().setTestResult(resultId).build()
+    }
 
-  public static BuildEventId testSummary(Label target, BuildEventId configuration) {
-    BuildEventId.ConfigurationId configId = configuration.getConfiguration();
-    BuildEventId.TestSummaryId summaryId =
-        BuildEventId.TestSummaryId.newBuilder()
-            .setLabel(target.toString())
-            .setConfiguration(configId)
-            .build();
-    return BuildEventId.newBuilder().setTestSummary(summaryId).build();
-  }
+    fun testResult(
+        target: com.google.devtools.build.lib.cmdline.Label, run: Int, shard: Int, configuration: BuildEventId
+    ): BuildEventId {
+        return testResult(target, run, shard, 1, configuration)
+    }
 
-  public static BuildEventId targetSummary(Label target, BuildEventId configuration) {
-    BuildEventId.ConfigurationId configId = configuration.getConfiguration();
-    BuildEventId.TargetSummaryId summaryId =
-        BuildEventId.TargetSummaryId.newBuilder()
-            .setLabel(target.toString())
-            .setConfiguration(configId)
-            .build();
-    return BuildEventId.newBuilder().setTargetSummary(summaryId).build();
-  }
+    fun testProgressId(
+        label: String?,
+        configId: BuildEventId.ConfigurationId?,
+        run: Int,
+        shard: Int,
+        attempt: Int,
+        opaqueCount: Int
+    ): BuildEventId {
+        return BuildEventId.newBuilder()
+            .setTestProgress(
+                BuildEventId.TestProgressId.newBuilder()
+                    .setLabel(label)
+                    .setConfiguration(configId)
+                    .setRun(run)
+                    .setShard(shard)
+                    .setAttempt(attempt)
+                    .setOpaqueCount(opaqueCount)
+            )
+            .build()
+    }
 
-  public static BuildEventId buildFinished() {
-    BuildEventId.BuildFinishedId finishedId = BuildEventId.BuildFinishedId.getDefaultInstance();
-    return BuildEventId.newBuilder().setBuildFinished(finishedId).build();
-  }
+    fun testSummary(target: com.google.devtools.build.lib.cmdline.Label, configuration: BuildEventId): BuildEventId {
+        val configId: BuildEventId.ConfigurationId? = configuration.getConfiguration()
+        val summaryId: BuildEventId.TestSummaryId? =
+            BuildEventId.TestSummaryId.newBuilder()
+                .setLabel(target.toString())
+                .setConfiguration(configId)
+                .build()
+        return BuildEventId.newBuilder().setTestSummary(summaryId).build()
+    }
 
-  public static BuildEventId buildToolLogs() {
-    return BuildEventId.newBuilder()
-        .setBuildToolLogs(BuildEventId.BuildToolLogsId.getDefaultInstance())
-        .build();
-  }
+    fun targetSummary(target: com.google.devtools.build.lib.cmdline.Label, configuration: BuildEventId): BuildEventId {
+        val configId: BuildEventId.ConfigurationId? = configuration.getConfiguration()
+        val summaryId: BuildEventId.TargetSummaryId? =
+            BuildEventId.TargetSummaryId.newBuilder()
+                .setLabel(target.toString())
+                .setConfiguration(configId)
+                .build()
+        return BuildEventId.newBuilder().setTargetSummary(summaryId).build()
+    }
 
-  public static BuildEventId buildMetrics() {
-    return BuildEventId.newBuilder()
-        .setBuildMetrics(BuildEventId.BuildMetricsId.getDefaultInstance())
-        .build();
-  }
+    @kotlin.jvm.JvmStatic
+    fun buildFinished(): BuildEventId {
+        val finishedId: BuildEventId.BuildFinishedId? = BuildEventId.BuildFinishedId.getDefaultInstance()
+        return BuildEventId.newBuilder().setBuildFinished(finishedId).build()
+    }
 
-  public static BuildEventId convenienceSymlinksIdentifiedId() {
-    return BuildEventId.newBuilder()
-        .setConvenienceSymlinksIdentified(
-            BuildEventId.ConvenienceSymlinksIdentifiedId.getDefaultInstance())
-        .build();
-  }
+    @kotlin.jvm.JvmStatic
+    fun buildToolLogs(): BuildEventId {
+        return BuildEventId.newBuilder()
+            .setBuildToolLogs(BuildEventId.BuildToolLogsId.getDefaultInstance())
+            .build()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun buildMetrics(): BuildEventId {
+        return BuildEventId.newBuilder()
+            .setBuildMetrics(BuildEventId.BuildMetricsId.getDefaultInstance())
+            .build()
+    }
+
+    fun convenienceSymlinksIdentifiedId(): BuildEventId {
+        return BuildEventId.newBuilder()
+            .setConvenienceSymlinksIdentified(
+                BuildEventId.ConvenienceSymlinksIdentifiedId.getDefaultInstance()
+            )
+            .build()
+    }
 }

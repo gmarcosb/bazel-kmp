@@ -11,42 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.starlarkbuildapi.repository.RepositoryModuleApi.TagClassApi;
-import java.util.Optional;
+import com.google.devtools.build.lib.starlarkbuildapi.repository.RepositoryModuleApi.TagClassApi
 
 /**
- * Represents a tag class, which is a "class" of {@link Tag}s that share the same attribute schema.
- *
+ * Represents a tag class, which is a "class" of [Tag]s that share the same attribute schema.
+ * 
  * @param attributes The list of attributes of this tag class.
  * @param doc Documentation about this tag class.
- * @param attributeIndices A mapping from the <em> public </em> name of an attribute to the position
- *     of said attribute in {@link #getAttributes}.
+ * @param attributeIndices A mapping from the * public * name of an attribute to the position
+ * of said attribute in [.getAttributes].
  */
-public record TagClass(
-    ImmutableList<Attribute> attributes,
-    Optional<String> doc,
-    ImmutableMap<String, Integer> attributeIndices)
-    implements TagClassApi {
-  public TagClass {
-    requireNonNull(attributes, "attributes");
-    requireNonNull(doc, "doc");
-    requireNonNull(attributeIndices, "attributeIndices");
-  }
+class TagClass(
+    attributes: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.packages.Attribute?>?,
+    doc: java.util.Optional<String?>?,
+    attributeIndices: com.google.common.collect.ImmutableMap<String?, Int?>?
+) : TagClassApi {
+    val attributes: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.packages.Attribute?>?
+    val doc: java.util.Optional<String?>?
+    val attributeIndices: com.google.common.collect.ImmutableMap<String?, Int?>?
 
-  public static TagClass create(ImmutableList<Attribute> attributes, Optional<String> doc) {
-    ImmutableMap.Builder<String, Integer> attributeIndicesBuilder =
-        ImmutableMap.builderWithExpectedSize(attributes.size());
-    for (int i = 0; i < attributes.size(); i++) {
-      attributeIndicesBuilder.put(attributes.get(i).getPublicName(), i);
+    init {
+        this.attributeIndices = attributeIndices
+        this.doc = doc
+        this.attributes = attributes
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<com.google.devtools.build.lib.packages.Attribute?>?>(
+            attributes,
+            "attributes"
+        )
+        java.util.Objects.requireNonNull<java.util.Optional<String?>?>(doc, "doc")
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, Int?>?>(
+            attributeIndices,
+            "attributeIndices"
+        )
     }
-    return new TagClass(attributes, doc, attributeIndicesBuilder.buildOrThrow());
-  }
+
+    companion object {
+        fun create(
+            attributes: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.packages.Attribute?>,
+            doc: java.util.Optional<String?>?
+        ): TagClass {
+            val attributeIndicesBuilder: com.google.common.collect.ImmutableMap.Builder<String?, Int?> =
+                com.google.common.collect.ImmutableMap.builderWithExpectedSize<String?, Int?>(attributes.size())
+            for (i in attributes.indices) {
+                attributeIndicesBuilder.put(attributes.get(i).getPublicName(), i)
+            }
+            return TagClass(attributes, doc, attributeIndicesBuilder.buildOrThrow())
+        }
+    }
 }

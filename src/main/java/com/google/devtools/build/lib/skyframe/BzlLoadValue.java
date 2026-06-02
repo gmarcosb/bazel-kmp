@@ -142,7 +142,7 @@ public class BzlLoadValue implements SkyValue {
     // The alternative is to use a separate key type just for .scl, but that complicates repo logic;
     // see BzlLoadFunction#getRepositoryMapping.
     final boolean isSclDialect() {
-      return getLabel().getName().endsWith(".scl");
+      return getLabel().name.endsWith(".scl");
     }
 
     /**

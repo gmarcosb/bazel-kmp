@@ -11,28 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventstream;
+package com.google.devtools.build.lib.buildeventstream
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import java.util.Collection;
-import java.util.Set;
+import com.google.devtools.build.lib.buildeventstream.BuildEventTransport
 
 /**
- * An event announcing a list of all active {@link BuildEventTransport}s.
+ * An event announcing a list of all active [BuildEventTransport]s.
  */
-public class AnnounceBuildEventTransportsEvent implements Postable {
+class AnnounceBuildEventTransportsEvent(transports: MutableCollection<BuildEventTransport?>) :
+    com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    private val transports: MutableSet<BuildEventTransport?>
 
-  private final Set<BuildEventTransport> transports;
+    init {
+        this.transports = com.google.common.collect.ImmutableSet.copyOf<BuildEventTransport?>(transports)
+    }
 
-  public AnnounceBuildEventTransportsEvent(Collection<BuildEventTransport> transports) {
-    this.transports = ImmutableSet.copyOf(transports);
-  }
-
-  /**
-   * Returns a list of all active build event transports.
-   */
-  public Set<BuildEventTransport> transports() {
-    return transports;
-  }
+    /**
+     * Returns a list of all active build event transports.
+     */
+    fun transports(): MutableSet<BuildEventTransport?> {
+        return transports
+    }
 }

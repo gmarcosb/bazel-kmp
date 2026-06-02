@@ -11,233 +11,216 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.collect
 
-package com.google.devtools.build.lib.collect;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import javax.annotation.concurrent.Immutable;
+import com.google.devtools.build.lib.collect.CompactImmutableMap
+import com.google.devtools.build.lib.collect.ImmutableSharedKeyMap
 
 /**
  * Provides a memory-efficient map when the key sets are likely to be shared between multiple
  * instances of this class.
- *
- * <p>This class is appropriate where it is expected that a lot of the key sets will be the same.
+ * 
+ * 
+ * This class is appropriate where it is expected that a lot of the key sets will be the same.
  * These key sets are shared and an offset table of indices is computed. Each map instance thus
  * contains only a reference to the shared offset table, and a plain array of instances.
- *
- * <p>The map is sensitive to insertion order. Two maps with different insertion orders are *not*
+ * 
+ * 
+ * The map is sensitive to insertion order. Two maps with different insertion orders are *not*
  * considered equal, and will not share keys.
- *
- * <p>This class explicitly does *not* implement the Map interface, as use of that would lead to a
+ * 
+ * 
+ * This class explicitly does *not* implement the Map interface, as use of that would lead to a
  * lot of GC churn.
  */
-@Immutable
-public class ImmutableSharedKeyMap<K, V> implements CompactImmutableMap<K, V> {
-  private static final Interner<OffsetTable<?>> offsetTables = BlazeInterners.newWeakInterner();
+@javax.annotation.concurrent.Immutable
+class ImmutableSharedKeyMap<K, V> protected constructor(keys: Array<Any?>, values: Array<Any>) :
+    CompactImmutableMap<K?, V?> {
+    private val offsetTable: OffsetTable<K?>
 
-  private final OffsetTable<K> offsetTable;
-  // If size is 1, this is the value itself.
-  @VisibleForSerialization protected final Object values;
+    // If size is 1, this is the value itself.
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    protected val values: Any
 
-  private static final class OffsetTable<K> {
-    final Object[] keys;
-    // Keep a map around to speed up get lookups for larger maps.
-    // We make this value lazy to avoid computing for values that end up being thrown away
-    // during interning anyway (the majority).
-    private volatile ImmutableMap<K, Integer> indexMap;
+    private class OffsetTable<K>(val keys: Array<Any?>) {
+        // Keep a map around to speed up get lookups for larger maps.
+        // We make this value lazy to avoid computing for values that end up being thrown away
+        // during interning anyway (the majority).
+        @kotlin.concurrent.Volatile
+        private var indexMap: com.google.common.collect.ImmutableMap<K?, Int?>? = null
 
-    private OffsetTable(Object[] keys) {
-      this.keys = keys;
-    }
-
-    void initIndexMap() {
-      if (indexMap == null) {
-        synchronized (this) {
-          if (indexMap == null) {
-            ImmutableMap.Builder<K, Integer> builder = ImmutableMap.builder();
-            for (int i = 0; i < keys.length; ++i) {
-              @SuppressWarnings("unchecked")
-              K key = (K) keys[i];
-              builder.put(key, i);
+        fun initIndexMap() {
+            if (indexMap == null) {
+                synchronized(this) {
+                    if (indexMap == null) {
+                        val builder: com.google.common.collect.ImmutableMap.Builder<K?, Int?> =
+                            com.google.common.collect.ImmutableMap.builder<K?, Int?>()
+                        for (i in keys.indices) {
+                            val key = keys[i] as K?
+                            builder.put(key, i)
+                        }
+                        this.indexMap = builder.buildOrThrow()
+                    }
+                }
             }
-            this.indexMap = builder.buildOrThrow();
-          }
         }
-      }
+
+        fun offsetForKey(key: K?): Int {
+            return indexMap.getOrDefault(key, -1)
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is OffsetTable<*>) {
+                return false
+            }
+            return java.util.Arrays.equals(this.keys, o.keys)
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Arrays.hashCode(keys)
+        }
     }
 
-    int offsetForKey(K key) {
-      return indexMap.getOrDefault(key, -1);
+    init {
+        com.google.common.base.Preconditions.checkArgument(keys.length == values.length)
+        this.offsetTable = createOffsetTable<K?>(keys)
+        if (values.length == 1) {
+            this.values = values[0]
+        } else {
+            this.values = values
+        }
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof OffsetTable<?> that)) {
-        return false;
-      }
-      return Arrays.equals(this.keys, that.keys);
+    override fun get(key: K?): V? {
+        val offset = offsetTable.offsetForKey(key)
+        if (offset == -1) {
+            return null
+        }
+        val size: Int = offsetTable.keys.length
+        if (size == 1) {
+            return values as V?
+        }
+        return (values as Array<Any?>?)!![offset] as V?
     }
 
-    @Override
-    public int hashCode() {
-      return Arrays.hashCode(keys);
-    }
-  }
-
-  protected ImmutableSharedKeyMap(Object[] keys, Object[] values) {
-    Preconditions.checkArgument(keys.length == values.length);
-    this.offsetTable = createOffsetTable(keys);
-    if (values.length == 1) {
-      this.values = values[0];
-    } else {
-      this.values = values;
-    }
-  }
-
-  @SuppressWarnings("unchecked")
-  private static <K> OffsetTable<K> createOffsetTable(Object[] keys) {
-    OffsetTable<K> offsetTable = new OffsetTable<>(keys);
-    OffsetTable<K> internedTable = (OffsetTable<K>) offsetTables.intern(offsetTable);
-    internedTable.initIndexMap();
-    return internedTable;
-  }
-
-  @SuppressWarnings("unchecked")
-  @Override
-  public V get(K key) {
-    int offset = offsetTable.offsetForKey(key);
-    if (offset == -1) {
-      return null;
-    }
-    int size = offsetTable.keys.length;
-    if (size == 1) {
-      return (V) values;
-    }
-    return (V) ((Object[]) values)[offset];
-  }
-
-  @Override
-  public int size() {
-    return offsetTable.keys.length;
-  }
-
-  @SuppressWarnings("unchecked")
-  @Override
-  public K keyAt(int index) {
-    return (K) offsetTable.keys[index];
-  }
-
-  @SuppressWarnings("unchecked")
-  @Override
-  public V valueAt(int index) {
-    int size = offsetTable.keys.length;
-    if (size == 1) {
-      Preconditions.checkElementIndex(index, 1);
-      return (V) values;
-    }
-    return (V) ((Object[]) values)[index];
-  }
-
-  /** Do not use! Present only for serialization. (Annotated as @Deprecated just to prevent use.) */
-  @Deprecated
-  @VisibleForSerialization
-  public Object[] getKeys() {
-    return offsetTable.keys;
-  }
-
-  /** Do not use! Present only for serialization. (Annotated as @Deprecated just to prevent use.) */
-  @Deprecated
-  @VisibleForSerialization
-  public Object[] getValuesAsArray() {
-    int size = offsetTable.keys.length;
-    if (size == 1) {
-      return new Object[] {values};
-    }
-    return (Object[]) values;
-  }
-
-  @Override
-  @SuppressWarnings("ReferenceEquality")
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-    ImmutableSharedKeyMap<?, ?> that = (ImmutableSharedKeyMap<?, ?>) o;
-    if (offsetTable != that.offsetTable) {
-      return false;
-    }
-    int size = offsetTable.keys.length;
-    if (size == 1) {
-      return Objects.equals(values, that.values);
-    }
-    return Arrays.equals((Object[]) values, (Object[]) that.values);
-  }
-
-  @Override
-  public int hashCode() {
-    int size = offsetTable.keys.length;
-    if (size == 1) {
-      return Objects.hash(offsetTable, values);
-    }
-    return Objects.hash(offsetTable, Arrays.hashCode((Object[]) values));
-  }
-
-  /**
-   * Creates an {@link ImmutableSharedKeyMap} directly from an {@link ImmutableMap}.
-   *
-   * <p>This is a more efficient alternative to using a {@link Builder} when the input is already in
-   * the form of an {@link ImmutableMap}.
-   *
-   * <p>This method could accept a more general type of {@link java.util.Map}, but it is
-   * intentionally overly strict to ensure that copies are only made from a type with a meaningful
-   * iteration order (and because there is no current use case for other types of maps).
-   */
-  public static <K, V> ImmutableSharedKeyMap<K, V> copyOf(ImmutableMap<K, V> map) {
-    return new ImmutableSharedKeyMap<>(map.keySet().toArray(), map.values().toArray());
-  }
-
-  public static <K, V> Builder<K, V> builder() {
-    return new Builder<>();
-  }
-
-  /** Builder for {@link ImmutableSharedKeyMap}. */
-  public static final class Builder<K, V> {
-    private final List<Object> entries = new ArrayList<>();
-
-    private Builder() {}
-
-    @CanIgnoreReturnValue
-    public Builder<K, V> put(K key, V value) {
-      entries.add(key);
-      entries.add(value);
-      return this;
+    override fun size(): Int {
+        return offsetTable.keys.length
     }
 
-    public ImmutableSharedKeyMap<K, V> build() {
-      int count = entries.size() / 2;
-      Object[] keys = new Object[count];
-      Object[] values = new Object[count];
-      int entryIndex = 0;
-      for (int i = 0; i < count; ++i) {
-        keys[i] = entries.get(entryIndex++);
-        values[i] = entries.get(entryIndex++);
-      }
-      return new ImmutableSharedKeyMap<>(keys, values);
+    override fun keyAt(index: Int): K? {
+        return offsetTable.keys[index] as K?
     }
-  }
+
+    override fun valueAt(index: Int): V? {
+        val size: Int = offsetTable.keys.length
+        if (size == 1) {
+            com.google.common.base.Preconditions.checkElementIndex(index, 1)
+            return values as V?
+        }
+        return (values as Array<Any?>?)!![index] as V?
+    }
+
+    @get:com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @get:Deprecated("")
+    val keys: Array<Any?>
+        /** Do not use! Present only for serialization. (Annotated as @Deprecated just to prevent use.)  */
+        get() = offsetTable.keys
+
+    @get:com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @get:Deprecated("")
+    val valuesAsArray: Array<Any?>?
+        /** Do not use! Present only for serialization. (Annotated as @Deprecated just to prevent use.)  */
+        get() {
+            val size: Int = offsetTable.keys.length
+            if (size == 1) {
+                return arrayOf<Any?>(values)
+            }
+            return values as Array<Any?>?
+        }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false
+        }
+        val that = o as ImmutableSharedKeyMap<*, *>
+        if (offsetTable !== that.offsetTable) {
+            return false
+        }
+        val size: Int = offsetTable.keys.length
+        if (size == 1) {
+            return values == that.values
+        }
+        return java.util.Arrays.equals(values as Array<Any?>?, that.values as Array<Any?>?)
+    }
+
+    override fun hashCode(): Int {
+        val size: Int = offsetTable.keys.length
+        if (size == 1) {
+            return java.util.Objects.hash(offsetTable, values)
+        }
+        return java.util.Objects.hash(offsetTable, java.util.Arrays.hashCode(values as Array<Any?>?))
+    }
+
+    /** Builder for [ImmutableSharedKeyMap].  */
+    class Builder<K, V> private constructor() {
+        private val entries: MutableList<Any?> = java.util.ArrayList<Any?>()
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun put(key: K?, value: V?): Builder<K?, V?> {
+            entries.add(key)
+            entries.add(value)
+            return this
+        }
+
+        fun build(): ImmutableSharedKeyMap<K?, V?> {
+            val count: Int = entries.size() / 2
+            val keys = arrayOfNulls<Any>(count)
+            val values: Array<Any> = arrayOfNulls<Any>(count)
+            var entryIndex = 0
+            for (i in 0..<count) {
+                keys[i] = entries.get(entryIndex++)
+                values[i] = entries.get(entryIndex++)!!
+            }
+            return ImmutableSharedKeyMap<K?, V?>(keys, values)
+        }
+    }
+
+    companion object {
+        private val offsetTables: com.google.common.collect.Interner<OffsetTable<*>?> =
+            com.google.devtools.build.lib.concurrent.BlazeInterners.newWeakInterner<OffsetTable<*>?>()
+
+        private fun <K> createOffsetTable(keys: Array<Any?>): OffsetTable<K?> {
+            val offsetTable = OffsetTable<K?>(keys)
+            val internedTable = offsetTables.intern(offsetTable) as OffsetTable<K?>
+            internedTable.initIndexMap()
+            return internedTable
+        }
+
+        /**
+         * Creates an [ImmutableSharedKeyMap] directly from an [ImmutableMap].
+         * 
+         * 
+         * This is a more efficient alternative to using a [Builder] when the input is already in
+         * the form of an [ImmutableMap].
+         * 
+         * 
+         * This method could accept a more general type of [java.util.Map], but it is
+         * intentionally overly strict to ensure that copies are only made from a type with a meaningful
+         * iteration order (and because there is no current use case for other types of maps).
+         */
+        fun <K, V> copyOf(map: com.google.common.collect.ImmutableMap<K?, V?>): ImmutableSharedKeyMap<K?, V?> {
+            return ImmutableSharedKeyMap<K?, V?>(map.keySet().toArray(), map.values().toArray())
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun <K, V> builder(): Builder<K?, V?> {
+            return com.google.devtools.build.lib.collect.ImmutableSharedKeyMap.Builder<K?, V?>()
+        }
+    }
 }

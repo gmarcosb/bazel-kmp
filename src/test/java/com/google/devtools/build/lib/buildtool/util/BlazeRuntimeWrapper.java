@@ -433,7 +433,7 @@ public class BlazeRuntimeWrapper {
           result = command.exec(env, optionsParser);
         } catch (RuntimeException | Error e) {
           crash = Crash.from(e);
-          result = BlazeCommandResult.detailedExitCode(crash.getDetailedExitCode());
+          result = BlazeCommandResult.detailedExitCode(crash.detailedExitCode);
           throw e;
         } finally {
           commandComplete(crash);
@@ -558,14 +558,14 @@ public class BlazeRuntimeWrapper {
           throw e;
         } catch (RuntimeException | Error e) {
           crash = Crash.from(e);
-          detailedExitCode = crash.getDetailedExitCode();
+          detailedExitCode = crash.detailedExitCode;
           throw e;
         } finally {
           env.getTimestampGranularityMonitor().waitForTimestampGranularity(lastRequest.getOutErr());
           configuration = lastResult.getBuildConfiguration();
           finalizeBuildResult(lastResult);
           buildTool.stopRequest(
-              lastResult, crash != null ? crash.getThrowable() : null, detailedExitCode);
+              lastResult, crash != null ? crash.throwable : null, detailedExitCode);
           commandComplete(crash);
         }
       } finally {

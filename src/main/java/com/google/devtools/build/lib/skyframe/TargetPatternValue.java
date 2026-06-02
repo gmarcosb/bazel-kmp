@@ -146,10 +146,10 @@ public final class TargetPatternValue implements SkyValue {
       if (!laterTargetPatternKey.isNegative()) {
         continue;
       }
-      if (laterParsedPattern.getType() == Type.TARGETS_BELOW_DIRECTORY) {
+      if (laterParsedPattern.type == Type.TARGETS_BELOW_DIRECTORY) {
         TargetsBelowDirectory laterParsedTargetsBelowDirectory =
             (TargetsBelowDirectory) laterParsedPattern;
-        if (targetPattern.getType() == Type.TARGETS_BELOW_DIRECTORY) {
+        if (targetPattern.type == Type.TARGETS_BELOW_DIRECTORY) {
           TargetsBelowDirectory targetsBelowDirectory = (TargetsBelowDirectory) targetPattern;
           if (laterParsedTargetsBelowDirectory.contains(targetsBelowDirectory)
               == ContainsResult.DIRECTORY_EXCLUSION_WOULD_BE_EXACT) {
@@ -168,7 +168,7 @@ public final class TargetPatternValue implements SkyValue {
             }
           }
         }
-      } else if (excludeSingleTargets && laterParsedPattern.getType() == Type.SINGLE_TARGET) {
+      } else if (excludeSingleTargets && laterParsedPattern.type == Type.SINGLE_TARGET) {
         excludedSingleTargetsBuilder.add(laterParsedPattern.getSingleTargetLabel());
       } else {
         indicesOfNegativePatternsThatNeedToBeIncludedBuilder.add(j);
@@ -222,7 +222,7 @@ public final class TargetPatternValue implements SkyValue {
     }
 
     public String getPattern() {
-      return signedParsedPattern.pattern().getOriginalPattern();
+      return signedParsedPattern.pattern().originalPattern;
     }
 
     public TargetPattern getParsedPattern() {
@@ -249,7 +249,7 @@ public final class TargetPatternValue implements SkyValue {
     public String toString() {
       return String.format(
           "%s, excludedSubdirs=%s, filteringPolicy=%s",
-          (isNegative() ? "-" : "") + signedParsedPattern.pattern().getOriginalPattern(),
+          (isNegative() ? "-" : "") + signedParsedPattern.pattern().originalPattern,
           excludedSubdirectories,
           policy);
     }

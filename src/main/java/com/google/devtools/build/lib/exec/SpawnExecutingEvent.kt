@@ -11,34 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.RunningActionEvent;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.exec.SpawnRunner.ProgressStatus;
+import com.google.devtools.build.lib.actions.ActionExecutionMetadata
 
 /**
- * Notifies that {@link SpawnRunner} failed to find a cache hit and acquired the resources to
+ * Notifies that [SpawnRunner] failed to find a cache hit and acquired the resources to
  * execute. This MUST be posted before attempting to execute the subprocess.
- *
- * <p>Caching {@link SpawnRunner} implementations should only post this after a failed cache lookup,
+ * 
+ * 
+ * Caching [SpawnRunner] implementations should only post this after a failed cache lookup,
  * but may post this if cache lookup and execution happen within the same step, e.g. as part of a
  * single RPC call with no mechanism to report cache misses.
  */
-public record SpawnExecutingEvent(String name) implements ProgressStatus {
-  public SpawnExecutingEvent {
-    requireNonNull(name, "name");
-  }
+@kotlin.jvm.JvmRecord
+data class SpawnExecutingEvent(val name: String?) : ProgressStatus {
+    override fun postTo(
+        eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler,
+        action: ActionExecutionMetadata?
+    ) {
+        eventHandler.post(RunningActionEvent(action, this.name))
+    }
 
-  public static SpawnExecutingEvent create(String name) {
-    return new SpawnExecutingEvent(name);
-  }
+    init {
+        java.util.Objects.requireNonNull<String?>(name, "name")
+    }
 
-  @Override
-  public void postTo(ExtendedEventHandler eventHandler, ActionExecutionMetadata action) {
-    eventHandler.post(new RunningActionEvent(action, name()));
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun create(name: String?): SpawnExecutingEvent {
+            return SpawnExecutingEvent(name)
+        }
+    }
 }

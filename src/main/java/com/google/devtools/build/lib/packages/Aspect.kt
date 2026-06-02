@@ -11,207 +11,227 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.util.HashCodes;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
 /**
- * An instance of a given {@code AspectClass} with loaded definition and parameters.
- *
- * <p>This is an aspect equivalent of {@link Rule} class for build rules.
- *
- * <p>Note: equality is only implemented for purposes of interning. It delegates to {@link
- * AspectDefinition} equality, which is not overridden. For this reason, this class should not be
- * used in SkyKeys - use {@link AspectDescriptor} instead.
+ * An instance of a given `AspectClass` with loaded definition and parameters.
+ * 
+ * 
+ * This is an aspect equivalent of [Rule] class for build rules.
+ * 
+ * 
+ * Note: equality is only implemented for purposes of interning. It delegates to [ ] equality, which is not overridden. For this reason, this class should not be
+ * used in SkyKeys - use [AspectDescriptor] instead.
  */
 @Immutable
-public final class Aspect implements DependencyFilter.AttributeInfoProvider {
+class Aspect private constructor(aspectDescriptor: AspectDescriptor?, aspectDefinition: AspectDefinition?) :
+    AttributeInfoProvider {
+    private val aspectDescriptor: AspectDescriptor
+    private val aspectDefinition: AspectDefinition
 
-  /**
-   * The aspect definition is a function of the aspect class + its parameters, so we can cache that.
-   *
-   * <p>The native aspects are loaded with blaze and are not stateful. Reference equality works fine
-   * in this case.
-   */
-  private static final LoadingCache<
-          NativeAspectClass, LoadingCache<AspectParameters, AspectDefinition>>
-      definitionCache =
-          Caffeine.newBuilder()
-              .build(
-                  nativeAspectClass ->
-                      Caffeine.newBuilder().build(nativeAspectClass::getDefinition));
-
-  private static final Interner<Aspect> interner = BlazeInterners.newWeakInterner();
-
-  private final AspectDescriptor aspectDescriptor;
-  private final AspectDefinition aspectDefinition;
-
-  private Aspect(AspectDescriptor aspectDescriptor, AspectDefinition aspectDefinition) {
-    this.aspectDescriptor = checkNotNull(aspectDescriptor);
-    this.aspectDefinition = checkNotNull(aspectDefinition);
-  }
-
-  public static Aspect forNative(NativeAspectClass nativeAspectClass, AspectParameters parameters) {
-    AspectDefinition definition = definitionCache.get(nativeAspectClass).get(parameters);
-    return createInterned(nativeAspectClass, definition, parameters);
-  }
-
-  public static Aspect forNative(NativeAspectClass nativeAspectClass) {
-    return forNative(nativeAspectClass, AspectParameters.EMPTY);
-  }
-
-  public static Aspect forStarlark(
-      StarlarkAspectClass starlarkAspectClass,
-      AspectDefinition aspectDefinition,
-      AspectParameters parameters) {
-    return createInterned(starlarkAspectClass, aspectDefinition, parameters);
-  }
-
-  private static Aspect createInterned(
-      AspectClass aspectClass, AspectDefinition definition, AspectParameters parameters) {
-    return interner.intern(new Aspect(AspectDescriptor.of(aspectClass, parameters), definition));
-  }
-
-  /** Returns the aspectClass required for building the aspect. */
-  public AspectClass getAspectClass() {
-    return aspectDescriptor.getAspectClass();
-  }
-
-  /** Returns parameters for evaluation of the aspect. */
-  public AspectParameters getParameters() {
-    return aspectDescriptor.getParameters();
-  }
-
-  public AspectDescriptor getDescriptor() {
-    return aspectDescriptor;
-  }
-
-  public AspectDefinition getDefinition() {
-    return aspectDefinition;
-  }
-
-  @Override
-  public boolean isAttributeValueExplicitlySpecified(Attribute attribute) {
-    // All aspect attributes are implicit.
-    return false;
-  }
-
-  @Override
-  public String toString() {
-    return "Aspect " + aspectDescriptor;
-  }
-
-  @Override
-  public int hashCode() {
-    return HashCodes.hashObjects(aspectDescriptor, aspectDefinition);
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (!(obj instanceof Aspect)) {
-      return false;
+    init {
+        this.aspectDescriptor = com.google.common.base.Preconditions.checkNotNull<AspectDescriptor>(aspectDescriptor)
+        this.aspectDefinition = com.google.common.base.Preconditions.checkNotNull<AspectDefinition>(aspectDefinition)
     }
 
-    Aspect that = (Aspect) obj;
-    return aspectDescriptor.equals(that.aspectDescriptor)
-        && aspectDefinition.equals(that.aspectDefinition);
-  }
-
-  /**
-   * Codec for {@link Aspect}.
-   *
-   * <p>This codec calls {@link Aspect#forNative} and {@link Aspect#forStarlark} as the final step
-   * in serialization, which is important for interning. It also optimizes the way that native
-   * aspects are serialized by taking advantage of the fact that native aspect definitions can be
-   * determined from their descriptors alone.
-   */
-  @SuppressWarnings("unused") // Used reflectively.
-  private static final class AspectCodec extends DeferredObjectCodec<Aspect> {
-    @Override
-    public Class<Aspect> getEncodedClass() {
-      return Aspect.class;
+    /** Returns the aspectClass required for building the aspect.  */
+    fun getAspectClass(): AspectClass? {
+        return aspectDescriptor.getAspectClass()
     }
 
-    @Override
-    public void serialize(SerializationContext context, Aspect obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      AspectDescriptor descriptor = obj.getDescriptor();
-      boolean isNativeAspect = descriptor.getAspectClass() instanceof NativeAspectClass;
-      codedOut.writeBoolNoTag(isNativeAspect);
-      context.serialize(descriptor, codedOut);
-      if (!isNativeAspect) {
-        context.serialize(obj.getDefinition(), codedOut);
-      }
+    /** Returns parameters for evaluation of the aspect.  */
+    fun getParameters(): AspectParameters? {
+        return aspectDescriptor.getParameters()
     }
 
-    @Override
-    public DeferredValue<Aspect> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      if (codedIn.readBool()) {
-        var builder = new AspectDeserializationBuilderForNative();
-        context.deserialize(codedIn, builder, AspectDeserializationBuilderForNative::setDescriptor);
-        return builder;
-      }
-      var builder = new AspectDeserializationBuilderForStarlark();
-      context.deserialize(codedIn, builder, AspectDeserializationBuilderForStarlark::setDescriptor);
-      context.deserialize(codedIn, builder, AspectDeserializationBuilderForStarlark::setDefinition);
-      return builder;
+    fun getDescriptor(): AspectDescriptor {
+        return aspectDescriptor
     }
 
-    private static class AspectDeserializationBuilderForNative implements DeferredValue<Aspect> {
-      private AspectDescriptor descriptor;
-
-      @Override
-      public Aspect call() {
-        return forNative(
-            (NativeAspectClass) descriptor.getAspectClass(), descriptor.getParameters());
-      }
-
-      private static void setDescriptor(
-          AspectDeserializationBuilderForNative builder, Object value) {
-        builder.descriptor = (AspectDescriptor) value;
-      }
+    fun getDefinition(): AspectDefinition {
+        return aspectDefinition
     }
 
-    private static class AspectDeserializationBuilderForStarlark implements DeferredValue<Aspect> {
-      private AspectDescriptor descriptor;
-      private AspectDefinition definition;
-
-      @Override
-      public Aspect call() {
-        return forStarlark(
-            (StarlarkAspectClass) descriptor.getAspectClass(),
-            definition,
-            descriptor.getParameters());
-      }
-
-      private static void setDescriptor(
-          AspectDeserializationBuilderForStarlark builder, Object value) {
-        builder.descriptor = (AspectDescriptor) value;
-      }
-
-      private static void setDefinition(
-          AspectDeserializationBuilderForStarlark builder, Object value) {
-        builder.definition = (AspectDefinition) value;
-      }
+    override fun isAttributeValueExplicitlySpecified(attribute: com.google.devtools.build.lib.packages.Attribute?): Boolean {
+        // All aspect attributes are implicit.
+        return false
     }
-  }
+
+    override fun toString(): String {
+        return "Aspect " + aspectDescriptor
+    }
+
+    override fun hashCode(): Int {
+        return HashCodes.hashObjects(aspectDescriptor, aspectDefinition)
+    }
+
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is Aspect) {
+            return false
+        }
+
+        val that = obj
+        return aspectDescriptor == that.aspectDescriptor
+                && aspectDefinition == that.aspectDefinition
+    }
+
+    /**
+     * Codec for [Aspect].
+     * 
+     * 
+     * This codec calls [Aspect.forNative] and [Aspect.forStarlark] as the final step
+     * in serialization, which is important for interning. It also optimizes the way that native
+     * aspects are serialized by taking advantage of the fact that native aspect definitions can be
+     * determined from their descriptors alone.
+     */
+    @Suppress("unused") // Used reflectively.
+    private class AspectCodec : DeferredObjectCodec<Aspect?>() {
+        override fun getEncodedClass(): java.lang.Class<Aspect?> {
+            return Aspect::class.java
+        }
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(context: SerializationContext, obj: Aspect, codedOut: CodedOutputStream) {
+            val descriptor: AspectDescriptor = obj.getDescriptor()
+            val isNativeAspect = descriptor.getAspectClass() is NativeAspectClass
+            codedOut.writeBoolNoTag(isNativeAspect)
+            context.serialize(descriptor, codedOut)
+            if (!isNativeAspect) {
+                context.serialize(obj.getDefinition(), codedOut)
+            }
+        }
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserializeDeferred(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream
+        ): DeferredValue<Aspect?> {
+            if (codedIn.readBool()) {
+                val builder = AspectDeserializationBuilderForNative()
+                context.deserialize<AspectDeserializationBuilderForNative?>(
+                    codedIn,
+                    builder,
+                    AsyncDeserializationContext.FieldSetter { builder: AspectDeserializationBuilderForNative?, value: Any? ->
+                        AspectDeserializationBuilderForNative.Companion.setDescriptor(
+                            builder,
+                            value
+                        )
+                    })
+                return builder
+            }
+            val builder = AspectDeserializationBuilderForStarlark()
+            context.deserialize<AspectDeserializationBuilderForStarlark?>(
+                codedIn,
+                builder,
+                AsyncDeserializationContext.FieldSetter { builder: AspectDeserializationBuilderForStarlark?, value: Any? ->
+                    AspectDeserializationBuilderForStarlark.Companion.setDescriptor(
+                        builder,
+                        value
+                    )
+                })
+            context.deserialize<AspectDeserializationBuilderForStarlark?>(
+                codedIn,
+                builder,
+                AsyncDeserializationContext.FieldSetter { builder: AspectDeserializationBuilderForStarlark?, value: Any? ->
+                    AspectDeserializationBuilderForStarlark.Companion.setDefinition(
+                        builder,
+                        value
+                    )
+                })
+            return builder
+        }
+
+        private class AspectDeserializationBuilderForNative : DeferredValue<Aspect?> {
+            private var descriptor: AspectDescriptor? = null
+
+            override fun call(): Aspect {
+                return forNative(
+                    descriptor.getAspectClass() as NativeAspectClass?, descriptor.getParameters()
+                )
+            }
+
+            companion object {
+                private fun setDescriptor(
+                    builder: AspectDeserializationBuilderForNative, value: Any?
+                ) {
+                    builder.descriptor = value as AspectDescriptor
+                }
+            }
+        }
+
+        private class AspectDeserializationBuilderForStarlark : DeferredValue<Aspect?> {
+            private var descriptor: AspectDescriptor? = null
+            private var definition: AspectDefinition? = null
+
+            override fun call(): Aspect {
+                return forStarlark(
+                    descriptor.getAspectClass() as StarlarkAspectClass?,
+                    definition,
+                    descriptor.getParameters()
+                )
+            }
+
+            companion object {
+                private fun setDescriptor(
+                    builder: AspectDeserializationBuilderForStarlark, value: Any?
+                ) {
+                    builder.descriptor = value as AspectDescriptor
+                }
+
+                private fun setDefinition(
+                    builder: AspectDeserializationBuilderForStarlark, value: Any?
+                ) {
+                    builder.definition = value as AspectDefinition?
+                }
+            }
+        }
+    }
+
+    companion object {
+        /**
+         * The aspect definition is a function of the aspect class + its parameters, so we can cache that.
+         * 
+         * 
+         * The native aspects are loaded with blaze and are not stateful. Reference equality works fine
+         * in this case.
+         */
+        private val definitionCache: com.github.benmanes.caffeine.cache.LoadingCache<NativeAspectClass?, com.github.benmanes.caffeine.cache.LoadingCache<AspectParameters?, AspectDefinition?>?> =
+            Caffeine.newBuilder()
+                .build<NativeAspectClass?, com.github.benmanes.caffeine.cache.LoadingCache<AspectParameters?, AspectDefinition?>?>(
+                    com.github.benmanes.caffeine.cache.CacheLoader { nativeAspectClass: NativeAspectClass? ->
+                        Caffeine.newBuilder()
+                            .build<AspectParameters?, AspectDefinition?>(com.github.benmanes.caffeine.cache.CacheLoader { aspectParameters: AspectParameters? ->
+                                nativeAspectClass.getDefinition(aspectParameters)
+                            })
+                    })
+
+        private val interner: com.google.common.collect.Interner<Aspect> = BlazeInterners.newWeakInterner()
+
+        @kotlin.jvm.JvmOverloads
+        fun forNative(
+            nativeAspectClass: NativeAspectClass?,
+            parameters: AspectParameters? = AspectParameters.Companion.EMPTY
+        ): Aspect {
+            val definition: AspectDefinition? = definitionCache.get(nativeAspectClass).get(parameters)
+            return createInterned(nativeAspectClass, definition, parameters)
+        }
+
+        fun forStarlark(
+            starlarkAspectClass: StarlarkAspectClass?,
+            aspectDefinition: AspectDefinition?,
+            parameters: AspectParameters?
+        ): Aspect {
+            return createInterned(starlarkAspectClass, aspectDefinition, parameters)
+        }
+
+        private fun createInterned(
+            aspectClass: AspectClass?, definition: AspectDefinition?, parameters: AspectParameters?
+        ): Aspect {
+            return interner.intern(Aspect(AspectDescriptor.Companion.of(aspectClass, parameters), definition))
+        }
+    }
 }

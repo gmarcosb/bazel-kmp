@@ -11,17 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.rules.cpp
 
-package com.google.devtools.build.lib.bazel.rules.cpp;
+import com.google.devtools.build.lib.packages.Provider
+import com.google.devtools.build.lib.rules.cpp.CcModule
+import com.google.devtools.build.lib.rules.cpp.CcToolchainProvider
 
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.rules.cpp.CcModule;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainProvider;
-
-/** A module that contains Starlark utilities for C++ support. */
-public class BazelCcModule extends CcModule {
-  @Override
-  public Provider getCcToolchainProvider() {
-    return CcToolchainProvider.BAZEL_PROVIDER;
-  }
+/** A module that contains Starlark utilities for C++ support.  */
+class BazelCcModule : CcModule() {
+    override fun getCcToolchainProvider(): Provider {
+        return CcToolchainProvider.BAZEL_PROVIDER
+    }
 }

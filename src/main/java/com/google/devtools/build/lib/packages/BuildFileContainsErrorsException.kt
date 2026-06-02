@@ -11,51 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import java.io.IOException;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * Exception indicating a failed attempt to access a package that could not be read or had syntax
  * errors.
  */
-public class BuildFileContainsErrorsException extends NoSuchPackageException {
-
-  public BuildFileContainsErrorsException(PackageIdentifier packageIdentifier) {
-    super(
+class BuildFileContainsErrorsException : NoSuchPackageException {
+    constructor(packageIdentifier: PackageIdentifier) : super(
         packageIdentifier,
-        String.format(
+        java.lang.String.format(
             "Package '%s' contains errors",
-            packageIdentifier.getPackageFragment().getPathString()));
-  }
+            packageIdentifier.getPackageFragment().getPathString()
+        )
+    )
 
-  public BuildFileContainsErrorsException(PackageIdentifier packageIdentifier, String message) {
-    super(packageIdentifier, message);
-  }
+    constructor(packageIdentifier: PackageIdentifier?, message: String?) : super(packageIdentifier, message)
 
-  public BuildFileContainsErrorsException(
-      PackageIdentifier packageIdentifier, String message, IOException cause) {
-    super(packageIdentifier, message, cause);
-  }
+    constructor(packageIdentifier: PackageIdentifier?, message: String?, cause: IOException?) : super(
+        packageIdentifier,
+        message,
+        cause
+    )
 
-  public BuildFileContainsErrorsException(
-      PackageIdentifier packageIdentifier, String message, DetailedExitCode detailedExitCode) {
-    super(packageIdentifier, message, detailedExitCode);
-  }
+    constructor(packageIdentifier: PackageIdentifier?, message: String?, detailedExitCode: DetailedExitCode?) : super(
+        packageIdentifier,
+        message,
+        detailedExitCode
+    )
 
-  public BuildFileContainsErrorsException(
-      PackageIdentifier packageIdentifier,
-      String message,
-      IOException cause,
-      DetailedExitCode detailedExitCode) {
-    super(packageIdentifier, message, cause, detailedExitCode);
-  }
+    constructor(
+        packageIdentifier: PackageIdentifier?,
+        message: String?,
+        cause: IOException?,
+        detailedExitCode: DetailedExitCode?
+    ) : super(packageIdentifier, message, cause, detailedExitCode)
 
-  @Override
-  public String getMessage() {
-    return String.format("error loading package '%s': %s", getPackageId(), getRawMessage());
-  }
+    override fun getMessage(): String? {
+        return java.lang.String.format("error loading package '%s': %s", getPackageId(), getRawMessage())
+    }
 }

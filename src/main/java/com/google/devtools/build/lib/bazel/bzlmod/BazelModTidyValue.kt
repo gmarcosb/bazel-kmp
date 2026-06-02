@@ -12,49 +12,71 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.List;
+import com.google.devtools.build.lib.bazel.bzlmod.ExternalDepsException
+import com.google.devtools.build.lib.bazel.bzlmod.RootModuleFileFixup
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * All Skyframe information required for the {@code bazel mod tidy} command.
- *
+ * All Skyframe information required for the `bazel mod tidy` command.
+ * 
  * @param fixups Buildozer fixups for incorrect use_repo declarations by the root module.
  * @param buildozer The path of the buildozer binary provided by the "buildozer" module.
  * @param moduleFilePaths The set of paths to the root MODULE.bazel file and all its includes.
- * @param errors Errors encountered while evaluating prerequisites for {@code bazel mod tidy}.
+ * @param errors Errors encountered while evaluating prerequisites for `bazel mod tidy`.
  */
-public record BazelModTidyValue(
-    ImmutableList<RootModuleFileFixup> fixups,
-    Path buildozer,
-    ImmutableSet<PathFragment> moduleFilePaths,
-    ImmutableList<ExternalDepsException> errors)
-    implements SkyValue {
-  public BazelModTidyValue {
-    requireNonNull(fixups, "fixups");
-    requireNonNull(buildozer, "buildozer");
-    requireNonNull(moduleFilePaths, "moduleFilePaths");
-    requireNonNull(errors, "errors");
-  }
+class BazelModTidyValue(
+    fixups: com.google.common.collect.ImmutableList<RootModuleFileFixup?>?,
+    buildozer: com.google.devtools.build.lib.vfs.Path?,
+    moduleFilePaths: com.google.common.collect.ImmutableSet<PathFragment?>?,
+    errors: com.google.common.collect.ImmutableList<ExternalDepsException?>?
+) : SkyValue {
+    val fixups: com.google.common.collect.ImmutableList<RootModuleFileFixup?>?
+    val buildozer: com.google.devtools.build.lib.vfs.Path?
+    val moduleFilePaths: com.google.common.collect.ImmutableSet<PathFragment?>?
+    val errors: com.google.common.collect.ImmutableList<ExternalDepsException?>?
 
-  @SerializationConstant public static final SkyKey KEY = () -> SkyFunctions.BAZEL_MOD_TIDY;
+    init {
+        this.errors = errors
+        this.moduleFilePaths = moduleFilePaths
+        this.buildozer = buildozer
+        this.fixups = fixups
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<RootModuleFileFixup?>?>(
+            fixups,
+            "fixups"
+        )
+        java.util.Objects.requireNonNull<com.google.devtools.build.lib.vfs.Path?>(buildozer, "buildozer")
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<PathFragment?>?>(
+            moduleFilePaths,
+            "moduleFilePaths"
+        )
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<ExternalDepsException?>?>(
+            errors,
+            "errors"
+        )
+    }
 
-  static BazelModTidyValue create(
-      List<RootModuleFileFixup> fixups,
-      Path buildozer,
-      ImmutableSet<PathFragment> moduleFilePaths,
-      ImmutableList<ExternalDepsException> errors) {
-    return new BazelModTidyValue(ImmutableList.copyOf(fixups), buildozer, moduleFilePaths, errors);
-  }
+    companion object {
+        @SerializationConstant
+        val KEY: SkyKey = SkyKey { SkyFunctions.BAZEL_MOD_TIDY }
+
+        fun create(
+            fixups: MutableList<RootModuleFileFixup?>,
+            buildozer: com.google.devtools.build.lib.vfs.Path?,
+            moduleFilePaths: com.google.common.collect.ImmutableSet<PathFragment?>?,
+            errors: com.google.common.collect.ImmutableList<ExternalDepsException?>?
+        ): BazelModTidyValue {
+            return BazelModTidyValue(
+                com.google.common.collect.ImmutableList.copyOf<RootModuleFileFixup?>(fixups),
+                buildozer,
+                moduleFilePaths,
+                errors
+            )
+        }
+    }
 }

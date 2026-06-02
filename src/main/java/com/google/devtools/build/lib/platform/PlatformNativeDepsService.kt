@@ -11,66 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import java.util.function.IntConsumer
 
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.function.IntConsumer;
+/** Service interface for platform-specific native dependencies.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface PlatformNativeDepsService : com.google.devtools.build.lib.runtime.BlazeService {
+    /**
+     * Push a request to disable automatic sleep for hardware. Useful for making sure computers don't
+     * go to sleep during long builds. Must be matched with a [.popDisableSleep] call.
+     * 
+     * @return 0 on success, -1 if sleep is not supported.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun pushDisableSleep(): Int
 
-/** Service interface for platform-specific native dependencies. */
-@SkybridgeInterface
-public interface PlatformNativeDepsService extends BlazeService {
-  /**
-   * Push a request to disable automatic sleep for hardware. Useful for making sure computers don't
-   * go to sleep during long builds. Must be matched with a {@link #popDisableSleep} call.
-   *
-   * @return 0 on success, -1 if sleep is not supported.
-   */
-  @CanIgnoreReturnValue
-  int pushDisableSleep();
+    /**
+     * Pop a request to disable automatic sleep for hardware. Useful for making sure computers don't
+     * go to sleep during long builds. Must be matched with a previous [.pushDisableSleep] call.
+     * 
+     * @return 0 on success, -1 if sleep is not supported.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun popDisableSleep(): Int
 
-  /**
-   * Pop a request to disable automatic sleep for hardware. Useful for making sure computers don't
-   * go to sleep during long builds. Must be matched with a previous {@link #pushDisableSleep} call.
-   *
-   * @return 0 on success, -1 if sleep is not supported.
-   */
-  @CanIgnoreReturnValue
-  int popDisableSleep();
+    /** Registers the JNI callbacks for the CPU speed module.  */
+    fun registerCPUSpeedJni(callback: IntConsumer?)
 
-  /** Registers the JNI callbacks for the CPU speed module. */
-  void registerCPUSpeedJni(IntConsumer callback);
+    /**
+     * Returns the current CPU speed as a percentage.
+     * 
+     * @return 1-100 to represent CPU speed. Returns -1 in case of error.
+     */
+    fun cpuSpeed(): Int
 
-  /**
-   * Returns the current CPU speed as a percentage.
-   *
-   * @return 1-100 to represent CPU speed. Returns -1 in case of error.
-   */
-  int cpuSpeed();
+    /** Registers the JNI callbacks for the disk space module.  */
+    fun registerDiskSpaceJni(callback: IntConsumer?)
 
-  /** Registers the JNI callbacks for the disk space module. */
-  void registerDiskSpaceJni(IntConsumer callback);
+    /** Registers the JNI callbacks for the load advisory module.  */
+    fun registerLoadAdvisoryJni(callback: IntConsumer?)
 
-  /** Registers the JNI callbacks for the load advisory module. */
-  void registerLoadAdvisoryJni(IntConsumer callback);
+    /** Returns the system load advisory.  */
+    fun systemLoadAdvisory(): Int
 
-  /** Returns the system load advisory. */
-  int systemLoadAdvisory();
+    /** Registers the JNI callbacks for the memory pressure monitor.  */
+    fun registerMemoryPressureJni(callback: IntConsumer?)
 
-  /** Registers the JNI callbacks for the memory pressure monitor. */
-  void registerMemoryPressureJni(IntConsumer callback);
+    /** Returns the current memory pressure.  */
+    fun systemMemoryPressure(): Int
 
-  /** Returns the current memory pressure. */
-  int systemMemoryPressure();
+    /** Registers the JNI callbacks for the suspension module.  */
+    fun registerSuspensionJni(callback: IntConsumer?)
 
-  /** Registers the JNI callbacks for the suspension module. */
-  void registerSuspensionJni(IntConsumer callback);
+    /** Registers the JNI callbacks for the thermal module.  */
+    fun registerThermalJni(callback: IntConsumer?)
 
-  /** Registers the JNI callbacks for the thermal module. */
-  void registerThermalJni(IntConsumer callback);
-
-  /** Returns the current thermal load. */
-  int thermalLoad();
+    /** Returns the current thermal load.  */
+    fun thermalLoad(): Int
 }

@@ -398,7 +398,7 @@ public abstract sealed class RepoRecordedInput {
                 directories
                     .getOutputBase()
                     .getRelative(LabelConstants.EXTERNAL_REPOSITORY_LOCATION)
-                    .getRelative(repoName().get().getName()));
+                    .getRelative(repoName().get().name));
       }
       return RootedPath.toRootedPath(root, path());
     }
@@ -903,7 +903,7 @@ public abstract sealed class RepoRecordedInput {
 
     @Override
     public String toStringInternal() {
-      return sourceRepo.getName() + ',' + apparentName;
+      return sourceRepo.name + ',' + apparentName;
     }
 
     @Override
@@ -927,7 +927,7 @@ public abstract sealed class RepoRecordedInput {
         return new MaybeValue.Invalid("source repo %s doesn't exist anymore".formatted(sourceRepo));
       }
       RepositoryName canonicalName = repoMappingValue.repositoryMapping().get(apparentName);
-      return new MaybeValue.Valid(canonicalName != null ? canonicalName.getName() : null);
+      return new MaybeValue.Valid(canonicalName != null ? canonicalName.name : null);
     }
 
     @Override

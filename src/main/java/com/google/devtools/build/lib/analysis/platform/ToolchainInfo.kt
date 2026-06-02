@@ -11,86 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
-
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.devtools.build.lib.analysis.ResolvedToolchainData;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.starlarkbuildapi.platform.ToolchainInfoApi;
-import java.util.Map;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.analysis.ResolvedToolchainData
+import com.google.devtools.build.lib.analysis.platform.ToolchainInfo
+import com.google.devtools.build.lib.packages.BuiltinProvider
+import com.google.devtools.build.lib.packages.StructImpl
+import com.google.devtools.build.lib.starlarkbuildapi.platform.ToolchainInfoApi
 
 /**
  * A provider that supplies information about a specific language toolchain, including what platform
  * constraints are required for execution and for the target platform.
- *
- * <p>Unusually, ToolchainInfo exposes both its StarlarkCallable-annotated fields and a Map of
+ * 
+ * 
+ * Unusually, ToolchainInfo exposes both its StarlarkCallable-annotated fields and a Map of
  * additional fields to Starlark code. Also, these are not disjoint.
  */
-@Immutable
-public final class ToolchainInfo extends StructImpl
-    implements ToolchainInfoApi, ResolvedToolchainData {
-
-  /** Name used in Starlark for accessing this provider. */
-  public static final String STARLARK_NAME = "ToolchainInfo";
-
-  /** Provider singleton constant. */
-  public static final BuiltinProvider<ToolchainInfo> PROVIDER = new Provider();
-
-  /** Provider for {@link ToolchainInfo} objects. */
-  private static class Provider extends BuiltinProvider<ToolchainInfo>
-      implements ToolchainInfoApi.Provider {
-    private Provider() {
-      super(STARLARK_NAME, ToolchainInfo.class);
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class ToolchainInfo internal constructor(values: MutableMap<String?, Any?>) : StructImpl(), ToolchainInfoApi,
+    ResolvedToolchainData {
+    /** Provider for [ToolchainInfo] objects.  */
+    private class Provider : BuiltinProvider<ToolchainInfo?>(STARLARK_NAME, ToolchainInfo::class.java),
+        ToolchainInfoApi.Provider {
+        override fun toolchainInfo(kwargs: net.starlark.java.eval.Dict<String?, Any?>): ToolchainInfo {
+            return ToolchainInfo(kwargs)
+        }
     }
 
-    @Override
-    public ToolchainInfo toolchainInfo(Dict<String, Object> kwargs) {
-      return new ToolchainInfo(kwargs);
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    val values: com.google.common.collect.ImmutableSortedMap<String?, Any?>
+
+    /** Constructs a ToolchainInfo. The `values` map itself is not retained.  */
+    init {
+        this.values = copyValues(values)
     }
-  }
 
-  @VisibleForSerialization final ImmutableSortedMap<String, Object> values;
+    val provider: BuiltinProvider<ToolchainInfo?>
+        get() = PROVIDER
 
-  /** Constructs a ToolchainInfo. The {@code values} map itself is not retained. */
-  ToolchainInfo(Map<String, Object> values) {
-    this.values = copyValues(values);
-  }
-
-  @Override
-  public BuiltinProvider<ToolchainInfo> getProvider() {
-    return PROVIDER;
-  }
-
-  /**
-   * Preprocesses a map of field values to convert the field names and field values to
-   * Starlark-acceptable names and types.
-   *
-   * <p>Entries are ordered by key.
-   */
-  private static ImmutableSortedMap<String, Object> copyValues(Map<String, Object> values) {
-    ImmutableSortedMap.Builder<String, Object> builder = ImmutableSortedMap.naturalOrder();
-    for (Map.Entry<String, Object> e : values.entrySet()) {
-      builder.put(Attribute.getStarlarkName(e.getKey()), Starlark.fromJava(e.getValue(), null));
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun getValue(name: String?): Any? {
+        return values.get(name)
     }
-    return builder.buildOrThrow();
-  }
 
-  @Override
-  public Object getValue(String name) throws EvalException {
-    return values.get(name);
-  }
+    val fieldNames: com.google.common.collect.ImmutableSortedSet<String?>
+        get() = values.keys
 
-  @Override
-  public ImmutableSortedSet<String> getFieldNames() {
-    return values.keySet();
-  }
+    companion object {
+        /** Name used in Starlark for accessing this provider.  */
+        const val STARLARK_NAME: String = "ToolchainInfo"
+
+        /** Provider singleton constant.  */
+        @kotlin.jvm.JvmField
+        val PROVIDER: BuiltinProvider<ToolchainInfo?> =
+            com.google.devtools.build.lib.analysis.platform.ToolchainInfo.Provider()
+
+        /**
+         * Preprocesses a map of field values to convert the field names and field values to
+         * Starlark-acceptable names and types.
+         * 
+         * 
+         * Entries are ordered by key.
+         */
+        private fun copyValues(values: MutableMap<String?, Any?>): com.google.common.collect.ImmutableSortedMap<String?, Any?> {
+            val builder: com.google.common.collect.ImmutableSortedMap.Builder<String?, Any?> =
+                com.google.common.collect.ImmutableSortedMap.naturalOrder<String?, Any?>()
+            for (e in values.entries) {
+                builder.put(
+                    com.google.devtools.build.lib.packages.Attribute.getStarlarkName(e.key),
+                    net.starlark.java.eval.Starlark.fromJava(e.value, null)
+                )
+            }
+            return builder.buildOrThrow()
+        }
+    }
 }

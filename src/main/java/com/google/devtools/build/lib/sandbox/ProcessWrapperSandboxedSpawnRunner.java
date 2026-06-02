@@ -64,7 +64,7 @@ final class ProcessWrapperSandboxedSpawnRunner extends AbstractSandboxSpawnRunne
     // Note that the value returned by context.getId() is only unique inside one given SpawnRunner,
     // so we have to prefix our name to turn it into a globally unique value.
     Path sandboxPath =
-        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.getId()));
+        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.id));
     sandboxPath.createDirectoryAndParents();
 
     // b/64689608: The execroot of the sandboxed process must end with the workspace name, just like
@@ -76,7 +76,7 @@ final class ProcessWrapperSandboxedSpawnRunner extends AbstractSandboxSpawnRunne
     ImmutableMap<String, String> environment =
         localEnvProvider.rewriteLocalEnv(spawn.getEnvironment(), binTools, "/tmp");
 
-    Duration timeout = context.getTimeout();
+    Duration timeout = context.timeout;
     ProcessWrapper.CommandLineBuilder commandLineBuilder =
         processWrapper
             .commandLineBuilder(spawn.getArguments())

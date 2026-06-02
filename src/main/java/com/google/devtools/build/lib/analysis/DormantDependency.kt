@@ -11,79 +11,86 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.errorprone.annotations.Keep;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
  * Not an actual dependency, but the possibility of one.
- *
- * <p>Dormant attributes result in an instance of this object for each possible dependency edge. It
+ * 
+ * 
+ * Dormant attributes result in an instance of this object for each possible dependency edge. It
  * can then be passed up the dependency graph and turned into an actual dependency ("materialized")
  * by rules in the reverse transitive closure.
  */
-public record DormantDependency(Label label) implements StarlarkValue {
-  public static final String NAME = "dormant_dependency";
-  public static final String ALLOWLIST_ATTRIBUTE_NAME = "$allowlist_dormant_dependency";
-  public static final String ALLOWLIST_LABEL_STR =
-      "//tools/allowlists/dormant_dependency_allowlist";
-  public static final Label ALLOWLIST_LABEL = Label.parseCanonicalUnchecked(ALLOWLIST_LABEL_STR);
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<dormant dependency label='");
-    printer.str(label, semantics);
-    printer.append("'>");
-  }
-
-  @StarlarkMethod(name = "label", structField = true, doc = "TBD")
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public boolean isImmutable() {
-    return true;
-  }
-
-  @Override
-  public String toString() {
-    return "<dormant dependency " + label.toString() + ">";
-  }
-
-  @Keep
-  private static final class Codec extends LeafObjectCodec<DormantDependency> {
-    @Override
-    public Class<DormantDependency> getEncodedClass() {
-      return DormantDependency.class;
+class DormantDependency(label: com.google.devtools.build.lib.cmdline.Label?) : net.starlark.java.eval.StarlarkValue {
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("<dormant dependency label='")
+        printer.str(label, semantics)
+        printer.append("'>")
     }
 
-    @Override
-    public void serialize(
-        LeafSerializationContext context, DormantDependency obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serializeLeaf(obj.label(), Label.labelCodec(), codedOut);
+    @net.starlark.java.annot.StarlarkMethod(name = "label", structField = true, doc = "TBD")
+    fun getLabel(): com.google.devtools.build.lib.cmdline.Label? {
+        return label
     }
 
-    @Override
-    public DormantDependency deserialize(
-        LeafDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      Label label = context.deserializeLeaf(codedIn, Label.labelCodec());
-      return new DormantDependency(label);
+    override fun isImmutable(): Boolean {
+        return true
     }
-  }
+
+    override fun toString(): String {
+        return "<dormant dependency " + label.toString() + ">"
+    }
+
+    @com.google.errorprone.annotations.Keep
+    private class Codec : LeafObjectCodec<DormantDependency?>() {
+        override fun getEncodedClass(): java.lang.Class<DormantDependency?> {
+            return DormantDependency::class.java
+        }
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(
+            context: LeafSerializationContext, obj: DormantDependency, codedOut: CodedOutputStream?
+        ) {
+            context.serializeLeaf<com.google.devtools.build.lib.cmdline.Label?>(
+                obj.label,
+                com.google.devtools.build.lib.cmdline.Label.labelCodec(),
+                codedOut
+            )
+        }
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserialize(
+            context: LeafDeserializationContext, codedIn: CodedInputStream?
+        ): DormantDependency {
+            val label: com.google.devtools.build.lib.cmdline.Label? =
+                context.deserializeLeaf<com.google.devtools.build.lib.cmdline.Label?>(
+                    codedIn,
+                    com.google.devtools.build.lib.cmdline.Label.labelCodec()
+                )
+            return DormantDependency(label)
+        }
+    }
+
+    val label: com.google.devtools.build.lib.cmdline.Label?
+
+    init {
+        this.label = label
+    }
+
+    companion object {
+        const val NAME: String = "dormant_dependency"
+        const val ALLOWLIST_ATTRIBUTE_NAME: String = "\$allowlist_dormant_dependency"
+        const val ALLOWLIST_LABEL_STR: String = "//tools/allowlists/dormant_dependency_allowlist"
+        val ALLOWLIST_LABEL: com.google.devtools.build.lib.cmdline.Label? =
+            com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked(
+                ALLOWLIST_LABEL_STR
+            )
+    }
 }

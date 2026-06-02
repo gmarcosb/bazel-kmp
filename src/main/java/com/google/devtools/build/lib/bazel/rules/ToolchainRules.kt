@@ -11,33 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.rules;
+package com.google.devtools.build.lib.bazel.rules
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
-import com.google.devtools.build.lib.bazel.rules.genrule.BazelGenRuleRule;
-import com.google.devtools.build.lib.rules.ToolchainType.ToolchainTypeRule;
-import com.google.devtools.build.lib.rules.core.CoreRules;
-import com.google.devtools.build.lib.rules.genrule.GenRuleBaseRule;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
-/** Rules for toolchain support in Bazel. */
-public class ToolchainRules implements RuleSet {
-  public static final ToolchainRules INSTANCE = new ToolchainRules();
+/** Rules for toolchain support in Bazel.  */
+class ToolchainRules private constructor() : RuleSet {
+    public override fun init(builder: ConfiguredRuleClassProvider.Builder) {
+        builder.addRuleDefinition(ToolchainTypeRule())
+        builder.addRuleDefinition(GenRuleBaseRule())
+        builder.addRuleDefinition(BazelGenRuleRule())
+    }
 
-  private ToolchainRules() {
-    // Use the static INSTANCE field instead.
-  }
+    public override fun requires(): com.google.common.collect.ImmutableList<RuleSet?> {
+        return com.google.common.collect.ImmutableList.of<E?>(
+            CoreRules.INSTANCE,
+            CcRules.Companion.INSTANCE,
+            JavaRules.Companion.INSTANCE
+        )
+    }
 
-  @Override
-  public void init(ConfiguredRuleClassProvider.Builder builder) {
-    builder.addRuleDefinition(new ToolchainTypeRule());
-    builder.addRuleDefinition(new GenRuleBaseRule());
-    builder.addRuleDefinition(new BazelGenRuleRule());
-  }
-
-  @Override
-  public ImmutableList<RuleSet> requires() {
-    return ImmutableList.of(CoreRules.INSTANCE, CcRules.INSTANCE, JavaRules.INSTANCE);
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: ToolchainRules = ToolchainRules()
+    }
 }

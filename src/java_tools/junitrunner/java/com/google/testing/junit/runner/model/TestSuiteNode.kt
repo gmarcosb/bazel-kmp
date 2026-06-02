@@ -11,119 +11,99 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.model
 
-package com.google.testing.junit.runner.model;
-
-import com.google.testing.junit.runner.model.TestResult.Status;
-import com.google.testing.junit.runner.util.TestClock.TestInstant;
-import com.google.testing.junit.runner.util.TestIntegration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import org.junit.runner.Description;
+import com.google.testing.junit.runner.util.TestClock.TestInstant
+import org.junit.runner.Description
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
 /**
  * A parent node in the test suite model.
  */
-class TestSuiteNode extends TestNode {
-  private final List<TestNode> children = new ArrayList<>();
-  private final Map<String, String> properties;
+internal class TestSuiteNode @kotlin.jvm.JvmOverloads constructor(
+    description: Description?,
+    private val properties: MutableMap<String?, String?>? = mutableMapOf<String?, String?>()
+) : TestNode(description) {
+    private val children: MutableList<TestNode> = ArrayList<TestNode>()
 
-  TestSuiteNode(Description description) {
-    this(description, Collections.emptyMap());
-  }
-
-  TestSuiteNode(Description description, Map<String, String> properties) {
-    super(description);
-    this.properties = properties;
-  }
-
-  // VisibleForTesting
-  @Override
-  public List<TestNode> getChildren() {
-    return Collections.unmodifiableList(children);
-  }
-
-  @Override
-  public boolean isTestCase() {
-    return false;
-  }
-
-  @Override
-  public void testFailure(Throwable throwable, TestInstant now) {
-    for (TestNode child : getChildren()) {
-      child.testFailure(throwable, now);
-    }
-  }
-
-  @Override
-  public void dynamicTestFailure(Description test, Throwable throwable, TestInstant now) {
-    for (TestNode child : getChildren()) {
-      child.dynamicTestFailure(test, throwable, now);
-    }
-  }
-
-  @Override
-  public void testInterrupted(TestInstant now) {
-    for (TestNode child : getChildren()) {
-      child.testInterrupted(now);
-    }
-  }
-
-  @Override
-  public void testSkipped(TestInstant now) {
-    for (TestNode child : getChildren()) {
-      child.testSkipped(now);
-    }
-  }
-
-  @Override
-  public void testSuppressed(TestInstant now) {
-    for (TestNode child : getChildren()) {
-      child.testSuppressed(now);
-    }
-  }
-
-  void addTestSuite(TestSuiteNode suite) {
-    children.add(suite);
-  }
-
-  void addTestCase(TestCaseNode testCase) {
-    children.add(testCase);
-  }
-
-  @Override
-  protected TestResult buildResult() {
-    TestInterval runTime = null;
-    int numTests = 0;
-    int numFailures = 0;
-    LinkedList<TestResult> childResults = new LinkedList<>();
-
-    for (TestNode child : children) {
-      TestResult childResult = child.getResult();
-      childResults.add(childResult);
-      numTests += childResult.getNumTests();
-      numFailures += childResult.getNumFailures();
-
-      TestInterval childRunTime = childResult.getRunTimeInterval();
-      if (childRunTime != null) {
-        runTime = runTime == null ? childRunTime : TestInterval.around(runTime, childRunTime);
-      }
+    // VisibleForTesting
+    override fun getChildren(): MutableList<TestNode> {
+        return Collections.unmodifiableList<TestNode?>(children)
     }
 
-    return new TestResult.Builder()
-        .name(getDescription().getDisplayName())
-        .className("")
-        .properties(properties)
-        .failures(Collections.<Throwable>emptyList())
-        .runTimeInterval(runTime)
-        .status(Status.SKIPPED)
-        .numTests(numTests)
-        .numFailures(numFailures)
-        .childResults(childResults)
-        .integrations(Collections.<TestIntegration>emptySet())
-        .build();
-  }
+    override fun isTestCase(): Boolean {
+        return false
+    }
+
+    override fun testFailure(throwable: Throwable?, now: TestInstant?) {
+        for (child in getChildren()) {
+            child.testFailure(throwable, now)
+        }
+    }
+
+    override fun dynamicTestFailure(test: Description?, throwable: Throwable?, now: TestInstant?) {
+        for (child in getChildren()) {
+            child.dynamicTestFailure(test, throwable, now)
+        }
+    }
+
+    override fun testInterrupted(now: TestInstant?) {
+        for (child in getChildren()) {
+            child.testInterrupted(now)
+        }
+    }
+
+    override fun testSkipped(now: TestInstant?) {
+        for (child in getChildren()) {
+            child.testSkipped(now)
+        }
+    }
+
+    override fun testSuppressed(now: TestInstant?) {
+        for (child in getChildren()) {
+            child.testSuppressed(now)
+        }
+    }
+
+    fun addTestSuite(suite: TestSuiteNode?) {
+        children.add(suite!!)
+    }
+
+    fun addTestCase(testCase: TestCaseNode?) {
+        children.add(testCase!!)
+    }
+
+    override fun buildResult(): TestResult {
+        var runTime: TestInterval? = null
+        var numTests = 0
+        var numFailures = 0
+        val childResults: LinkedList<TestResult?> = LinkedList<TestResult?>()
+
+        for (child in children) {
+            val childResult = child.getResult()
+            childResults.add(childResult)
+            numTests += childResult.getNumTests()
+            numFailures += childResult.getNumFailures()
+
+            val childRunTime = childResult.getRunTimeInterval()
+            if (childRunTime != null) {
+                runTime = if (runTime == null) childRunTime else TestInterval.Companion.around(runTime, childRunTime)
+            }
+        }
+
+        return TestResult.Builder()
+            .name(getDescription().getDisplayName())
+            .className("")
+            .properties(properties)
+            .failures(mutableListOf<Throwable?>())
+            .runTimeInterval(runTime)
+            .status(TestResult.Status.SKIPPED)
+            .numTests(numTests)
+            .numFailures(numFailures)
+            .childResults(childResults)
+            .integrations(mutableSetOf<TestIntegration?>())
+            .build()
+    }
 }

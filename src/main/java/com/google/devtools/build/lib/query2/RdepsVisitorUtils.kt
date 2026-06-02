@@ -11,66 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2;
+package com.google.devtools.build.lib.query2
 
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Multimap;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.concurrent.MultisetSemaphore;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.ParallelSkyQueryUtils.DepAndRdep;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Set;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-class RdepsVisitorUtils {
-  private RdepsVisitorUtils() {}
-
-  static Iterable<SkyKey> getMaybeFilteredRdeps(
-      Iterable<DepAndRdep> depAndRdeps, SkyQueryEnvironment env) throws InterruptedException {
-    return env.hasDependencyFilter() ? getFilteredRdeps(depAndRdeps, env) : getRdeps(depAndRdeps);
-  }
-
-  private static Iterable<SkyKey> getFilteredRdeps(
-      Iterable<DepAndRdep> depAndRdeps, SkyQueryEnvironment env) throws InterruptedException {
-    ArrayList<SkyKey> filteredRdeps = new ArrayList<>();
-
-    Multimap<SkyKey, SkyKey> reverseDepMultimap = ArrayListMultimap.create();
-    for (DepAndRdep depAndRdep : depAndRdeps) {
-      if (depAndRdep.dep == null) {
-        filteredRdeps.add(depAndRdep.rdep);
-      } else {
-        reverseDepMultimap.put(depAndRdep.dep, depAndRdep.rdep);
-      }
+internal object RdepsVisitorUtils {
+    @Throws(java.lang.InterruptedException::class)
+    fun getMaybeFilteredRdeps(
+        depAndRdeps: Iterable<DepAndRdep>, env: SkyQueryEnvironment
+    ): Iterable<SkyKey?> {
+        return if (env.hasDependencyFilter()) getFilteredRdeps(depAndRdeps, env) else getRdeps(depAndRdeps)
     }
 
-    Multimap<SkyKey, SkyKey> packageKeyToTargetKeyMap =
-        SkyQueryEnvironment.makePackageKeyToTargetKeyMap(
-            Iterables.concat(reverseDepMultimap.values()));
-    Set<PackageIdentifier> pkgIdsNeededForTargetification =
-        SkyQueryEnvironment.getPkgIdsNeededForTargetification(packageKeyToTargetKeyMap);
+    @Throws(java.lang.InterruptedException::class)
+    private fun getFilteredRdeps(
+        depAndRdeps: Iterable<DepAndRdep>, env: SkyQueryEnvironment
+    ): Iterable<SkyKey?> {
+        val filteredRdeps: java.util.ArrayList<SkyKey?> = java.util.ArrayList<SkyKey?>()
 
-    MultisetSemaphore<PackageIdentifier> packageSemaphore = env.getPackageMultisetSemaphore();
-    packageSemaphore.acquireAll(pkgIdsNeededForTargetification);
-    try {
-      if (!reverseDepMultimap.isEmpty()) {
-        Collection<Target> filteredTargets =
-            env.filterRawReverseDepsOfTransitiveTraversalKeys(
-                reverseDepMultimap.asMap(), packageKeyToTargetKeyMap);
-        filteredTargets.stream()
-            .map(SkyQueryEnvironment.TARGET_TO_SKY_KEY)
-            .forEachOrdered(filteredRdeps::add);
-      }
-    } finally {
-      packageSemaphore.releaseAll(pkgIdsNeededForTargetification);
+        val reverseDepMultimap: com.google.common.collect.Multimap<SkyKey?, SkyKey?> =
+            com.google.common.collect.ArrayListMultimap.create<SkyKey?, SkyKey?>()
+        for (depAndRdep in depAndRdeps) {
+            if (depAndRdep.dep == null) {
+                filteredRdeps.add(depAndRdep.rdep)
+            } else {
+                reverseDepMultimap.put(depAndRdep.dep, depAndRdep.rdep)
+            }
+        }
+
+        val packageKeyToTargetKeyMap: com.google.common.collect.Multimap<SkyKey?, SkyKey?> =
+            SkyQueryEnvironment.Companion.makePackageKeyToTargetKeyMap(
+                com.google.common.collect.Iterables.concat<SkyKey?>(reverseDepMultimap.values())
+            )
+        val pkgIdsNeededForTargetification: MutableSet<PackageIdentifier?>? =
+            SkyQueryEnvironment.Companion.getPkgIdsNeededForTargetification(packageKeyToTargetKeyMap)
+
+        val packageSemaphore: MultisetSemaphore<PackageIdentifier?> = env.getPackageMultisetSemaphore()
+        packageSemaphore.acquireAll(pkgIdsNeededForTargetification)
+        try {
+            if (!reverseDepMultimap.isEmpty()) {
+                val filteredTargets: MutableCollection<Target?> =
+                    env.filterRawReverseDepsOfTransitiveTraversalKeys(
+                        reverseDepMultimap.asMap(), packageKeyToTargetKeyMap
+                    )
+                filteredTargets.stream()
+                    .map<SkyKey?>(SkyQueryEnvironment.Companion.TARGET_TO_SKY_KEY)
+                    .forEachOrdered { e: SkyKey? -> filteredRdeps.add(e) }
+            }
+        } finally {
+            packageSemaphore.releaseAll(pkgIdsNeededForTargetification)
+        }
+
+        return filteredRdeps
     }
 
-    return filteredRdeps;
-  }
-
-  private static Iterable<SkyKey> getRdeps(Iterable<DepAndRdep> depAndRdeps) {
-    return Iterables.transform(depAndRdeps, depAndRdep -> depAndRdep.rdep);
-  }
+    private fun getRdeps(depAndRdeps: Iterable<DepAndRdep>): Iterable<SkyKey?> {
+        return com.google.common.collect.Iterables.transform<DepAndRdep?, SkyKey?>(
+            depAndRdeps,
+            com.google.common.base.Function { depAndRdep: DepAndRdep? -> depAndRdep.rdep })
+    }
 }

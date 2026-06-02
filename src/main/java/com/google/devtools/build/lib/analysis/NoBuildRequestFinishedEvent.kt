@@ -11,15 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.buildeventstream.BuildCompletingEvent
+import com.google.devtools.build.lib.util.ExitCode
 
-import com.google.devtools.build.lib.buildeventstream.BuildCompletingEvent;
-import com.google.devtools.build.lib.util.ExitCode;
-
-/** {@link BuildEvent} indicating that a request that does not involve building as finished. */
-public final class NoBuildRequestFinishedEvent extends BuildCompletingEvent {
-  public NoBuildRequestFinishedEvent(ExitCode exitCode, long finishTimeMillis) {
-    super(exitCode, finishTimeMillis);
-  }
-}
+/** [BuildEvent] indicating that a request that does not involve building as finished.  */
+class NoBuildRequestFinishedEvent(exitCode: ExitCode?, finishTimeMillis: Long) :
+    BuildCompletingEvent(exitCode, finishTimeMillis)

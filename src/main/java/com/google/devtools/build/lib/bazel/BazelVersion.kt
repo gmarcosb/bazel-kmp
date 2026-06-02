@@ -11,87 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel
 
-package com.google.devtools.build.lib.bazel;
-
-import static com.google.common.base.Strings.nullToEmpty;
-import static com.google.common.collect.Comparators.lexicographical;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import java.util.Comparator;
-import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
+import com.google.auto.value.AutoValue
 
 /**
  * Represents a bazel version. The version format supported is {RELEASE[SUFFIX]}, where:
- *
- * <ul>
- *   <li>{RELEASE} is a sequence of decimal numbers separated by dots;
- *   <li>{SUFFIX} could be: {@code -pre.*}, or any other string (which compares equal to SUFFIX
- *       being absent)
- * </ul>
+ * 
+ * 
+ *  * {RELEASE} is a sequence of decimal numbers separated by dots;
+ *  * {SUFFIX} could be: `-pre.*`, or any other string (which compares equal to SUFFIX
+ * being absent)
+ * 
  */
 @AutoValue
-public abstract class BazelVersion {
+abstract class BazelVersion {
+    /** Returns the "release" part of the version string as a list of integers.  */
+    abstract val release: com.google.common.collect.ImmutableList<Int?>?
 
-  private static final Pattern PATTERN =
-      Pattern.compile("(?<release>(?:\\d+\\.)*\\d+)(?<suffix>(.*))?");
+    /** Returns the "suffix" part of the version that starts after the integers  */
+    abstract val suffix: String?
 
-  /** Returns the "release" part of the version string as a list of integers. */
-  abstract ImmutableList<Integer> getRelease();
+    /** Returns the original version string.  */
+    abstract val original: String?
 
-  /** Returns the "suffix" part of the version that starts after the integers */
-  abstract String getSuffix();
+    val isPrerelease: Boolean
+        /** Whether this is a prerelease  */
+        get() = this.suffix.startsWith("-pre")
 
-  /** Returns the original version string. */
-  public abstract String getOriginal();
+    /** Check if class version satisfies compatibility version  */
+    fun satisfiesCompatibility(compatVersion: String): Boolean {
+        var compatVersion = compatVersion
+        val cutIndex = if (compatVersion.contains("=")) 2 else 1
+        val sign: String = compatVersion.substring(0, cutIndex)
+        compatVersion = compatVersion.substring(cutIndex)
 
-  /** Whether this is a prerelease */
-  boolean isPrerelease() {
-    return getSuffix().startsWith("-pre");
-  }
+        val compatSplit: com.google.common.collect.ImmutableList<Int?> =
+            com.google.common.base.Splitter.on('.')
+                .splitToStream(compatVersion)
+                .map<Int?>(java.util.function.Function { s: String? -> java.lang.Integer.valueOf(s) })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Int?>())
 
-  /** Parses a version string into a {@link BazelVersion} object. */
-  public static BazelVersion parse(String version) {
-    Matcher matcher = PATTERN.matcher(version);
-    Preconditions.checkArgument(
-        matcher.matches(), "bad version (does not match regex): %s", version);
+        var result: Int =
+            java.util.Objects.compare<com.google.common.collect.ImmutableList<Int?>?>(
+                this.release,
+                compatSplit,
+                com.google.common.collect.Comparators.lexicographical<Int?, Int?>(java.util.Comparator.naturalOrder<Int?>())
+            )
+        if (result == 0 && this.isPrerelease) {
+            result = -1
+        }
 
-    String release = matcher.group("release");
-    @Nullable String suffix = matcher.group("suffix");
-
-    ImmutableList<Integer> releaseSplit =
-        Splitter.on('.').splitToStream(release).map(Integer::valueOf).collect(toImmutableList());
-    return new AutoValue_BazelVersion(releaseSplit, nullToEmpty(suffix), version);
-  }
-
-  /** Check if class version satisfies compatibility version */
-  public boolean satisfiesCompatibility(String compatVersion) {
-    int cutIndex = compatVersion.contains("=") ? 2 : 1;
-    String sign = compatVersion.substring(0, cutIndex);
-    compatVersion = compatVersion.substring(cutIndex);
-
-    ImmutableList<Integer> compatSplit =
-        Splitter.on('.')
-            .splitToStream(compatVersion)
-            .map(Integer::valueOf)
-            .collect(toImmutableList());
-
-    int result =
-        Objects.compare(
-            getRelease(), compatSplit, lexicographical(Comparator.<Integer>naturalOrder()));
-    if (result == 0 && isPrerelease()) {
-      result = -1;
+        return (result == 0 && sign.contains("="))
+                || (result > 0 && (sign.contains(">") || sign.contains("-")))
+                || (result < 0 && (sign.contains("<") || sign.contains("-")))
     }
 
-    return (result == 0 && sign.contains("="))
-        || (result > 0 && (sign.contains(">") || sign.contains("-")))
-        || (result < 0 && (sign.contains("<") || sign.contains("-")));
-  }
+    companion object {
+        private val PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile("(?<release>(?:\\d+\\.)*\\d+)(?<suffix>(.*))?")
+
+        /** Parses a version string into a [BazelVersion] object.  */
+        fun parse(version: String?): BazelVersion {
+            val matcher: java.util.regex.Matcher = PATTERN.matcher(version)
+            com.google.common.base.Preconditions.checkArgument(
+                matcher.matches(), "bad version (does not match regex): %s", version
+            )
+
+            val release: String = matcher.group("release")
+            val suffix: String? = matcher.group("suffix")
+
+            val releaseSplit: com.google.common.collect.ImmutableList<Int?> =
+                com.google.common.base.Splitter.on('.').splitToStream(release)
+                    .map<Int?>(java.util.function.Function { s: String? -> java.lang.Integer.valueOf(s) })
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<Int?>())
+            return AutoValue_BazelVersion(releaseSplit, com.google.common.base.Strings.nullToEmpty(suffix), version)
+        }
+    }
 }

@@ -11,24 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding.testing
 
-package com.google.testing.junit.runner.sharding.testing;
-
-import com.google.testing.junit.runner.sharding.RoundRobinShardingFilter;
-import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory;
-
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
-
-import java.util.Collection;
+import com.google.testing.junit.runner.sharding.RoundRobinShardingFilter
+import org.junit.runner.Description
+import org.junit.runner.manipulation.Filter
 
 /**
- * Creates a {@link RoundRobinShardingFilter} for use in tests.
+ * Creates a [RoundRobinShardingFilter] for use in tests.
  */
-public final class RoundRobinShardingFilterFactory implements ShardingFilterFactory {
-  @Override
-  public Filter createFilter(
-      Collection<Description> testDescriptions, int shardIndex, int totalShards) {
-    return new RoundRobinShardingFilter(testDescriptions, shardIndex, totalShards);
-  }
+class RoundRobinShardingFilterFactory : ShardingFilterFactory {
+    override fun createFilter(
+        testDescriptions: MutableCollection<Description?>?, shardIndex: Int, totalShards: Int
+    ): Filter {
+        return RoundRobinShardingFilter(testDescriptions, shardIndex, totalShards)
+    }
 }

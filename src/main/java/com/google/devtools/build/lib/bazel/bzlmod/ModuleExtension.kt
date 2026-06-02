@@ -11,74 +11,94 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.Optional;
-import net.starlark.java.eval.StarlarkCallable;
-import net.starlark.java.eval.StarlarkValue;
-import net.starlark.java.syntax.Location;
+import com.google.auto.value.AutoBuilder
+import com.google.devtools.build.lib.bazel.bzlmod.TagClass
 
 /**
  * A module extension object, which can be used to perform arbitrary logic in order to create repos.
- *
+ * 
  * @param definingBzlFileLabel The .bzl file where the module extension object was originally
- *     defined.
- *     <p>Note that if the extension object was then loaded and re-exported by a different .bzl file
- *     before being used in a MODULE.bazel file, the output of this function may differ from the
- *     corresponding ModuleExtensionUsage#getExtensionBzlFile and ModuleExtensionId#getBzlFileLabel.
+ * defined.
+ * 
+ * Note that if the extension object was then loaded and re-exported by a different .bzl file
+ * before being used in a MODULE.bazel file, the output of this function may differ from the
+ * corresponding ModuleExtensionUsage#getExtensionBzlFile and ModuleExtensionId#getBzlFileLabel.
  */
-public record ModuleExtension(
-    StarlarkCallable implementation,
-    ImmutableMap<String, TagClass> tagClasses,
-    Optional<String> doc,
-    Label definingBzlFileLabel,
-    Location location,
-    ImmutableList<String> envVariables,
-    boolean osDependent,
-    boolean archDependent,
-    int factsVersion)
-    implements StarlarkValue {
-  public ModuleExtension {
-    requireNonNull(implementation, "implementation");
-    requireNonNull(tagClasses, "tagClasses");
-    requireNonNull(doc, "doc");
-    requireNonNull(definingBzlFileLabel, "definingBzlFileLabel");
-    requireNonNull(location, "location");
-    requireNonNull(envVariables, "envVariables");
-  }
+class ModuleExtension(
+    implementation: net.starlark.java.eval.StarlarkCallable?,
+    tagClasses: com.google.common.collect.ImmutableMap<String?, TagClass?>?,
+    doc: java.util.Optional<String?>?,
+    definingBzlFileLabel: com.google.devtools.build.lib.cmdline.Label?,
+    location: net.starlark.java.syntax.Location?,
+    envVariables: com.google.common.collect.ImmutableList<String?>?,
+    val osDependent: Boolean,
+    val archDependent: Boolean,
+    val factsVersion: Int
+) : net.starlark.java.eval.StarlarkValue {
+    /** Builder for [ModuleExtension].  */
+    @AutoBuilder
+    abstract class Builder {
+        abstract fun setDoc(value: java.util.Optional<String?>?): Builder?
 
-  public static Builder builder() {
-    return new AutoBuilder_ModuleExtension_Builder();
-  }
+        abstract fun setDefiningBzlFileLabel(value: com.google.devtools.build.lib.cmdline.Label?): Builder?
 
-  /** Builder for {@link ModuleExtension}. */
-  @AutoBuilder
-  public abstract static class Builder {
-    public abstract Builder setDoc(Optional<String> value);
+        abstract fun setLocation(value: net.starlark.java.syntax.Location?): Builder?
 
-    public abstract Builder setDefiningBzlFileLabel(Label value);
+        abstract fun setImplementation(value: net.starlark.java.eval.StarlarkCallable?): Builder?
 
-    public abstract Builder setLocation(Location value);
+        abstract fun setTagClasses(value: com.google.common.collect.ImmutableMap<String?, TagClass?>?): Builder?
 
-    public abstract Builder setImplementation(StarlarkCallable value);
+        abstract fun setEnvVariables(value: com.google.common.collect.ImmutableList<String?>?): Builder?
 
-    public abstract Builder setTagClasses(ImmutableMap<String, TagClass> value);
+        abstract fun setOsDependent(osDependent: Boolean): Builder?
 
-    public abstract Builder setEnvVariables(ImmutableList<String> value);
+        abstract fun setArchDependent(archDependent: Boolean): Builder?
 
-    public abstract Builder setOsDependent(boolean osDependent);
+        abstract fun setFactsVersion(factsVersion: Int): Builder?
 
-    public abstract Builder setArchDependent(boolean archDependent);
+        abstract fun build(): ModuleExtension?
+    }
 
-    public abstract Builder setFactsVersion(int factsVersion);
+    val implementation: net.starlark.java.eval.StarlarkCallable?
+    val tagClasses: com.google.common.collect.ImmutableMap<String?, TagClass?>?
+    val doc: java.util.Optional<String?>?
+    val definingBzlFileLabel: com.google.devtools.build.lib.cmdline.Label?
+    val location: net.starlark.java.syntax.Location?
+    val envVariables: com.google.common.collect.ImmutableList<String?>?
 
-    public abstract ModuleExtension build();
-  }
+    init {
+        this.envVariables = envVariables
+        this.location = location
+        this.definingBzlFileLabel = definingBzlFileLabel
+        this.doc = doc
+        this.tagClasses = tagClasses
+        this.implementation = implementation
+        StarlarkCallable > java.util.Objects.requireNonNull<net.starlark.java.eval.StarlarkCallable?>(
+            implementation,
+            "implementation"
+        )
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, TagClass?>?>(
+            tagClasses,
+            "tagClasses"
+        )
+        java.util.Objects.requireNonNull<java.util.Optional<String?>?>(doc, "doc")
+        Label > java.util.Objects.requireNonNull<com.google.devtools.build.lib.cmdline.Label?>(
+            definingBzlFileLabel,
+            "definingBzlFileLabel"
+        )
+        Location > java.util.Objects.requireNonNull<net.starlark.java.syntax.Location?>(location, "location")
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<String?>?>(
+            envVariables,
+            "envVariables"
+        )
+    }
+
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return AutoBuilder_ModuleExtension_Builder()
+        }
+    }
 }

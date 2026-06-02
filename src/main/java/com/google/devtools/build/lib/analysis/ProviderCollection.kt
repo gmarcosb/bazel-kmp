@@ -11,78 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StarlarkProviderIdentifier;
-import com.google.devtools.build.lib.packages.StarlarkProviderWrapper;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.packages.BuiltinProvider
+import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException
+import com.google.devtools.build.lib.packages.StarlarkProviderIdentifier
+import com.google.devtools.build.lib.packages.StarlarkProviderWrapper
 
 /**
  * Interface to mark classes that could contain transitive information added using the Starlark
  * framework.
  */
-public interface ProviderCollection {
-  /**
-   * Returns the transitive information provider requested, or null if the provider is not found.
-   * The provider has to be a TransitiveInfoProvider Java class.
-   */
-  @Nullable
-  <P extends TransitiveInfoProvider> P getProvider(Class<P> provider);
+interface ProviderCollection {
+    /**
+     * Returns the transitive information provider requested, or null if the provider is not found.
+     * The provider has to be a TransitiveInfoProvider Java class.
+     */
+    fun <P : com.google.devtools.build.lib.analysis.TransitiveInfoProvider?> getProvider(provider: java.lang.Class<P?>?): P?
 
-  /**
-   * Returns the transitive information requested or null, if the information is not found. The
-   * transitive information has to have been added using the Starlark framework.
-   */
-  @Nullable
-  Object get(String providerKey);
+    /**
+     * Returns the transitive information requested or null, if the information is not found. The
+     * transitive information has to have been added using the Starlark framework.
+     */
+    fun get(providerKey: String?): Any?
 
-  /**
-   * Returns the declared provider requested, or null, if the information is not found.
-   *
-   * <p>Use {@link #get(BuiltinProvider)} for built-in providers.
-   */
-  @Nullable
-  Info get(Provider.Key providerKey);
+    /**
+     * Returns the declared provider requested, or null, if the information is not found.
+     * 
+     * 
+     * Use [.get] for built-in providers.
+     */
+    fun get(providerKey: com.google.devtools.build.lib.packages.Provider.Key?): com.google.devtools.build.lib.packages.Info?
 
-  /**
-   * Returns the native declared provider requested, or null, if the information is not found.
-   *
-   * <p>Type-safe version of {@link #get(Provider.Key)} for built-in providers.
-   */
-  @Nullable
-  default <T extends Info> T get(BuiltinProvider<T> provider) {
-    return provider.getValueClass().cast(get(provider.getKey()));
-  }
+    /**
+     * Returns the native declared provider requested, or null, if the information is not found.
+     * 
+     * 
+     * Type-safe version of [.get] for built-in providers.
+     */
+    fun <T : com.google.devtools.build.lib.packages.Info?> get(provider: BuiltinProvider<T?>): T? {
+        return provider.getValueClass().cast(get(provider.getKey()))
+    }
 
-  /**
-   * Retrieves and converts an instance of a Starlark-defined provider to an instance of {@code T},
-   * according to the conversion defined by {@code wrapper}.
-   *
-   * <p>If the provider identified by {@code wrapper} is not present, returns null.
-   *
-   * <p>Conversion errors (e.g. missing fields or bad types) are indicated by throwing {@link
-   * RuleErrorException}.
-   */
-  @Nullable
-  default <T> T get(StarlarkProviderWrapper<T> wrapper) throws RuleErrorException {
-    Info value = get(wrapper.getKey());
-    return value == null ? null : wrapper.wrap(value);
-  }
+    /**
+     * Retrieves and converts an instance of a Starlark-defined provider to an instance of `T`,
+     * according to the conversion defined by `wrapper`.
+     * 
+     * 
+     * If the provider identified by `wrapper` is not present, returns null.
+     * 
+     * 
+     * Conversion errors (e.g. missing fields or bad types) are indicated by throwing [ ].
+     */
+    @Throws(RuleErrorException::class)
+    fun <T> get(wrapper: StarlarkProviderWrapper<T?>): T? {
+        val value: com.google.devtools.build.lib.packages.Info? = get(wrapper.getKey())
+        return if (value == null) null else wrapper.wrap(value)
+    }
 
-  /**
-   * Returns the provider defined in Starlark, or null, if the information is not found. The
-   * transitive information has to have been added using the Starlark framework.
-   *
-   * <p>This method dispatches to either {@link #get(Provider.Key)} or {@link #get(String)}
-   * depending on whether {@link StarlarkProviderIdentifier} is for legacy or for declared provider.
-   */
-  @Nullable
-  default Object get(StarlarkProviderIdentifier id) {
-    return this.get(id.getKey());
-  }
+    /**
+     * Returns the provider defined in Starlark, or null, if the information is not found. The
+     * transitive information has to have been added using the Starlark framework.
+     * 
+     * 
+     * This method dispatches to either [.get] or [.get]
+     * depending on whether [StarlarkProviderIdentifier] is for legacy or for declared provider.
+     */
+    fun get(id: StarlarkProviderIdentifier): Any? {
+        return this.get(id.getKey())
+    }
 }

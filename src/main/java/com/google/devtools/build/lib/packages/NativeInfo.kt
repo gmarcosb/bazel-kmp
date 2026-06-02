@@ -11,112 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
 
-import com.google.common.base.Objects;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Ordering;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import java.util.List;
-import net.starlark.java.eval.BuiltinFunction;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.Structure;
-import net.starlark.java.lib.MapWrapperStructure;
-import net.starlark.java.lib.StarlarkEncodable;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 
 /**
- * Abstract base class for implementations of {@link Info} that expose StarlarkCallable-annotated
+ * Abstract base class for implementations of [Info] that expose StarlarkCallable-annotated
  * fields (not just methods) to Starlark code. Subclasses must be immutable.
  */
 // TODO(adonovan): ensure that all subclasses are named *Info and not *Provider.
 // (Info is to object as Provider is to class.)
 @Immutable
-public abstract class NativeInfo implements Info, StarlarkEncodable {
+abstract class NativeInfo : com.google.devtools.build.lib.packages.Info, net.starlark.java.lib.StarlarkEncodable {
+    override fun isImmutable(): Boolean {
+        return true // immutable and Starlark-hashable
+    }
 
-  @Override
-  public boolean isImmutable() {
-    return true; // immutable and Starlark-hashable
-  }
+    // TODO(b/408391489) repr, hash, equals for native providers are inefficient; implement them
+    //  directly and remove getLegacyStarlarkMethodNames getLegacyFields
+    private fun getLegacyStarlarkMethodNames(): MutableList<String?> {
+        return com.google.common.collect.Ordering.natural<Comparable<*>?>()
+            .sortedCopy<String?>(
+                net.starlark.java.eval.Starlark.dir(
+                    net.starlark.java.eval.Mutability.IMMUTABLE,
+                    net.starlark.java.eval.StarlarkSemantics.DEFAULT,
+                    this
+                )
+            )
+    }
 
-  // TODO(b/408391489) repr, hash, equals for native providers are inefficient; implement them
-  //  directly and remove getLegacyStarlarkMethodNames getLegacyFields
-  private List<String> getLegacyStarlarkMethodNames() {
-    return Ordering.natural()
-        .sortedCopy(Starlark.dir(Mutability.IMMUTABLE, StarlarkSemantics.DEFAULT, this));
-  }
-
-  private ImmutableMap<String, Object> getLegacyFields() {
-    ImmutableMap.Builder<String, Object> fields = ImmutableMap.builder();
-    for (String fieldName : getLegacyStarlarkMethodNames()) {
-      try {
-        Object value =
-            Starlark.getattr(
-                Mutability.IMMUTABLE, StarlarkSemantics.DEFAULT, this, fieldName, null);
-        if (value instanceof BuiltinFunction) {
-          continue;
+    private fun getLegacyFields(): com.google.common.collect.ImmutableMap<String?, Any?> {
+        val fields: com.google.common.collect.ImmutableMap.Builder<String?, Any?> =
+            com.google.common.collect.ImmutableMap.builder<String?, Any?>()
+        for (fieldName in getLegacyStarlarkMethodNames()) {
+            try {
+                val value: Any? =
+                    net.starlark.java.eval.Starlark.getattr(
+                        net.starlark.java.eval.Mutability.IMMUTABLE,
+                        net.starlark.java.eval.StarlarkSemantics.DEFAULT,
+                        this,
+                        fieldName,
+                        null
+                    )
+                if (value is net.starlark.java.eval.BuiltinFunction) {
+                    continue
+                }
+                fields.put(fieldName, value)
+            } catch (e: net.starlark.java.eval.EvalException) {
+                fields.put(fieldName, net.starlark.java.eval.Starlark.NONE)
+            } catch (e: java.lang.InterruptedException) {
+                // Struct fields on NativeInfo objects are supposed to behave well and not throw
+                // exceptions, as they should be logicless field accessors. If this occurs, it's
+                // indicative of a bad NativeInfo implementation.
+                throw java.lang.IllegalStateException(
+                    java.lang.String.format(
+                        "Access of field %s was unexpectedly interrupted, but should be "
+                                + "uninterruptible. This is indicative of a bad provider implementation.",
+                        fieldName
+                    ),
+                    e
+                )
+            }
         }
-        fields.put(fieldName, value);
-      } catch (EvalException e) {
-        fields.put(fieldName, Starlark.NONE);
-      } catch (InterruptedException e) {
-        // Struct fields on NativeInfo objects are supposed to behave well and not throw
-        // exceptions, as they should be logicless field accessors. If this occurs, it's
-        // indicative of a bad NativeInfo implementation.
-        throw new IllegalStateException(
-            String.format(
-                "Access of field %s was unexpectedly interrupted, but should be "
-                    + "uninterruptible. This is indicative of a bad provider implementation.",
-                fieldName),
-            e);
-      }
+        return fields.buildOrThrow()
     }
-    return fields.buildOrThrow();
-  }
 
-  @Override
-  public boolean equals(Object otherObject) {
-    if (!(otherObject instanceof NativeInfo other)) {
-      return false;
+    override fun equals(otherObject: Any?): Boolean {
+        if (otherObject !is NativeInfo) {
+            return false
+        }
+        if (this === otherObject) {
+            return true
+        }
+        if (this.getProvider() != otherObject.getProvider()) {
+            return false
+        }
+        // Compare objects' fields and their values
+        if (!com.google.common.base.Objects.equal(
+                getLegacyStarlarkMethodNames(),
+                otherObject.getLegacyStarlarkMethodNames()
+            )
+        ) {
+            return false
+        }
+        return com.google.common.base.Objects.equal(getLegacyFields(), otherObject.getLegacyFields())
     }
-    if (this == other) {
-      return true;
+
+    override fun hashCode(): Int {
+        return com.google.common.base.Objects.hashCode(getProvider(), getLegacyFields())
     }
-    if (!this.getProvider().equals(other.getProvider())) {
-      return false;
+
+    /**
+     * Convert the object to string using Starlark syntax. The output tries to be reversible (but
+     * there is no guarantee, it depends on the actual values).
+     */
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        net.starlark.java.lib.MapWrapperStructure(getLegacyFields()).repr(printer, semantics)
     }
-    // Compare objects' fields and their values
-    if (!Objects.equal(getLegacyStarlarkMethodNames(), other.getLegacyStarlarkMethodNames())) {
-      return false;
+
+    override fun objectForEncoding(semantics: net.starlark.java.eval.StarlarkSemantics?): net.starlark.java.eval.Structure {
+        return net.starlark.java.lib.MapWrapperStructure(getLegacyFields())
     }
-    return Objects.equal(getLegacyFields(), other.getLegacyFields());
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hashCode(getProvider(), getLegacyFields());
-  }
-
-  /**
-   * Convert the object to string using Starlark syntax. The output tries to be reversible (but
-   * there is no guarantee, it depends on the actual values).
-   */
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    new MapWrapperStructure(getLegacyFields()).repr(printer, semantics);
-  }
-
-  @Override
-  public Structure objectForEncoding(StarlarkSemantics semantics) {
-    return new MapWrapperStructure(getLegacyFields());
-  }
-
-  @Override
-  public String toString() {
-    return Starlark.repr(this, StarlarkSemantics.DEFAULT);
-  }
+    override fun toString(): String {
+        return net.starlark.java.eval.Starlark.repr(this, net.starlark.java.eval.StarlarkSemantics.DEFAULT)
+    }
 }

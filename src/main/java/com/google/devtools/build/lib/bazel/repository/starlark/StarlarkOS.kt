@@ -11,73 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.starlark
 
-package com.google.devtools.build.lib.bazel.repository.starlark;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
+import java.util.*
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import java.util.Locale;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** A Starlark structure to deliver information about the system we are running on. */
+/** A Starlark structure to deliver information about the system we are running on.  */
 @StarlarkBuiltin(
     name = "repository_os",
     category = DocCategory.BUILTIN,
-    doc = "Various data about the current platform Bazel is running on.")
-@Immutable
-final class StarlarkOS implements StarlarkValue {
+    doc = "Various data about the current platform Bazel is running on."
+)
+@ThreadSafety.Immutable
+internal class StarlarkOS(
+    @get:StarlarkMethod(
+        name = "environ", structField = true, doc = """
+          The dictionary of environment variables. <p><b>NOTE</b>: Retrieving an environment variable from this dictionary does not establish a dependency from a repository rule or module extension to the environment variable. To establish a dependency when looking up an environment variable, use either <code>repository_ctx.getenv</code> or <code>module_ctx.getenv</code> instead.
+          
+          """.trimIndent()
+    ) val environmentVariables: ImmutableMap<String?, String?>?
+) : StarlarkValue {
+    override fun isImmutable(): Boolean {
+        return true // immutable and Starlark-hashable
+    }
 
-  private final ImmutableMap<String, String> repoEnv;
+    @get:StarlarkMethod(
+        name = "name", structField = true, doc = """
+          A string identifying the operating system Bazel is running on (the value of the <code>"os.name"</code> Java property converted to lower case).
+          
+          """.trimIndent()
+    )
+    val name: String
+        get() = System.getProperty("os.name").toLowerCase(Locale.ROOT)
 
-  StarlarkOS(ImmutableMap<String, String> repoEnv) {
-    this.repoEnv = repoEnv;
-  }
-
-  @Override
-  public boolean isImmutable() {
-    return true; // immutable and Starlark-hashable
-  }
-
-  @StarlarkMethod(
-      name = "environ",
-      structField = true,
-      doc =
-          """
-          The dictionary of environment variables. \
-          <p><b>NOTE</b>: Retrieving an environment variable from this dictionary does not \
-          establish a dependency from a repository rule or module extension to the \
-          environment variable. To establish a dependency when looking up an \
-          environment variable, use either <code>repository_ctx.getenv</code> or \
-          <code>module_ctx.getenv</code> instead.
-          """)
-  public ImmutableMap<String, String> getEnvironmentVariables() {
-    return repoEnv;
-  }
-
-  @StarlarkMethod(
-      name = "name",
-      structField = true,
-      doc =
-          """
-          A string identifying the operating system Bazel is running on (the value of the \
-          <code>"os.name"</code> Java property converted to lower case).
-          """)
-  public String getName() {
-    return System.getProperty("os.name").toLowerCase(Locale.ROOT);
-  }
-
-  @StarlarkMethod(
-      name = "arch",
-      structField = true,
-      doc =
-          """
-          A string identifying the architecture Bazel is running on (the value of the \
-          <code>"os.arch"</code> Java property converted to lower case).
-          """)
-  public String getArch() {
-    return System.getProperty("os.arch").toLowerCase(Locale.ROOT);
-  }
+    @get:StarlarkMethod(
+        name = "arch", structField = true, doc = """
+          A string identifying the architecture Bazel is running on (the value of the <code>"os.arch"</code> Java property converted to lower case).
+          
+          """.trimIndent()
+    )
+    val arch: String
+        get() = System.getProperty("os.arch").toLowerCase(Locale.ROOT)
 }

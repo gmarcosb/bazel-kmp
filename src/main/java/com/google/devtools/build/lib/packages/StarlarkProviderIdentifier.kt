@@ -11,85 +11,80 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.util.Fingerprint;
-import java.util.Objects;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
 /**
  * A wrapper around Starlark provider identifier, representing either a declared provider ({@see
- * StarlarkProvider}) or a "legacy" string identifier.
+ * * StarlarkProvider}) or a "legacy" string identifier.
  */
-public abstract class StarlarkProviderIdentifier {
-  private static final Interner<StarlarkProviderIdentifier> interner =
-      BlazeInterners.newWeakInterner();
+abstract class StarlarkProviderIdentifier {
+    /** Returns a key identifying the declared provider (only for non-legacy providers).  */
+    abstract fun getKey(): com.google.devtools.build.lib.packages.Provider.Key?
 
-  /** Creates an id for a declared provider with a given key ({@see StarlarkProvider}). */
-  public static StarlarkProviderIdentifier forKey(Provider.Key key) {
-    return interner.intern(new KeyedIdentifier(key));
-  }
+    abstract fun fingerprint(fp: Fingerprint?)
 
-  /** Returns a key identifying the declared provider (only for non-legacy providers). */
-  public abstract Provider.Key getKey();
+    /**
+     * Returns the provider key name for a declared provider, or the legacy ID for a legacy provider.
+     * 
+     * 
+     * Used for rendering human-readable descriptions, such as for a rule attribute's set of
+     * required providers.
+     */
+    abstract override fun toString(): String
 
-  abstract void fingerprint(Fingerprint fp);
+    @AutoCodec
+    internal class KeyedIdentifier private constructor(key: com.google.devtools.build.lib.packages.Provider.Key) :
+        StarlarkProviderIdentifier() {
+        private val key: com.google.devtools.build.lib.packages.Provider.Key
 
-  /**
-   * Returns the provider key name for a declared provider, or the legacy ID for a legacy provider.
-   *
-   * <p>Used for rendering human-readable descriptions, such as for a rule attribute's set of
-   * required providers.
-   */
-  @Override
-  public abstract String toString();
+        init {
+            this.key = key
+        }
 
-  @AutoCodec
-  static final class KeyedIdentifier extends StarlarkProviderIdentifier {
-    private final Provider.Key key;
+        override fun getKey(): com.google.devtools.build.lib.packages.Provider.Key {
+            return key
+        }
 
-    private KeyedIdentifier(Provider.Key key) {
-      this.key = key;
+        override fun fingerprint(fp: Fingerprint) {
+            fp.addBoolean(false)
+            key.fingerprint(fp)
+        }
+
+        override fun hashCode(): Int {
+            return key.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is KeyedIdentifier) {
+                return false
+            }
+            return key == obj.key
+        }
+
+        override fun toString(): String {
+            return key.toString()
+        }
+
+        companion object {
+            @AutoCodec.Interner
+            fun intern(id: KeyedIdentifier?): KeyedIdentifier {
+                return interner.intern(id) as KeyedIdentifier
+            }
+        }
     }
 
-    @Override
-    public Provider.Key getKey() {
-      return key;
-    }
+    companion object {
+        private val interner: com.google.common.collect.Interner<StarlarkProviderIdentifier> =
+            BlazeInterners.newWeakInterner()
 
-    @Override
-    void fingerprint(Fingerprint fp) {
-      fp.addBoolean(false);
-      key.fingerprint(fp);
+        /** Creates an id for a declared provider with a given key ({@see StarlarkProvider}).  */
+        fun forKey(key: com.google.devtools.build.lib.packages.Provider.Key): StarlarkProviderIdentifier {
+            return interner.intern(KeyedIdentifier(key))
+        }
     }
-
-    @Override
-    public int hashCode() {
-      return key.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof KeyedIdentifier)) {
-        return false;
-      }
-      return Objects.equals(key, ((KeyedIdentifier) obj).key);
-    }
-
-    @Override
-    public String toString() {
-      return key.toString();
-    }
-
-    @AutoCodec.Interner
-    static KeyedIdentifier intern(KeyedIdentifier id) {
-      return (KeyedIdentifier) interner.intern(id);
-    }
-  }
 }

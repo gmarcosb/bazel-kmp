@@ -11,99 +11,94 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.metrics;
+package com.google.devtools.build.lib.packages.metrics
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
+import com.google.common.collect.ImmutableCollection
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics
+import java.util.function.Function
 
-import com.google.common.collect.ImmutableCollection;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics.BzlFileMetrics;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.protobuf.Duration;
-import java.util.Collection;
-import java.util.Map;
+/** Interface encapsulating the strategy used for recording Package Metrics.  */
+interface PackageMetricsRecorder {
+    /** What type of packages are metrics being recorded for?  */
+    enum class Type {
+        ONLY_EXTREMES,
+        ALL,
+    }
 
-/** Interface encapsulating the strategy used for recording Package Metrics. */
-public interface PackageMetricsRecorder {
+    /** Records the metrics for a given package.  */
+    fun recordMetrics(pkgId: PackageIdentifier?, metrics: PackageLoadMetrics?)
 
-  /** What type of packages are metrics being recorded for? */
-  enum Type {
-    ONLY_EXTREMES,
-    ALL,
-  }
+    /** Records the metrics for a single bzl file.  */
+    fun recordBzlMetrics(metrics: BzlFileMetrics?)
 
-  /** Records the metrics for a given package. */
-  void recordMetrics(PackageIdentifier pkgId, PackageLoadMetrics metrics);
+    /**
+     * Returns a `Map<PackageIdentifier, Duration>` of recorded load durations. This may contain
+     * only a subset of all packages loaded based on the implementation.
+     */
+    fun getLoadTimes(): MutableMap<PackageIdentifier?, Duration?>?
 
-  /** Records the metrics for a single bzl file. */
-  void recordBzlMetrics(BzlFileMetrics metrics);
+    /**
+     * Returns a `Map<PackageIdentifier, Long>` of glob costs. This may contain only a subset of
+     * all packages loaded based on the implementation.
+     */
+    fun getGlobFilesystemOperationCost(): MutableMap<PackageIdentifier?, Long?>?
 
-  /**
-   * Returns a {@code Map<PackageIdentifier, Duration>} of recorded load durations. This may contain
-   * only a subset of all packages loaded based on the implementation.
-   */
-  Map<PackageIdentifier, Duration> getLoadTimes();
+    /**
+     * Returns a `Map<PackageIdentifier, Long>` of computation steps. This may contain only a
+     * subset of all packages loaded based on the implementation.
+     */
+    fun getComputationSteps(): MutableMap<PackageIdentifier?, Long?>?
 
-  /**
-   * Returns a {@code Map<PackageIdentifier, Long>} of glob costs. This may contain only a subset of
-   * all packages loaded based on the implementation.
-   */
-  Map<PackageIdentifier, Long> getGlobFilesystemOperationCost();
+    /**
+     * Returns a `Map<PackageIdentifier, Long>` of num targets. This may contain only a subset
+     * of all packages loaded based on the implementation.
+     */
+    fun getNumTargets(): MutableMap<PackageIdentifier?, Long?>?
 
-  /**
-   * Returns a {@code Map<PackageIdentifier, Long>} of computation steps. This may contain only a
-   * subset of all packages loaded based on the implementation.
-   */
-  Map<PackageIdentifier, Long> getComputationSteps();
+    /**
+     * Returns a `Map<PackageIdentifier, Long>` of num targets. This may contain only a subset
+     * of all packages loaded based on the implementation.
+     */
+    fun getNumTransitiveLoads(): MutableMap<PackageIdentifier?, Long?>?
 
-  /**
-   * Returns a {@code Map<PackageIdentifier, Long>} of num targets. This may contain only a subset
-   * of all packages loaded based on the implementation.
-   */
-  Map<PackageIdentifier, Long> getNumTargets();
+    /** Returns map of package overhead. This may contain only a subset of all packages loaded.  */
+    fun getPackageOverhead(): MutableMap<PackageIdentifier?, Long?>?
 
-  /**
-   * Returns a {@code Map<PackageIdentifier, Long>} of num targets. This may contain only a subset
-   * of all packages loaded based on the implementation.
-   */
-  Map<PackageIdentifier, Long> getNumTransitiveLoads();
+    /** Clears the contents of the PackageMetricsRecorder.  */
+    fun clear()
 
-  /** Returns map of package overhead. This may contain only a subset of all packages loaded. */
-  Map<PackageIdentifier, Long> getPackageOverhead();
+    /**
+     * Called after package loading is complete to allow handlers to perform post-loading phase
+     * processing.
+     */
+    fun loadingFinished()
 
-  /** Clears the contents of the PackageMetricsRecorder. */
-  void clear();
+    /** Returns the type of package metrics being recorded.  */
+    fun getRecorderType(): Type?
 
-  /**
-   * Called after package loading is complete to allow handlers to perform post-loading phase
-   * processing.
-   */
-  void loadingFinished();
+    /** If Type is ALL returns metrics for all Packages loaded.  */
+    fun getPackageLoadMetrics(): MutableCollection<PackageLoadMetrics?>
 
-  /** Returns the type of package metrics being recorded. */
-  Type getRecorderType();
+    /** Returns recorded bzl metrics.  */
+    fun getBzlMetrics(): BzlMetrics?
 
-  /** If Type is ALL returns metrics for all Packages loaded. */
-  Collection<PackageLoadMetrics> getPackageLoadMetrics();
-
-  /** Returns recorded bzl metrics. */
-  BzlMetrics getBzlMetrics();
-
-  /* TODO(twerth): Remove method after migration is complete. */
-  default ImmutableCollection<PackageMetrics> getPackageMetrics() {
-    Collection<PackageLoadMetrics> packageLoadMetrics = getPackageLoadMetrics();
-    return packageLoadMetrics.stream()
-        .map(
-            plm ->
-                PackageMetrics.newBuilder()
-                    .setName(plm.getName())
-                    .setPackageOverhead(plm.getPackageOverhead())
-                    .setComputationSteps(plm.getComputationSteps())
-                    .setLoadDuration(plm.getLoadDuration())
-                    .setNumTargets(plm.getNumTargets())
-                    .setNumTransitiveLoads(plm.getNumTransitiveLoads())
-                    .setGlobFilesystemOperationCost(plm.getGlobFilesystemOperationCost())
-                    .build())
-        .collect(toImmutableList());
-  }
+    /* TODO(twerth): Remove method after migration is complete. */
+    fun getPackageMetrics(): ImmutableCollection<PackageMetrics?> {
+        val packageLoadMetrics: MutableCollection<PackageLoadMetrics?> = getPackageLoadMetrics()
+        return packageLoadMetrics.stream()
+            .map<Any?>(
+                Function { plm: PackageLoadMetrics? ->
+                    PackageMetrics.newBuilder()
+                        .setName(plm.getName())
+                        .setPackageOverhead(plm.getPackageOverhead())
+                        .setComputationSteps(plm.getComputationSteps())
+                        .setLoadDuration(plm.getLoadDuration())
+                        .setNumTargets(plm.getNumTargets())
+                        .setNumTransitiveLoads(plm.getNumTransitiveLoads())
+                        .setGlobFilesystemOperationCost(plm.getGlobFilesystemOperationCost())
+                        .build()
+                })
+            .collect(ImmutableList.toImmutableList<Any?>())
+    }
 }

@@ -39,7 +39,7 @@ import org.junit.runners.JUnit4;
 public class PackageMetricsPackageLoadingListenerTest {
 
   private final PackageMetricsPackageLoadingListener underTest =
-      PackageMetricsPackageLoadingListener.getInstance();
+          PackageMetricsPackageLoadingListener.instance;
 
   private static final Metrics PLACEHOLDER_METRICS =
       new Metrics(/* loadTimeNanos= */ 123, /* globFilesystemOperationCost= */ 456);
@@ -47,11 +47,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTopSlowestPackagesPerBuild_extrema() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordSlowPackages();
 
-    assertThat(underTest.getPackageMetricsRecorder().getLoadTimes())
+    assertThat(underTest.packageMetricsRecorder.getLoadTimes())
         .containsExactlyEntriesIn(
             ImmutableMap.of(
                 PackageIdentifier.createInMainRepo("my/pkg3"),
@@ -67,11 +67,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTopSlowestPackagesPerBuild_complete() {
     PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordSlowPackages();
 
-    assertThat(underTest.getPackageMetricsRecorder().getLoadTimes())
+    assertThat(underTest.packageMetricsRecorder.getLoadTimes())
         .containsExactly(
             PackageIdentifier.createInMainRepo("my/pkg1"),
             Durations.fromMillis(42),
@@ -109,11 +109,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTopLargestPackagesPerBuild_extrema() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordLargePackages();
 
-    assertThat(underTest.getPackageMetricsRecorder().getNumTargets())
+    assertThat(underTest.packageMetricsRecorder.getNumTargets())
         .containsExactlyEntriesIn(
             ImmutableMap.of(
                 PackageIdentifier.createInMainRepo("my/pkg3"),
@@ -129,11 +129,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTopLargestPackagesPerBuild_complete() {
     PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordLargePackages();
 
-    assertThat(underTest.getPackageMetricsRecorder().getNumTargets())
+    assertThat(underTest.packageMetricsRecorder.getNumTargets())
         .containsExactly(
             PackageIdentifier.createInMainRepo("my/pkg3"),
             3L,
@@ -181,11 +181,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTransitiveLoadsPerBuild_extrema() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordTransitiveLoads();
 
-    assertThat(underTest.getPackageMetricsRecorder().getNumTransitiveLoads())
+    assertThat(underTest.packageMetricsRecorder.getNumTransitiveLoads())
         .containsExactlyEntriesIn(
             ImmutableMap.of(
                 PackageIdentifier.createInMainRepo("my/pkg3"),
@@ -200,11 +200,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTransitiveLoadsPerBuild_complete() {
     PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordTransitiveLoads();
 
-    assertThat(underTest.getPackageMetricsRecorder().getNumTransitiveLoads())
+    assertThat(underTest.packageMetricsRecorder.getNumTransitiveLoads())
         .containsExactly(
             PackageIdentifier.createInMainRepo("my/pkg3"),
             3L,
@@ -240,11 +240,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsMostComputationStepsPerBuild_extrema() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordComputationSteps();
 
-    assertThat(underTest.getPackageMetricsRecorder().getComputationSteps())
+    assertThat(underTest.packageMetricsRecorder.getComputationSteps())
         .containsExactlyEntriesIn(
             ImmutableMap.of(
                 PackageIdentifier.createInMainRepo("my/pkg1"),
@@ -260,11 +260,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsMostComputationStepsPerBuild_complete() {
     PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordComputationSteps();
 
-    assertThat(underTest.getPackageMetricsRecorder().getComputationSteps())
+    assertThat(underTest.packageMetricsRecorder.getComputationSteps())
         .containsExactly(
             PackageIdentifier.createInMainRepo("my/pkg1"),
             1000L,
@@ -281,7 +281,7 @@ public class PackageMetricsPackageLoadingListenerTest {
     Package mockPackage1 =
         mockPackage(
             "my/pkg1", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage1.getComputationSteps()).thenReturn(1000L);
+    when(mockPackage1.computationSteps).thenReturn(1000L);
     underTest.onLoadingCompleteAndSuccessful(
         mockPackage1,
         StarlarkSemantics.DEFAULT,
@@ -291,7 +291,7 @@ public class PackageMetricsPackageLoadingListenerTest {
     Package mockPackage2 =
         mockPackage(
             "my/pkg2", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage2.getComputationSteps()).thenReturn(100L);
+    when(mockPackage2.computationSteps).thenReturn(100L);
     underTest.onLoadingCompleteAndSuccessful(
         mockPackage2,
         StarlarkSemantics.DEFAULT,
@@ -301,7 +301,7 @@ public class PackageMetricsPackageLoadingListenerTest {
     Package mockPackage3 =
         mockPackage(
             "my/pkg3", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage3.getComputationSteps()).thenReturn(10L);
+    when(mockPackage3.computationSteps).thenReturn(10L);
     underTest.onLoadingCompleteAndSuccessful(
         mockPackage3,
         StarlarkSemantics.DEFAULT,
@@ -312,11 +312,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsMostPackageOverheadPerBuild_complete() {
     PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordPackageOverhead();
 
-    assertThat(underTest.getPackageMetricsRecorder().getPackageOverhead())
+    assertThat(underTest.packageMetricsRecorder.getPackageOverhead())
         .containsExactly(
             PackageIdentifier.createInMainRepo("my/pkg1"),
             100L,
@@ -330,11 +330,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTopPackageOverheadPackagesPerBuild_extrema() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordPackageOverhead();
 
-    assertThat(underTest.getPackageMetricsRecorder().getPackageOverhead())
+    assertThat(underTest.packageMetricsRecorder.getPackageOverhead())
         .containsExactlyEntriesIn(
             ImmutableMap.of(
                 PackageIdentifier.createInMainRepo("my/pkg3"),
@@ -371,7 +371,7 @@ public class PackageMetricsPackageLoadingListenerTest {
     Package mockPackage3 =
         mockPackage(
             "my/pkg3", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage3.getComputationSteps()).thenReturn(10L);
+    when(mockPackage3.computationSteps).thenReturn(10L);
     when(mockPackage3.getPackageOverhead()).thenReturn(OptionalLong.of(300));
 
     underTest.onLoadingCompleteAndSuccessful(
@@ -384,7 +384,7 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void metricMap_extrema() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordEverything();
 
@@ -421,7 +421,7 @@ public class PackageMetricsPackageLoadingListenerTest {
             .setPackageOverhead(300_000)
             .build();
 
-    assertThat(underTest.getPackageMetricsRecorder().getPackageLoadMetrics())
+    assertThat(underTest.packageMetricsRecorder.getPackageLoadMetrics())
         .containsExactly(pkg1, pkg2, pkg3);
     recorder.loadingFinished();
     assertAllMapsEmpty(recorder);
@@ -430,7 +430,7 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void metricMap_complete() {
     PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordEverything();
 
@@ -467,7 +467,7 @@ public class PackageMetricsPackageLoadingListenerTest {
             .setPackageOverhead(300_000)
             .build();
 
-    assertThat(underTest.getPackageMetricsRecorder().getPackageLoadMetrics())
+    assertThat(underTest.packageMetricsRecorder.getPackageLoadMetrics())
         .containsExactly(pkg1, pkg2, pkg3);
     recorder.loadingFinished();
     assertAllMapsEmpty(recorder);
@@ -479,7 +479,7 @@ public class PackageMetricsPackageLoadingListenerTest {
             "my/pkg1",
             /* targets= */ ImmutableMap.of("target1", mock(Target.class)),
             /* transitivelyLoadedStarlarkFiles= */ 1);
-    when(mockPackage1.getComputationSteps()).thenReturn(1000L);
+    when(mockPackage1.computationSteps).thenReturn(1000L);
     when(mockPackage1.getPackageOverhead()).thenReturn(OptionalLong.of(100_000));
 
     underTest.onLoadingCompleteAndSuccessful(
@@ -494,7 +494,7 @@ public class PackageMetricsPackageLoadingListenerTest {
             /* targets= */ ImmutableMap.of(
                 "target1", mock(Target.class), "target2", mock(Target.class)),
             /* transitivelyLoadedStarlarkFiles= */ 2);
-    when(mockPackage2.getComputationSteps()).thenReturn(100L);
+    when(mockPackage2.computationSteps).thenReturn(100L);
     when(mockPackage2.getPackageOverhead()).thenReturn(OptionalLong.of(200_000));
     underTest.onLoadingCompleteAndSuccessful(
         mockPackage2,
@@ -513,7 +513,7 @@ public class PackageMetricsPackageLoadingListenerTest {
                 "target3",
                 mock(Target.class)),
             /* transitivelyLoadedStarlarkFiles= */ 3);
-    when(mockPackage3.getComputationSteps()).thenReturn(10L);
+    when(mockPackage3.computationSteps).thenReturn(10L);
     when(mockPackage3.getPackageOverhead()).thenReturn(OptionalLong.of(300_000));
     underTest.onLoadingCompleteAndSuccessful(
         mockPackage3,
@@ -548,11 +548,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTopGlobFilesystemOperationCost_extrema() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordPackagesWithGlobCost();
 
-    assertThat(underTest.getPackageMetricsRecorder().getGlobFilesystemOperationCost())
+    assertThat(underTest.packageMetricsRecorder.getGlobFilesystemOperationCost())
         .containsExactlyEntriesIn(
             ImmutableMap.of(
                 PackageIdentifier.createInMainRepo("my/pkg3"),
@@ -568,11 +568,11 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testRecordsTopGlobFilesystemOperationCost_complete() {
     PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     recordPackagesWithGlobCost();
 
-    assertThat(underTest.getPackageMetricsRecorder().getGlobFilesystemOperationCost())
+    assertThat(underTest.packageMetricsRecorder.getGlobFilesystemOperationCost())
         .containsExactly(
             PackageIdentifier.createInMainRepo("my/pkg3"),
             333L,
@@ -585,7 +585,7 @@ public class PackageMetricsPackageLoadingListenerTest {
   @Test
   public void testDoesntRecordAnythingWhenNumPackagesToTrackIsZero() {
     PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(0);
-    underTest.setPackageMetricsRecorder(recorder);
+    underTest.packageMetricsRecorder = recorder;
 
     underTest.onLoadingCompleteAndSuccessful(
         mockPackage(
@@ -594,7 +594,7 @@ public class PackageMetricsPackageLoadingListenerTest {
         LazyMacroExpansionPackages.NONE,
         new Metrics(/* loadTimeNanos= */ 42_000_000, /* globFilesystemOperationCost= */ 0));
 
-    assertAllMapsEmpty(underTest.getPackageMetricsRecorder());
+    assertAllMapsEmpty(underTest.packageMetricsRecorder);
   }
 
   private static void assertAllMapsEmpty(PackageMetricsRecorder recorder) {

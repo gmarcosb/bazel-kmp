@@ -45,7 +45,7 @@ public class ProtoLangToolchainTest extends BuildViewTestCase {
         .isEqualTo("third_party/x/plugin");
 
     TransitiveInfoCollection runtimes = toolchain.runtime();
-    assertThat(runtimes.getLabel()).isEqualTo(Label.parseCanonical("//third_party/x:runtime"));
+    assertThat(runtimes.label).isEqualTo(Label.parseCanonical("//third_party/x:runtime"));
 
     assertThat(toolchain.protocOpts()).containsExactly("--myflag");
 

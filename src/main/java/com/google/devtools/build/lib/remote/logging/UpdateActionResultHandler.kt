@@ -11,38 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
-
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.UpdateActionResultRequest;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.UpdateActionResultDetails;
+import build.bazel.remote.execution.v2.ActionResult
 
 /**
- * LoggingHandler for {@link google.devtools.remoteexecution.v1test.ActionCache.UpdateActionResult}
+ * LoggingHandler for [google.devtools.remoteexecution.v1test.ActionCache.UpdateActionResult]
  * gRPC call.
  */
-public class UpdateActionResultHandler
-    implements LoggingHandler<UpdateActionResultRequest, ActionResult> {
+class UpdateActionResultHandler
 
-  private final UpdateActionResultDetails.Builder updateActiontResultDetailsBuilder =
-      UpdateActionResultDetails.newBuilder();
+    : LoggingHandler<UpdateActionResultRequest?, ActionResult?> {
+    private val updateActiontResultDetailsBuilder: UpdateActionResultDetails.Builder =
+        UpdateActionResultDetails.newBuilder()
 
-  @Override
-  public void handleReq(UpdateActionResultRequest message) {
-    updateActiontResultDetailsBuilder.setRequest(message);
-  }
+    override fun handleReq(message: UpdateActionResultRequest?) {
+        updateActiontResultDetailsBuilder.setRequest(message)
+    }
 
-  @Override
-  public void handleResp(ActionResult message) {
-    updateActiontResultDetailsBuilder.setResponse(message);
-  }
+    override fun handleResp(message: ActionResult?) {
+        updateActiontResultDetailsBuilder.setResponse(message)
+    }
 
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder()
-        .setUpdateActionResult(updateActiontResultDetailsBuilder)
-        .build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder()
+            .setUpdateActionResult(updateActiontResultDetailsBuilder)
+            .build()
+    }
 }

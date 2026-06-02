@@ -11,218 +11,207 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventservice.client
 
-package com.google.devtools.build.lib.buildeventservice.client;
+import com.google.devtools.build.v1.BuildEvent.BuildComponentStreamFinished.FinishType.FINISHED
 
-import static com.google.devtools.build.v1.BuildEvent.BuildComponentStreamFinished.FinishType.FINISHED;
+/** Utility methods to create BES proto messages.  */
+object BuildEventServiceProtoUtil {
+    private val TYPE_URL = "type.googleapis.com/" + BuildEventStreamProtos.BuildEvent.getDescriptor().getFullName()
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.CommandContext;
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.InvocationStatus;
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.LifecycleEvent;
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.StreamEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.v1.BuildEvent;
-import com.google.devtools.build.v1.BuildEvent.BuildComponentStreamFinished;
-import com.google.devtools.build.v1.BuildEvent.BuildEnqueued;
-import com.google.devtools.build.v1.BuildEvent.BuildFinished;
-import com.google.devtools.build.v1.BuildEvent.EventCase;
-import com.google.devtools.build.v1.BuildEvent.InvocationAttemptFinished;
-import com.google.devtools.build.v1.BuildEvent.InvocationAttemptStarted;
-import com.google.devtools.build.v1.BuildStatus;
-import com.google.devtools.build.v1.BuildStatus.Result;
-import com.google.devtools.build.v1.OrderedBuildEvent;
-import com.google.devtools.build.v1.PublishBuildToolEventStreamRequest;
-import com.google.devtools.build.v1.PublishLifecycleEventRequest;
-import com.google.devtools.build.v1.StreamId;
-import com.google.devtools.build.v1.StreamId.BuildComponent;
-import com.google.protobuf.Any;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.Timestamp;
-import java.time.Instant;
+    /** Creates a [PublishLifecycleEventRequest] from a [LifecycleEvent].  */
+    fun publishLifecycleEventRequest(
+        commandContext: CommandContext, lifecycleEvent: LifecycleEvent
+    ): PublishLifecycleEventRequest? {
+        return when (lifecycleEvent) {
+            -> buildEnqueued(commandContext, eventTime)
+            -> invocationStarted(commandContext, eventTime)
+            -> invocationFinished(commandContext, eventTime, status)
+            -> buildFinished(commandContext, eventTime, status)
+        }
+    }
 
-/** Utility methods to create BES proto messages. */
-public final class BuildEventServiceProtoUtil {
-
-  private BuildEventServiceProtoUtil() {}
-
-  private static final String TYPE_URL =
-      "type.googleapis.com/" + BuildEventStreamProtos.BuildEvent.getDescriptor().getFullName();
-
-  /** Creates a {@link PublishLifecycleEventRequest} from a {@link LifecycleEvent}. */
-  public static PublishLifecycleEventRequest publishLifecycleEventRequest(
-      CommandContext commandContext, LifecycleEvent lifecycleEvent) {
-    return switch (lifecycleEvent) {
-      case LifecycleEvent.BuildEnqueued(Instant eventTime) ->
-          buildEnqueued(commandContext, eventTime);
-      case LifecycleEvent.InvocationStarted(Instant eventTime) ->
-          invocationStarted(commandContext, eventTime);
-      case LifecycleEvent.InvocationFinished(Instant eventTime, InvocationStatus status) ->
-          invocationFinished(commandContext, eventTime, status);
-      case LifecycleEvent.BuildFinished(Instant eventTime, InvocationStatus status) ->
-          buildFinished(commandContext, eventTime, status);
-    };
-  }
-
-  public static PublishLifecycleEventRequest buildEnqueued(
-      CommandContext commandContext, Instant instant) {
-    return lifecycleRequest(
+    fun buildEnqueued(
+        commandContext: CommandContext, instant: Instant
+    ): PublishLifecycleEventRequest {
+        return lifecycleRequest(
             commandContext,
             1,
             BuildEvent.newBuilder()
                 .setEventTime(toProtoTimestamp(instant))
-                .setBuildEnqueued(BuildEnqueued.getDefaultInstance()))
-        .build();
-  }
+                .setBuildEnqueued(BuildEnqueued.getDefaultInstance())
+        )
+            .build()
+    }
 
-  public static PublishLifecycleEventRequest buildFinished(
-      CommandContext commandContext, Instant eventTime, InvocationStatus status) {
-    return lifecycleRequest(
+    fun buildFinished(
+        commandContext: CommandContext, eventTime: Instant, status: InvocationStatus
+    ): PublishLifecycleEventRequest {
+        return lifecycleRequest(
             commandContext,
             2,
             BuildEvent.newBuilder()
                 .setEventTime(toProtoTimestamp(eventTime))
-                .setBuildFinished(BuildFinished.newBuilder().setStatus(buildStatus(status))))
-        .build();
-  }
+                .setBuildFinished(BuildFinished.newBuilder().setStatus(buildStatus(status)))
+        )
+            .build()
+    }
 
-  public static PublishLifecycleEventRequest invocationStarted(
-      CommandContext commandContext, Instant instant) {
-    return lifecycleRequest(
+    fun invocationStarted(
+        commandContext: CommandContext, instant: Instant
+    ): PublishLifecycleEventRequest {
+        return lifecycleRequest(
             commandContext,
             1,
             BuildEvent.newBuilder()
                 .setEventTime(toProtoTimestamp(instant))
                 .setInvocationAttemptStarted(
                     InvocationAttemptStarted.newBuilder()
-                        .setAttemptNumber(commandContext.attemptNumber())))
-        .build();
-  }
+                        .setAttemptNumber(commandContext.attemptNumber)
+                )
+        )
+            .build()
+    }
 
-  public static PublishLifecycleEventRequest invocationFinished(
-      CommandContext commandContext, Instant eventTime, InvocationStatus status) {
-    return lifecycleRequest(
+    fun invocationFinished(
+        commandContext: CommandContext, eventTime: Instant, status: InvocationStatus
+    ): PublishLifecycleEventRequest {
+        return lifecycleRequest(
             commandContext,
             2,
             BuildEvent.newBuilder()
                 .setEventTime(toProtoTimestamp(eventTime))
                 .setInvocationAttemptFinished(
                     InvocationAttemptFinished.newBuilder()
-                        .setInvocationStatus(buildStatus(status))))
-        .build();
-  }
-
-  private static BuildStatus buildStatus(InvocationStatus status) {
-    return switch (status) {
-      case UNKNOWN -> BuildStatus.newBuilder().setResult(Result.UNKNOWN_STATUS).build();
-      case SUCCEEDED -> BuildStatus.newBuilder().setResult(Result.COMMAND_SUCCEEDED).build();
-      case FAILED -> BuildStatus.newBuilder().setResult(Result.COMMAND_FAILED).build();
-    };
-  }
-
-  /** Creates a {@link PublishBuildToolEventStreamRequest} from a {@link StreamEvent}. */
-  public static PublishBuildToolEventStreamRequest publishBuildToolEventStreamRequest(
-      CommandContext commandContext, StreamEvent streamEvent) {
-    return switch (streamEvent) {
-      case StreamEvent.BazelEvent(Instant eventTime, long sequenceNumber, byte[] payload) ->
-          bazelEvent(commandContext, eventTime, sequenceNumber, payload);
-      case StreamEvent.StreamFinished(Instant eventTime, long sequenceNumber) ->
-          streamFinished(commandContext, eventTime, sequenceNumber);
-    };
-  }
-
-  public static PublishBuildToolEventStreamRequest bazelEvent(
-      CommandContext commandContext, Instant eventTime, long sequenceNumber, byte[] payload) {
-    // Any.pack() would require us to parse the payload into a Message, which is wasteful.
-    // Implement it manually instead.
-    Any packed =
-        Any.newBuilder().setTypeUrl(TYPE_URL).setValue(ByteString.copyFrom(payload)).build();
-    return streamRequest(
-        commandContext,
-        sequenceNumber,
-        toProtoTimestamp(eventTime),
-        BuildEvent.newBuilder().setBazelEvent(packed));
-  }
-
-  public static PublishBuildToolEventStreamRequest streamFinished(
-      CommandContext commandContext, Instant eventTime, long sequenceNumber) {
-    return streamRequest(
-        commandContext,
-        sequenceNumber,
-        toProtoTimestamp(eventTime),
-        BuildEvent.newBuilder()
-            .setComponentStreamFinished(
-                BuildComponentStreamFinished.newBuilder().setType(FINISHED)));
-  }
-
-  @VisibleForTesting
-  public static PublishBuildToolEventStreamRequest streamRequest(
-      CommandContext commandContext,
-      long sequenceNumber,
-      Timestamp timestamp,
-      BuildEvent.Builder besEvent) {
-    PublishBuildToolEventStreamRequest.Builder builder =
-        PublishBuildToolEventStreamRequest.newBuilder()
-            .setOrderedBuildEvent(
-                OrderedBuildEvent.newBuilder()
-                    .setSequenceNumber(sequenceNumber)
-                    .setEvent(besEvent.setEventTime(timestamp))
-                    .setStreamId(streamId(commandContext, besEvent.getEventCase())));
-    if (sequenceNumber == 1) {
-      builder
-          .addAllNotificationKeywords(commandContext.keywords())
-          .setCheckPrecedingLifecycleEventsPresent(commandContext.checkPrecedingLifecycleEvents());
+                        .setInvocationStatus(buildStatus(status))
+                )
+        )
+            .build()
     }
-    if (commandContext.projectId() != null) {
-      builder.setProjectId(commandContext.projectId());
-    }
-    return builder.build();
-  }
 
-  @VisibleForTesting
-  public static PublishLifecycleEventRequest.Builder lifecycleRequest(
-      CommandContext commandContext, int sequenceNumber, BuildEvent.Builder lifecycleEvent) {
-    PublishLifecycleEventRequest.Builder builder =
-        PublishLifecycleEventRequest.newBuilder()
-            .setServiceLevel(PublishLifecycleEventRequest.ServiceLevel.INTERACTIVE)
-            .setBuildEvent(
-                OrderedBuildEvent.newBuilder()
-                    .setSequenceNumber(sequenceNumber)
-                    .setStreamId(streamId(commandContext, lifecycleEvent.getEventCase()))
-                    .setEvent(lifecycleEvent));
-    if (commandContext.projectId() != null) {
-      builder.setProjectId(commandContext.projectId());
+    private fun buildStatus(status: InvocationStatus): BuildStatus? {
+        return when (status) {
+            InvocationStatus.UNKNOWN -> BuildStatus.newBuilder().setResult(Result.UNKNOWN_STATUS).build()
+            InvocationStatus.SUCCEEDED -> BuildStatus.newBuilder().setResult(Result.COMMAND_SUCCEEDED).build()
+            InvocationStatus.FAILED -> BuildStatus.newBuilder().setResult(Result.COMMAND_FAILED).build()
+        }
     }
-    switch (lifecycleEvent.getEventCase()) {
-      case BUILD_ENQUEUED, INVOCATION_ATTEMPT_STARTED, BUILD_FINISHED ->
-          builder.addAllNotificationKeywords(commandContext.keywords());
-      default -> {}
-    }
-    return builder;
-  }
 
-  @VisibleForTesting
-  public static StreamId streamId(CommandContext commandContext, EventCase eventCase) {
-    StreamId.Builder streamId = StreamId.newBuilder().setBuildId(commandContext.buildId());
-    switch (eventCase) {
-      case BUILD_ENQUEUED, BUILD_FINISHED -> streamId.setComponent(BuildComponent.CONTROLLER);
-      case INVOCATION_ATTEMPT_STARTED, INVOCATION_ATTEMPT_FINISHED -> {
-        streamId
-            .setInvocationId(commandContext.invocationId())
-            .setComponent(BuildComponent.CONTROLLER);
-      }
-      case BAZEL_EVENT, COMPONENT_STREAM_FINISHED -> {
-        streamId.setInvocationId(commandContext.invocationId()).setComponent(BuildComponent.TOOL);
-      }
-      default -> throw new IllegalArgumentException("Illegal EventCase " + eventCase);
+    /** Creates a [PublishBuildToolEventStreamRequest] from a [StreamEvent].  */
+    fun publishBuildToolEventStreamRequest(
+        commandContext: CommandContext, streamEvent: StreamEvent
+    ): PublishBuildToolEventStreamRequest? {
+        return when (streamEvent) {
+            -> bazelEvent(commandContext, eventTime, sequenceNumber, payload)
+            -> streamFinished(commandContext, eventTime, sequenceNumber)
+        }
     }
-    return streamId.build();
-  }
 
-  private static Timestamp toProtoTimestamp(Instant instant) {
-    return Timestamp.newBuilder()
-        .setSeconds(instant.getEpochSecond())
-        .setNanos(instant.getNano())
-        .build();
-  }
+    fun bazelEvent(
+        commandContext: CommandContext, eventTime: Instant, sequenceNumber: Long, payload: ByteArray
+    ): PublishBuildToolEventStreamRequest {
+        // Any.pack() would require us to parse the payload into a Message, which is wasteful.
+        // Implement it manually instead.
+        val packed: Any? =
+            Any.newBuilder().setTypeUrl(TYPE_URL).setValue(ByteString.copyFrom(payload)).build()
+        return streamRequest(
+            commandContext,
+            sequenceNumber,
+            toProtoTimestamp(eventTime),
+            BuildEvent.newBuilder().setBazelEvent(packed)
+        )
+    }
+
+    fun streamFinished(
+        commandContext: CommandContext, eventTime: Instant, sequenceNumber: Long
+    ): PublishBuildToolEventStreamRequest {
+        return streamRequest(
+            commandContext,
+            sequenceNumber,
+            toProtoTimestamp(eventTime),
+            BuildEvent.newBuilder()
+                .setComponentStreamFinished(
+                    BuildComponentStreamFinished.newBuilder().setType(FINISHED)
+                )
+        )
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun streamRequest(
+        commandContext: CommandContext,
+        sequenceNumber: Long,
+        timestamp: Timestamp?,
+        besEvent: BuildEvent.Builder
+    ): PublishBuildToolEventStreamRequest {
+        val builder: PublishBuildToolEventStreamRequest.Builder =
+            PublishBuildToolEventStreamRequest.newBuilder()
+                .setOrderedBuildEvent(
+                    OrderedBuildEvent.newBuilder()
+                        .setSequenceNumber(sequenceNumber)
+                        .setEvent(besEvent.setEventTime(timestamp))
+                        .setStreamId(streamId(commandContext, besEvent.getEventCase()))
+                )
+        if (sequenceNumber == 1L) {
+            builder
+                .addAllNotificationKeywords(commandContext.keywords)
+                .setCheckPrecedingLifecycleEventsPresent(commandContext.checkPrecedingLifecycleEvents)
+        }
+        if (commandContext.projectId != null) {
+            builder.setProjectId(commandContext.projectId)
+        }
+        return builder.build()
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun lifecycleRequest(
+        commandContext: CommandContext, sequenceNumber: Int, lifecycleEvent: BuildEvent.Builder
+    ): PublishLifecycleEventRequest.Builder {
+        val builder: PublishLifecycleEventRequest.Builder =
+            PublishLifecycleEventRequest.newBuilder()
+                .setServiceLevel(PublishLifecycleEventRequest.ServiceLevel.INTERACTIVE)
+                .setBuildEvent(
+                    OrderedBuildEvent.newBuilder()
+                        .setSequenceNumber(sequenceNumber)
+                        .setStreamId(streamId(commandContext, lifecycleEvent.getEventCase()))
+                        .setEvent(lifecycleEvent)
+                )
+        if (commandContext.projectId != null) {
+            builder.setProjectId(commandContext.projectId)
+        }
+        when (lifecycleEvent.getEventCase()) {
+            BUILD_ENQUEUED, INVOCATION_ATTEMPT_STARTED, BUILD_FINISHED -> builder.addAllNotificationKeywords(
+                commandContext.keywords
+            )
+
+            else -> {}
+        }
+        return builder
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun streamId(commandContext: CommandContext, eventCase: EventCase): StreamId {
+        val streamId: StreamId.Builder = StreamId.newBuilder().setBuildId(commandContext.buildId)
+        when (eventCase) {
+            BUILD_ENQUEUED, BUILD_FINISHED -> streamId.setComponent(BuildComponent.CONTROLLER)
+            INVOCATION_ATTEMPT_STARTED, INVOCATION_ATTEMPT_FINISHED -> {
+                streamId
+                    .setInvocationId(commandContext.invocationId)
+                    .setComponent(BuildComponent.CONTROLLER)
+            }
+
+            BAZEL_EVENT, COMPONENT_STREAM_FINISHED -> {
+                streamId.setInvocationId(commandContext.invocationId).setComponent(BuildComponent.TOOL)
+            }
+
+            else -> throw java.lang.IllegalArgumentException("Illegal EventCase " + eventCase)
+        }
+        return streamId.build()
+    }
+
+    private fun toProtoTimestamp(instant: Instant): Timestamp {
+        return Timestamp.newBuilder()
+            .setSeconds(instant.getEpochSecond())
+            .setNanos(instant.getNano())
+            .build()
+    }
 }

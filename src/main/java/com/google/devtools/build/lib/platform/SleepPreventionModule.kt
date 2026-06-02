@@ -11,34 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Prevents the computer from going to sleep while a Bazel command is running.  */
+class SleepPreventionModule : BlazeModule() {
+    private var service: PlatformNativeDepsService? = null
 
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
+    override fun workspaceInit(
+        runtime: BlazeRuntime, directories: BlazeDirectories?, builder: WorkspaceBuilder?
+    ) {
+        service = com.google.common.base.Preconditions.checkNotNull<PlatformNativeDepsService>(
+            runtime.getBlazeService<PlatformNativeDepsService?>(PlatformNativeDepsService::class.java)
+        )
+    }
 
-/** Prevents the computer from going to sleep while a Bazel command is running. */
-public final class SleepPreventionModule extends BlazeModule {
-  private PlatformNativeDepsService service;
+    override fun beforeCommand(env: CommandEnvironment?) {
+        service.pushDisableSleep()
+    }
 
-  @Override
-  public void workspaceInit(
-      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {
-    service = checkNotNull(runtime.getBlazeService(PlatformNativeDepsService.class));
-  }
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    service.pushDisableSleep();
-  }
-
-  @Override
-  public void afterCommand() {
-    service.popDisableSleep();
-  }
+    override fun afterCommand() {
+        service.popDisableSleep()
+    }
 }

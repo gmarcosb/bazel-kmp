@@ -11,19 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding.api
 
-package com.google.testing.junit.runner.sharding.api;
-
-import org.junit.runner.Description;
+import org.junit.runner.Description
 
 /**
  * Extracts the weight associated with a test for use by sharding filters.
  */
-public interface WeightStrategy {
-  /**
-   * Returns the weight of a test extracted from its description.
-   * 
-   * @param description the description that contains the associated weight for a test
-   */
-  int getDescriptionWeight(Description description);
+interface WeightStrategy {
+    /**
+     * Returns the weight of a test extracted from its description.
+     * 
+     * @param description the description that contains the associated weight for a test
+     */
+    fun getDescriptionWeight(description: Description?): Int
 }

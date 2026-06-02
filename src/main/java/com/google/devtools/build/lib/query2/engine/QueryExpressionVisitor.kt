@@ -11,17 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-/** Provides interfaces to visit all {@link QueryExpression}s with a context object. */
-public interface QueryExpressionVisitor<T, C> {
-  T visit(TargetLiteral targetLiteral, C context);
+/** Provides interfaces to visit all [QueryExpression]s with a context object.  */
+interface QueryExpressionVisitor<T, C> {
+    fun visit(targetLiteral: TargetLiteral?, context: C?): T?
 
-  T visit(BinaryOperatorExpression binaryOperatorExpression, C context);
+    fun visit(binaryOperatorExpression: BinaryOperatorExpression?, context: C?): T?
 
-  T visit(FunctionExpression functionExpression, C context);
+    fun visit(functionExpression: FunctionExpression?, context: C?): T?
 
-  T visit(LetExpression letExpression, C context);
+    fun visit(letExpression: LetExpression?, context: C?): T?
 
-  T visit(SetExpression setExpression, C context);
+    fun visit(setExpression: SetExpression?, context: C?): T?
 }

@@ -11,100 +11,100 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.Pair;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * Encapsulates logic for gathering tests for {@code test_suite}'s {@code $implicit_tests}
+ * Encapsulates logic for gathering tests for `test_suite`'s `$implicit_tests`
  * attribute.
- *
- * <p>Usage is tightly coupled with the package loading process. Expected flow is roughly
- *
- * <ol>
- *   <li>{@link #getTestSuiteImplicitTestsRefForTags} for all relevant {@code test_suite}s
- *   <li>Then, after all all targets have been added to the package...
- *       <ol>
- *         <li>{@link #clearAccumulatedTests()}
- *         <li>{@link #processRule} for every rule in the package
- *         <li>{@link #sortTests()}
- *       </ol>
- *   <li>Repeat the previous step(s) as necessary, eg due to skyframe restarts from missing deps
- * </ol>
+ * 
+ * 
+ * Usage is tightly coupled with the package loading process. Expected flow is roughly
+ * 
+ * 
+ *  1. [.getTestSuiteImplicitTestsRefForTags] for all relevant `test_suite`s
+ *  1. Then, after all all targets have been added to the package...
+ * 
+ *  1. [.clearAccumulatedTests]
+ *  1. [.processRule] for every rule in the package
+ *  1. [.sortTests]
+ * 
+ *  1. Repeat the previous step(s) as necessary, eg due to skyframe restarts from missing deps
+ * 
  */
-class TestSuiteImplicitTestsAccumulator {
+internal class TestSuiteImplicitTestsAccumulator {
+    private val testSuiteImplicitTests: MutableMap<com.google.common.collect.ImmutableSet<String?>?, ImplicitTestsAccumulator> =
+        HashMap<com.google.common.collect.ImmutableSet<String?>?, ImplicitTestsAccumulator>()
 
-  private final Map<ImmutableSet<String>, ImplicitTestsAccumulator> testSuiteImplicitTests =
-      new HashMap<>();
-
-  /**
-   * Returns a reference to the list of tests matching tags (or all tests if empty), to be populated
-   * by {@link #processRule}.
-   */
-  List<Label> getTestSuiteImplicitTestsRefForTags(List<String> tags) {
-    ImplicitTestsAccumulator accumulatorForTags =
-        testSuiteImplicitTests.computeIfAbsent(
-            ImmutableSet.copyOf(tags), ImplicitTestsAccumulator::new);
-    return Collections.unmodifiableList(accumulatorForTags.tests);
-  }
-
-  /** Clears all accumulated tests. */
-  void clearAccumulatedTests() {
-    testSuiteImplicitTests.values().forEach(acc -> acc.tests.clear());
-  }
-
-  /**
-   * Processes a rule from the package, adding it to the necessary {@code $implicit_test} values
-   * returned by {@link #getTestSuiteImplicitTestsRefForTags}.
-   */
-  void processRule(Rule rule) {
-    if (testSuiteImplicitTests.isEmpty()) {
-      // No test suites requiring implicit test accumulation encountered.
-      return;
+    /**
+     * Returns a reference to the list of tests matching tags (or all tests if empty), to be populated
+     * by [.processRule].
+     */
+    fun getTestSuiteImplicitTestsRefForTags(tags: MutableList<String?>): MutableList<Label?> {
+        val accumulatorForTags: ImplicitTestsAccumulator =
+            testSuiteImplicitTests.computeIfAbsent(
+                com.google.common.collect.ImmutableSet.copyOf<String?>(tags),
+                java.util.function.Function { testTags: com.google.common.collect.ImmutableSet<kotlin.String?>? ->
+                    ImplicitTestsAccumulator(testTags)
+                })
+        return Collections.unmodifiableList<Label?>(accumulatorForTags.tests)
     }
 
-    if (TargetUtils.isTestRule(rule) && !TargetUtils.hasManualTag(rule)) {
-      NonconfigurableAttributeMapper mapper = NonconfigurableAttributeMapper.of(rule);
-      Set<String> testSuiteTags =
-          ImmutableSet.<String>builder()
-              .addAll(mapper.get("tags", Types.STRING_LIST))
-              .add(mapper.get("size", Type.STRING))
-              .build();
-      for (ImplicitTestsAccumulator acc : testSuiteImplicitTests.values()) {
-        if (TestTargetUtils.testMatchesFilters(testSuiteTags, acc.requiredTags, acc.excludedTags)) {
-          acc.tests.add(rule.getLabel());
+    /** Clears all accumulated tests.  */
+    fun clearAccumulatedTests() {
+        testSuiteImplicitTests.values()
+            .forEach(java.util.function.Consumer { acc: ImplicitTestsAccumulator? -> acc.tests.clear() })
+    }
+
+    /**
+     * Processes a rule from the package, adding it to the necessary `$implicit_test` values
+     * returned by [.getTestSuiteImplicitTestsRefForTags].
+     */
+    fun processRule(rule: com.google.devtools.build.lib.packages.Rule?) {
+        if (testSuiteImplicitTests.isEmpty()) {
+            // No test suites requiring implicit test accumulation encountered.
+            return
         }
-      }
+
+        if (TargetUtils.isTestRule(rule) && !TargetUtils.hasManualTag(rule)) {
+            val mapper: NonconfigurableAttributeMapper = NonconfigurableAttributeMapper.Companion.of(rule)
+            val testSuiteTags: MutableSet<String?> =
+                com.google.common.collect.ImmutableSet.builder<String?>()
+                    .addAll(
+                        mapper.get<MutableList<String?>?>(
+                            "tags",
+                            com.google.devtools.build.lib.packages.Types.STRING_LIST
+                        )
+                    )
+                    .add(mapper.get<String?>("size", com.google.devtools.build.lib.packages.Type.Companion.STRING))
+                    .build()
+            for (acc in testSuiteImplicitTests.values()) {
+                if (testMatchesFilters(testSuiteTags, acc.requiredTags, acc.excludedTags)) {
+                    acc.tests.add(rule.getLabel())
+                }
+            }
+        }
     }
-  }
 
-  /**
-   * Sorts all of accumulated test lists returned by {@link #getTestSuiteImplicitTestsRefForTags}.
-   */
-  void sortTests() {
-    testSuiteImplicitTests.values().forEach(acc -> Collections.sort(acc.tests));
-  }
-
-  private static class ImplicitTestsAccumulator {
-    private final Collection<String> requiredTags;
-    private final Collection<String> excludedTags;
-    private final List<Label> tests = new ArrayList<>();
-
-    private ImplicitTestsAccumulator(Set<String> testTags) {
-      Pair<Collection<String>, Collection<String>> requiredAndExcludedTags =
-          TestTargetUtils.sortTagsBySense(testTags);
-      this.requiredTags = requiredAndExcludedTags.first;
-      this.excludedTags = requiredAndExcludedTags.second;
+    /**
+     * Sorts all of accumulated test lists returned by [.getTestSuiteImplicitTestsRefForTags].
+     */
+    fun sortTests() {
+        testSuiteImplicitTests.values()
+            .forEach(java.util.function.Consumer { acc: ImplicitTestsAccumulator? -> Collections.sort<T?>(acc.tests) })
     }
-  }
+
+    private class ImplicitTestsAccumulator(testTags: MutableSet<String?>) {
+        private val requiredTags: MutableCollection<String?>?
+        private val excludedTags: MutableCollection<String?>?
+        private val tests: MutableList<Label?> = java.util.ArrayList<Label?>()
+
+        init {
+            val requiredAndExcludedTags: com.google.devtools.build.lib.util.Pair<MutableCollection<String?>?, MutableCollection<String?>?> =
+                TestTargetUtils.sortTagsBySense(testTags)
+            this.requiredTags = requiredAndExcludedTags.first
+            this.excludedTags = requiredAndExcludedTags.second
+        }
+    }
 }

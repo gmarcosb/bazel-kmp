@@ -11,18 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.http
 
-package com.google.devtools.build.lib.remote.http;
+import java.io.IOException
+import java.lang.String
+import kotlin.Long
 
-import java.io.IOException;
-
-final class UploadTimeoutException extends IOException {
-
-  UploadTimeoutException(String url, long contentLength) {
-    super(buildMessage(url, contentLength));
-  }
-
-  private static String buildMessage(String url, long contentLength) {
-    return String.format("Upload of '%s' timed out. Sent %d bytes.", url, contentLength);
-  }
+internal class UploadTimeoutException(url: String?, contentLength: Long) :
+    IOException(buildMessage(url, contentLength)) {
+    companion object {
+        private fun buildMessage(url: String?, contentLength: Long): String? {
+            return String.format("Upload of '%s' timed out. Sent %d bytes.", url, contentLength)
+        }
+    }
 }

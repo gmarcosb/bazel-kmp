@@ -11,237 +11,241 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.StarlarkThreadContext;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.starlarkbuildapi.StarlarkAspectPropagationContextApi;
-import java.util.Objects;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkFunction;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * Supplies the list of edges (attribute names or toolchain types) that should be propagated by an
  * aspect. It is extended by 2 classes:
- *
- * <ul>
- *   <li>FixedListSupplier: for the case when the list is fixed and known at the aspect definition
- *       time.
- *   <li>FunctionSupplier: for the case when the list is computed for each target that aspect
- *       visits.
- * </ul>
- *
- * The type <T> is String for {@code attr_aspects} and {@link Label} for {@code toolchains_aspects}.
- */
-public sealed interface AspectPropagationEdgesSupplier<T> {
+ * 
+ * 
+ *  * FixedListSupplier: for the case when the list is fixed and known at the aspect definition
+ * time.
+ *  * FunctionSupplier: for the case when the list is computed for each target that aspect
+ * visits.
+ * 
+ * 
+ * The type <T> is String for `attr_aspects` and [Label] for `toolchains_aspects`.
+</T> */
+interface AspectPropagationEdgesSupplier<T> {
+    /** A supplier of the edges that is fixed and known at the aspect definition time.  */
+    class FixedListSupplier<T> private constructor(edges: com.google.common.collect.ImmutableSet<T?>?) :
+        AspectPropagationEdgesSupplier<T?> {
+        private val edges: com.google.common.collect.ImmutableSet<T?>?
 
-  Label ALL_TOOLCHAINS = Label.parseCanonicalUnchecked("//__toolchains_aspects__:all");
-
-  public static final AspectPropagationEdgesSupplier<String> DEFAULT_ATTR_ASPECTS_SUPPLIER =
-      new FixedListSupplier<>(ImmutableSet.of());
-
-  public static final FixedListSupplier<Label> DEFAULT_TOOLCHAINS_ASPECTS_SUPPLIER =
-      new FixedListSupplier<>(ImmutableSet.of());
-
-  /** A supplier of the edges that is fixed and known at the aspect definition time. */
-  public static final class FixedListSupplier<T> implements AspectPropagationEdgesSupplier<T> {
-
-    private final ImmutableSet<T> edges;
-
-    private FixedListSupplier(ImmutableSet<T> edges) {
-      this.edges = edges;
-    }
-
-    public ImmutableSet<T> getList() {
-      return edges;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || !(o instanceof FixedListSupplier<?> that)) {
-        return false;
-      }
-
-      return Objects.equals(edges, that.edges);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(edges);
-    }
-  }
-
-  /** A supplier of the edges that is computed for each target that aspect visits. */
-  public abstract static sealed class FunctionSupplier<T>
-      implements AspectPropagationEdgesSupplier<T> {
-    private final StarlarkFunction function;
-    private final StarlarkSemantics semantics;
-
-    private FunctionSupplier(StarlarkFunction function, StarlarkSemantics semantics) {
-      this.function = function;
-      this.semantics = semantics;
-    }
-
-    public abstract ImmutableSet<T> computeList(
-        StarlarkAspectPropagationContextApi context, ExtendedEventHandler eventHandler)
-        throws InterruptedException, EvalException;
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || !(o instanceof FunctionSupplier<?> that)) {
-        return false;
-      }
-
-      return Objects.equals(function, that.function) && Objects.equals(semantics, that.semantics);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(function, semantics);
-    }
-
-    private static final class AspectPropagationEdgesThreadContext extends StarlarkThreadContext {
-      private AspectPropagationEdgesThreadContext() {
-        super(null);
-      }
-    }
-
-    protected StarlarkList<?> runFunction(
-        StarlarkAspectPropagationContextApi context, ExtendedEventHandler eventHandler)
-        throws InterruptedException, EvalException {
-      try (Mutability mu = Mutability.create("aspect_propagation_edges")) {
-        StarlarkThread thread = StarlarkThread.createTransient(mu, semantics);
-        thread.setPrintHandler(Event.makeDebugPrintHandler(eventHandler));
-        new AspectPropagationEdgesThreadContext().storeInThread(thread);
-        Object starlarkResult = Starlark.positionalOnlyCall(thread, function, context);
-        if (starlarkResult instanceof StarlarkList<?> listResult) {
-          return listResult;
+        init {
+            this.edges = edges
         }
-        throw new EvalException("Expected a list");
-      }
-    }
-  }
 
-  /** A function supplier for {@code attr_aspects}. */
-  public static final class AttrAspectsFunctionSupplier extends FunctionSupplier<String> {
-    private AttrAspectsFunctionSupplier(StarlarkFunction function, StarlarkSemantics semantics) {
-      super(function, semantics);
-    }
-
-    @Override
-    public ImmutableSet<String> computeList(
-        StarlarkAspectPropagationContextApi context, ExtendedEventHandler eventHandler)
-        throws InterruptedException, EvalException {
-      return parseAttrAspects(runFunction(context, eventHandler), /* allowAll= */ false);
-    }
-  }
-
-  /** A function supplier for {@code toolchains_aspects}. */
-  public static final class ToolchainsAspectsFunctionSupplier extends FunctionSupplier<Label> {
-    private ToolchainsAspectsFunctionSupplier(
-        StarlarkFunction function, StarlarkSemantics semantics) {
-      super(function, semantics);
-    }
-
-    @Override
-    public ImmutableSet<Label> computeList(
-        StarlarkAspectPropagationContextApi context, ExtendedEventHandler eventHandler)
-        throws InterruptedException, EvalException {
-      StarlarkList<?> listResult = runFunction(context, eventHandler);
-      if (listResult == null || listResult.isEmpty()) {
-        return ImmutableSet.of();
-      }
-      return ImmutableSet.copyOf(Sequence.cast(listResult, Label.class, "toolchains_aspects"));
-    }
-  }
-
-  public static AspectPropagationEdgesSupplier<String> createForAttrAspects(
-      Object rawAttrAspects, StarlarkThread thread) throws EvalException {
-    if (rawAttrAspects instanceof StarlarkFunction attrAspectsFunction) {
-      return new AttrAspectsFunctionSupplier(attrAspectsFunction, thread.getSemantics());
-    } else {
-      return new FixedListSupplier<>(parseAttrAspects(rawAttrAspects, /* allowAll= */ true));
-    }
-  }
-
-  public static AspectPropagationEdgesSupplier<Label> createForToolchainsAspects(
-      Object rawToolchainsAspects, StarlarkThread thread, LabelConverter labelConverter)
-      throws EvalException {
-    if (rawToolchainsAspects instanceof StarlarkFunction toolchainsAspectsFunction) {
-      return new ToolchainsAspectsFunctionSupplier(
-          toolchainsAspectsFunction, thread.getSemantics());
-    } else {
-      return new FixedListSupplier<>(parseToolchainsAspects(rawToolchainsAspects, labelConverter));
-    }
-  }
-
-  private static ImmutableSet<String> parseAttrAspects(Object rawAttrAspects, boolean allowAll)
-      throws EvalException {
-    Sequence<String> attrAspects = Sequence.cast(rawAttrAspects, String.class, "attr_aspects");
-
-    ImmutableSet.Builder<String> attrAspectsBuilder = ImmutableSet.builder();
-    for (String attrName : attrAspects) {
-      if (attrName.equals("*")) {
-        if (!allowAll) {
-          throw new EvalException("'*' is not allowed in 'attr_aspects' list");
-        } else if (attrAspects.size() != 1) {
-          throw new EvalException("'*' must be the only string in 'attr_aspects' list");
+        fun getList(): com.google.common.collect.ImmutableSet<T?>? {
+            return edges
         }
-      }
-      if (!attrName.startsWith("_")) {
-        attrAspectsBuilder.add(attrName);
-      } else {
-        // Implicit attribute names mean either implicit or late-bound attributes
-        // (``$attr`` or ``:attr``). Depend on both.
-        attrAspectsBuilder
-            .add(AttributeValueSource.COMPUTED_DEFAULT.convertToNativeName(attrName))
-            .add(AttributeValueSource.LATE_BOUND.convertToNativeName(attrName));
-      }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || o !is FixedListSupplier<*>) {
+                return false
+            }
+
+            return edges == o.edges
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hashCode(edges)
+        }
     }
 
-    return attrAspectsBuilder.build();
-  }
+    /** A supplier of the edges that is computed for each target that aspect visits.  */
+    class FunctionSupplier<T>
+    private constructor(
+        function: net.starlark.java.eval.StarlarkFunction?,
+        semantics: net.starlark.java.eval.StarlarkSemantics?
+    ) : AspectPropagationEdgesSupplier<T?> {
+        private val function: net.starlark.java.eval.StarlarkFunction?
+        private val semantics: net.starlark.java.eval.StarlarkSemantics?
 
-  private static ImmutableSet<Label> parseToolchainsAspects(
-      Object rawToolchainsAspects, LabelConverter labelConverter) throws EvalException {
-    Sequence<String> toolchainsAspects =
-        Sequence.cast(rawToolchainsAspects, String.class, "toolchains_aspects");
+        init {
+            this.function = function
+            this.semantics = semantics
+        }
 
-    if (toolchainsAspects.size() == 1 && Objects.equals(toolchainsAspects.get(0), "*")) {
-      return ImmutableSet.of(ALL_TOOLCHAINS);
+        @Throws(java.lang.InterruptedException::class, net.starlark.java.eval.EvalException::class)
+        abstract fun computeList(
+            context: StarlarkAspectPropagationContextApi?, eventHandler: ExtendedEventHandler?
+        ): com.google.common.collect.ImmutableSet<T?>?
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || o !is FunctionSupplier<*>) {
+                return false
+            }
+
+            return function == o.function && semantics == o.semantics
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(function, semantics)
+        }
+
+        private class AspectPropagationEdgesThreadContext : StarlarkThreadContext(null)
+
+        @Throws(java.lang.InterruptedException::class, net.starlark.java.eval.EvalException::class)
+        protected fun runFunction(
+            context: StarlarkAspectPropagationContextApi?, eventHandler: ExtendedEventHandler?
+        ): net.starlark.java.eval.StarlarkList<*> {
+            net.starlark.java.eval.Mutability.create("aspect_propagation_edges").use { mu ->
+                val thread: net.starlark.java.eval.StarlarkThread =
+                    net.starlark.java.eval.StarlarkThread.createTransient(mu, semantics)
+                thread.setPrintHandler(Event.makeDebugPrintHandler(eventHandler))
+                AspectPropagationEdgesThreadContext().storeInThread(thread)
+                val starlarkResult: Any? = net.starlark.java.eval.Starlark.positionalOnlyCall(thread, function, context)
+                if (starlarkResult is net.starlark.java.eval.StarlarkList<*>) {
+                    return starlarkResult
+                }
+                throw net.starlark.java.eval.EvalException("Expected a list")
+            }
+        }
     }
 
-    ImmutableSet.Builder<Label> parsedLabels = new ImmutableSet.Builder<>();
-    for (String input : toolchainsAspects) {
-      if (Objects.equals(input, "*")) {
-        // This is already handled if the list has a single '*' item in it
-        throw new EvalException("'*' must be the only item in 'toolchains_aspects' list");
-      }
-      try {
-        Label label = labelConverter.convert(input);
-        parsedLabels.add(label);
-      } catch (LabelSyntaxException e) {
-        throw Starlark.errorf(
-            "Unable to parse label '%s' in attribute '%s': %s",
-            input, "toolchains_aspects", e.getMessage());
-      }
+    /** A function supplier for `attr_aspects`.  */
+    class AttrAspectsFunctionSupplier private constructor(
+        function: net.starlark.java.eval.StarlarkFunction?,
+        semantics: net.starlark.java.eval.StarlarkSemantics?
+    ) : FunctionSupplier<String?>(function, semantics) {
+        @Throws(java.lang.InterruptedException::class, net.starlark.java.eval.EvalException::class)
+        override fun computeList(
+            context: StarlarkAspectPropagationContextApi?, eventHandler: ExtendedEventHandler?
+        ): com.google.common.collect.ImmutableSet<String?> {
+            return parseAttrAspects(runFunction(context, eventHandler),  /* allowAll= */false)
+        }
     }
-    return parsedLabels.build();
-  }
+
+    /** A function supplier for `toolchains_aspects`.  */
+    class ToolchainsAspectsFunctionSupplier private constructor(
+        function: net.starlark.java.eval.StarlarkFunction?,
+        semantics: net.starlark.java.eval.StarlarkSemantics?
+    ) : FunctionSupplier<Label?>(function, semantics) {
+        @Throws(java.lang.InterruptedException::class, net.starlark.java.eval.EvalException::class)
+        override fun computeList(
+            context: StarlarkAspectPropagationContextApi?, eventHandler: ExtendedEventHandler?
+        ): com.google.common.collect.ImmutableSet<Label?> {
+            val listResult: net.starlark.java.eval.StarlarkList<*>? = runFunction(context, eventHandler)
+            if (listResult == null || listResult.isEmpty()) {
+                return com.google.common.collect.ImmutableSet.of<Label?>()
+            }
+            return com.google.common.collect.ImmutableSet.copyOf<Label?>(
+                net.starlark.java.eval.Sequence.cast<Label?>(
+                    listResult,
+                    Label::class.java,
+                    "toolchains_aspects"
+                )
+            )
+        }
+    }
+
+    companion object {
+        val DEFAULT_ATTR_ASPECTS_SUPPLIER: AspectPropagationEdgesSupplier<String?> =
+            FixedListSupplier<String?>(com.google.common.collect.ImmutableSet.of<String?>())
+
+        val DEFAULT_TOOLCHAINS_ASPECTS_SUPPLIER: FixedListSupplier<Label?> =
+            FixedListSupplier<Label?>(com.google.common.collect.ImmutableSet.of<Label?>())
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun createForAttrAspects(
+            rawAttrAspects: Any?, thread: net.starlark.java.eval.StarlarkThread
+        ): AspectPropagationEdgesSupplier<String?> {
+            if (rawAttrAspects is net.starlark.java.eval.StarlarkFunction) {
+                return AttrAspectsFunctionSupplier(rawAttrAspects, thread.getSemantics())
+            } else {
+                return FixedListSupplier<String?>(parseAttrAspects(rawAttrAspects,  /* allowAll= */true))
+            }
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun createForToolchainsAspects(
+            rawToolchainsAspects: Any?, thread: net.starlark.java.eval.StarlarkThread, labelConverter: LabelConverter
+        ): AspectPropagationEdgesSupplier<Label?> {
+            if (rawToolchainsAspects is net.starlark.java.eval.StarlarkFunction) {
+                return ToolchainsAspectsFunctionSupplier(
+                    rawToolchainsAspects, thread.getSemantics()
+                )
+            } else {
+                return FixedListSupplier<Label?>(parseToolchainsAspects(rawToolchainsAspects, labelConverter))
+            }
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun parseAttrAspects(
+            rawAttrAspects: Any?,
+            allowAll: Boolean
+        ): com.google.common.collect.ImmutableSet<String?> {
+            val attrAspects: net.starlark.java.eval.Sequence<String> =
+                net.starlark.java.eval.Sequence.cast<String?>(rawAttrAspects, String::class.java, "attr_aspects")
+
+            val attrAspectsBuilder: com.google.common.collect.ImmutableSet.Builder<String?> =
+                com.google.common.collect.ImmutableSet.builder<String?>()
+            for (attrName in attrAspects) {
+                if (attrName == "*") {
+                    if (!allowAll) {
+                        throw net.starlark.java.eval.EvalException("'*' is not allowed in 'attr_aspects' list")
+                    } else if (attrAspects.size() != 1) {
+                        throw net.starlark.java.eval.EvalException("'*' must be the only string in 'attr_aspects' list")
+                    }
+                }
+                if (!attrName.startsWith("_")) {
+                    attrAspectsBuilder.add(attrName)
+                } else {
+                    // Implicit attribute names mean either implicit or late-bound attributes
+                    // (``$attr`` or ``:attr``). Depend on both.
+                    attrAspectsBuilder
+                        .add(AttributeValueSource.COMPUTED_DEFAULT.convertToNativeName(attrName))
+                        .add(AttributeValueSource.LATE_BOUND.convertToNativeName(attrName))
+                }
+            }
+
+            return attrAspectsBuilder.build()
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun parseToolchainsAspects(
+            rawToolchainsAspects: Any?, labelConverter: LabelConverter
+        ): com.google.common.collect.ImmutableSet<Label?> {
+            val toolchainsAspects: net.starlark.java.eval.Sequence<String?> =
+                net.starlark.java.eval.Sequence.cast<String?>(
+                    rawToolchainsAspects,
+                    String::class.java,
+                    "toolchains_aspects"
+                )
+
+            if (toolchainsAspects.size() == 1 && toolchainsAspects.get(0) == "*") {
+                return com.google.common.collect.ImmutableSet.of<Label?>(ALL_TOOLCHAINS)
+            }
+
+            val parsedLabels: com.google.common.collect.ImmutableSet.Builder<Label?> =
+                com.google.common.collect.ImmutableSet.Builder<Label?>()
+            for (input in toolchainsAspects) {
+                if (input == "*") {
+                    // This is already handled if the list has a single '*' item in it
+                    throw net.starlark.java.eval.EvalException("'*' must be the only item in 'toolchains_aspects' list")
+                }
+                try {
+                    val label: Label? = labelConverter.convert(input)
+                    parsedLabels.add(label)
+                } catch (e: LabelSyntaxException) {
+                    throw net.starlark.java.eval.Starlark.errorf(
+                        "Unable to parse label '%s' in attribute '%s': %s",
+                        input, "toolchains_aspects", e.getMessage()
+                    )
+                }
+            }
+            return parsedLabels.build()
+        }
+
+        val ALL_TOOLCHAINS: Label = Label.parseCanonicalUnchecked("//__toolchains_aspects__:all")
+    }
 }

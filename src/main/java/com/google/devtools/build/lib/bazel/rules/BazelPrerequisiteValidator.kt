@@ -11,47 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.rules
 
-package com.google.devtools.build.lib.bazel.rules;
+import com.google.devtools.build.lib.analysis.CommonPrerequisiteValidator
 
-import com.google.devtools.build.lib.analysis.CommonPrerequisiteValidator;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
+/** Ensures that a target's prerequisites are visible to it and match its testonly status.  */
+class BazelPrerequisiteValidator : CommonPrerequisiteValidator() {
+    protected override fun isSameLogicalPackage(
+        thisPackage: PackageIdentifier, prerequisitePackage: PackageIdentifier?
+    ): Boolean {
+        return thisPackage == prerequisitePackage
+    }
 
-/** Ensures that a target's prerequisites are visible to it and match its testonly status. */
-public class BazelPrerequisiteValidator extends CommonPrerequisiteValidator {
-  @Override
-  protected boolean isSameLogicalPackage(
-      PackageIdentifier thisPackage, PackageIdentifier prerequisitePackage) {
-    return thisPackage.equals(prerequisitePackage);
-  }
+    public override fun packageUnderExperimental(packageIdentifier: PackageIdentifier?): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean packageUnderExperimental(PackageIdentifier packageIdentifier) {
-    return false;
-  }
+    public override fun packageUnderPrototypes(packageIdentifier: PackageIdentifier?): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean packageUnderPrototypes(PackageIdentifier packageIdentifier) {
-    return false;
-  }
+    protected override fun checkVisibilityForExperimental(context: RuleContext.Builder?): Boolean {
+        // It does not matter whether we return true or false here if packageUnderExperimental always
+        // returns false.
+        return true
+    }
 
-  @Override
-  protected boolean checkVisibilityForExperimental(RuleContext.Builder context) {
-    // It does not matter whether we return true or false here if packageUnderExperimental always
-    // returns false.
-    return true;
-  }
+    protected override fun checkVisibilityForPrototypes(context: RuleContext.Builder?): Boolean {
+        return true
+    }
 
-  @Override
-  protected boolean checkVisibilityForPrototypes(RuleContext.Builder context) {
-    return true;
-  }
-
-  @Override
-  protected boolean allowExperimentalDeps(RuleContext.Builder context) {
-    // It does not matter whether we return true or false here if packageUnderExperimental always
-    // returns false.
-    return false;
-  }
+    protected override fun allowExperimentalDeps(context: RuleContext.Builder?): Boolean {
+        // It does not matter whether we return true or false here if packageUnderExperimental always
+        // returns false.
+        return false
+    }
 }

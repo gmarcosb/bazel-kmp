@@ -11,37 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
-
-import java.util.concurrent.Callable;
+package com.google.devtools.build.lib.concurrent
 
 /**
- * Helper class for dealing with {@link InterruptedException}.
+ * Helper class for dealing with [InterruptedException].
  */
-public final class Uninterruptibles {
-
-  /**
-   * Calls the given callable uninterruptibly.
-   *
-   * <p>If the callable throws {@link InterruptedException}, calls it again, until the callable
-   * returns a result. Sets the {@code currentThread().interrupted()} bit if the callable threw
-   * {@link InterruptedException} at least once.
-   */
-  public static final <T> T callUninterruptibly(Callable<T> callable) throws Exception {
-    boolean interrupted = false;
-    try {
-      while (true) {
+object Uninterruptibles {
+    /**
+     * Calls the given callable uninterruptibly.
+     * 
+     * 
+     * If the callable throws [InterruptedException], calls it again, until the callable
+     * returns a result. Sets the `currentThread().interrupted()` bit if the callable threw
+     * [InterruptedException] at least once.
+     */
+    @Throws(java.lang.Exception::class)
+    fun <T> callUninterruptibly(callable: java.util.concurrent.Callable<T?>): T? {
+        var interrupted = false
         try {
-          return callable.call();
-        } catch (InterruptedException e) {
-          interrupted = true;
+            while (true) {
+                try {
+                    return callable.call()
+                } catch (e: java.lang.InterruptedException) {
+                    interrupted = true
+                }
+            }
+        } finally {
+            if (interrupted) {
+                java.lang.Thread.currentThread().interrupt()
+            }
         }
-      }
-    } finally {
-      if (interrupted) {
-        Thread.currentThread().interrupt();
-      }
     }
-  }
 }
 

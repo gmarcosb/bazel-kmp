@@ -81,7 +81,7 @@ public class TestCommand implements BlazeCommand {
 
   @Override
   public void editOptions(OptionsParser optionsParser) {
-    TestOutputFormat testOutput = optionsParser.getOptions(ExecutionOptions.class).getTestOutput();
+    TestOutputFormat testOutput = optionsParser.getOptions(ExecutionOptions.class).testOutput;
     try {
       if (testOutput == TestOutputFormat.STREAMED) {
         optionsParser.parse(
@@ -96,7 +96,7 @@ public class TestCommand implements BlazeCommand {
 
   @Override
   public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    TestOutputFormat testOutput = options.getOptions(ExecutionOptions.class).getTestOutput();
+    TestOutputFormat testOutput = options.getOptions(ExecutionOptions.class).testOutput;
     if (testOutput == TestOutputFormat.STREAMED) {
       env.getReporter()
           .handle(

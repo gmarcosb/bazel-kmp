@@ -11,30 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import java.io.IOException;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
- *  Exception indicating an attempt to access a package which is not found or
- *  does not exist.
+ * Exception indicating an attempt to access a package which is not found or
+ * does not exist.
  */
-public class BuildFileNotFoundException extends NoSuchPackageException {
+class BuildFileNotFoundException : NoSuchPackageException {
+    constructor(packageIdentifier: PackageIdentifier?, message: String?) : super(packageIdentifier, message)
 
-  public BuildFileNotFoundException(PackageIdentifier packageIdentifier, String message) {
-    super(packageIdentifier, message);
-  }
+    constructor(
+        packageIdentifier: PackageIdentifier?, message: String?,
+        cause: IOException?
+    ) : super(packageIdentifier, message, cause)
 
-  public BuildFileNotFoundException(PackageIdentifier packageIdentifier, String message,
-      IOException cause) {
-    super(packageIdentifier, message, cause);
-  }
-
-  public BuildFileNotFoundException(
-      PackageIdentifier packageIdentifier, String message, DetailedExitCode detailedExitCode) {
-    super(packageIdentifier, message, detailedExitCode);
-  }
+    constructor(packageIdentifier: PackageIdentifier?, message: String?, detailedExitCode: DetailedExitCode?) : super(
+        packageIdentifier,
+        message,
+        detailedExitCode
+    )
 }

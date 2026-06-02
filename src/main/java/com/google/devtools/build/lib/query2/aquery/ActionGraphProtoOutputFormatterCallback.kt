@@ -11,208 +11,197 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.aquery;
+package com.google.devtools.build.lib.query2.aquery
 
-import static com.google.common.base.Throwables.throwIfInstanceOf;
-import static com.google.common.base.Throwables.throwIfUnchecked;
+import com.google.devtools.build.lib.actions.CommandLineExpansionException
 
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.actions.TemplateExpansionException;
-import com.google.devtools.build.lib.concurrent.NamedForkJoinPool;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import com.google.devtools.build.lib.skyframe.RuleConfiguredTargetValue;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.ActionGraphDump;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryConsumingOutputHandler;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryOutputHandler;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryOutputHandler.OutputType;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.MonolithicOutputHandler;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.StreamedConsumingOutputHandler;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
+/** Default output callback for aquery, prints proto output.  */
+class ActionGraphProtoOutputFormatterCallback internal constructor(
+    eventHandler: ExtendedEventHandler?,
+    options: AqueryOptions,
+    out: java.io.OutputStream,
+    accessor: TargetAccessor<ConfiguredTargetValue?>?,
+    outputType: com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryOutputHandler.OutputType,
+    actionFilters: AqueryActionFilter?
+) : AqueryThreadsafeCallback(eventHandler, options, out, accessor) {
+    private val outputType: com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryOutputHandler.OutputType
+    private val actionGraphDump: ActionGraphDump
+    private val actionFilters: AqueryActionFilter?
+    private val aqueryOutputHandler: AqueryOutputHandler
 
-/** Default output callback for aquery, prints proto output. */
-public class ActionGraphProtoOutputFormatterCallback extends AqueryThreadsafeCallback {
-  // Arbitrarily chosen. Large enough for good performance, small enough not to cause OOMs.
-  private static final int BLOCKING_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * 2;
-  private final OutputType outputType;
-  private final ActionGraphDump actionGraphDump;
-  private final AqueryActionFilter actionFilters;
-  private final AqueryOutputHandler aqueryOutputHandler;
-
-  /**
-   * Pseudo-arbitrarily chosen buffer size for output. Chosen to be large enough to fit a handful of
-   * messages without needing to flush to the underlying output, which may not be buffered.
-   */
-  private static final int OUTPUT_BUFFER_SIZE = 16384;
-
-  ActionGraphProtoOutputFormatterCallback(
-      ExtendedEventHandler eventHandler,
-      AqueryOptions options,
-      OutputStream out,
-      TargetAccessor<ConfiguredTargetValue> accessor,
-      OutputType outputType,
-      AqueryActionFilter actionFilters) {
-    super(eventHandler, options, out, accessor);
-    this.outputType = outputType;
-    this.actionFilters = actionFilters;
-    this.aqueryOutputHandler = constructAqueryOutputHandler(outputType, out, printStream);
-    this.actionGraphDump =
-        new ActionGraphDump(
-            options.getIncludeCommandline(),
-            options.getIncludeArtifacts(),
-            options.getIncludePrunedInputs(),
-            this.actionFilters,
-            options.getIncludeParamFiles(),
-            options.getIncludeFileWriteContents(),
-            aqueryOutputHandler,
-            eventHandler);
-  }
-
-  public static AqueryOutputHandler constructAqueryOutputHandler(
-      OutputType outputType, OutputStream out, PrintStream printStream) {
-    return switch (outputType) {
-      case BINARY, DELIMITED_BINARY, TEXT ->
-          new StreamedConsumingOutputHandler(
-              outputType,
-              out,
-              CodedOutputStream.newInstance(out, OUTPUT_BUFFER_SIZE),
-              printStream,
-              new LinkedBlockingQueue<>(BLOCKING_QUEUE_SIZE));
-      case JSON -> new MonolithicOutputHandler(printStream);
-    };
-  }
-
-  @Override
-  public String getName() {
-    return outputType.formatName();
-  }
-
-  @Override
-  public void close(boolean failFast) throws IOException {
-    if (!failFast) {
-      try (SilentCloseable c = Profiler.instance().profile("aqueryOutputHandler.close")) {
-        aqueryOutputHandler.close();
-      }
-    }
-  }
-
-  @Override
-  public void processOutput(Iterable<ConfiguredTargetValue> partialResult)
-      throws IOException, InterruptedException {
-    if (aqueryOutputHandler instanceof AqueryConsumingOutputHandler) {
-      processOutputInParallel(partialResult);
-      return;
+    init {
+        this.outputType = outputType
+        this.actionFilters = actionFilters
+        this.aqueryOutputHandler = constructAqueryOutputHandler(outputType, out, printStream)
+        this.actionGraphDump =
+            ActionGraphDump(
+                options.getIncludeCommandline(),
+                options.getIncludeArtifacts(),
+                options.getIncludePrunedInputs(),
+                this.actionFilters,
+                options.getIncludeParamFiles(),
+                options.getIncludeFileWriteContents(),
+                aqueryOutputHandler,
+                eventHandler
+            )
     }
 
-    try (SilentCloseable c = Profiler.instance().profile("process partial result")) {
-      // Enabling includeParamFiles should enable includeCommandline by default.
-      options.setIncludeCommandline(
-          options.getIncludeCommandline() || options.getIncludeParamFiles());
+    val name: String?
+        get() = outputType.formatName()
 
-      for (ConfiguredTargetValue configuredTargetValue : partialResult) {
-        processSingleEntry(configuredTargetValue);
-      }
-    } catch (CommandLineExpansionException | TemplateExpansionException e) {
-      throw new IOException(e.getMessage());
-    }
-  }
-
-  private void processSingleEntry(ConfiguredTargetValue configuredTargetValue)
-      throws CommandLineExpansionException,
-          InterruptedException,
-          IOException,
-          TemplateExpansionException {
-    if (!(configuredTargetValue instanceof RuleConfiguredTargetValue)) {
-      // We have to include non-rule values in the graph to visit their dependencies, but they
-      // don't have any actions to print out.
-      return;
-    }
-    actionGraphDump.dumpConfiguredTarget((RuleConfiguredTargetValue) configuredTargetValue);
-    if (options.getUseAspects()) {
-      for (AspectValue aspectValue : accessor.getAspectValues(configuredTargetValue)) {
-        actionGraphDump.dumpAspect(aspectValue, configuredTargetValue);
-      }
-    }
-  }
-
-  private void processOutputInParallel(Iterable<ConfiguredTargetValue> partialResult)
-      throws IOException, InterruptedException {
-    AqueryConsumingOutputHandler aqueryConsumingOutputHandler =
-        (AqueryConsumingOutputHandler) aqueryOutputHandler;
-    try (SilentCloseable c = Profiler.instance().profile("process partial result")) {
-      // Enabling includeParamFiles should enable includeCommandline by default.
-      options.setIncludeCommandline(
-          options.getIncludeCommandline() || options.getIncludeParamFiles());
-      ForkJoinPool executor =
-          NamedForkJoinPool.newNamedPool("aquery", Runtime.getRuntime().availableProcessors());
-
-      try {
-        Future<Void> consumerFuture = executor.submit(aqueryConsumingOutputHandler.startConsumer());
-        List<Future<Void>> futures = executor.invokeAll(toTasks(partialResult));
-        for (Future<Void> future : futures) {
-          future.get();
+    @Throws(IOException::class)
+    override fun close(failFast: Boolean) {
+        if (!failFast) {
+            Profiler.instance().profile("aqueryOutputHandler.close").use { c ->
+                aqueryOutputHandler.close()
+            }
         }
-        aqueryConsumingOutputHandler.stopConsumer(/* discardRemainingTasks= */ false);
-        // Get any possible exception from the consumer.
-        consumerFuture.get();
-      } catch (ExecutionException e) {
-        aqueryConsumingOutputHandler.stopConsumer(/* discardRemainingTasks= */ true);
-        Throwable cause = Throwables.getRootCause(e);
-        if (cause instanceof CommandLineExpansionException
-            || cause instanceof TemplateExpansionException) {
-          // This is kinda weird, but keeping it in line with the status quo for now.
-          // TODO(b/266179316): Clean this up.
-          throw new IOException(cause.getMessage());
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun processOutput(partialResult: Iterable<ConfiguredTargetValue?>) {
+        if (aqueryOutputHandler is AqueryConsumingOutputHandler) {
+            processOutputInParallel(partialResult)
+            return
         }
-        throwIfInstanceOf(cause, IOException.class);
-        throwIfInstanceOf(cause, InterruptedException.class);
-        throwIfUnchecked(cause);
-        throw new IllegalStateException("Unexpected exception type: ", e);
-      } finally {
-        executor.shutdown();
-      }
-    }
-  }
 
-  private ImmutableList<AqueryOutputTask> toTasks(Iterable<ConfiguredTargetValue> values) {
-    ImmutableList.Builder<AqueryOutputTask> tasks = ImmutableList.builder();
-    for (ConfiguredTargetValue value : values) {
-      tasks.add(new AqueryOutputTask(value));
-    }
-    return tasks.build();
-  }
-
-  private final class AqueryOutputTask implements Callable<Void> {
-
-    private final ConfiguredTargetValue configuredTargetValue;
-
-    AqueryOutputTask(ConfiguredTargetValue configuredTargetValue) {
-      this.configuredTargetValue = configuredTargetValue;
+        try {
+            Profiler.instance().profile("process partial result").use { c ->
+                // Enabling includeParamFiles should enable includeCommandline by default.
+                options.setIncludeCommandline(
+                    options.getIncludeCommandline() || options.getIncludeParamFiles()
+                )
+                for (configuredTargetValue in partialResult) {
+                    processSingleEntry(configuredTargetValue)
+                }
+            }
+        } catch (e: CommandLineExpansionException) {
+            throw IOException(e.getMessage())
+        } catch (e: TemplateExpansionException) {
+            throw IOException(e.getMessage())
+        }
     }
 
-    @Override
-    public Void call()
-        throws CommandLineExpansionException,
-            TemplateExpansionException,
-            IOException,
-            InterruptedException {
-      processSingleEntry(configuredTargetValue);
-      return null;
+    @Throws(
+        CommandLineExpansionException::class,
+        java.lang.InterruptedException::class,
+        IOException::class,
+        TemplateExpansionException::class
+    )
+    private fun processSingleEntry(configuredTargetValue: ConfiguredTargetValue?) {
+        if (configuredTargetValue !is RuleConfiguredTargetValue) {
+            // We have to include non-rule values in the graph to visit their dependencies, but they
+            // don't have any actions to print out.
+            return
+        }
+        actionGraphDump.dumpConfiguredTarget(configuredTargetValue as RuleConfiguredTargetValue?)
+        if (options.getUseAspects()) {
+            for (aspectValue in accessor.getAspectValues(configuredTargetValue)) {
+                actionGraphDump.dumpAspect(aspectValue, configuredTargetValue)
+            }
+        }
     }
-  }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun processOutputInParallel(partialResult: Iterable<ConfiguredTargetValue?>) {
+        val aqueryConsumingOutputHandler: AqueryConsumingOutputHandler =
+            aqueryOutputHandler as AqueryConsumingOutputHandler
+        Profiler.instance().profile("process partial result").use { c ->
+            // Enabling includeParamFiles should enable includeCommandline by default.
+            options.setIncludeCommandline(
+                options.getIncludeCommandline() || options.getIncludeParamFiles()
+            )
+            val executor: ForkJoinPool =
+                NamedForkJoinPool.newNamedPool("aquery", java.lang.Runtime.getRuntime().availableProcessors())
+            try {
+                val consumerFuture: java.util.concurrent.Future<java.lang.Void?> =
+                    executor.submit<java.lang.Void?>(aqueryConsumingOutputHandler.startConsumer())
+                val futures: MutableList<java.util.concurrent.Future<java.lang.Void?>> =
+                    executor.invokeAll<java.lang.Void?>(toTasks(partialResult))
+                for (future in futures) {
+                    future.get()
+                }
+                aqueryConsumingOutputHandler.stopConsumer( /* discardRemainingTasks= */false)
+                // Get any possible exception from the consumer.
+                consumerFuture.get()
+            } catch (e: ExecutionException) {
+                aqueryConsumingOutputHandler.stopConsumer( /* discardRemainingTasks= */true)
+                val cause: Throwable = com.google.common.base.Throwables.getRootCause(e)
+                if (cause is CommandLineExpansionException
+                    || cause is TemplateExpansionException
+                ) {
+                    // This is kinda weird, but keeping it in line with the status quo for now.
+                    // TODO(b/266179316): Clean this up.
+                    throw IOException(cause.message)
+                }
+                com.google.common.base.Throwables.throwIfInstanceOf<IOException?>(cause, IOException::class.java)
+                com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                    cause,
+                    java.lang.InterruptedException::class.java
+                )
+                com.google.common.base.Throwables.throwIfUnchecked(cause)
+                throw java.lang.IllegalStateException("Unexpected exception type: ", e)
+            } finally {
+                executor.shutdown()
+            }
+        }
+    }
+
+    private fun toTasks(values: Iterable<ConfiguredTargetValue?>): com.google.common.collect.ImmutableList<AqueryOutputTask?> {
+        val tasks: com.google.common.collect.ImmutableList.Builder<AqueryOutputTask?> =
+            com.google.common.collect.ImmutableList.builder<AqueryOutputTask?>()
+        for (value in values) {
+            tasks.add(AqueryOutputTask(value))
+        }
+        return tasks.build()
+    }
+
+    private inner class AqueryOutputTask(configuredTargetValue: ConfiguredTargetValue?) :
+        java.util.concurrent.Callable<java.lang.Void?> {
+        private val configuredTargetValue: ConfiguredTargetValue?
+
+        init {
+            this.configuredTargetValue = configuredTargetValue
+        }
+
+        @Throws(
+            CommandLineExpansionException::class,
+            TemplateExpansionException::class,
+            IOException::class,
+            java.lang.InterruptedException::class
+        )
+        override fun call(): java.lang.Void? {
+            processSingleEntry(configuredTargetValue)
+            return null
+        }
+    }
+
+    companion object {
+        // Arbitrarily chosen. Large enough for good performance, small enough not to cause OOMs.
+        private val BLOCKING_QUEUE_SIZE: Int = java.lang.Runtime.getRuntime().availableProcessors() * 2
+
+        /**
+         * Pseudo-arbitrarily chosen buffer size for output. Chosen to be large enough to fit a handful of
+         * messages without needing to flush to the underlying output, which may not be buffered.
+         */
+        private const val OUTPUT_BUFFER_SIZE = 16384
+
+        fun constructAqueryOutputHandler(
+            outputType: com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryOutputHandler.OutputType,
+            out: java.io.OutputStream,
+            printStream: PrintStream?
+        ): AqueryOutputHandler {
+            return when (outputType) {
+                AqueryOutputHandler.OutputType.BINARY, AqueryOutputHandler.OutputType.DELIMITED_BINARY, AqueryOutputHandler.OutputType.TEXT -> StreamedConsumingOutputHandler(
+                    outputType,
+                    out,
+                    CodedOutputStream.newInstance(out, OUTPUT_BUFFER_SIZE),
+                    printStream,
+                    LinkedBlockingQueue<PrintTask?>(BLOCKING_QUEUE_SIZE)
+                )
+
+                AqueryOutputHandler.OutputType.JSON -> MonolithicOutputHandler(printStream)
+            }
+        }
+    }
 }

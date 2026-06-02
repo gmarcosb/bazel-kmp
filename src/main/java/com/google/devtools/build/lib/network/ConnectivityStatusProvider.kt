@@ -11,14 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.network
 
-package com.google.devtools.build.lib.network;
+import com.google.devtools.build.lib.network.ConnectivityStatus
 
 /**
  * Interface that gives services (such as the BES or remote build) exposure to their corresponding
- * {@link ConnectivityStatus}.
+ * [ConnectivityStatus].
  */
-public interface ConnectivityStatusProvider {
-  /** Returns the current connectivity status for a given service. */
-  ConnectivityStatus getStatus(String service);
+interface ConnectivityStatusProvider {
+    /** Returns the current connectivity status for a given service.  */
+    fun getStatus(service: String?): ConnectivityStatus?
 }

@@ -11,62 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.StarlarkThreadContext
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.StarlarkThreadContext;
-import java.util.Collection;
-import java.util.Map;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkThread;
+/** Context object for a Starlark thread evaluating the REPO.bazel file.  */
+class RepoThreadContext : StarlarkThreadContext({ null }) {
+    private var packageArgsMap: com.google.common.collect.ImmutableMap<String?, Any?> =
+        com.google.common.collect.ImmutableMap.of<String?, Any?>()
+    private var repoFunctionCalled = false
 
-/** Context object for a Starlark thread evaluating the REPO.bazel file. */
-public class RepoThreadContext extends StarlarkThreadContext {
-  private ImmutableMap<String, Object> packageArgsMap = ImmutableMap.of();
-  private boolean repoFunctionCalled = false;
+    private var ignoredDirectories: com.google.common.collect.ImmutableList<String?> =
+        com.google.common.collect.ImmutableList.of<String?>()
+    private var ignoredDirectoriesSet = false
 
-  private ImmutableList<String> ignoredDirectories = ImmutableList.of();
-  private boolean ignoredDirectoriesSet = false;
-
-  public static RepoThreadContext fromOrFail(StarlarkThread thread, String what)
-      throws EvalException {
-    StarlarkThreadContext context = thread.getThreadLocal(StarlarkThreadContext.class);
-    if (context instanceof RepoThreadContext c) {
-      return c;
+    fun isRepoFunctionCalled(): Boolean {
+        return repoFunctionCalled
     }
-    throw Starlark.errorf("%s can only be called from REPO.bazel", what);
-  }
 
-  public RepoThreadContext() {
-    super(() -> null);
-  }
+    fun setPackageArgsMap(kwargs: MutableMap<String?, Any?>) {
+        repoFunctionCalled = true
+        this.packageArgsMap = com.google.common.collect.ImmutableMap.copyOf<String?, Any?>(kwargs)
+    }
 
-  public boolean isRepoFunctionCalled() {
-    return repoFunctionCalled;
-  }
+    fun getPackageArgsMap(): com.google.common.collect.ImmutableMap<String?, Any?> {
+        return packageArgsMap
+    }
 
-  public void setPackageArgsMap(Map<String, Object> kwargs) {
-    repoFunctionCalled = true;
-    this.packageArgsMap = ImmutableMap.copyOf(kwargs);
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun setIgnoredDirectories(ignoredDirectories: MutableCollection<String?>) {
+        ignoredDirectoriesSet = true
+        this.ignoredDirectories = com.google.common.collect.ImmutableList.copyOf<String?>(ignoredDirectories)
+    }
 
-  public ImmutableMap<String, Object> getPackageArgsMap() {
-    return packageArgsMap;
-  }
+    fun isIgnoredDirectoriesSet(): Boolean {
+        return ignoredDirectoriesSet
+    }
 
-  public void setIgnoredDirectories(Collection<String> ignoredDirectories) throws EvalException {
-    ignoredDirectoriesSet = true;
-    this.ignoredDirectories = ImmutableList.copyOf(ignoredDirectories);
-  }
+    fun getIgnoredDirectories(): com.google.common.collect.ImmutableList<String?> {
+        return ignoredDirectories
+    }
 
-  public boolean isIgnoredDirectoriesSet() {
-    return ignoredDirectoriesSet;
-  }
-
-  public ImmutableList<String> getIgnoredDirectories() {
-    return ignoredDirectories;
-  }
+    companion object {
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun fromOrFail(thread: net.starlark.java.eval.StarlarkThread, what: String?): RepoThreadContext? {
+            val context: StarlarkThreadContext? =
+                thread.getThreadLocal<StarlarkThreadContext?>(StarlarkThreadContext::class.java)
+            if (context is RepoThreadContext) {
+                return context
+            }
+            throw net.starlark.java.eval.Starlark.errorf("%s can only be called from REPO.bazel", what)
+        }
+    }
 }

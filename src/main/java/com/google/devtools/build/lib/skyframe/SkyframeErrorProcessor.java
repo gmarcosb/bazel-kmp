@@ -568,7 +568,7 @@ public final class SkyframeErrorProcessor {
       // TODO(ulfjack): Remove this code once we've migrated to the BEP.
       for (Cause rootCause : ctCause.getRootCauses().toList()) {
         if (rootCause instanceof LoadingFailedCause) {
-          loadingRootCauses.add(rootCause.getLabel());
+          loadingRootCauses.add(rootCause.label);
         }
       }
       analysisRootCauses = ctCause.getRootCauses();

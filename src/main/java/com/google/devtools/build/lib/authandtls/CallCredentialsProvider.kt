@@ -11,44 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls
 
-package com.google.devtools.build.lib.authandtls;
+import io.grpc.CallCredentials
+import java.io.IOException
 
-import io.grpc.CallCredentials;
-import java.io.IOException;
-import javax.annotation.Nullable;
+/** Interface for providing [CallCredentials]. Implementations must be thread-safe.  */
+interface CallCredentialsProvider {
+    /**
+     * Returns the current [CallCredentials]. May be `null`, in which case no
+     * authentication is required.
+     */
+    @kotlin.jvm.JvmField
+    val callCredentials: CallCredentials?
 
-/** Interface for providing {@link CallCredentials}. Implementations must be thread-safe. */
-public interface CallCredentialsProvider {
-  /**
-   * Returns the current {@link CallCredentials}. May be {@code null}, in which case no
-   * authentication is required.
-   */
-  @Nullable
-  CallCredentials getCallCredentials();
+    /**
+     * Refresh the authorization data, discarding any cached state.
+     * 
+     * 
+     * For use by the transport to allow retry after getting an error indicating there may be
+     * invalid tokens or other cached state.
+     * 
+     * @throws IOException if there was an error getting up-to-date access.
+     */
+    @Throws(IOException::class)
+    fun refresh()
 
-  /**
-   * Refresh the authorization data, discarding any cached state.
-   *
-   * <p>For use by the transport to allow retry after getting an error indicating there may be
-   * invalid tokens or other cached state.
-   *
-   * @throws IOException if there was an error getting up-to-date access.
-   */
-  void refresh() throws IOException;
+    /** A no-op implementation that has no credentials and performs no refreshes.  */
+    class NoCredentials : CallCredentialsProvider {
+        override fun getCallCredentials(): CallCredentials? {
+            return null
+        }
 
-  /** A no-op implementation that has no credentials and performs no refreshes. */
-  public static class NoCredentials implements CallCredentialsProvider {
-
-    @Nullable
-    @Override
-    public CallCredentials getCallCredentials() {
-      return null;
+        @Throws(IOException::class)
+        override fun refresh() {
+        }
     }
 
-    @Override
-    public void refresh() throws IOException {}
-  }
-
-  public static CallCredentialsProvider NO_CREDENTIALS = new NoCredentials();
+    companion object {
+        @kotlin.jvm.JvmField
+        val NO_CREDENTIALS: CallCredentialsProvider = NoCredentials()
+    }
 }

@@ -11,51 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.http;
+package com.google.devtools.build.lib.remote.http
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.base.Preconditions;
-import java.io.OutputStream;
-import java.net.URI;
+import build.bazel.remote.execution.v2.Digest
+import com.google.common.base.Preconditions
+import java.io.OutputStream
+import java.net.URI
 
-/** Object sent through the channel pipeline to start a download. */
-final class DownloadCommand {
+/** Object sent through the channel pipeline to start a download.  */
+internal class DownloadCommand(
+    uri: URI?,
+    private val casDownload: Boolean,
+    digest: Digest?,
+    out: OutputStream?,
+    private val offset: Long
+) {
+    private val uri: URI
+    private val digest: Digest
+    private val out: OutputStream
 
-  private final URI uri;
-  private final boolean casDownload;
-  private final Digest digest;
-  private final OutputStream out;
-  private final long offset;
+    init {
+        this.uri = Preconditions.checkNotNull<URI>(uri)
+        this.digest = Preconditions.checkNotNull<Digest>(digest)
+        this.out = Preconditions.checkNotNull<OutputStream>(out)
+    }
 
-  DownloadCommand(URI uri, boolean casDownload, Digest digest, OutputStream out, long offset) {
-    this.uri = Preconditions.checkNotNull(uri);
-    this.casDownload = casDownload;
-    this.digest = Preconditions.checkNotNull(digest);
-    this.out = Preconditions.checkNotNull(out);
-    this.offset = offset;
-  }
+    constructor(uri: URI?, casDownload: Boolean, digest: Digest?, out: OutputStream?) : this(
+        uri,
+        casDownload,
+        digest,
+        out,
+        0
+    )
 
-  DownloadCommand(URI uri, boolean casDownload, Digest digest, OutputStream out) {
-    this(uri, casDownload, digest, out, 0);
-  }
+    fun uri(): URI {
+        return uri
+    }
 
-  public URI uri() {
-    return uri;
-  }
+    fun casDownload(): Boolean {
+        return casDownload
+    }
 
-  public boolean casDownload() {
-    return casDownload;
-  }
+    fun digest(): Digest {
+        return digest
+    }
 
-  public Digest digest() {
-    return digest;
-  }
+    fun out(): OutputStream {
+        return out
+    }
 
-  public OutputStream out() {
-    return out;
-  }
-
-  public long offset() {
-    return offset;
-  }
+    fun offset(): Long {
+        return offset
+    }
 }

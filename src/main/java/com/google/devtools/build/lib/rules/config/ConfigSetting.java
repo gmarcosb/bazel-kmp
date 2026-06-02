@@ -309,7 +309,7 @@ Either remove one of these settings or ensure they match the same value.
       if (!PlatformProviderUtils.hasConstraintValue(dep)) {
         ruleContext.attributeError(
             ConfigSettingRule.CONSTRAINT_VALUES_ATTRIBUTE,
-            dep.getLabel() + " is not a constraint_value");
+            dep.label + " is not a constraint_value");
       } else {
         constraintValues.add(PlatformProviderUtils.constraintValue(dep));
       }
@@ -623,7 +623,7 @@ Either remove one of these settings or ensure they match the same value.
       ImmutableListMultimap.Builder<Label, Label> targetsToAliases =
           new ImmutableListMultimap.Builder<>();
       for (TransitiveInfoCollection target : prerequisites) {
-        targetsToAliases.put(target.getLabel(), AliasProvider.getDependencyLabel(target));
+        targetsToAliases.put(target.label, AliasProvider.getDependencyLabel(target));
       }
       return targetsToAliases.build();
     }
@@ -655,7 +655,7 @@ Either remove one of these settings or ensure they match the same value.
           ruleContext.getPrerequisites(ConfigSettingRule.FLAG_ALIAS_SETTINGS_ATTRIBUTE));
 
       for (TransitiveInfoCollection target : prerequisites) {
-        Label actualLabel = target.getLabel();
+        Label actualLabel = target.label;
         Label specifiedLabel = AliasProvider.getDependencyLabel(target);
         String specifiedValue =
             maybeCanonicalizeLabel(attributeValue.get(specifiedLabel), target, ruleContext);

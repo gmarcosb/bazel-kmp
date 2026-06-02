@@ -897,7 +897,7 @@ public class BzlLoadFunction implements SkyFunction {
         new BzlInitThreadContext(
             label,
             transitiveDigest,
-            ruleClassProvider.getToolsRepository(),
+                ruleClassProvider.toolsRepository,
             ruleClassProvider.getNetworkAllowlistForTests(),
             ruleClassProvider.getConfigurationFragmentMap(),
             mainRepoMapping);
@@ -1000,7 +1000,7 @@ public class BzlLoadFunction implements SkyFunction {
       boolean mentionSclInErrorMessage)
       throws LabelSyntaxException {
     // Check file extension.
-    String baseName = label.getName();
+    String baseName = label.name;
     if (withinSclDialect) {
       if (!baseName.endsWith(".scl")) {
         String msg = "The label must reference a file with extension \".scl\"";

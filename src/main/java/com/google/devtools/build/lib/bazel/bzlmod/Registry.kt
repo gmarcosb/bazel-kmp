@@ -12,62 +12,63 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleFile
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
+import com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue
+import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager
+import com.google.devtools.build.skyframe.NotComparableSkyValue
+import java.io.IOException
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.skyframe.NotComparableSkyValue;
-import java.io.IOException;
-import java.util.Optional;
+/** A database where module metadata is stored.  */
+interface Registry : NotComparableSkyValue {
+    /** The URL that uniquely identifies the registry.  */
+    val url: String?
 
-/** A database where module metadata is stored. */
-public interface Registry extends NotComparableSkyValue {
+    /** Thrown when a file is not found in the registry.  */
+    class NotFoundException(message: String?) : java.lang.Exception(message)
 
-  /** The URL that uniquely identifies the registry. */
-  String getUrl();
+    /**
+     * Retrieves the contents of the module file of the module identified by `key` from the
+     * registry.
+     * 
+     * @throws NotFoundException if the module file is not found in the registry
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class, NotFoundException::class)
+    fun getModuleFile(
+        key: ModuleKey?,
+        eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?,
+        downloadManager: DownloadManager?
+    ): ModuleFile?
 
-  /** Thrown when a file is not found in the registry. */
-  final class NotFoundException extends Exception {
-    public NotFoundException(String message) {
-      super(message);
-    }
-  }
+    /**
+     * Retrieves the [RepoSpec] object that indicates how the contents of the module identified
+     * by `key` should be materialized as a repo.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun getRepoSpec(
+        key: ModuleKey?,
+        moduleFileHashes: com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?,
+        eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?,
+        downloadManager: DownloadManager?
+    ): RepoSpec?
 
-  /**
-   * Retrieves the contents of the module file of the module identified by {@code key} from the
-   * registry.
-   *
-   * @throws NotFoundException if the module file is not found in the registry
-   */
-  ModuleFile getModuleFile(
-      ModuleKey key, ExtendedEventHandler eventHandler, DownloadManager downloadManager)
-      throws IOException, InterruptedException, NotFoundException;
+    /**
+     * Retrieves yanked versions of the module identified by `key.getName()` from the registry.
+     * Returns `Optional.empty()` when the information is not found in the registry.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun getYankedVersions(
+        moduleName: String?,
+        eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?,
+        downloadManager: DownloadManager?
+    ): java.util.Optional<com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>?>?
 
-  /**
-   * Retrieves the {@link RepoSpec} object that indicates how the contents of the module identified
-   * by {@code key} should be materialized as a repo.
-   */
-  RepoSpec getRepoSpec(
-      ModuleKey key,
-      ImmutableMap<String, Optional<Checksum>> moduleFileHashes,
-      ExtendedEventHandler eventHandler,
-      DownloadManager downloadManager)
-      throws IOException, InterruptedException;
-
-  /**
-   * Retrieves yanked versions of the module identified by {@code key.getName()} from the registry.
-   * Returns {@code Optional.empty()} when the information is not found in the registry.
-   */
-  Optional<ImmutableMap<Version, String>> getYankedVersions(
-      String moduleName, ExtendedEventHandler eventHandler, DownloadManager downloadManager)
-      throws IOException, InterruptedException;
-
-  /**
-   * Returns the yanked versions information, limited to the given selected module version, purely
-   * based on the lockfile (if possible).
-   */
-  Optional<YankedVersionsValue> tryGetYankedVersionsFromLockfile(ModuleKey selectedModuleKey);
+    /**
+     * Returns the yanked versions information, limited to the given selected module version, purely
+     * based on the lockfile (if possible).
+     */
+    fun tryGetYankedVersionsFromLockfile(selectedModuleKey: ModuleKey?): java.util.Optional<YankedVersionsValue?>?
 }

@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.LoadingFailedException;
-
-import java.util.Collection;
+import com.google.devtools.build.lib.pkgcache.LoadingFailedException
 
 /**
  * Validator for targets.
- *
- * <p>Used in "blaze run" to make sure that we are building exactly one binary target.
+ * 
+ * 
+ * Used in "blaze run" to make sure that we are building exactly one binary target.
  */
-public interface TargetValidator {
-
-  /**
-   * Hook for subclasses to validate a build request before building begins.
-   * Implementors should print warnings for invalid targets iff keepGoing.
-   *
-   * @param targets The targets to build.
-   * @throws LoadingFailedException if the request is not valid for some reason.
-   */
-  void validateTargets(Collection<Target> targets, boolean keepGoing)
-      throws LoadingFailedException;
+interface TargetValidator {
+    /**
+     * Hook for subclasses to validate a build request before building begins.
+     * Implementors should print warnings for invalid targets iff keepGoing.
+     * 
+     * @param targets The targets to build.
+     * @throws LoadingFailedException if the request is not valid for some reason.
+     */
+    @Throws(LoadingFailedException::class)
+    fun validateTargets(targets: MutableCollection<com.google.devtools.build.lib.packages.Target?>?, keepGoing: Boolean)
 }

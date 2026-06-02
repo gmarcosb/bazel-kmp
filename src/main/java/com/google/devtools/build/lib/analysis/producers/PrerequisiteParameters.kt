@@ -11,171 +11,151 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import static com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationId;
+import com.google.devtools.build.lib.analysis.config.StarlarkTransitionCache
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ToolchainCollection;
-import com.google.devtools.build.lib.analysis.ToolchainContext;
-import com.google.devtools.build.lib.analysis.TransitiveDependencyState;
-import com.google.devtools.build.lib.analysis.config.StarlarkTransitionCache;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkAttributeTransitionProvider;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.ConfiguredAttributeMapper;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.BaseTargetPrerequisitesSupplier;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.LoadAspectsKey;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.toolchains.UnloadedToolchainContext;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+/** Common parameters for computing prerequisites.  */
+class PrerequisiteParameters(
+    configuredTargetKey: ConfiguredTargetKey,
+    target: com.google.devtools.build.lib.packages.Target,
+    aspects: Iterable<Aspect?>,
+    loadExecAspectsKey: LoadAspectsKey?,
+    starlarkTransitionProvider: StarlarkAttributeTransitionProvider?,
+    transitionCache: StarlarkTransitionCache?,
+    toolchainContexts: ToolchainCollection<ToolchainContext?>?,
+    attributeMap: ConfiguredAttributeMapper?,
+    transitiveState: TransitiveDependencyState?,
+    eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?,
+    baseTargetPrerequisitesSupplier: BaseTargetPrerequisitesSupplier?,
+    baseTargetToolchainContexts: ToolchainCollection<UnloadedToolchainContext?>?
+) {
+    private val configuredTargetKey: ConfiguredTargetKey
+    private val target: com.google.devtools.build.lib.packages.Target
 
-/** Common parameters for computing prerequisites. */
-public final class PrerequisiteParameters {
-  private final ConfiguredTargetKey configuredTargetKey;
-  private final Target target;
+    private val aspects: com.google.common.collect.ImmutableList<Aspect?>
 
-  private final ImmutableList<Aspect> aspects;
-  // This is the key for loading the aspects passed to the --exec_aspects flag, which get attached
-  // to targets in the exec configuration.
-  @Nullable private final LoadAspectsKey loadExecAspectsKey;
-  @Nullable private final StarlarkAttributeTransitionProvider starlarkTransitionProvider;
-  private final StarlarkTransitionCache transitionCache;
-  @Nullable private final ToolchainCollection<ToolchainContext> toolchainContexts;
+    // This is the key for loading the aspects passed to the --exec_aspects flag, which get attached
+    // to targets in the exec configuration.
+    private val loadExecAspectsKey: LoadAspectsKey?
+    private val starlarkTransitionProvider: StarlarkAttributeTransitionProvider?
+    private val transitionCache: StarlarkTransitionCache?
+    private val toolchainContexts: ToolchainCollection<ToolchainContext?>?
 
-  @Nullable private final ConfiguredAttributeMapper attributeMap;
-  private final TransitiveDependencyState transitiveState;
+    private val attributeMap: ConfiguredAttributeMapper?
+    private val transitiveState: TransitiveDependencyState?
 
-  private final ExtendedEventHandler eventHandler;
+    private val eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?
 
-  /**
-   * Cache for {@link ConfiguredTargetValue} and {@link BuildConfigurationValue}
-   *
-   * <p>Check {@link AspectFunction#baseTargetPrerequisitesSupplier} for more details.
-   */
-  @Nullable private final BaseTargetPrerequisitesSupplier baseTargetPrerequisitesSupplier;
+    /**
+     * Cache for [ConfiguredTargetValue] and [BuildConfigurationValue]
+     * 
+     * 
+     * Check [AspectFunction.baseTargetPrerequisitesSupplier] for more details.
+     */
+    private val baseTargetPrerequisitesSupplier: BaseTargetPrerequisitesSupplier?
 
-  /**
-   * The {@link UnloadedToolchainContext}s for the base target of the aspect under evaluation.
-   *
-   * <p>This is only non-null during aspect evaluation if the aspects path can propagate to
-   * toolchains.
-   */
-  @Nullable private final ToolchainCollection<UnloadedToolchainContext> baseTargetToolchainContexts;
+    /**
+     * The [UnloadedToolchainContext]s for the base target of the aspect under evaluation.
+     * 
+     * 
+     * This is only non-null during aspect evaluation if the aspects path can propagate to
+     * toolchains.
+     */
+    private val baseTargetToolchainContexts: ToolchainCollection<UnloadedToolchainContext?>?
 
-  public PrerequisiteParameters(
-      ConfiguredTargetKey configuredTargetKey,
-      Target target,
-      Iterable<Aspect> aspects,
-      @Nullable LoadAspectsKey loadExecAspectsKey,
-      @Nullable StarlarkAttributeTransitionProvider starlarkTransitionProvider,
-      StarlarkTransitionCache transitionCache,
-      @Nullable ToolchainCollection<ToolchainContext> toolchainContexts,
-      @Nullable ConfiguredAttributeMapper attributeMap,
-      TransitiveDependencyState transitiveState,
-      ExtendedEventHandler eventHandler,
-      @Nullable BaseTargetPrerequisitesSupplier baseTargetPrerequisitesSupplier,
-      @Nullable ToolchainCollection<UnloadedToolchainContext> baseTargetToolchainContexts) {
-    this.configuredTargetKey = configuredTargetKey;
-    this.target = target;
-    this.aspects = ImmutableList.copyOf(aspects);
-    this.loadExecAspectsKey = loadExecAspectsKey;
-    this.starlarkTransitionProvider = starlarkTransitionProvider;
-    this.transitionCache = transitionCache;
-    this.toolchainContexts = toolchainContexts;
-    this.attributeMap = attributeMap;
-    this.transitiveState = transitiveState;
-    this.eventHandler = eventHandler;
-    this.baseTargetPrerequisitesSupplier = baseTargetPrerequisitesSupplier;
-    this.baseTargetToolchainContexts = baseTargetToolchainContexts;
-  }
-
-  @Nullable
-  public ToolchainCollection<UnloadedToolchainContext> baseTargetToolchainContexts() {
-    return baseTargetToolchainContexts;
-  }
-
-  @Nullable
-  public BaseTargetPrerequisitesSupplier baseTargetPrerequisitesSupplier() {
-    return baseTargetPrerequisitesSupplier;
-  }
-
-  public Label label() {
-    return configuredTargetKey.getLabel();
-  }
-
-  public Target target() {
-    return target;
-  }
-
-  @Nullable
-  public Rule associatedRule() {
-    return target.getAssociatedRule();
-  }
-
-  @Nullable
-  public BuildConfigurationKey configurationKey() {
-    return configuredTargetKey.getConfigurationKey();
-  }
-
-  public ImmutableList<Aspect> aspects() {
-    return aspects;
-  }
-
-  @Nullable
-  public LoadAspectsKey loadExecAspectsKey() {
-    return loadExecAspectsKey;
-  }
-
-  @Nullable
-  public StarlarkAttributeTransitionProvider starlarkTransitionProvider() {
-    return starlarkTransitionProvider;
-  }
-
-  public StarlarkTransitionCache transitionCache() {
-    return transitionCache;
-  }
-
-  @Nullable
-  public ToolchainCollection<ToolchainContext> toolchainContexts() {
-    return toolchainContexts;
-  }
-
-  @Nullable // Non-null for rules, and output files when there are aspects that apply to files.
-  public ConfiguredAttributeMapper attributeMap() {
-    return attributeMap;
-  }
-
-  public Location location() {
-    return target.getLocation();
-  }
-
-  public BuildEventId eventId() {
-    return configurationId(configurationKey());
-  }
-
-  @Nullable
-  public Label getExecutionPlatformLabel(String execGroup, boolean isBaseTargetToolchain) {
-    var context = isBaseTargetToolchain ? baseTargetToolchainContexts : toolchainContexts;
-
-    var platform = context.getToolchainContext(execGroup).executionPlatform();
-    if (platform == null) {
-      return null;
+    init {
+        this.configuredTargetKey = configuredTargetKey
+        this.target = target
+        this.aspects = com.google.common.collect.ImmutableList.copyOf<Aspect?>(aspects)
+        this.loadExecAspectsKey = loadExecAspectsKey
+        this.starlarkTransitionProvider = starlarkTransitionProvider
+        this.transitionCache = transitionCache
+        this.toolchainContexts = toolchainContexts
+        this.attributeMap = attributeMap
+        this.transitiveState = transitiveState
+        this.eventHandler = eventHandler
+        this.baseTargetPrerequisitesSupplier = baseTargetPrerequisitesSupplier
+        this.baseTargetToolchainContexts = baseTargetToolchainContexts
     }
-    return platform.label();
-  }
 
-  public TransitiveDependencyState transitiveState() {
-    return transitiveState;
-  }
+    fun baseTargetToolchainContexts(): ToolchainCollection<UnloadedToolchainContext?>? {
+        return baseTargetToolchainContexts
+    }
 
-  public ExtendedEventHandler eventHandler() {
-    return eventHandler;
-  }
+    fun baseTargetPrerequisitesSupplier(): BaseTargetPrerequisitesSupplier? {
+        return baseTargetPrerequisitesSupplier
+    }
+
+    fun label(): com.google.devtools.build.lib.cmdline.Label? {
+        return configuredTargetKey.getLabel()
+    }
+
+    fun target(): com.google.devtools.build.lib.packages.Target {
+        return target
+    }
+
+    fun associatedRule(): com.google.devtools.build.lib.packages.Rule? {
+        return target.getAssociatedRule()
+    }
+
+    fun configurationKey(): BuildConfigurationKey? {
+        return configuredTargetKey.getConfigurationKey()
+    }
+
+    fun aspects(): com.google.common.collect.ImmutableList<Aspect?> {
+        return aspects
+    }
+
+    fun loadExecAspectsKey(): LoadAspectsKey? {
+        return loadExecAspectsKey
+    }
+
+    fun starlarkTransitionProvider(): StarlarkAttributeTransitionProvider? {
+        return starlarkTransitionProvider
+    }
+
+    fun transitionCache(): StarlarkTransitionCache? {
+        return transitionCache
+    }
+
+    fun toolchainContexts(): ToolchainCollection<ToolchainContext?>? {
+        return toolchainContexts
+    }
+
+    // Non-null for rules, and output files when there are aspects that apply to files.
+    fun attributeMap(): ConfiguredAttributeMapper? {
+        return attributeMap
+    }
+
+    fun location(): net.starlark.java.syntax.Location? {
+        return target.getLocation()
+    }
+
+    fun eventId(): BuildEventId? {
+        return BuildEventIdUtil.configurationId(configurationKey())
+    }
+
+    fun getExecutionPlatformLabel(
+        execGroup: String?,
+        isBaseTargetToolchain: Boolean
+    ): com.google.devtools.build.lib.cmdline.Label? {
+        val context: ToolchainCollection<*>? =
+            if (isBaseTargetToolchain) baseTargetToolchainContexts else toolchainContexts
+
+        val platform: com.google.devtools.build.lib.analysis.platform.PlatformInfo? =
+            context.getToolchainContext(execGroup).executionPlatform()
+        if (platform == null) {
+            return null
+        }
+        return platform.label()
+    }
+
+    fun transitiveState(): TransitiveDependencyState? {
+        return transitiveState
+    }
+
+    fun eventHandler(): com.google.devtools.build.lib.events.ExtendedEventHandler? {
+        return eventHandler
+    }
 }

@@ -11,98 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo
+import com.google.devtools.build.lib.packages.BuiltinProvider
+import com.google.devtools.build.lib.packages.NativeInfo
+import com.google.devtools.build.lib.starlarkbuildapi.platform.ConstraintSettingInfoApi
+import com.google.devtools.build.lib.util.Fingerprint
 
-import com.google.common.base.Objects;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.NativeInfo;
-import com.google.devtools.build.lib.starlarkbuildapi.platform.ConstraintSettingInfoApi;
-import com.google.devtools.build.lib.util.Fingerprint;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+/** Provider for a platform constraint setting that is available to be fulfilled.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class ConstraintSettingInfo private constructor(
+    label: com.google.devtools.build.lib.cmdline.Label,
+    defaultConstraintValueLabel: com.google.devtools.build.lib.cmdline.Label?
+) : NativeInfo(), ConstraintSettingInfoApi {
+    private val label: com.google.devtools.build.lib.cmdline.Label
+    private val defaultConstraintValueLabel: com.google.devtools.build.lib.cmdline.Label?
 
-/** Provider for a platform constraint setting that is available to be fulfilled. */
-@Immutable
-public class ConstraintSettingInfo extends NativeInfo implements ConstraintSettingInfoApi {
-  /** Name used in Starlark for accessing this provider. */
-  public static final String STARLARK_NAME = "ConstraintSettingInfo";
-
-  /** Provider singleton constant. */
-  public static final BuiltinProvider<ConstraintSettingInfo> PROVIDER =
-      new BuiltinProvider<ConstraintSettingInfo>(STARLARK_NAME, ConstraintSettingInfo.class) {};
-
-  private final Label label;
-  @Nullable private final Label defaultConstraintValueLabel;
-
-  private ConstraintSettingInfo(Label label, Label defaultConstraintValueLabel) {
-    this.label = label;
-    this.defaultConstraintValueLabel = defaultConstraintValueLabel;
-  }
-
-  @Override
-  public BuiltinProvider<ConstraintSettingInfo> getProvider() {
-    return PROVIDER;
-  }
-
-  @Override
-  public Label label() {
-    return label;
-  }
-
-  @Override
-  public boolean hasDefaultConstraintValue() {
-    return defaultConstraintValueLabel != null;
-  }
-
-  @Override
-  @Nullable
-  public ConstraintValueInfo defaultConstraintValue() {
-    if (!hasDefaultConstraintValue()) {
-      return null;
-    }
-    return ConstraintValueInfo.create(this, defaultConstraintValueLabel);
-  }
-
-  /** Add this constraint setting to the given fingerprint. */
-  public void addTo(Fingerprint fp) {
-    fp.addString(label.getCanonicalForm());
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (!(other instanceof ConstraintSettingInfo otherConstraint)) {
-      return false;
+    init {
+        this.label = label
+        this.defaultConstraintValueLabel = defaultConstraintValueLabel
     }
 
-    return Objects.equal(label, otherConstraint.label);
-  }
+    val provider: BuiltinProvider<ConstraintSettingInfo?>
+        get() = PROVIDER
 
-  @Override
-  public int hashCode() {
-    return Objects.hashCode(label);
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("ConstraintSettingInfo(").str(label, semantics);
-    if (defaultConstraintValueLabel != null) {
-      printer.append(", default_constraint_value=").str(defaultConstraintValueLabel, semantics);
+    override fun label(): com.google.devtools.build.lib.cmdline.Label {
+        return label
     }
-    printer.append(")");
-  }
 
-  /** Returns a new {@link ConstraintSettingInfo} with the given data. */
-  public static ConstraintSettingInfo create(Label constraintSetting) {
-    return create(constraintSetting, null);
-  }
+    override fun hasDefaultConstraintValue(): Boolean {
+        return defaultConstraintValueLabel != null
+    }
 
-  /** Returns a new {@link ConstraintSettingInfo} with the given data. */
-  public static ConstraintSettingInfo create(
-      Label constraintSetting, Label defaultConstraintValue) {
-    return new ConstraintSettingInfo(constraintSetting, defaultConstraintValue);
-  }
+    override fun defaultConstraintValue(): ConstraintValueInfo? {
+        if (!hasDefaultConstraintValue()) {
+            return null
+        }
+        return ConstraintValueInfo.Companion.create(this, defaultConstraintValueLabel)
+    }
+
+    /** Add this constraint setting to the given fingerprint.  */
+    fun addTo(fp: Fingerprint) {
+        fp.addString(label.getCanonicalForm())
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other !is ConstraintSettingInfo) {
+            return false
+        }
+
+        return com.google.common.base.Objects.equal(label, other.label)
+    }
+
+    override fun hashCode(): Int {
+        return com.google.common.base.Objects.hashCode(label)
+    }
+
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("ConstraintSettingInfo(").str(label, semantics)
+        if (defaultConstraintValueLabel != null) {
+            printer.append(", default_constraint_value=").str(defaultConstraintValueLabel, semantics)
+        }
+        printer.append(")")
+    }
+
+    companion object {
+        /** Name used in Starlark for accessing this provider.  */
+        const val STARLARK_NAME: String = "ConstraintSettingInfo"
+
+        /** Provider singleton constant.  */
+        @kotlin.jvm.JvmField
+        val PROVIDER: BuiltinProvider<ConstraintSettingInfo?> = object : BuiltinProvider<ConstraintSettingInfo?>(
+            STARLARK_NAME, ConstraintSettingInfo::class.java
+        ) {}
+
+        /** Returns a new [ConstraintSettingInfo] with the given data.  */
+        /** Returns a new [ConstraintSettingInfo] with the given data.  */
+        @kotlin.jvm.JvmOverloads
+        fun create(
+            constraintSetting: com.google.devtools.build.lib.cmdline.Label,
+            defaultConstraintValue: com.google.devtools.build.lib.cmdline.Label? = null
+        ): ConstraintSettingInfo {
+            return ConstraintSettingInfo(constraintSetting, defaultConstraintValue)
+        }
+    }
 }

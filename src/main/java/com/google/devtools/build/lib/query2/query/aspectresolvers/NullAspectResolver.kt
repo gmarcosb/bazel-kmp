@@ -11,31 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.query.aspectresolvers;
+package com.google.devtools.build.lib.query2.query.aspectresolvers
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.DependencyFilter;
-import com.google.devtools.build.lib.packages.Target;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableMultimap
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * An aspect resolver that does not return any aspect dependencies.
- *
- * <p>Simple, fast, wrong.
+ * 
+ * 
+ * Simple, fast, wrong.
  */
-public class NullAspectResolver implements AspectResolver {
-  @Override
-  public ImmutableMap<Aspect, ImmutableMultimap<Attribute, Label>> computeAspectDependencies(
-      Target target, DependencyFilter dependencyFilter) {
-    return ImmutableMap.of();
-  }
+class NullAspectResolver : AspectResolver {
+    override fun computeAspectDependencies(
+        target: Target?, dependencyFilter: DependencyFilter?
+    ): ImmutableMap<Aspect?, ImmutableMultimap<Attribute?, Label?>?> {
+        return ImmutableMap.of<Aspect?, ImmutableMultimap<Attribute?, Label?>?>()
+    }
 
-  @Override
-  public ImmutableList<Label> computeBuildFileDependencies(Target buildFile) {
-    return buildFile.getPackageDeclarations().getOrComputeTransitivelyLoadedStarlarkFiles();
-  }
+    override fun computeBuildFileDependencies(buildFile: Target): ImmutableList<Label?> {
+        return buildFile.getPackageDeclarations().getOrComputeTransitivelyLoadedStarlarkFiles()
+    }
 }

@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.gson.stream.JsonWriter;
-import java.io.IOException;
+import com.google.gson.stream.JsonWriter
+import java.io.IOException
 
-/** Encapsulates data to be written to the JSON trace profile. */
-public interface TraceData {
-  void writeTraceData(JsonWriter jsonWriter, long profileStartTimeNanos) throws IOException;
+/** Encapsulates data to be written to the JSON trace profile.  */
+interface TraceData {
+    @Throws(IOException::class)
+    fun writeTraceData(jsonWriter: JsonWriter?, profileStartTimeNanos: Long)
 }

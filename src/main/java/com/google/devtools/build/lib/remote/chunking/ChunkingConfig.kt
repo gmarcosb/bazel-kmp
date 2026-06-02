@@ -11,59 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.chunking
 
-package com.google.devtools.build.lib.remote.chunking;
+import build.bazel.remote.execution.v2.CacheCapabilities
 
-import build.bazel.remote.execution.v2.CacheCapabilities;
-import build.bazel.remote.execution.v2.FastCdc2020Params;
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import javax.annotation.Nullable;
-
-/** Configuration for content-defined chunking. All sizes are in bytes. */
-public record ChunkingConfig(int avgChunkSize, int normalizationLevel, int seed) {
-
-  public static final int DEFAULT_AVG_CHUNK_SIZE = 512 * 1024;
-  public static final int DEFAULT_NORMALIZATION_LEVEL = 2;
-  public static final int DEFAULT_SEED = 0;
-
-  public int minChunkSize() {
-    return avgChunkSize / 4;
-  }
-
-  public int maxChunkSize() {
-    return avgChunkSize * 4;
-  }
-
-  /** Blobs larger than this should be chunked. Equal to maxChunkSize(). */
-  public long chunkingThreshold() {
-    return maxChunkSize();
-  }
-
-  public static ChunkingConfig defaults() {
-    return new ChunkingConfig(DEFAULT_AVG_CHUNK_SIZE, DEFAULT_NORMALIZATION_LEVEL, DEFAULT_SEED);
-  }
-
-  @Nullable
-  public static ChunkingConfig fromServerCapabilities(ServerCapabilities capabilities) {
-    if (!capabilities.hasCacheCapabilities()) {
-      return null;
-    }
-    CacheCapabilities cacheCap = capabilities.getCacheCapabilities();
-
-    if (!cacheCap.hasFastCdc2020Params()) {
-      return null;
+/** Configuration for content-defined chunking. All sizes are in bytes.  */
+@kotlin.jvm.JvmRecord
+data class ChunkingConfig(@kotlin.jvm.JvmField val avgChunkSize: Int, @kotlin.jvm.JvmField val normalizationLevel: Int, @kotlin.jvm.JvmField val seed: Int) {
+    fun minChunkSize(): Int {
+        return avgChunkSize / 4
     }
 
-    FastCdc2020Params params = cacheCap.getFastCdc2020Params();
-    int avgSize = DEFAULT_AVG_CHUNK_SIZE;
-    long configAvgSize = params.getAvgChunkSizeBytes();
-    if (configAvgSize >= 1024
-        && configAvgSize <= 1024 * 1024
-        && (configAvgSize & (configAvgSize - 1)) == 0) {
-      avgSize = (int) configAvgSize;
+    fun maxChunkSize(): Int {
+        return avgChunkSize * 4
     }
-    int seed = params.getSeed();
 
-    return new ChunkingConfig(avgSize, DEFAULT_NORMALIZATION_LEVEL, seed);
-  }
+    /** Blobs larger than this should be chunked. Equal to maxChunkSize().  */
+    fun chunkingThreshold(): Long {
+        return maxChunkSize().toLong()
+    }
+
+    companion object {
+        val DEFAULT_AVG_CHUNK_SIZE: Int = 512 * 1024
+        const val DEFAULT_NORMALIZATION_LEVEL: Int = 2
+        const val DEFAULT_SEED: Int = 0
+
+        fun defaults(): ChunkingConfig {
+            return ChunkingConfig(DEFAULT_AVG_CHUNK_SIZE, DEFAULT_NORMALIZATION_LEVEL, DEFAULT_SEED)
+        }
+
+        fun fromServerCapabilities(capabilities: ServerCapabilities): ChunkingConfig? {
+            if (!capabilities.hasCacheCapabilities()) {
+                return null
+            }
+            val cacheCap: CacheCapabilities = capabilities.getCacheCapabilities()
+
+            if (!cacheCap.hasFastCdc2020Params()) {
+                return null
+            }
+
+            val params: FastCdc2020Params = cacheCap.getFastCdc2020Params()
+            var avgSize: Int = DEFAULT_AVG_CHUNK_SIZE
+            val configAvgSize: Long = params.getAvgChunkSizeBytes()
+            if (configAvgSize >= 1024 && configAvgSize <= 1024 * 1024 && (configAvgSize and (configAvgSize - 1)) == 0L) {
+                avgSize = configAvgSize.toInt()
+            }
+            val seed: Int = params.getSeed()
+
+            return ChunkingConfig(avgSize, DEFAULT_NORMALIZATION_LEVEL, seed)
+        }
+    }
 }

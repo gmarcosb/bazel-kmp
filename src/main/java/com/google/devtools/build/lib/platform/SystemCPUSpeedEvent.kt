@@ -11,36 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
- * This event is fired from {@link
- * com.google.devtools.build.lib.platform.SystemCPUSpeedModule#cpuSpeedCallback} to indicate that a
+ * This event is fired from [ ][com.google.devtools.build.lib.platform.SystemCPUSpeedModule.cpuSpeedCallback] to indicate that a
  * cpu speed event has occurred.
  */
-public class SystemCPUSpeedEvent implements ExtendedEventHandler.Postable {
-  private final int speed;
+class SystemCPUSpeedEvent(speed: Int) : Postable {
+    private val speed: Int
 
-  /**
-   * SystemCPUSpeedEvent Constructor.
-   *
-   * @param speed The actual speed (1-100).
-   */
-  public SystemCPUSpeedEvent(int speed) {
-    checkArgument(speed > 0 && speed <= 100);
-    this.speed = speed;
-  }
+    /**
+     * SystemCPUSpeedEvent Constructor.
+     * 
+     * @param speed The actual speed (1-100).
+     */
+    init {
+        com.google.common.base.Preconditions.checkArgument(speed > 0 && speed <= 100)
+        this.speed = speed
+    }
 
-  public int speed() {
-    return speed;
-  }
+    fun speed(): Int {
+        return speed
+    }
 
-  public String logString() {
-    return String.format("SystemCPUSpeedEvent: %d", speed);
-  }
+    fun logString(): String? {
+        return java.lang.String.format("SystemCPUSpeedEvent: %d", speed)
+    }
 }

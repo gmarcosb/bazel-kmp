@@ -11,54 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.platform.SystemDiskSpaceEvent
 
 /**
- * This event is fired from {@link
- * com.google.devtools.build.lib.platform.SystemDiskSpaceModule#diskSpaceCallback} to indicate that
+ * This event is fired from [ ][com.google.devtools.build.lib.platform.SystemDiskSpaceModule.diskSpaceCallback] to indicate that
  * a disk space event has occurred.
  */
-public class SystemDiskSpaceEvent implements ExtendedEventHandler.Postable {
+class SystemDiskSpaceEvent(level: Int) : Postable {
+    /** Rough description of why the disk space event fired.  */
+    enum class Level(logString: String) {
+        LOW("Low"),
+        VERY_LOW("Very Low");
 
-  /** Rough description of why the disk space event fired. */
-  public enum Level {
-    LOW("Low"),
-    VERY_LOW("Very Low");
+        private val logString: String
 
-    private final String logString;
+        init {
+            this.logString = logString
+        }
 
-    Level(String logString) {
-      this.logString = logString;
+        fun logString(): String {
+            return logString
+        }
+
+        companion object {
+            /** These constants are mapped to enum in third_party/bazel/src/main/native/unix_jni.h.  */
+            fun fromInt(number: Int): Level {
+                return when (number) {
+                    0 -> com.google.devtools.build.lib.platform.SystemDiskSpaceEvent.Level.LOW
+                    1 -> com.google.devtools.build.lib.platform.SystemDiskSpaceEvent.Level.VERY_LOW
+                    else -> throw java.lang.IllegalStateException("Unknown disk space level: " + number)
+                }
+            }
+        }
     }
 
-    public String logString() {
-      return logString;
+    private val level: Level
+
+    init {
+        this.level = com.google.devtools.build.lib.platform.SystemDiskSpaceEvent.Level.Companion.fromInt(level)
     }
 
-    /** These constants are mapped to enum in third_party/bazel/src/main/native/unix_jni.h. */
-    static Level fromInt(int number) {
-      return switch (number) {
-        case 0 -> LOW;
-        case 1 -> VERY_LOW;
-        default -> throw new IllegalStateException("Unknown disk space level: " + number);
-      };
+    fun level(): Level {
+        return level
     }
-  };
 
-  private final Level level;
-
-  public SystemDiskSpaceEvent(int level) {
-    this.level = Level.fromInt(level);
-  }
-
-  public Level level() {
-    return level;
-  }
-
-  public String logString() {
-    return "SystemDiskSpaceEvent: " + level.logString();
-  }
+    fun logString(): String {
+        return "SystemDiskSpaceEvent: " + level.logString()
+    }
 }

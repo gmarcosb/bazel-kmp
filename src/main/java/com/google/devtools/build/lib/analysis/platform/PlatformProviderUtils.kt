@@ -11,94 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import com.google.devtools.build.lib.analysis.ProviderCollection
+import com.google.devtools.build.lib.analysis.platform.ConstraintSettingInfo
+import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo
+import com.google.devtools.build.lib.analysis.platform.DeclaredToolchainInfo
+import com.google.devtools.build.lib.analysis.platform.ToolchainInfo
+import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo
 
-import static com.google.common.base.Predicates.notNull;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ProviderCollection;
-import java.util.List;
-import javax.annotation.Nullable;
-
-/** Utility methods to help locate platform-related providers. */
-public class PlatformProviderUtils {
-
-  /** Retrieves and casts the {@link PlatformInfo} provider from the given target. */
-  @Nullable
-  public static PlatformInfo platform(@Nullable ProviderCollection target) {
-    if (target == null) {
-      return null;
+/** Utility methods to help locate platform-related providers.  */
+object PlatformProviderUtils {
+    /** Retrieves and casts the [PlatformInfo] provider from the given target.  */
+    fun platform(target: ProviderCollection?): com.google.devtools.build.lib.analysis.platform.PlatformInfo? {
+        if (target == null) {
+            return null
+        }
+        return target.get<com.google.devtools.build.lib.analysis.platform.PlatformInfo?>(com.google.devtools.build.lib.analysis.platform.PlatformInfo.Companion.PROVIDER)
     }
-    return target.get(PlatformInfo.PROVIDER);
-  }
 
-  /** Retrieves and casts {@link PlatformInfo} providers from the given targets. */
-  public static ImmutableList<PlatformInfo> platforms(List<? extends ProviderCollection> targets) {
-    return targets.stream()
-        .map(PlatformProviderUtils::platform)
-        .filter(notNull())
-        .collect(toImmutableList());
-  }
-
-  /** Retrieves and casts the {@link ConstraintSettingInfo} provider from the given target. */
-  @Nullable
-  public static ConstraintSettingInfo constraintSetting(@Nullable ProviderCollection target) {
-    if (target == null) {
-      return null;
+    /** Retrieves and casts [PlatformInfo] providers from the given targets.  */
+    fun platforms(targets: MutableList<out ProviderCollection?>): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.analysis.platform.PlatformInfo?> {
+        return targets.stream()
+            .map<com.google.devtools.build.lib.analysis.platform.PlatformInfo?> { obj: PlatformProviderUtils?, target: ProviderCollection? ->
+                platform(
+                    target
+                )
+            }
+            .filter(com.google.common.base.Predicates.notNull<com.google.devtools.build.lib.analysis.platform.PlatformInfo?>())
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<com.google.devtools.build.lib.analysis.platform.PlatformInfo?>())
     }
-    return target.get(ConstraintSettingInfo.PROVIDER);
-  }
 
-  /** Retrieves and casts the {@link ConstraintValueInfo} provider from the given target. */
-  @Nullable
-  public static ConstraintValueInfo constraintValue(@Nullable ProviderCollection target) {
-    if (target == null) {
-      return null;
+    /** Retrieves and casts the [ConstraintSettingInfo] provider from the given target.  */
+    fun constraintSetting(target: ProviderCollection?): ConstraintSettingInfo? {
+        if (target == null) {
+            return null
+        }
+        return target.get<ConstraintSettingInfo?>(ConstraintSettingInfo.Companion.PROVIDER)
     }
-    return target.get(ConstraintValueInfo.PROVIDER);
-  }
 
-  /** Returns if a target provides {@link ConstraintValueInfo}. * */
-  public static boolean hasConstraintValue(ProviderCollection target) {
-    return target.get(ConstraintValueInfo.PROVIDER) != null;
-  }
-
-  /** Retrieves and casts {@link ConstraintValueInfo} providers from the given targets. */
-  public static ImmutableList<ConstraintValueInfo> constraintValues(
-      List<? extends ProviderCollection> targets) {
-    return targets.stream()
-        .map(PlatformProviderUtils::constraintValue)
-        .filter(notNull())
-        .collect(toImmutableList());
-  }
-
-  /**
-   * Retrieves and casts the {@link DeclaredToolchainInfo} from {@link
-   * com.google.devtools.build.lib.rules.platform.Toolchain} rule.
-   *
-   * <p>Returns null if the rule isn't a toolchain.
-   */
-  @Nullable
-  public static DeclaredToolchainInfo declaredToolchainInfo(@Nullable ProviderCollection target) {
-    if (target == null) {
-      return null;
+    /** Retrieves and casts the [ConstraintValueInfo] provider from the given target.  */
+    fun constraintValue(target: ProviderCollection?): ConstraintValueInfo? {
+        if (target == null) {
+            return null
+        }
+        return target.get<ConstraintValueInfo?>(ConstraintValueInfo.Companion.PROVIDER)
     }
-    return target.getProvider(DeclaredToolchainInfo.class);
-  }
 
-  /** Retrieves and casts the {@link ToolchainInfo} provider from the given target. */
-  @Nullable
-  public static ToolchainInfo toolchain(@Nullable ProviderCollection target) {
-    if (target == null) {
-      return null;
+    /** Returns if a target provides [ConstraintValueInfo]. *  */
+    fun hasConstraintValue(target: ProviderCollection): Boolean {
+        return target.get<ConstraintValueInfo?>(ConstraintValueInfo.Companion.PROVIDER) != null
     }
-    return target.get(ToolchainInfo.PROVIDER);
-  }
 
-  /** Retrieves and casts the {@link ToolchainTypeInfo} provider from the given target. */
-  public static ToolchainTypeInfo toolchainType(ProviderCollection target) {
-    return target.get(ToolchainTypeInfo.PROVIDER);
-  }
+    /** Retrieves and casts [ConstraintValueInfo] providers from the given targets.  */
+    fun constraintValues(
+        targets: MutableList<out ProviderCollection?>
+    ): com.google.common.collect.ImmutableList<ConstraintValueInfo?> {
+        return targets.stream()
+            .map<ConstraintValueInfo?> { obj: PlatformProviderUtils?, target: ProviderCollection? ->
+                constraintValue(
+                    target
+                )
+            }
+            .filter(com.google.common.base.Predicates.notNull<ConstraintValueInfo?>())
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<ConstraintValueInfo?>())
+    }
+
+    /**
+     * Retrieves and casts the [DeclaredToolchainInfo] from [ ] rule.
+     * 
+     * 
+     * Returns null if the rule isn't a toolchain.
+     */
+    fun declaredToolchainInfo(target: ProviderCollection?): DeclaredToolchainInfo? {
+        if (target == null) {
+            return null
+        }
+        return target.getProvider<DeclaredToolchainInfo?>(DeclaredToolchainInfo::class.java)
+    }
+
+    /** Retrieves and casts the [ToolchainInfo] provider from the given target.  */
+    fun toolchain(target: ProviderCollection?): ToolchainInfo? {
+        if (target == null) {
+            return null
+        }
+        return target.get<ToolchainInfo?>(ToolchainInfo.Companion.PROVIDER)
+    }
+
+    /** Retrieves and casts the [ToolchainTypeInfo] provider from the given target.  */
+    fun toolchainType(target: ProviderCollection): ToolchainTypeInfo? {
+        return target.get<ToolchainTypeInfo?>(ToolchainTypeInfo.Companion.PROVIDER)
+    }
 }

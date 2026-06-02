@@ -11,45 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-/** An Executor that can execute tasks in multiple independent thread pools. */
-public interface MultiThreadPoolsQuiescingExecutor extends QuiescingExecutor {
-  /** The types of thread pools to use. */
-  enum ThreadPoolType {
-    // Suitable for CPU-heavy tasks. Ideally the number of threads is close to the machine's number
-    // of cores.
-    CPU_HEAVY,
-    // Reserved for execution-phase tasks.
-    EXECUTION_PHASE,
-    REGULAR,
-  }
+/** An Executor that can execute tasks in multiple independent thread pools.  */
+interface MultiThreadPoolsQuiescingExecutor : com.google.devtools.build.lib.concurrent.QuiescingExecutor {
+    /** The types of thread pools to use.  */
+    enum class ThreadPoolType {
+        // Suitable for CPU-heavy tasks. Ideally the number of threads is close to the machine's number
+        // of cores.
+        CPU_HEAVY,
 
-  /**
-   * Execute the runnable, taking into consideration the preferred thread pool type.
-   *
-   * <p>WARNING: it is the developer's responsibility to check that the appropriate thread pool is
-   * present.
-   *
-   * @param shouldStallAwaitingSignal whether the execution of the runnable should be stalled. No-op
-   *     if the go ahead signal is already given.
-   */
-  void execute(Runnable runnable, ThreadPoolType threadPoolType, boolean shouldStallAwaitingSignal);
+        // Reserved for execution-phase tasks.
+        EXECUTION_PHASE,
+        REGULAR,
+    }
 
-  default void execute(Runnable runnable, ThreadPoolType threadPoolType) {
-    execute(runnable, threadPoolType, /* shouldStallAwaitingSignal= */ false);
-  }
+    /**
+     * Execute the runnable, taking into consideration the preferred thread pool type.
+     * 
+     * 
+     * WARNING: it is the developer's responsibility to check that the appropriate thread pool is
+     * present.
+     * 
+     * @param shouldStallAwaitingSignal whether the execution of the runnable should be stalled. No-op
+     * if the go ahead signal is already given.
+     */
+    fun execute(runnable: java.lang.Runnable?, threadPoolType: ThreadPoolType?, shouldStallAwaitingSignal: Boolean)
 
-  /**
-   * Begin executing execution phase tasks.
-   *
-   * <p>The execution phase tasks sent to this executor will be queued up until this method is
-   * called. This is called exactly once per build.
-   *
-   * <p>Skymeld-only.
-   */
-  void launchQueuedUpExecutionPhaseTasks();
+    fun execute(runnable: java.lang.Runnable?, threadPoolType: ThreadPoolType?) {
+        execute(runnable, threadPoolType,  /* shouldStallAwaitingSignal= */false)
+    }
 
-  /** Only true when in Skymeld mode. */
-  boolean hasSeparatePoolForExecutionTasks();
+    /**
+     * Begin executing execution phase tasks.
+     * 
+     * 
+     * The execution phase tasks sent to this executor will be queued up until this method is
+     * called. This is called exactly once per build.
+     * 
+     * 
+     * Skymeld-only.
+     */
+    fun launchQueuedUpExecutionPhaseTasks()
+
+    /** Only true when in Skymeld mode.  */
+    fun hasSeparatePoolForExecutionTasks(): Boolean
 }

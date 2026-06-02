@@ -11,140 +11,127 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.StarlarkThreadContext;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Optional;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkThread;
+import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment
 
 /**
  * Bazel application data for the Starlark thread that evaluates the top-level code in a .bzl (or
  * .scl) module (i.e. when evaluating that module's global symbols).
  */
-public final class BzlInitThreadContext extends StarlarkThreadContext
-    implements RuleDefinitionEnvironment {
+class BzlInitThreadContext(
+    bzlFile: Label?,
+    transitiveDigest: ByteArray?,
+    toolsRepository: RepositoryName?,
+    networkAllowlistForTests: java.util.Optional<Label?>?,
+    fragmentNameToClass: com.google.common.collect.ImmutableMap<String?, java.lang.Class<*>?>?,
+    mainRepoMapping: RepositoryMapping?
+) : StarlarkThreadContext({ mainRepoMapping }), RuleDefinitionEnvironment {
+    private val bzlFile: Label?
 
-  private final Label bzlFile;
+    /* Digest of the .bzl file being initialized along with all its transitive loads. */
+    private val transitiveDigest: ByteArray?
 
-  /* Digest of the .bzl file being initialized along with all its transitive loads. */
-  private final byte[] transitiveDigest;
+    // For storing the result of calling `visibility()`.
+    private var bzlVisibility: BzlVisibility? = null
 
-  // For storing the result of calling `visibility()`.
-  @Nullable private BzlVisibility bzlVisibility;
+    private val toolsRepository: RepositoryName?
 
-  private final RepositoryName toolsRepository;
+    // TODO(b/192694287): Remove once we migrate all tests from the allowlist
+    private val networkAllowlistForTests: java.util.Optional<Label?>?
 
-  // TODO(b/192694287): Remove once we migrate all tests from the allowlist
-  private final Optional<Label> networkAllowlistForTests;
+    // Used for `configuration_field`.
+    private val fragmentNameToClass: com.google.common.collect.ImmutableMap<String?, java.lang.Class<*>?>?
 
-  // Used for `configuration_field`.
-  private final ImmutableMap<String, Class<?>> fragmentNameToClass;
-
-  /**
-   * Constructs a new context for initializing a .bzl file.
-   *
-   * @param bzlFile the name of the .bzl being initialized
-   * @param transitiveDigest the hash of that file and its transitive load()s
-   * @param toolsRepository the name of the tools repository, such as "@bazel_tools"
-   * @param networkAllowlistForTests an allowlist for rule classes created by this thread
-   * @param fragmentNameToClass a map from configuration fragment name to configuration fragment
-   *     class, such as "apple" to AppleConfiguration.class
-   * @param mainRepoMapping the repository mapping of the main repository
-   */
-  public BzlInitThreadContext(
-      Label bzlFile,
-      byte[] transitiveDigest,
-      RepositoryName toolsRepository,
-      Optional<Label> networkAllowlistForTests,
-      ImmutableMap<String, Class<?>> fragmentNameToClass,
-      RepositoryMapping mainRepoMapping) {
-    super(() -> mainRepoMapping);
-    this.bzlFile = bzlFile;
-    this.transitiveDigest = transitiveDigest;
-    this.toolsRepository = toolsRepository;
-    this.networkAllowlistForTests = networkAllowlistForTests;
-    this.fragmentNameToClass = fragmentNameToClass;
-  }
-
-  /**
-   * Retrieves this context from a Starlark thread. If not present, throws {@code EvalException}
-   * with an error message indicating that {@code what} can't be used in this Starlark environment.
-   */
-  @CanIgnoreReturnValue
-  public static BzlInitThreadContext fromOrFail(StarlarkThread thread, String what)
-      throws EvalException {
-    @Nullable StarlarkThreadContext ctx = thread.getThreadLocal(StarlarkThreadContext.class);
-    if (!(ctx instanceof BzlInitThreadContext)) {
-      throw Starlark.errorf(
-          "%s can only be used during .bzl initialization (top-level evaluation)", what);
+    /**
+     * Constructs a new context for initializing a .bzl file.
+     * 
+     * @param bzlFile the name of the .bzl being initialized
+     * @param transitiveDigest the hash of that file and its transitive load()s
+     * @param toolsRepository the name of the tools repository, such as "@bazel_tools"
+     * @param networkAllowlistForTests an allowlist for rule classes created by this thread
+     * @param fragmentNameToClass a map from configuration fragment name to configuration fragment
+     * class, such as "apple" to AppleConfiguration.class
+     * @param mainRepoMapping the repository mapping of the main repository
+     */
+    init {
+        this.bzlFile = bzlFile
+        this.transitiveDigest = transitiveDigest
+        this.toolsRepository = toolsRepository
+        this.networkAllowlistForTests = networkAllowlistForTests
+        this.fragmentNameToClass = fragmentNameToClass
     }
-    return (BzlInitThreadContext) ctx;
-  }
 
-  /**
-   * Retrieves this context from a Starlark thread. If not present, returns {@code null} instead.
-   */
-  @Nullable
-  public static BzlInitThreadContext fromOrNull(StarlarkThread thread) {
-    return thread.getThreadLocal(StarlarkThreadContext.class) instanceof BzlInitThreadContext c
-        ? c
-        : null;
-  }
+    /**
+     * Returns the label of the .bzl module being initialized.
+     * 
+     * 
+     * Note that this is not necessarily the same as the module of the innermost stack frame (i.e.,
+     * `BazelModuleContext.of(Module.ofInnermostEnclosingStarlarkFunction(thread)).label()`),
+     * since the module may call helper functions loaded from elsewhere.
+     */
+    fun getBzlFile(): Label? {
+        return bzlFile
+    }
 
-  /**
-   * Returns the label of the .bzl module being initialized.
-   *
-   * <p>Note that this is not necessarily the same as the module of the innermost stack frame (i.e.,
-   * {@code BazelModuleContext.of(Module.ofInnermostEnclosingStarlarkFunction(thread)).label()}),
-   * since the module may call helper functions loaded from elsewhere.
-   */
-  public Label getBzlFile() {
-    return bzlFile;
-  }
+    /** Returns the transitive digest of the .bzl module being initialized.  */
+    fun getTransitiveDigest(): ByteArray? {
+        return transitiveDigest
+    }
 
-  /** Returns the transitive digest of the .bzl module being initialized. */
-  public byte[] getTransitiveDigest() {
-    return transitiveDigest;
-  }
+    /**
+     * Returns the saved BzlVisibility that was declared for the currently initializing .bzl module.
+     */
+    fun getBzlVisibility(): BzlVisibility? {
+        return bzlVisibility
+    }
 
-  /**
-   * Returns the saved BzlVisibility that was declared for the currently initializing .bzl module.
-   */
-  @Nullable
-  public BzlVisibility getBzlVisibility() {
-    return bzlVisibility;
-  }
+    /** Sets the BzlVisibility for the currently initializing .bzl module.  */
+    fun setBzlVisibility(bzlVisibility: BzlVisibility?) {
+        this.bzlVisibility = bzlVisibility
+    }
 
-  /** Sets the BzlVisibility for the currently initializing .bzl module. */
-  public void setBzlVisibility(BzlVisibility bzlVisibility) {
-    this.bzlVisibility = bzlVisibility;
-  }
+    /** Returns the name of the tools repository, such as "@bazel_tools".  */
+    public override fun getToolsRepository(): RepositoryName? {
+        return toolsRepository
+    }
 
-  /** Returns the name of the tools repository, such as "@bazel_tools". */
-  @Override
-  public RepositoryName getToolsRepository() {
-    return toolsRepository;
-  }
+    /** Returns a label for network allowlist for tests if one should be added.  */ // TODO(b/192694287): Remove once we migrate all tests from the allowlist.
+    public override fun getNetworkAllowlistForTests(): java.util.Optional<Label?>? {
+        return networkAllowlistForTests
+    }
 
-  /** Returns a label for network allowlist for tests if one should be added. */
-  // TODO(b/192694287): Remove once we migrate all tests from the allowlist.
-  @Override
-  public Optional<Label> getNetworkAllowlistForTests() {
-    return networkAllowlistForTests;
-  }
+    /** Returns a map from configuration fragment name to configuration fragment class.  */
+    fun getFragmentNameToClass(): com.google.common.collect.ImmutableMap<String?, java.lang.Class<*>?>? {
+        return fragmentNameToClass
+    }
 
-  /** Returns a map from configuration fragment name to configuration fragment class. */
-  public ImmutableMap<String, Class<?>> getFragmentNameToClass() {
-    return fragmentNameToClass;
-  }
+    companion object {
+        /**
+         * Retrieves this context from a Starlark thread. If not present, throws `EvalException`
+         * with an error message indicating that `what` can't be used in this Starlark environment.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun fromOrFail(thread: net.starlark.java.eval.StarlarkThread, what: String?): BzlInitThreadContext {
+            val ctx: StarlarkThreadContext? =
+                thread.getThreadLocal<StarlarkThreadContext?>(StarlarkThreadContext::class.java)
+            if (ctx !is BzlInitThreadContext) {
+                throw net.starlark.java.eval.Starlark.errorf(
+                    "%s can only be used during .bzl initialization (top-level evaluation)", what
+                )
+            }
+            return ctx
+        }
+
+        /**
+         * Retrieves this context from a Starlark thread. If not present, returns `null` instead.
+         */
+        fun fromOrNull(thread: net.starlark.java.eval.StarlarkThread): BzlInitThreadContext? {
+            return if (thread.getThreadLocal<StarlarkThreadContext?>(StarlarkThreadContext::class.java) is BzlInitThreadContext)
+                c
+            else
+                null
+        }
+    }
 }

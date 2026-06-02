@@ -11,30 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
- * Container for some attributes of a {@link Target} that is significantly less heavyweight than an
- * actual {@link Target} for purposes of serialization. Should still not be used indiscriminately,
- * since {@link Location} can be quite heavy on its own and each of these wrapper objects costs 24
- * bytes over an existing {@link Target}.
+ * Container for some attributes of a [Target] that is significantly less heavyweight than an
+ * actual [Target] for purposes of serialization. Should still not be used indiscriminately,
+ * since [Location] can be quite heavy on its own and each of these wrapper objects costs 24
+ * bytes over an existing [Target].
  */
 @AutoCodec
-public record LabelAndLocation(Label label, Location location) {
-  public LabelAndLocation {
-    requireNonNull(label, "label");
-    requireNonNull(location, "location");
-  }
+class LabelAndLocation(
+    label: com.google.devtools.build.lib.cmdline.Label?,
+    location: net.starlark.java.syntax.Location?
+) {
+    val label: com.google.devtools.build.lib.cmdline.Label?
+    val location: net.starlark.java.syntax.Location?
 
-  public static LabelAndLocation of(Target target) {
-    return new LabelAndLocation(target.getLabel(), target.getLocation());
-  }
+    init {
+        this.location = location
+        this.label = label
+        java.util.Objects.requireNonNull<com.google.devtools.build.lib.cmdline.Label?>(label, "label")
+        java.util.Objects.requireNonNull<net.starlark.java.syntax.Location?>(location, "location")
+    }
+
+    companion object {
+        fun of(target: com.google.devtools.build.lib.packages.Target): LabelAndLocation {
+            return LabelAndLocation(target.getLabel(), target.getLocation())
+        }
+    }
 }

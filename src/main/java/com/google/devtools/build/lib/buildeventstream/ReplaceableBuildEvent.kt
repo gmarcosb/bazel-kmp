@@ -11,26 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
+import BuildEventStreamProtos.BuildEvent
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
 /**
- * A {@link BuildEvent} that buffers until either a non-replaceable version (with the same {@link
- * BuildEventId}) is posted to replace it or the build ends without the other version happening.
- *
- * <p>If the non-replaceable version posts later or was posted before this one, this one is
+ * A [BuildEvent] that buffers until either a non-replaceable version (with the same [ ]) is posted to replace it or the build ends without the other version happening.
+ * 
+ * 
+ * If the non-replaceable version posts later or was posted before this one, this one is
  * discarded without posting.
- *
- * <p>If the non-replaceable version isn't posted for any reason - including build completion, build
+ * 
+ * 
+ * If the non-replaceable version isn't posted for any reason - including build completion, build
  * error, or a crash - this version posts.
- *
- * <p>This lets builds guarantee exactly once instance of an event gets posted. This is useful for
+ * 
+ * 
+ * This lets builds guarantee exactly once instance of an event gets posted. This is useful for
  * single-instance events that might be updated later in the build.
  */
-public interface ReplaceableBuildEvent extends BuildEvent {
-  /**
-   * Is this event replaceable? If so, a non-replaceable version with the same {@link BuildEventId}
-   * can replace it.
-   */
-  boolean replaceable();
+interface ReplaceableBuildEvent : BuildEvent {
+    /**
+     * Is this event replaceable? If so, a non-replaceable version with the same [BuildEventId]
+     * can replace it.
+     */
+    fun replaceable(): Boolean
 }

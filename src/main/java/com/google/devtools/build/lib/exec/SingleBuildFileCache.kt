@@ -11,179 +11,149 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.DigestOfDirectoryException;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FilesetOutputTree;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.RunfilesArtifactValue;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.XattrProvider;
-import java.io.IOException;
-import java.util.Map;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.ThreadSafe;
+import com.google.devtools.build.lib.actions.ActionInput
 
 /**
  * An in-memory cache to ensure we do I/O for source files only once during a single build.
- *
- * <p>Simply maintains a cached mapping from filename to metadata that may be populated only once.
+ * 
+ * 
+ * Simply maintains a cached mapping from filename to metadata that may be populated only once.
  */
-@ThreadSafe
-public class SingleBuildFileCache implements InputMetadataProvider {
-  private final Path execRoot;
-  private final PathFragment relativeOutputPath;
+@javax.annotation.concurrent.ThreadSafe
+class SingleBuildFileCache(
+    cwd: String?,
+    relativeOutputPath: PathFragment?,
+    fs: com.google.devtools.build.lib.vfs.FileSystem,
+    xattrProvider: XattrProvider?
+) : InputMetadataProvider {
+    private val execRoot: com.google.devtools.build.lib.vfs.Path?
+    private val relativeOutputPath: PathFragment?
 
-  // If we can't get the digest, we store the exception. This avoids extra file IO for files
-  // that are allowed to be missing, as we first check a likely non-existent content file
-  // first.  Further we won't need to unwrap the exception in getDigest().
-  private final Cache<PathFragment, ActionInputMetadata> pathToMetadata =
-      Caffeine.newBuilder()
-          // Even small-ish builds, as of 11/21/2011 typically have over 10k artifacts, so it's
-          // unlikely that this default will adversely affect memory in most cases.
-          .initialCapacity(10000)
-          .build();
-  private final XattrProvider xattrProvider;
+    // If we can't get the digest, we store the exception. This avoids extra file IO for files
+    // that are allowed to be missing, as we first check a likely non-existent content file
+    // first.  Further we won't need to unwrap the exception in getDigest().
+    private val pathToMetadata: com.github.benmanes.caffeine.cache.Cache<PathFragment?, ActionInputMetadata?> =
+        Caffeine.newBuilder() // Even small-ish builds, as of 11/21/2011 typically have over 10k artifacts, so it's
+            // unlikely that this default will adversely affect memory in most cases.
+            .initialCapacity(10000)
+            .build<PathFragment?, ActionInputMetadata?>()
+    private val xattrProvider: XattrProvider?
 
-  public SingleBuildFileCache(
-      String cwd, PathFragment relativeOutputPath, FileSystem fs, XattrProvider xattrProvider) {
-    this.xattrProvider = xattrProvider;
-    this.execRoot = fs.getPath(cwd);
-    this.relativeOutputPath = relativeOutputPath;
-  }
-
-  @Override
-  @Nullable
-  public FileArtifactValue getInputMetadataChecked(ActionInput input) throws IOException {
-    if (input instanceof Artifact artifact) {
-      if (!artifact.isSourceArtifact()) {
-        throw new IllegalStateException(
-            String.format(
-                "SingleBuildFileCache does not support derived artifact '%s'",
-                input.getExecPathString()));
-      }
-    } else if (input.getExecPath().startsWith(relativeOutputPath)) {
-      throw new IllegalStateException(
-          String.format(
-              "SingleBuildFileCache does not support action input '%s' in the output tree",
-              input.getExecPath()));
+    init {
+        this.xattrProvider = xattrProvider
+        this.execRoot = fs.getPath(cwd)
+        this.relativeOutputPath = relativeOutputPath
     }
 
-    return pathToMetadata
-        .get(
-            input.getExecPath(),
-            execPath -> {
-              Path path = ActionInputHelper.toInputPath(input, execRoot);
-              FileArtifactValue metadata;
-              try {
-                metadata =
-                    FileArtifactValue.createFromStat(
-                        path,
-                        // TODO(b/199940216): should we use syscallCache here since caching anyway?
-                        path.stat(Symlinks.FOLLOW),
-                        xattrProvider);
-              } catch (IOException e) {
-                return new ActionInputMetadata(input, e);
-              }
-              if (metadata.getType().isDirectory()) {
-                return new ActionInputMetadata(
-                    input, new DigestOfDirectoryException("Input is a directory: " + execPath));
-              }
-              return new ActionInputMetadata(input, metadata);
-            })
-        .getMetadata();
-  }
+    @Throws(IOException::class)
+    public override fun getInputMetadataChecked(input: ActionInput): FileArtifactValue? {
+        if (input is Artifact) {
+            check(input.isSourceArtifact()) {
+                java.lang.String.format(
+                    "SingleBuildFileCache does not support derived artifact '%s'",
+                    input.getExecPathString()
+                )
+            }
+        } else check(!input.getExecPath().startsWith(relativeOutputPath)) {
+            java.lang.String.format(
+                "SingleBuildFileCache does not support action input '%s' in the output tree",
+                input.getExecPath()
+            )
+        }
 
-  @Nullable
-  @Override
-  public TreeArtifactValue getTreeMetadata(ActionInput actionInput) {
-    return null;
-  }
-
-  @Nullable
-  @Override
-  public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-    return null;
-  }
-
-  @Override
-  @Nullable
-  public FilesetOutputTree getFileset(ActionInput input) {
-    return null;
-  }
-
-  @Override
-  public Map<Artifact, FilesetOutputTree> getFilesets() {
-    return ImmutableMap.of();
-  }
-
-  @Override
-  @Nullable
-  public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-    return null;
-  }
-
-  @Override
-  public ImmutableList<RunfilesTree> getRunfilesTrees() {
-    return ImmutableList.of();
-  }
-
-  @Override
-  @Nullable
-  public ActionInput getInput(PathFragment execPath) {
-    ActionInputMetadata metadata = pathToMetadata.getIfPresent(execPath);
-    if (metadata == null) {
-      return null;
-    }
-    return metadata.getInput();
-  }
-
-  /** Container class for caching I/O around ActionInputs. */
-  private static class ActionInputMetadata {
-    private final ActionInput input;
-    private final FileArtifactValue metadata;
-    private final IOException exceptionOnAccess;
-
-    /** Constructor for a successful lookup. */
-    ActionInputMetadata(ActionInput input, FileArtifactValue metadata) {
-      this.input = input;
-      this.metadata = metadata;
-      this.exceptionOnAccess = null;
+        return pathToMetadata
+            .get(
+                input.getExecPath(),
+                java.util.function.Function { execPath: PathFragment? ->
+                    val path: com.google.devtools.build.lib.vfs.Path = ActionInputHelper.toInputPath(input, execRoot)
+                    val metadata: FileArtifactValue
+                    try {
+                        metadata =
+                            FileArtifactValue.createFromStat(
+                                path,  // TODO(b/199940216): should we use syscallCache here since caching anyway?
+                                path.stat(Symlinks.FOLLOW),
+                                xattrProvider
+                            )
+                    } catch (e: IOException) {
+                        return@get ActionInputMetadata(input, e)
+                    }
+                    if (metadata.getType().isDirectory()) {
+                        return@get ActionInputMetadata(
+                            input, DigestOfDirectoryException("Input is a directory: " + execPath)
+                        )
+                    }
+                    ActionInputMetadata(input, metadata)
+                })
+            .getMetadata()
     }
 
-    /** Constructor for a failed lookup, size will be 0. */
-    ActionInputMetadata(ActionInput input, IOException exceptionOnAccess) {
-      this.input = input;
-      this.exceptionOnAccess = exceptionOnAccess;
-      this.metadata = null;
+    public override fun getTreeMetadata(actionInput: ActionInput?): TreeArtifactValue? {
+        return null
     }
 
-    FileArtifactValue getMetadata() throws IOException {
-      maybeRaiseException();
-      return metadata;
+    public override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+        return null
     }
 
-    ActionInput getInput() {
-      return input;
+    public override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+        return null
     }
 
-    private void maybeRaiseException() throws IOException {
-      if (exceptionOnAccess != null) {
-        throw exceptionOnAccess;
-      }
+    val filesets: MutableMap<Artifact, FilesetOutputTree>
+        get() = com.google.common.collect.ImmutableMap.of<Artifact?, FilesetOutputTree?>()
+
+    public override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+        return null
     }
-  }
+
+    val runfilesTrees: com.google.common.collect.ImmutableList<RunfilesTree?>
+        get() = com.google.common.collect.ImmutableList.of<RunfilesTree?>()
+
+    public override fun getInput(execPath: PathFragment?): ActionInput? {
+        val metadata: ActionInputMetadata? = pathToMetadata.getIfPresent(execPath)
+        if (metadata == null) {
+            return null
+        }
+        return metadata.getInput()
+    }
+
+    /** Container class for caching I/O around ActionInputs.  */
+    private class ActionInputMetadata {
+        private val input: ActionInput?
+        private val metadata: FileArtifactValue?
+        private val exceptionOnAccess: IOException?
+
+        /** Constructor for a successful lookup.  */
+        internal constructor(input: ActionInput?, metadata: FileArtifactValue?) {
+            this.input = input
+            this.metadata = metadata
+            this.exceptionOnAccess = null
+        }
+
+        /** Constructor for a failed lookup, size will be 0.  */
+        internal constructor(input: ActionInput?, exceptionOnAccess: IOException?) {
+            this.input = input
+            this.exceptionOnAccess = exceptionOnAccess
+            this.metadata = null
+        }
+
+        @Throws(IOException::class)
+        fun getMetadata(): FileArtifactValue? {
+            maybeRaiseException()
+            return metadata
+        }
+
+        fun getInput(): ActionInput? {
+            return input
+        }
+
+        @Throws(IOException::class)
+        fun maybeRaiseException() {
+            if (exceptionOnAccess != null) {
+                throw exceptionOnAccess
+            }
+        }
+    }
 }

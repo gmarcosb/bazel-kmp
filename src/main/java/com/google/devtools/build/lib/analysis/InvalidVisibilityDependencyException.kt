@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.PackageGroup;
-import com.google.devtools.build.lib.packages.Target;
+/** Indicates a visibility dependency on a [Target] that is not a [PackageGroup].  */
+class InvalidVisibilityDependencyException(label: com.google.devtools.build.lib.cmdline.Label?) :
+    java.lang.Exception() {
+    private val label: com.google.devtools.build.lib.cmdline.Label?
 
-/** Indicates a visibility dependency on a {@link Target} that is not a {@link PackageGroup}. */
-public final class InvalidVisibilityDependencyException extends Exception {
-  private final Label label;
+    init {
+        this.label = label
+    }
 
-  public InvalidVisibilityDependencyException(Label label) {
-    this.label = label;
-  }
-
-  /** Label of {@link Target} that was expected to be a {@link PackageGroup}. */
-  public Label label() {
-    return label;
-  }
+    /** Label of [Target] that was expected to be a [PackageGroup].  */
+    fun label(): com.google.devtools.build.lib.cmdline.Label? {
+        return label
+    }
 }

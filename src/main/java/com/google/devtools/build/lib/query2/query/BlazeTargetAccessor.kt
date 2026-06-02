@@ -11,201 +11,187 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.query;
+package com.google.devtools.build.lib.query2.query
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.AggregatingAttributeMapper;
-import com.google.devtools.build.lib.packages.PackageGroup;
-import com.google.devtools.build.lib.packages.PackageGroupsRuleVisibility;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleVisibility;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetNotFoundException;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QueryVisibility;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * Implementation of {@link TargetAccessor &lt;Target&gt;} that uses an
- * {@link AbstractBlazeQueryEnvironment &lt;Target&gt;} internally to report issues and resolve
+ * Implementation of [&amp;lt;Target&amp;gt;][TargetAccessor] that uses an
+ * [&amp;lt;Target&amp;gt;][AbstractBlazeQueryEnvironment] internally to report issues and resolve
  * targets.
  */
-public final class BlazeTargetAccessor implements TargetAccessor<Target> {
-  private final AbstractBlazeQueryEnvironment<Target> queryEnvironment;
+class BlazeTargetAccessor(queryEnvironment: AbstractBlazeQueryEnvironment<Target?>) : TargetAccessor<Target?> {
+    private val queryEnvironment: AbstractBlazeQueryEnvironment<Target?>
 
-  public BlazeTargetAccessor(AbstractBlazeQueryEnvironment<Target> queryEnvironment) {
-    this.queryEnvironment = queryEnvironment;
-  }
-
-  @Override
-  public String getTargetKind(Target target) {
-    return target.getTargetKind();
-  }
-
-  @Override
-  public String getLabel(Target target) {
-    return target.getLabel().toString();
-  }
-
-  @Override
-  public String getPackage(Target target) {
-    return target.getPackageMetadata().getName();
-  }
-
-  @Override
-  public Iterable<Target> getPrerequisites(
-      QueryExpression caller, Target target, String attrName, String errorMsgPrefix)
-      throws QueryException, InterruptedException {
-    Preconditions.checkArgument(target instanceof Rule);
-
-    Rule rule = (Rule) target;
-
-    AggregatingAttributeMapper attrMap = AggregatingAttributeMapper.of(rule);
-    Type<?> attrType = attrMap.getAttributeType(attrName);
-    if (attrType == null) {
-      // Return an empty list if the attribute isn't defined for this rule.
-      return ImmutableList.of();
+    init {
+        this.queryEnvironment = queryEnvironment
     }
 
-    Set<Label> labels = attrMap.getReachableLabels(attrName, false);
-    // TODO(nharmata): Figure out how to make use of the package semaphore in the transitive
-    // callsites of this method.
-    Map<Label, Target> labelTargetMap = queryEnvironment.getTargets(labels);
-    // Optimize for the common-case of no missing targets.
-    if (labelTargetMap.size() != labels.size()) {
-      for (Label label : labels) {
-        if (!labelTargetMap.containsKey(label)) {
-          // If a target was missing, fetch it directly for the sole purpose of getting a useful
-          // error message.
-          try {
-            queryEnvironment.getTarget(label);
-          } catch (TargetNotFoundException e) {
-            queryEnvironment.handleError(
-                caller, errorMsgPrefix + e.getMessage(), e.getDetailedExitCode());
-          }
+    override fun getTargetKind(target: Target): String {
+        return target.getTargetKind()
+    }
+
+    override fun getLabel(target: Target): String {
+        return target.getLabel().toString()
+    }
+
+    override fun getPackage(target: Target): String {
+        return target.getPackageMetadata().getName()
+    }
+
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class, java.lang.InterruptedException::class)
+    override fun getPrerequisites(
+        caller: QueryExpression?, target: Target?, attrName: String?, errorMsgPrefix: String?
+    ): Iterable<Target?> {
+        com.google.common.base.Preconditions.checkArgument(target is Rule)
+
+        val rule: Rule? = target as Rule?
+
+        val attrMap: AggregatingAttributeMapper = AggregatingAttributeMapper.of(rule)
+        val attrType: Type<*>? = attrMap.getAttributeType(attrName)
+        if (attrType == null) {
+            // Return an empty list if the attribute isn't defined for this rule.
+            return com.google.common.collect.ImmutableList.of<Target?>()
         }
-      }
 
-    }
-    return labelTargetMap.values();
-  }
-
-  @Override
-  public List<String> getStringListAttr(Target target, String attrName) {
-    return TargetUtils.getStringListAttr(target, attrName);
-  }
-
-  @Override
-  public String getStringAttr(Target target, String attrName) {
-    return TargetUtils.getStringAttr(target, attrName);
-  }
-
-  @Override
-  public Iterable<String> getAttrAsString(Target target, String attrName) {
-    return TargetUtils.getAttrAsString(target, attrName);
-  }
-
-  @Override
-  public boolean isRule(Target target) {
-    return target instanceof Rule;
-  }
-
-  @Override
-  public boolean isExecutableNonTestRule(Target target) {
-    return TargetUtils.isExecutableNonTestRule(target);
-  }
-
-  @Override
-  public boolean isTestRule(Target target) {
-    return TargetUtils.isTestRule(target);
-  }
-
-  @Override
-  public boolean isTestSuite(Target target) {
-    return TargetUtils.isTestSuiteRule(target);
-  }
-
-  @Override
-  public ImmutableSet<QueryVisibility<Target>> getVisibility(QueryExpression caller, Target target)
-      throws QueryException, InterruptedException {
-    ImmutableSet.Builder<QueryVisibility<Target>> result = ImmutableSet.builder();
-    result.add(QueryVisibility.samePackage(target, this));
-    convertVisibility(caller, result, target);
-    return result.build();
-  }
-
-  // CAUTION: keep in sync with ConfiguredTargetFactory#convertVisibility()
-  // TODO: #19922 - And... it's not in sync with Macro-Aware Visibility for symbolic macros. Fix
-  // this. Also mind the samePackage logic in getVisibility above.
-  private void convertVisibility(
-      QueryExpression caller,
-      ImmutableSet.Builder<QueryVisibility<Target>> packageSpecifications,
-      Target target)
-      throws QueryException, InterruptedException {
-    RuleVisibility ruleVisibility = target.getVisibility();
-    if (ruleVisibility.equals(RuleVisibility.PRIVATE)) {
-      return;
-    }
-    if (ruleVisibility.equals(RuleVisibility.PUBLIC)) {
-      packageSpecifications.add(QueryVisibility.everything());
-    } else if (ruleVisibility instanceof PackageGroupsRuleVisibility packageGroupsVisibility) {
-      for (Label groupLabel : packageGroupsVisibility.getPackageGroups()) {
-        try {
-          addAllPackageGroups(groupLabel, packageSpecifications);
-        } catch (TargetNotFoundException e) {
-          queryEnvironment.handleError(
-              caller,
-              "Invalid visibility label '" + groupLabel.getCanonicalForm() + "': " + e.getMessage(),
-              e.getDetailedExitCode());
+        val labels: MutableSet<Label?> = attrMap.getReachableLabels(attrName, false)
+        // TODO(nharmata): Figure out how to make use of the package semaphore in the transitive
+        // callsites of this method.
+        val labelTargetMap: MutableMap<Label?, Target?> = queryEnvironment.getTargets(labels)
+        // Optimize for the common-case of no missing targets.
+        if (labelTargetMap.size() != labels.size()) {
+            for (label in labels) {
+                if (!labelTargetMap.containsKey(label)) {
+                    // If a target was missing, fetch it directly for the sole purpose of getting a useful
+                    // error message.
+                    try {
+                        queryEnvironment.getTarget(label)
+                    } catch (e: TargetNotFoundException) {
+                        queryEnvironment.handleError(
+                            caller, errorMsgPrefix + e.getMessage(), e.getDetailedExitCode()
+                        )
+                    }
+                }
+            }
         }
-      }
-      packageSpecifications.add(
-          new BlazeQueryVisibility(packageGroupsVisibility.getDirectPackages()));
-   } else {
-     throw new IllegalStateException("unknown visibility: " + ruleVisibility.getClass());
-   }
-  }
-
-  /**
-   * If {@code groupLabel} refers to a {@code package_group}, recursively add the package
-   * specifications of it and of all other {@code package_group}s transitively in its {@code
-   * includes}.
-   */
-  private void addAllPackageGroups(
-      Label groupLabel, ImmutableSet.Builder<QueryVisibility<Target>> packageSpecifications)
-      throws QueryException, TargetNotFoundException, InterruptedException {
-    addAllPackageGroupsRecursive(groupLabel, packageSpecifications, new HashSet<>());
-  }
-
-  private void addAllPackageGroupsRecursive(
-      Label groupLabel,
-      ImmutableSet.Builder<QueryVisibility<Target>> packageSpecifications,
-      Set<Label> seen)
-      throws QueryException, TargetNotFoundException, InterruptedException {
-    if (!seen.add(groupLabel)) {
-      // Avoid infinite recursion in case of an illegal package_group that includes itself.
-      // The target can't be built, but we'll return a valid result that just ignores the cyclic
-      // reference.
-      return;
+        return labelTargetMap.values()
     }
-    Target groupTarget = queryEnvironment.getTarget(groupLabel);
-    if (groupTarget instanceof PackageGroup packageGroupTarget) {
-      for (Label include : packageGroupTarget.getIncludes()) {
-        addAllPackageGroupsRecursive(include, packageSpecifications, seen);
-      }
-      packageSpecifications.add(
-          new BlazeQueryVisibility(packageGroupTarget.getPackageSpecifications()));
+
+    override fun getStringListAttr(target: Target?, attrName: String?): MutableList<String?> {
+        return TargetUtils.getStringListAttr(target, attrName)
     }
-  }
+
+    override fun getStringAttr(target: Target?, attrName: String?): String {
+        return TargetUtils.getStringAttr(target, attrName)
+    }
+
+    override fun getAttrAsString(target: Target?, attrName: String?): Iterable<String?> {
+        return TargetUtils.getAttrAsString(target, attrName)
+    }
+
+    override fun isRule(target: Target?): Boolean {
+        return target is Rule
+    }
+
+    override fun isExecutableNonTestRule(target: Target?): Boolean {
+        return TargetUtils.isExecutableNonTestRule(target)
+    }
+
+    override fun isTestRule(target: Target?): Boolean {
+        return TargetUtils.isTestRule(target)
+    }
+
+    override fun isTestSuite(target: Target?): Boolean {
+        return TargetUtils.isTestSuiteRule(target)
+    }
+
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class, java.lang.InterruptedException::class)
+    override fun getVisibility(
+        caller: QueryExpression?,
+        target: Target
+    ): com.google.common.collect.ImmutableSet<QueryVisibility<Target?>?> {
+        val result: com.google.common.collect.ImmutableSet.Builder<QueryVisibility<Target?>?> =
+            com.google.common.collect.ImmutableSet.builder<QueryVisibility<Target?>?>()
+        result.add(QueryVisibility.Companion.samePackage<Target?>(target, this))
+        convertVisibility(caller, result, target)
+        return result.build()
+    }
+
+    // CAUTION: keep in sync with ConfiguredTargetFactory#convertVisibility()
+    // TODO: #19922 - And... it's not in sync with Macro-Aware Visibility for symbolic macros. Fix
+    // this. Also mind the samePackage logic in getVisibility above.
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class, java.lang.InterruptedException::class)
+    private fun convertVisibility(
+        caller: QueryExpression?,
+        packageSpecifications: com.google.common.collect.ImmutableSet.Builder<QueryVisibility<Target?>?>,
+        target: Target
+    ) {
+        val ruleVisibility: RuleVisibility = target.getVisibility()
+        if (ruleVisibility.equals(RuleVisibility.PRIVATE)) {
+            return
+        }
+        if (ruleVisibility.equals(RuleVisibility.PUBLIC)) {
+            packageSpecifications.add(QueryVisibility.Companion.everything<Target?>())
+        } else if (ruleVisibility is PackageGroupsRuleVisibility) {
+            for (groupLabel in ruleVisibility.getPackageGroups()) {
+                try {
+                    addAllPackageGroups(groupLabel, packageSpecifications)
+                } catch (e: TargetNotFoundException) {
+                    queryEnvironment.handleError(
+                        caller,
+                        "Invalid visibility label '" + groupLabel.getCanonicalForm() + "': " + e.getMessage(),
+                        e.getDetailedExitCode()
+                    )
+                }
+            }
+            packageSpecifications.add(
+                BlazeQueryVisibility(ruleVisibility.getDirectPackages())
+            )
+        } else {
+            throw java.lang.IllegalStateException("unknown visibility: " + ruleVisibility.getClass())
+        }
+    }
+
+    /**
+     * If `groupLabel` refers to a `package_group`, recursively add the package
+     * specifications of it and of all other `package_group`s transitively in its `includes`.
+     */
+    @Throws(
+        com.google.devtools.build.lib.query2.engine.QueryException::class,
+        TargetNotFoundException::class,
+        java.lang.InterruptedException::class
+    )
+    private fun addAllPackageGroups(
+        groupLabel: Label?,
+        packageSpecifications: com.google.common.collect.ImmutableSet.Builder<QueryVisibility<Target?>?>
+    ) {
+        addAllPackageGroupsRecursive(groupLabel, packageSpecifications, HashSet<Label?>())
+    }
+
+    @Throws(
+        com.google.devtools.build.lib.query2.engine.QueryException::class,
+        TargetNotFoundException::class,
+        java.lang.InterruptedException::class
+    )
+    private fun addAllPackageGroupsRecursive(
+        groupLabel: Label?,
+        packageSpecifications: com.google.common.collect.ImmutableSet.Builder<QueryVisibility<Target?>?>,
+        seen: MutableSet<Label?>
+    ) {
+        if (!seen.add(groupLabel)) {
+            // Avoid infinite recursion in case of an illegal package_group that includes itself.
+            // The target can't be built, but we'll return a valid result that just ignores the cyclic
+            // reference.
+            return
+        }
+        val groupTarget: Target? = queryEnvironment.getTarget(groupLabel)
+        if (groupTarget is PackageGroup) {
+            for (include in groupTarget.getIncludes()) {
+                addAllPackageGroupsRecursive(include, packageSpecifications, seen)
+            }
+            packageSpecifications.add(
+                BlazeQueryVisibility(groupTarget.getPackageSpecifications())
+            )
+        }
+    }
 }

@@ -11,161 +11,166 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod.modcommand
 
-package com.google.devtools.build.lib.bazel.bzlmod.modcommand;
-
-import static java.util.Objects.requireNonNull;
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.base.Ascii;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule.ResolutionReason;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.bazel.bzlmod.Version;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions.OutputFormat;
-import java.io.PrintWriter;
-import javax.annotation.Nullable;
+import com.google.common.base.Ascii
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.common.collect.ImmutableSetMultimap
+import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule
+import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule.ResolutionReason
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.bazel.bzlmod.Version
+import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode
+import java.io.PrintWriter
+import java.lang.String
+import java.util.*
+import java.util.function.Function
+import java.util.stream.Collectors
+import kotlin.Boolean
+import kotlin.IllegalArgumentException
+import kotlin.toString
 
 /**
- * Contains the output formatters for the graph-based results of {@link ModExecutor} that can be
- * specified using {@link ModOptions#outputFormat}.
+ * Contains the output formatters for the graph-based results of [ModExecutor] that can be
+ * specified using [ModOptions.outputFormat].
  */
-public final class OutputFormatters {
+object OutputFormatters {
+    private val textFormatter: OutputFormatter = TextOutputFormatter()
+    private val jsonFormatter: OutputFormatter = JsonOutputFormatter()
+    private val graphvizFormatter: OutputFormatter = GraphvizOutputFormatter()
 
-  private static final OutputFormatter textFormatter = new TextOutputFormatter();
-  private static final OutputFormatter jsonFormatter = new JsonOutputFormatter();
-  private static final OutputFormatter graphvizFormatter = new GraphvizOutputFormatter();
-
-  private OutputFormatters() {}
-
-  static OutputFormatter getFormatter(OutputFormat format) {
-    return switch (format) {
-      case TEXT -> textFormatter;
-      case JSON -> jsonFormatter;
-      case GRAPH -> graphvizFormatter;
-      case null -> throw new IllegalArgumentException("Output format cannot be null.");
-      default -> throw new IllegalArgumentException("Unsupported output format: " + format);
-    };
-  }
-
-  abstract static class OutputFormatter {
-
-    protected ImmutableMap<ModuleKey, ResultNode> result;
-    protected ImmutableMap<ModuleKey, AugmentedModule> depGraph;
-    protected ImmutableSetMultimap<ModuleExtensionId, String> extensionRepos;
-    protected ImmutableMap<ModuleExtensionId, ImmutableSetMultimap<String, ModuleKey>>
-        extensionRepoImports;
-    protected PrintWriter printer;
-    protected ModOptions options;
-
-    /**
-     * Compact representation of the data provided by the {@code --verbose} flag.
-     *
-     * @param changedVersion The version from/to which the module was changed after resolution.
-     * @param requestedByModules The list of modules who originally requested the selected version
-     *     in the case of Minimal-Version-Selection.
-     */
-    record Explanation(
-        Version changedVersion,
-        ResolutionReason resolutionReason,
-        @Nullable ImmutableSet<ModuleKey> requestedByModules) {
-      Explanation {
-        requireNonNull(changedVersion, "changedVersion");
-        requireNonNull(resolutionReason, "resolutionReason");
-      }
-
-      static Explanation create(
-          Version version, ResolutionReason reason, ImmutableSet<ModuleKey> requestedByModules) {
-        return new Explanation(version, reason, requestedByModules);
-      }
-
-      /**
-       * Gets the exact label that is printed next to the module if the {@code --verbose} flag is
-       * enabled.
-       */
-      String toExplanationString(boolean unused) {
-        String changedVersionLabel =
-            changedVersion().equals(Version.EMPTY) ? "_" : changedVersion().toString();
-        String toOrWasString = unused ? "to" : "was";
-        String reasonString =
-            requestedByModules() != null
-                ? requestedByModules().stream().map(ModuleKey::toString).collect(joining(", "))
-                : Ascii.toLowerCase(resolutionReason().toString());
-        return String.format("(%s %s, cause %s)", toOrWasString, changedVersionLabel, reasonString);
-      }
-    }
-
-    /** Exposed API of the formatter during which the necessary objects are injected. */
-    void output(
-        ImmutableMap<ModuleKey, ResultNode> result,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableSetMultimap<ModuleExtensionId, String> extensionRepos,
-        ImmutableMap<ModuleExtensionId, ImmutableSetMultimap<String, ModuleKey>>
-            extensionRepoImports,
-        PrintWriter printer,
-        ModOptions options) {
-      this.result = result;
-      this.depGraph = depGraph;
-      this.extensionRepos = extensionRepos;
-      this.extensionRepoImports = extensionRepoImports;
-      this.printer = printer;
-      this.options = options;
-      output();
-      printer.flush();
-    }
-
-    /** Internal implementation of the formatter output function. */
-    protected abstract void output();
-
-    /**
-     * Exists only for testing, because normally the depGraph and options are injected inside the
-     * public API call.
-     */
-    protected Explanation getExtraResolutionExplanation(
-        ModuleKey key,
-        ModuleKey parent,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ModOptions options) {
-      this.depGraph = depGraph;
-      this.options = options;
-      return getExtraResolutionExplanation(key, parent);
-    }
-
-    /**
-     * Returns {@code null} if the module version has not changed during resolution or if the module
-     * is <i>&lt;root&gt;</i>.
-     */
-    @Nullable
-    protected Explanation getExtraResolutionExplanation(ModuleKey key, ModuleKey parent) {
-      if (key.equals(ModuleKey.ROOT)) {
-        return null;
-      }
-      AugmentedModule module = depGraph.get(key);
-      AugmentedModule parentModule = depGraph.get(parent);
-      String repoName = parentModule.getAllDeps(options.getIncludeUnused()).get(key);
-      Version changedVersion;
-      ImmutableSet<ModuleKey> changedByModules = null;
-      ResolutionReason reason = parentModule.depReasons().get(repoName);
-      AugmentedModule replacement =
-          module.isUsed() ? module : depGraph.get(parentModule.deps().get(repoName));
-      if (reason != ResolutionReason.ORIGINAL) {
-        if (!module.isUsed()) {
-          changedVersion = replacement.version();
-        } else {
-          AugmentedModule old = depGraph.get(parentModule.unusedDeps().get(repoName));
-          changedVersion = old.version();
+    @kotlin.jvm.JvmStatic
+    fun getFormatter(format: ModOptions.OutputFormat?): OutputFormatter {
+        return when (format) {
+            ModOptions.OutputFormat.TEXT -> textFormatter
+            ModOptions.OutputFormat.JSON -> jsonFormatter
+            ModOptions.OutputFormat.GRAPH -> graphvizFormatter
+            null -> throw IllegalArgumentException("Output format cannot be null.")
+            else -> throw IllegalArgumentException("Unsupported output format: " + format)
         }
-        if (reason == ResolutionReason.MINIMAL_VERSION_SELECTION) {
-          changedByModules = replacement.originalDependants();
-        }
-        return Explanation.create(changedVersion, reason, changedByModules);
-      }
-      return null;
     }
-  }
+
+    internal abstract class OutputFormatter {
+        protected var result: ImmutableMap<ModuleKey?, ResultNode?>? = null
+        protected var depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>? = null
+        protected var extensionRepos: ImmutableSetMultimap<ModuleExtensionId?, String?>? = null
+        protected var extensionRepoImports: ImmutableMap<ModuleExtensionId?, ImmutableSetMultimap<String?, ModuleKey?>?>? =
+            null
+        protected var printer: PrintWriter? = null
+        protected var options: ModOptions? = null
+
+        /**
+         * Compact representation of the data provided by the `--verbose` flag.
+         * 
+         * @param changedVersion The version from/to which the module was changed after resolution.
+         * @param requestedByModules The list of modules who originally requested the selected version
+         * in the case of Minimal-Version-Selection.
+         */
+        @kotlin.jvm.JvmRecord
+        internal data class Explanation(
+            val changedVersion: Version?,
+            val resolutionReason: ResolutionReason?,
+            val requestedByModules: ImmutableSet<ModuleKey?>?
+        ) {
+            /**
+             * Gets the exact label that is printed next to the module if the `--verbose` flag is
+             * enabled.
+             */
+            fun toExplanationString(unused: Boolean): String? {
+                val changedVersionLabel: String? =
+                    if (this.changedVersion == Version.Companion.EMPTY) "_" else this.changedVersion.toString()
+                val toOrWasString = if (unused) "to" else "was"
+                val reasonString =
+                    if (this.requestedByModules != null)
+                        this.requestedByModules.stream().map<String?>(Function { obj: ModuleKey? -> obj.toString() })
+                            .collect(Collectors.joining(", "))
+                    else
+                        Ascii.toLowerCase(this.resolutionReason.toString())
+                return String.format("(%s %s, cause %s)", toOrWasString, changedVersionLabel, reasonString)
+            }
+
+            init {
+                Objects.requireNonNull<Version?>(changedVersion, "changedVersion")
+                Objects.requireNonNull<ResolutionReason?>(resolutionReason, "resolutionReason")
+            }
+
+            companion object {
+                fun create(
+                    version: Version?, reason: ResolutionReason?, requestedByModules: ImmutableSet<ModuleKey?>?
+                ): Explanation {
+                    return Explanation(version, reason, requestedByModules)
+                }
+            }
+        }
+
+        /** Exposed API of the formatter during which the necessary objects are injected.  */
+        fun output(
+            result: ImmutableMap<ModuleKey?, ResultNode?>?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            extensionRepos: ImmutableSetMultimap<ModuleExtensionId?, kotlin.String?>?,
+            extensionRepoImports: ImmutableMap<ModuleExtensionId?, ImmutableSetMultimap<kotlin.String?, ModuleKey?>?>?,
+            printer: PrintWriter,
+            options: ModOptions
+        ) {
+            this.result = result
+            this.depGraph = depGraph
+            this.extensionRepos = extensionRepos
+            this.extensionRepoImports = extensionRepoImports
+            this.printer = printer
+            this.options = options
+            output()
+            printer.flush()
+        }
+
+        /** Internal implementation of the formatter output function.  */
+        protected abstract fun output()
+
+        /**
+         * Exists only for testing, because normally the depGraph and options are injected inside the
+         * public API call.
+         */
+        fun getExtraResolutionExplanation(
+            key: ModuleKey,
+            parent: ModuleKey?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            options: ModOptions
+        ): Explanation? {
+            this.depGraph = depGraph
+            this.options = options
+            return getExtraResolutionExplanation(key, parent)
+        }
+
+        /**
+         * Returns `null` if the module version has not changed during resolution or if the module
+         * is *&lt;root&gt;*.
+         */
+        protected fun getExtraResolutionExplanation(key: ModuleKey, parent: ModuleKey?): Explanation? {
+            if (key == ModuleKey.Companion.ROOT) {
+                return null
+            }
+            val module = depGraph!!.get(key)
+            val parentModule = depGraph!!.get(parent)
+            val repoName = parentModule!!.getAllDeps(options!!.getIncludeUnused()).get(key)
+            val changedVersion: Version?
+            var changedByModules: ImmutableSet<ModuleKey?>? = null
+            val reason = parentModule.depReasons.get(repoName)
+            val replacement =
+                if (module!!.isUsed()) module else depGraph!!.get(parentModule.deps.get(repoName))
+            if (reason != ResolutionReason.ORIGINAL) {
+                if (!module.isUsed()) {
+                    changedVersion = replacement!!.version
+                } else {
+                    val old = depGraph!!.get(parentModule.unusedDeps.get(repoName))
+                    changedVersion = old!!.version
+                }
+                if (reason == ResolutionReason.MINIMAL_VERSION_SELECTION) {
+                    changedByModules = replacement!!.originalDependants
+                }
+                return Explanation.Companion.create(changedVersion, reason, changedByModules)
+            }
+            return null
+        }
+    }
 }

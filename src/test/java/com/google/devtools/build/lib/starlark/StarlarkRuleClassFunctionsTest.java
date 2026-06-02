@@ -234,7 +234,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
         "r = rule(impl, attrs = {'a': attr.string(), 'b': attr.label()})");
     Stream<Attribute> builtInAttributes =
         getRuleClass("r").getAttributeProvider().getAttributes().stream()
-            .filter(attr -> !(attr.getName().equals("a") || attr.getName().equals("b")));
+            .filter(attr -> !(attr.name.equals("a") || attr.name.equals("b")));
     assertThat(builtInAttributes.map(Attribute::starlarkDefined)).doesNotContain(true);
   }
 
@@ -316,7 +316,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
 
     Package pkg = getPackage("pkg");
     assertThat(pkg.getMacrosById().keySet()).containsExactly("abc:1", "def:1", "ghi:1").inOrder();
-    assertThat(pkg.getMacrosById().get("abc:1").getMacroClass().getName()).isEqualTo("my_macro");
+    assertThat(pkg.getMacrosById().get("abc:1").getMacroClass().name).isEqualTo("my_macro");
   }
 
   @Test
@@ -1141,7 +1141,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
         ")");
     StarlarkDefinedAspect aspect = (StarlarkDefinedAspect) ev.lookup("my_aspect");
     Attribute attribute = Iterables.getOnlyElement(aspect.getAttributes());
-    assertThat(attribute.getName()).isEqualTo("$extra_deps");
+    assertThat(attribute.name).isEqualTo("$extra_deps");
     assertThat(attribute.getDefaultValue(null))
         .isEqualTo(Label.parseCanonicalUnchecked("//foo/bar:baz"));
   }
@@ -1157,7 +1157,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
         ")");
     StarlarkDefinedAspect aspect = (StarlarkDefinedAspect) ev.lookup("my_aspect");
     Attribute attribute = Iterables.getOnlyElement(aspect.getAttributes());
-    assertThat(attribute.getName()).isEqualTo("param");
+    assertThat(attribute.name).isEqualTo("param");
   }
 
   @Test
@@ -1171,8 +1171,8 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
         ")");
     StarlarkDefinedAspect aspect = (StarlarkDefinedAspect) ev.lookup("my_aspect");
     Attribute attribute = Iterables.getOnlyElement(aspect.getAttributes());
-    assertThat(attribute.getName()).isEqualTo("param");
-    assertThat(((String) attribute.getDefaultValueUnchecked())).isEqualTo("a");
+    assertThat(attribute.name).isEqualTo("param");
+    assertThat(((String) attribute.defaultValueUnchecked)).isEqualTo("a");
   }
 
   @Test
@@ -1198,8 +1198,8 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
         ")");
     StarlarkDefinedAspect aspect = (StarlarkDefinedAspect) ev.lookup("my_aspect");
     Attribute attribute = Iterables.getOnlyElement(aspect.getAttributes());
-    assertThat(attribute.getName()).isEqualTo("param");
-    assertThat(((String) attribute.getDefaultValueUnchecked())).isEqualTo("val");
+    assertThat(attribute.name).isEqualTo("param");
+    assertThat(((String) attribute.defaultValueUnchecked)).isEqualTo("val");
   }
 
   @Test
@@ -1295,18 +1295,18 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
   @Test
   public void testAttrDefaultValue() throws Exception {
     Attribute attr = buildAttribute("a1", "attr.string(default = 'some value')");
-    assertThat(attr.getDefaultValueUnchecked()).isEqualTo("some value");
+    assertThat(attr.defaultValueUnchecked).isEqualTo("some value");
   }
 
   @Test
   public void testLabelAttrDefaultValueAsString() throws Exception {
     Attribute sligleAttr = buildAttribute("a1", "attr.label(default = '//foo:bar')");
-    assertThat(sligleAttr.getDefaultValueUnchecked())
+    assertThat(sligleAttr.defaultValueUnchecked)
         .isEqualTo(Label.parseCanonicalUnchecked("//foo:bar"));
 
     Attribute listAttr =
         buildAttribute("a2", "attr.label_list(default = ['//foo:bar', '//bar:foo'])");
-    assertThat(listAttr.getDefaultValueUnchecked())
+    assertThat(listAttr.defaultValueUnchecked)
         .isEqualTo(
             ImmutableList.of(
                 Label.parseCanonicalUnchecked("//foo:bar"),
@@ -1314,7 +1314,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
 
     Attribute dictAttr =
         buildAttribute("a3", "attr.label_keyed_string_dict(default = {'//foo:bar': 'my value'})");
-    assertThat(dictAttr.getDefaultValueUnchecked())
+    assertThat(dictAttr.defaultValueUnchecked)
         .isEqualTo(ImmutableMap.of(Label.parseCanonicalUnchecked("//foo:bar"), "my value"));
 
     Attribute labelListDictAttr =
@@ -1322,7 +1322,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
             "a4",
             "attr.label_list_dict(default = {'my': ['//foo:bar', '//bar:foo'], 'value':"
                 + " ['//bar:foo']})");
-    assertThat(labelListDictAttr.getDefaultValueUnchecked())
+    assertThat(labelListDictAttr.defaultValueUnchecked)
         .isEqualTo(
             ImmutableMap.of(
                 "my",
@@ -1530,14 +1530,14 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
       throws Exception {
     Attribute documented =
         buildAttribute("documented", String.format("attr.%s(doc='foo')", attrType));
-    assertThat(documented.getDoc()).isEqualTo("foo");
+    assertThat(documented.doc).isEqualTo("foo");
     Attribute documentedNeedingDedent =
         buildAttribute(
             "documented",
             String.format("attr.%s(doc='''foo\n\n    More details.\n    ''')", attrType));
-    assertThat(documentedNeedingDedent.getDoc()).isEqualTo("foo\n\nMore details.");
+    assertThat(documentedNeedingDedent.doc).isEqualTo("foo\n\nMore details.");
     Attribute undocumented = buildAttribute("undocumented", String.format("attr.%s()", attrType));
-    assertThat(undocumented.getDoc()).isNull();
+    assertThat(undocumented.doc).isNull();
   }
 
   @Test
@@ -1848,8 +1848,8 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
             + "attr.label(default = Label('//foo:foo'), allow_files=True)})");
     RuleClass c = ((StarlarkRuleFunction) ev.lookup("r1")).getRuleClass();
     Attribute a = c.getAttributeProvider().getAttributeByName("a1");
-    assertThat(a.getDefaultValueUnchecked()).isInstanceOf(Label.class);
-    assertThat(a.getDefaultValueUnchecked().toString()).isEqualTo("//foo:foo");
+    assertThat(a.defaultValueUnchecked).isInstanceOf(Label.class);
+    assertThat(a.defaultValueUnchecked.toString()).isEqualTo("//foo:foo");
   }
 
   @Test
@@ -1860,7 +1860,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
         "r1 = rule(impl, attrs = {'a1': attr.int(default = 40+2)})");
     RuleClass c = ((StarlarkRuleFunction) ev.lookup("r1")).getRuleClass();
     Attribute a = c.getAttributeProvider().getAttributeByName("a1");
-    assertThat(a.getDefaultValueUnchecked()).isEqualTo(StarlarkInt.of(42));
+    assertThat(a.defaultValueUnchecked).isEqualTo(StarlarkInt.of(42));
   }
 
   @Test
@@ -2764,7 +2764,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
     StructImpl data = (StructImpl) ev.lookup("data");
     assertThat(StructProvider.STRUCT.isExported()).isTrue();
     assertThat(data.getProvider()).isEqualTo(StructProvider.STRUCT);
-    assertThat(data.getProvider().getKey()).isEqualTo(StructProvider.STRUCT.getKey());
+    assertThat(data.getProvider().getKey()).isEqualTo(StructProvider.STRUCT.key);
   }
 
   @Test
@@ -3760,8 +3760,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
             requiredNativeAspect
                 .getDefinition()
                 .getAttributes()
-                .get("aspect_attr")
-                .getDefaultValueUnchecked())
+                .get("aspect_attr").defaultValueUnchecked)
         .isEqualTo("v1");
   }
 
@@ -5165,7 +5164,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
     StarlarkInfo myInfo = (StarlarkInfo) myTarget.get(myInfoKey);
 
     assertNoEvents();
-    assertThat(rule.getRuleClassObject().isExecutableStarlark()).isFalse();
+    assertThat(rule.getRuleClassObject().isExecutableStarlark).isFalse();
     assertThat(rule.getRuleClassObject().getRuleClassType()).isEqualTo(RuleClassType.NORMAL);
     assertThat(
             Sequence.cast(myInfo.getValue("srcs"), Artifact.class, "srcs").stream()
@@ -5269,7 +5268,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
     StarlarkInfo myInfo = (StarlarkInfo) myTarget.get(myInfoKey);
 
     assertNoEvents();
-    assertThat(rule.getRuleClassObject().isExecutableStarlark()).isFalse();
+    assertThat(rule.getRuleClassObject().isExecutableStarlark).isFalse();
     assertThat(rule.getRuleClassObject().getRuleClassType()).isEqualTo(RuleClassType.NORMAL);
     assertThat(
             Sequence.cast(myInfo.getValue("srcs"), Artifact.class, "srcs").stream()
@@ -5608,7 +5607,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
     Rule rule = getRuleContext(myTarget).getRule();
     assertNoEvents();
 
-    assertThat(rule.getRuleClassObject().isExecutableStarlark()).isFalse();
+    assertThat(rule.getRuleClassObject().isExecutableStarlark).isFalse();
     assertThat(rule.getRuleClassObject().getRuleClassType()).isEqualTo(RuleClassType.NORMAL);
     assertThat(
             rule
@@ -6006,7 +6005,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
     Rule rule = getRuleContext(myTarget).getRule();
 
     assertNoEvents();
-    assertThat(rule.getRuleClassObject().isExecutableStarlark()).isTrue();
+    assertThat(rule.getRuleClassObject().isExecutableStarlark).isTrue();
     assertThat(rule.getRuleClassObject().getRuleClassType()).isEqualTo(RuleClassType.NORMAL);
   }
 
@@ -6046,7 +6045,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
     Rule rule = getRuleContext(myTarget).getRule();
 
     assertNoEvents();
-    assertThat(rule.getRuleClassObject().isExecutableStarlark()).isTrue();
+    assertThat(rule.getRuleClassObject().isExecutableStarlark).isTrue();
     assertThat(rule.getRuleClassObject().getRuleClassType()).isEqualTo(RuleClassType.TEST);
   }
 
@@ -6497,7 +6496,7 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
     assertThat(
             rule.getRuleClassObject().getAdvertisedProviders().getStarlarkProviders().stream()
                 .map(StarlarkProviderIdentifier::getKey)
-                .map(key -> ((StarlarkProvider.Key) key).getExportedName()))
+                .map(key -> ((StarlarkProvider.Key) key).exportedName))
         .containsExactly("MyInfo", "ParentInfo");
   }
 
@@ -7018,8 +7017,8 @@ public final class StarlarkRuleClassFunctionsTest extends BuildViewTestCase {
         (Rule)
             getPackageManager()
                 .getTarget(ev.getEventHandler(), Label.parseCanonical("//p2:my_test_target"));
-    assertThat(p1Target.getRuleClassObject().getRuleDefinitionEnvironmentDigest())
-        .isNotEqualTo(p2Target.getRuleClassObject().getRuleDefinitionEnvironmentDigest());
+    assertThat(p1Target.getRuleClassObject().ruleDefinitionEnvironmentDigest)
+        .isNotEqualTo(p2Target.getRuleClassObject().ruleDefinitionEnvironmentDigest);
   }
 
   /**

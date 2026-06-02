@@ -11,40 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.internal.junit4
 
-package com.google.testing.junit.runner.internal.junit4;
-
-import org.junit.runner.Request;
-import org.junit.runner.Runner;
+import org.junit.runner.Request
+import org.junit.runner.Runner
 
 /**
- * A {@link Request} that memoizies another {@code Request}.
+ * A [Request] that memoizies another `Request`.
  */
-public class MemoizingRequest extends Request {
-  private final Request requestDelegate;
-  private Runner runnerDelegate;
+open class MemoizingRequest(private val requestDelegate: Request) : Request() {
+    private var runnerDelegate: Runner? = null
 
-  public MemoizingRequest(Request delegate) {
-    this.requestDelegate = delegate;
-  }
-
-  @Override
-  public final synchronized Runner getRunner() {
-    if (runnerDelegate == null) {
-      runnerDelegate = createRunner(requestDelegate);
+    @kotlin.jvm.Synchronized
+    override fun getRunner(): Runner? {
+        if (runnerDelegate == null) {
+            runnerDelegate = createRunner(requestDelegate)
+        }
+        return runnerDelegate
     }
-    return runnerDelegate;
-  }
 
-  /**
-   * Creates the runner. This method is called at most once.
-   * Subclasses can override this method for different behavior.
-   * The default implementation returns the runner created by the delegate.
-   *
-   * @param delegate request to delegate to
-   * @return runner
-   */
-  Runner createRunner(Request delegate) {
-    return delegate.getRunner();
-  }
+    /**
+     * Creates the runner. This method is called at most once.
+     * Subclasses can override this method for different behavior.
+     * The default implementation returns the runner created by the delegate.
+     * 
+     * @param delegate request to delegate to
+     * @return runner
+     */
+    open fun createRunner(delegate: Request): Runner? {
+        return delegate.getRunner()
+    }
 }

@@ -11,51 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.metrics;
+package com.google.devtools.build.lib.metrics
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithOrderConstraint;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import java.util.Collection;
+import com.google.devtools.build.lib.buildeventstream.BuildEventContext
 
-/** An event encapsulating build metrics collected during a build. */
-public class BuildMetricsEvent implements BuildEventWithOrderConstraint {
-  private final BuildMetrics buildMetrics;
+/** An event encapsulating build metrics collected during a build.  */
+class BuildMetricsEvent(buildMetrics: BuildMetrics?) : BuildEventWithOrderConstraint {
+    private val buildMetrics: BuildMetrics?
 
-  public BuildMetricsEvent(BuildMetrics buildMetrics) {
-    this.buildMetrics = buildMetrics;
-  }
+    init {
+        this.buildMetrics = buildMetrics
+    }
 
-  public static BuildMetricsEvent create(BuildMetrics buildMetrics) {
-    return new BuildMetricsEvent(buildMetrics);
-  }
+    public override fun getEventId(): BuildEventId {
+        return BuildEventIdUtil.buildMetrics()
+    }
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.buildMetrics();
-  }
+    public override fun getChildrenEvents(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<BuildEventId?>()
+    }
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    public override fun asStreamProto(converters: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        return GenericBuildEvent.protoChaining(this).setBuildMetrics(buildMetrics).build()
+    }
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    return GenericBuildEvent.protoChaining(this).setBuildMetrics(buildMetrics).build();
-  }
+    fun getBuildMetrics(): BuildMetrics? {
+        return buildMetrics
+    }
 
-  public BuildMetrics getBuildMetrics() {
-    return buildMetrics;
-  }
+    public override fun postedAfter(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<E?>(BuildEventIdUtil.buildFinished())
+    }
 
-  @Override
-  public Collection<BuildEventId> postedAfter() {
-    return ImmutableList.of(BuildEventIdUtil.buildFinished());
-  }
+    companion object {
+        fun create(buildMetrics: BuildMetrics?): BuildMetricsEvent {
+            return BuildMetricsEvent(buildMetrics)
+        }
+    }
 }

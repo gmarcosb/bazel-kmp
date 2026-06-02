@@ -11,10 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventstream;
+package com.google.devtools.build.lib.buildeventstream
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import java.time.Duration;
+/** An event signalling that the Build Event Service upload has completed.  */
+class BuildEventServiceUploadCompleteEvent(duration: java.time.Duration?) :
+    com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    val duration: java.time.Duration?
 
-/** An event signalling that the Build Event Service upload has completed. */
-public record BuildEventServiceUploadCompleteEvent(Duration duration) implements Postable {}
+    init {
+        this.duration = duration
+    }
+}

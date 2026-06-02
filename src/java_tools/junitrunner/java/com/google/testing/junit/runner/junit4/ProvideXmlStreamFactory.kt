@@ -11,88 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.junit4
 
-package com.google.testing.junit.runner.junit4;
-
-import com.google.testing.junit.runner.util.Factory;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.function.Supplier;
+import com.google.testing.junit.runner.util.Factory
+import java.io.OutputStream
+import java.util.function.Supplier
 
 /**
- * A factory that supplies {@link OutputStream}.
+ * A factory that supplies [OutputStream].
  */
-public final class ProvideXmlStreamFactory implements Factory<OutputStream> {
-  private final Supplier<JUnit4Config> configSupplier;
+class ProvideXmlStreamFactory(configSupplier: Supplier<JUnit4Config?>) : Factory<OutputStream?> {
+    private val configSupplier: Supplier<JUnit4Config?>
 
-  public ProvideXmlStreamFactory(Supplier<JUnit4Config> configSupplier) {
-    if (configSupplier == null) {
-      throw new IllegalStateException();
+    init {
+        checkNotNull(configSupplier)
+
+        this.configSupplier = configSupplier
     }
 
-    this.configSupplier = configSupplier;
-  }
-
-  @Override
-  public OutputStream get() {
-    return new LazyOutputStream(() -> JUnit4RunnerModule.provideXmlStream(configSupplier.get()));
-  }
-
-  public static Factory<OutputStream> create(Supplier<JUnit4Config> configSupplier) {
-    return new ProvideXmlStreamFactory(configSupplier);
-  }
-
-  private static class LazyOutputStream extends OutputStream {
-    private Supplier<OutputStream> supplier;
-    private volatile OutputStream delegate;
-
-    public LazyOutputStream(Supplier<OutputStream> supplier) {
-      this.supplier = supplier;
+    public override fun get(): OutputStream {
+        return LazyOutputStream(Supplier { JUnit4RunnerModule.Companion.provideXmlStream(configSupplier.get()) })
     }
 
-    private OutputStream ensureDelegate() {
-      OutputStream delegate0 = delegate;
-      if (delegate0 != null) {
-        return delegate0;
-      }
+    private class LazyOutputStream(private var supplier: Supplier<OutputStream?>?) : OutputStream() {
+        @kotlin.concurrent.Volatile
+        private var delegate: OutputStream? = null
 
-      synchronized (this) {
-        if (delegate == null) {
-          delegate = supplier.get();
-          supplier = null;
+        fun ensureDelegate(): OutputStream? {
+            val delegate0 = delegate
+            if (delegate0 != null) {
+                return delegate0
+            }
+
+            synchronized(this) {
+                if (delegate == null) {
+                    delegate = supplier!!.get()
+                    supplier = null
+                }
+            }
+
+            return delegate
         }
-      }
 
-      return delegate;
+        @Throws(IOException::class)
+        override fun write(b: Int) {
+            ensureDelegate()!!.write(b)
+        }
+
+        @Throws(IOException::class)
+        override fun write(b: ByteArray?, off: Int, len: Int) {
+            ensureDelegate()!!.write(b, off, len)
+        }
+
+        @Throws(IOException::class)
+        override fun write(b: ByteArray?) {
+            ensureDelegate()!!.write(b)
+        }
+
+        @Throws(IOException::class)
+        override fun close() {
+            if (delegate != null) {
+                delegate!!.close()
+            }
+        }
+
+        @Throws(IOException::class)
+        override fun flush() {
+            if (delegate != null) {
+                delegate!!.flush()
+            }
+        }
     }
 
-    @Override
-    public void write(int b) throws IOException {
-      ensureDelegate().write(b);
+    companion object {
+        fun create(configSupplier: Supplier<JUnit4Config?>): Factory<OutputStream?> {
+            return ProvideXmlStreamFactory(configSupplier)
+        }
     }
-
-    @Override
-    public void write(byte[] b, int off, int len) throws IOException {
-      ensureDelegate().write(b, off, len);
-    }
-
-    @Override
-    public void write(byte[] b) throws IOException {
-      ensureDelegate().write(b);
-    }
-
-    @Override
-    public void close() throws IOException {
-      if (delegate != null) {
-        delegate.close();
-      }
-    }
-
-    @Override
-    public void flush() throws IOException {
-      if (delegate != null) {
-        delegate.flush();
-      }
-    }
-  }
 }

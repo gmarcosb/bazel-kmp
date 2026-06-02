@@ -30,35 +30,35 @@ import org.junit.runners.JUnit4;
 public class PackageMetricsModuleTest {
 
   private final PackageMetricsPackageLoadingListener listener =
-      PackageMetricsPackageLoadingListener.getInstance();
+          PackageMetricsPackageLoadingListener.instance;
 
   private PackageMetricsModule underTest;
 
   @Before
   public void setUp() {
     underTest = new PackageMetricsModule();
-    listener.setPackageMetricsRecorder(null);
+    listener.packageMetricsRecorder = null;
   }
 
   @Test
   public void testBeforeCommandConfiguresNumberOfPackagesToTrack() throws Exception {
     underTest.beforeCommand(commandEnv("--log_top_n_packages=100"));
-    assertThat(listener.getPackageMetricsRecorder())
+    assertThat(listener.packageMetricsRecorder)
         .isInstanceOf(ExtremaPackageMetricsRecorder.class);
     ExtremaPackageMetricsRecorder ext =
-        (ExtremaPackageMetricsRecorder) listener.getPackageMetricsRecorder();
-    assertThat(ext.getNumPackagesToTrack()).isEqualTo(100);
+        (ExtremaPackageMetricsRecorder) listener.packageMetricsRecorder;
+    assertThat(ext.numPackagesToTrack).isEqualTo(100);
   }
 
   @Test
   public void testBeforeCommandConfiguresNumberOfPackagesToTrackTreatsNegativeAsZero()
       throws Exception {
     underTest.beforeCommand(commandEnv("--log_top_n_packages=-100"));
-    assertThat(listener.getPackageMetricsRecorder())
+    assertThat(listener.packageMetricsRecorder)
         .isInstanceOf(ExtremaPackageMetricsRecorder.class);
     ExtremaPackageMetricsRecorder ext =
-        (ExtremaPackageMetricsRecorder) listener.getPackageMetricsRecorder();
-    assertThat(ext.getNumPackagesToTrack()).isEqualTo(0);
+        (ExtremaPackageMetricsRecorder) listener.packageMetricsRecorder;
+    assertThat(ext.numPackagesToTrack).isEqualTo(0);
   }
 
   @Test
@@ -66,7 +66,7 @@ public class PackageMetricsModuleTest {
       throws Exception {
     underTest.beforeCommand(
         commandEnv("--log_top_n_packages=100", "--record_metrics_for_all_packages=1"));
-    assertThat(listener.getPackageMetricsRecorder())
+    assertThat(listener.packageMetricsRecorder)
         .isInstanceOf(CompletePackageMetricsRecorder.class);
   }
 
@@ -74,7 +74,7 @@ public class PackageMetricsModuleTest {
   public void testAfterCommandGetsAndResetsMetrics() {
     // Mocking here is lazy, but it helps verify we actually did something with all of the results.
     PackageMetricsRecorder mockRecorder = mock(PackageMetricsRecorder.class);
-    listener.setPackageMetricsRecorder(mockRecorder);
+    listener.packageMetricsRecorder = mockRecorder;
 
     underTest.afterCommand();
     verify(mockRecorder).loadingFinished();

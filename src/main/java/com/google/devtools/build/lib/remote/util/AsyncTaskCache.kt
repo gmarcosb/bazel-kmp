@@ -11,593 +11,611 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.util;
+package com.google.devtools.build.lib.remote.util
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.base.Throwables.throwIfInstanceOf;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import io.reactivex.rxjava3.annotations.NonNull;
-import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.CompletableEmitter;
-import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.core.SingleObserver;
-import io.reactivex.rxjava3.disposables.Disposable;
-import io.reactivex.rxjava3.functions.Action;
-import io.reactivex.rxjava3.subjects.AsyncSubject;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import javax.annotation.concurrent.GuardedBy;
-import javax.annotation.concurrent.ThreadSafe;
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.CompletableEmitter
+import io.reactivex.rxjava3.core.CompletableOnSubscribe
+import io.reactivex.rxjava3.core.Flowable
+import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.core.SingleEmitter
+import io.reactivex.rxjava3.core.SingleObserver
+import io.reactivex.rxjava3.core.SingleOnSubscribe
+import io.reactivex.rxjava3.disposables.Disposable
+import io.reactivex.rxjava3.subjects.AsyncSubject
+import java.util.HashMap
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A cache which de-duplicates the executions and stores the results of asynchronous tasks. Each
- * task is identified by a key of type {@link KeyT} and has the result of type {@link ValueT}.
- *
- * <p>Use {@link #executeIfNot} or {@link #execute} and subscribe the returned {@link Single} to
- * start executing a task. The {@link Single} turns to completed once the task is {@code finished}.
+ * task is identified by a key of type [KeyT] and has the result of type [ValueT].
+ * 
+ * 
+ * Use [.executeIfNot] or [.execute] and subscribe the returned [Single] to
+ * start executing a task. The [Single] turns to completed once the task is `finished`.
  * Errors are propagated if any.
- *
- * <p>Calling {@code execute[IfNot]} multiple times with the same task key can get an {@link Single}
+ * 
+ * 
+ * Calling `execute[IfNot]` multiple times with the same task key can get an [Single]
  * which connects to the same underlying execution if the task is still executing, or get a
- * completed {@link Single} if the task is already finished. Set {@code force} to {@code true } to
+ * completed [Single] if the task is already finished. Set `force` to `true ` to
  * re-execute a finished task.
- *
- * <p>Dispose the {@link Single} to cancel to task execution.
- *
- * <p>Use {@link #shutdown} to shuts the cache down. Any in progress tasks will continue running
- * while new tasks will be injected with {@link CancellationException}. Use {@link
- * #awaitTermination()} after {@link #shutdown} to wait for the in progress tasks finished.
- *
- * <p>Use {@link #shutdownNow} to cancel all in progress and new tasks with exception {@link
- * CancellationException}.
+ * 
+ * 
+ * Dispose the [Single] to cancel to task execution.
+ * 
+ * 
+ * Use [.shutdown] to shuts the cache down. Any in progress tasks will continue running
+ * while new tasks will be injected with [CancellationException]. Use [ ][.awaitTermination] after [.shutdown] to wait for the in progress tasks finished.
+ * 
+ * 
+ * Use [.shutdownNow] to cancel all in progress and new tasks with exception [ ].
  */
-@ThreadSafe
-public final class AsyncTaskCache<KeyT, ValueT> {
-  private final Object lock = new Object();
+@javax.annotation.concurrent.ThreadSafe
+class AsyncTaskCache<KeyT, ValueT> {
+    private val lock = Any()
 
-  private static final int STATE_ACTIVE = 0;
-  private static final int STATE_SHUTDOWN = 1;
-  private static final int STATE_TERMINATED = 2;
+    @javax.annotation.concurrent.GuardedBy("lock")
+    private var state = STATE_ACTIVE
 
-  @GuardedBy("lock")
-  private int state = STATE_ACTIVE;
+    @javax.annotation.concurrent.GuardedBy("lock")
+    private val terminationSubscriber: java.util.ArrayList<CompletableEmitter> =
+        java.util.ArrayList<CompletableEmitter>()
 
-  @GuardedBy("lock")
-  private final ArrayList<CompletableEmitter> terminationSubscriber = new ArrayList<>();
+    // Concurrent so that {@link #invalidate} can run without acquiring {@code lock}, which prevents
+    // lock-ordering deadlocks when invalidation is triggered from within another cache's observer
+    // notification (e.g., a doFinally on an upload completion).
+    private val finished: ConcurrentHashMap<KeyT?, ValueT?> = ConcurrentHashMap<KeyT?, ValueT?>()
 
-  // Concurrent so that {@link #invalidate} can run without acquiring {@code lock}, which prevents
-  // lock-ordering deadlocks when invalidation is triggered from within another cache's observer
-  // notification (e.g., a doFinally on an upload completion).
-  private final ConcurrentHashMap<KeyT, ValueT> finished = new ConcurrentHashMap<>();
+    @javax.annotation.concurrent.GuardedBy("lock")
+    private var inProgress: MutableMap<KeyT?, Execution?> = HashMap<KeyT?, Execution?>()
 
-  @GuardedBy("lock")
-  private Map<KeyT, Execution> inProgress = new HashMap<>();
+    val finishedTasks: com.google.common.collect.ImmutableSet<KeyT?>
+        /** Returns a set of keys for tasks which is finished.  */
+        get() = com.google.common.collect.ImmutableSet.copyOf<KeyT?>(finished.keySet())
 
-  public static <KeyT, ValueT> AsyncTaskCache<KeyT, ValueT> create() {
-    return new AsyncTaskCache<>();
-  }
-
-  /** Returns a set of keys for tasks which is finished. */
-  public ImmutableSet<KeyT> getFinishedTasks() {
-    return ImmutableSet.copyOf(finished.keySet());
-  }
-
-  /**
-   * Removes any cached result for the given {@code key}, so that the next call to {@link #execute}
-   * for that key re-runs the task. Does not affect in-progress tasks. Safe to call concurrently
-   * with {@link #execute}.
-   */
-  public void invalidate(KeyT key) {
-    finished.remove(key);
-  }
-
-  /**
-   * Atomically replaces the cached result for {@code key} with {@code value}. The new value is
-   * visible to subsequent {@link #execute} callers. Safe to call concurrently with {@link
-   * #execute}.
-   */
-  public void put(KeyT key, ValueT value) {
-    finished.put(key, value);
-  }
-
-  /** Returns a set of keys for tasks which is still executing. */
-  public ImmutableSet<KeyT> getInProgressTasks() {
-    synchronized (lock) {
-      return ImmutableSet.copyOf(inProgress.keySet());
-    }
-  }
-
-  /**
-   * Executes a task if it hasn't been executed.
-   *
-   * @param key identifies the task.
-   * @return a {@link Single} which turns to completed once the task is finished or propagates the
-   *     error if any.
-   */
-  public Single<ValueT> executeIfNot(KeyT key, Single<ValueT> task) {
-    return execute(key, task, false);
-  }
-
-  /** Returns count of subscribers for a task. */
-  public int getSubscriberCount(KeyT key) {
-    synchronized (lock) {
-      Execution task = inProgress.get(key);
-      if (task != null) {
-        return task.getSubscriberCount();
-      }
+    /**
+     * Removes any cached result for the given `key`, so that the next call to [.execute]
+     * for that key re-runs the task. Does not affect in-progress tasks. Safe to call concurrently
+     * with [.execute].
+     */
+    fun invalidate(key: KeyT?) {
+        finished.remove(key)
     }
 
-    return 0;
-  }
-
-  class Execution extends Single<ValueT> implements SingleObserver<ValueT> {
-    private final KeyT key;
-    private final Single<ValueT> upstream;
-
-    @GuardedBy("lock")
-    private boolean terminated = false;
-
-    @GuardedBy("lock")
-    private Disposable upstreamDisposable;
-
-    @GuardedBy("lock")
-    private final List<SingleObserver<? super ValueT>> observers = new ArrayList<>();
-
-    private final AsyncSubject<ValueT> completion = AsyncSubject.create();
-
-    Execution(KeyT key, Single<ValueT> upstream) {
-      this.key = key;
-      this.upstream = upstream;
+    /**
+     * Atomically replaces the cached result for `key` with `value`. The new value is
+     * visible to subsequent [.execute] callers. Safe to call concurrently with [ ][.execute].
+     */
+    fun put(key: KeyT?, value: ValueT?) {
+        finished.put(key, value)
     }
 
-    int getSubscriberCount() {
-      synchronized (lock) {
-        return observers.size();
-      }
-    }
-
-    @Override
-    protected void subscribeActual(@NonNull SingleObserver<? super ValueT> observer) {
-      synchronized (lock) {
-        checkState(!terminated, "terminated");
-
-        boolean shouldSubscribe = observers.isEmpty();
-
-        observers.add(observer);
-
-        observer.onSubscribe(new ExecutionDisposable(this, observer));
-
-        if (shouldSubscribe) {
-          upstream.subscribe(this);
-        }
-      }
-    }
-
-    @Override
-    public void onSubscribe(@NonNull Disposable d) {
-      synchronized (lock) {
-        upstreamDisposable = d;
-
-        if (terminated) {
-          d.dispose();
-        }
-      }
-    }
-
-    @Override
-    public void onSuccess(@NonNull ValueT value) {
-      synchronized (lock) {
-        if (!terminated) {
-          inProgress.remove(key);
-          finished.put(key, value);
-          terminated = true;
-
-          for (SingleObserver<? super ValueT> observer : ImmutableList.copyOf(observers)) {
-            observer.onSuccess(value);
-          }
-
-          completion.onNext(value);
-          completion.onComplete();
-
-          maybeNotifyTermination();
-        }
-      }
-    }
-
-    @Override
-    public void onError(@NonNull Throwable error) {
-      synchronized (lock) {
-        if (!terminated) {
-          inProgress.remove(key);
-          terminated = true;
-
-          for (SingleObserver<? super ValueT> observer : ImmutableList.copyOf(observers)) {
-            observer.onError(error);
-          }
-
-          completion.onError(error);
-
-          maybeNotifyTermination();
-        }
-      }
-    }
-
-    void remove(SingleObserver<? super ValueT> observer) {
-      synchronized (lock) {
-        observers.remove(observer);
-
-        if (observers.isEmpty() && !terminated) {
-          inProgress.remove(key);
-          terminated = true;
-
-          if (upstreamDisposable != null) {
-            upstreamDisposable.dispose();
-          }
-        }
-      }
-    }
-
-    void cancel() {
-      synchronized (lock) {
-        if (!terminated) {
-          if (upstreamDisposable != null) {
-            upstreamDisposable.dispose();
-          }
-
-          onError(new CancellationException("cancelled"));
-        }
-      }
-    }
-  }
-
-  class ExecutionDisposable implements Disposable {
-    final Execution execution;
-    final SingleObserver<? super ValueT> observer;
-    AtomicBoolean isDisposed = new AtomicBoolean(false);
-
-    ExecutionDisposable(Execution execution, SingleObserver<? super ValueT> observer) {
-      this.execution = execution;
-      this.observer = observer;
-    }
-
-    @Override
-    public void dispose() {
-      if (isDisposed.compareAndSet(false, true)) {
-        execution.remove(observer);
-      }
-    }
-
-    @Override
-    public boolean isDisposed() {
-      return isDisposed.get();
-    }
-  }
-
-  /**
-   * Executes a task.
-   *
-   * @see #execute(Object, Single, Action, Action, boolean).
-   */
-  public Single<ValueT> execute(KeyT key, Single<ValueT> task, boolean force) {
-    return execute(key, task, () -> {}, () -> {}, force);
-  }
-
-  /**
-   * Executes a task. If the task has already finished, this execution of the task is ignored unless
-   * `force` is true. If the task is in progress this execution of the task is always ignored.
-   *
-   * <p>If the cache is already shutdown, a {@link CancellationException} will be emitted.
-   *
-   * @param key identifies the task.
-   * @param onAlreadyRunning callback called when provided task is already running.
-   * @param onAlreadyFinished callback called when provided task is already finished.
-   * @param force re-execute a finished task if set to {@code true}.
-   * @return a {@link Single} which turns to completed once the task is finished or propagates the
-   *     error if any.
-   */
-  public Single<ValueT> execute(
-      KeyT key,
-      Single<ValueT> task,
-      Action onAlreadyRunning,
-      Action onAlreadyFinished,
-      boolean force) {
-    return Single.create(
-        emitter -> {
-          synchronized (lock) {
-            if (state != STATE_ACTIVE) {
-              emitter.onError(new CancellationException("already shutdown"));
-              return;
+    val inProgressTasks: com.google.common.collect.ImmutableSet<KeyT?>
+        /** Returns a set of keys for tasks which is still executing.  */
+        get() {
+            synchronized(lock) {
+                return com.google.common.collect.ImmutableSet.copyOf<KeyT?>(inProgress.keySet())
             }
+        }
 
-            if (!force) {
-              ValueT cached = finished.get(key);
-              if (cached != null) {
-                onAlreadyFinished.run();
-                emitter.onSuccess(cached);
-                return;
-              }
-            } else {
-              finished.remove(key);
-            }
-
-            Execution execution = inProgress.get(key);
-            if (execution != null) {
-              onAlreadyRunning.run();
-            } else {
-              execution = new Execution(key, task);
-              inProgress.put(key, execution);
-            }
-
-            // We must subscribe the execution within the scope of lock to avoid race condition
-            // that:
-            //    1. Two callers get the same execution instance
-            //    2. One decides to dispose the execution, since no more observers, the execution
-            // will change to the terminate state
-            //    3. Another one try to subscribe, will get "terminated" error.
-            execution.subscribe(
-                new SingleObserver<ValueT>() {
-                  @Override
-                  public void onSubscribe(@NonNull Disposable d) {
-                    emitter.setDisposable(d);
-                  }
-
-                  @Override
-                  public void onSuccess(@NonNull ValueT valueT) {
-                    emitter.onSuccess(valueT);
-                  }
-
-                  @Override
-                  public void onError(@NonNull Throwable e) {
-                    if (!emitter.isDisposed()) {
-                      emitter.onError(e);
-                    }
-                  }
-                });
-          }
-        });
-  }
-
-  /**
-   * Initiates an orderly shutdown in which preexisting tasks continue but new tasks are immediately
-   * cancelled with {@link CancellationException}.
-   */
-  public void shutdown() {
-    synchronized (lock) {
-      if (state == STATE_ACTIVE) {
-        state = STATE_SHUTDOWN;
-        maybeNotifyTermination();
-      }
+    /**
+     * Executes a task if it hasn't been executed.
+     * 
+     * @param key identifies the task.
+     * @return a [Single] which turns to completed once the task is finished or propagates the
+     * error if any.
+     */
+    fun executeIfNot(key: KeyT?, task: Single<ValueT?>): Single<ValueT?>? {
+        return execute(key, task, false)
     }
-  }
 
-  /**
-   * Waits for the in-progress tasks to finish. Any tasks that are submitted after the call are not
-   * waited.
-   */
-  public void awaitInProgressTasks() throws InterruptedException {
-    Completable completable =
-        Completable.defer(
-            () -> {
-              ImmutableList<Execution> executions;
-              synchronized (lock) {
-                executions = ImmutableList.copyOf(inProgress.values());
-              }
+    /** Returns count of subscribers for a task.  */
+    fun getSubscriberCount(key: KeyT?): Int {
+        synchronized(lock) {
+            val task = inProgress.get(key)
+            if (task != null) {
+                return task.subscriberCount
+            }
+        }
 
-              if (executions.isEmpty()) {
-                return Completable.complete();
-              }
-
-              return Completable.fromPublisher(
-                  Flowable.fromIterable(executions)
-                      .flatMapSingle(e -> Single.fromObservable(e.completion)));
-            });
-
-    try {
-      completable.blockingAwait();
-    } catch (RuntimeException e) {
-      Throwable cause = e.getCause();
-      if (cause != null) {
-        throwIfInstanceOf(cause, InterruptedException.class);
-      }
-      throw e;
+        return 0
     }
-  }
 
-  /** Waits for the channel to become terminated. */
-  public void awaitTermination() throws InterruptedException {
-    Completable completable =
-        Completable.create(
-            emitter -> {
-              synchronized (lock) {
-                if (state == STATE_TERMINATED) {
-                  // Reduce retained size in case references to the cache are held after shutdown.
-                  terminationSubscriber.trimToSize();
-                  inProgress = new HashMap<>();
-                  finished.clear();
-                  emitter.onComplete();
-                } else {
-                  terminationSubscriber.add(emitter);
+    internal inner class Execution(private val key: KeyT?, upstream: Single<ValueT?>) : Single<ValueT?>(),
+        SingleObserver<ValueT?> {
+        private val upstream: Single<ValueT?>
 
-                  emitter.setCancellable(
-                      () -> {
-                        synchronized (lock) {
-                          if (state != STATE_TERMINATED) {
-                            terminationSubscriber.remove(emitter);
-                          }
-                        }
-                      });
+        @javax.annotation.concurrent.GuardedBy("lock")
+        private var terminated = false
+
+        @javax.annotation.concurrent.GuardedBy("lock")
+        private var upstreamDisposable: Disposable? = null
+
+        @javax.annotation.concurrent.GuardedBy("lock")
+        private val observers: MutableList<SingleObserver<in ValueT?>?> =
+            java.util.ArrayList<SingleObserver<in ValueT?>?>()
+
+        private val completion: AsyncSubject<ValueT?> = AsyncSubject.create<ValueT?>()
+
+        init {
+            this.upstream = upstream
+        }
+
+        val subscriberCount: Int
+            get() {
+                synchronized(lock) {
+                    return observers.size()
                 }
-              }
-            });
+            }
 
-    try {
-      completable.blockingAwait();
-    } catch (RuntimeException e) {
-      Throwable cause = e.getCause();
-      if (cause != null) {
-        throwIfInstanceOf(cause, InterruptedException.class);
-      }
-      throw e;
-    }
-  }
+        override fun subscribeActual(observer: SingleObserver<in ValueT?>) {
+            synchronized(lock) {
+                com.google.common.base.Preconditions.checkState(!terminated, "terminated")
+                val shouldSubscribe = observers.isEmpty()
 
-  /**
-   * Initiates a forceful shutdown in which preexisting and new tasks are cancelled with {@link
-   * CancellationException}. Although forceful, the shutdown process is still not instantaneous;
-   * {@link #isTerminated()} will likely return {@code false} immediately after this method returns.
-   */
-  public void shutdownNow() {
-    shutdown();
+                observers.add(observer)
 
-    synchronized (lock) {
-      if (state == STATE_SHUTDOWN) {
-        for (Execution execution : ImmutableList.copyOf(inProgress.values())) {
-          execution.cancel();
+                observer.onSubscribe(ExecutionDisposable(this, observer))
+                if (shouldSubscribe) {
+                    upstream.subscribe(this)
+                }
+            }
         }
-      }
-    }
-  }
 
-  /**
-   * Returns whether the cache is shutdown. Shutdown cache immediately cancels any new tasks, but
-   * may still have some tasks in the progress.
-   */
-  public boolean isShutdown() {
-    synchronized (lock) {
-      return state == STATE_SHUTDOWN || state == STATE_TERMINATED;
-    }
-  }
+        override fun onSubscribe(d: Disposable) {
+            synchronized(lock) {
+                upstreamDisposable = d
+                if (terminated) {
+                    d.dispose()
+                }
+            }
+        }
 
-  /**
-   * Returns whether the cache is terminated. Terminated cache have no running tasks and relevant
-   * resources released.
-   */
-  public boolean isTerminated() {
-    synchronized (lock) {
-      return state == STATE_TERMINATED;
-    }
-  }
+        override fun onSuccess(value: ValueT) {
+            synchronized(lock) {
+                if (!terminated) {
+                    inProgress.remove(key)
+                    finished.put(key, value)
+                    terminated = true
 
-  @GuardedBy("lock")
-  private void maybeNotifyTermination() {
-    if (state == STATE_SHUTDOWN && inProgress.isEmpty()) {
-      state = STATE_TERMINATED;
+                    for (observer in com.google.common.collect.ImmutableList.copyOf<SingleObserver<in ValueT?>?>(
+                        observers
+                    )) {
+                        observer.onSuccess(value)
+                    }
 
-      for (CompletableEmitter emitter : terminationSubscriber) {
-        emitter.onComplete();
-      }
-      terminationSubscriber.clear();
-    }
-  }
+                    completion.onNext(value)
+                    completion.onComplete()
 
-  /** An {@link AsyncTaskCache} without result. */
-  public static final class NoResult<KeyT> {
-    private final AsyncTaskCache<KeyT, Optional<Void>> cache;
+                    maybeNotifyTermination()
+                }
+            }
+        }
 
-    public static <KeyT> AsyncTaskCache.NoResult<KeyT> create() {
-      return new AsyncTaskCache.NoResult<>(AsyncTaskCache.create());
-    }
+        override fun onError(error: Throwable) {
+            synchronized(lock) {
+                if (!terminated) {
+                    inProgress.remove(key)
+                    terminated = true
 
-    public NoResult(AsyncTaskCache<KeyT, Optional<Void>> cache) {
-      this.cache = cache;
-    }
+                    for (observer in com.google.common.collect.ImmutableList.copyOf<SingleObserver<in ValueT?>?>(
+                        observers
+                    )) {
+                        observer.onError(error)
+                    }
 
-    /** Same as {@link AsyncTaskCache#executeIfNot} but operates on {@link Completable}. */
-    public Completable executeIfNot(KeyT key, Completable task) {
-      return Completable.fromSingle(
-          cache.executeIfNot(key, task.toSingleDefault(Optional.empty())));
-    }
+                    completion.onError(error)
 
-    /** Same as {@link AsyncTaskCache#execute} but operates on {@link Completable}. */
-    public Completable execute(KeyT key, Completable task, boolean force) {
-      return execute(key, task, () -> {}, () -> {}, force);
-    }
+                    maybeNotifyTermination()
+                }
+            }
+        }
 
-    /** Same as {@link AsyncTaskCache#execute} but operates on {@link Completable}. */
-    public Completable execute(
-        KeyT key,
-        Completable task,
-        Action onAlreadyRunning,
-        Action onAlreadyFinished,
-        boolean force) {
-      return Completable.fromSingle(
-          cache.execute(
-              key,
-              task.toSingleDefault(Optional.empty()),
-              onAlreadyRunning,
-              onAlreadyFinished,
-              force));
-    }
+        fun remove(observer: SingleObserver<in ValueT?>?) {
+            synchronized(lock) {
+                observers.remove(observer)
+                if (observers.isEmpty() && !terminated) {
+                    inProgress.remove(key)
+                    terminated = true
 
-    /** Returns a set of keys for tasks which is finished. */
-    public ImmutableSet<KeyT> getFinishedTasks() {
-      return cache.getFinishedTasks();
+                    if (upstreamDisposable != null) {
+                        upstreamDisposable.dispose()
+                    }
+                }
+            }
+        }
+
+        fun cancel() {
+            synchronized(lock) {
+                if (!terminated) {
+                    if (upstreamDisposable != null) {
+                        upstreamDisposable.dispose()
+                    }
+
+                    onError(CancellationException("cancelled"))
+                }
+            }
+        }
     }
 
-    /** Returns a set of keys for tasks which is still executing. */
-    public ImmutableSet<KeyT> getInProgressTasks() {
-      return cache.getInProgressTasks();
-    }
+    internal inner class ExecutionDisposable(val execution: Execution, observer: SingleObserver<in ValueT?>?) :
+        Disposable {
+        val observer: SingleObserver<in ValueT?>?
+        var isDisposed: AtomicBoolean = AtomicBoolean(false)
 
-    /** Returns count of subscribers for a task. */
-    public int getSubscriberCount(KeyT key) {
-      return cache.getSubscriberCount(key);
-    }
+        init {
+            this.observer = observer
+        }
 
-    /**
-     * Initiates an orderly shutdown in which preexisting tasks continue but new tasks are
-     * immediately cancelled with {@link CancellationException}.
-     */
-    public void shutdown() {
-      cache.shutdown();
-    }
+        override fun dispose() {
+            if (isDisposed.compareAndSet(false, true)) {
+                execution.remove(observer)
+            }
+        }
 
-    /**
-     * Waits for the in-progress tasks to finish. Any tasks that are submitted after the call are
-     * not waited.
-     */
-    public void awaitInProgressTasks() throws InterruptedException {
-      cache.awaitInProgressTasks();
-    }
-
-    /** Waits for the cache to become terminated. */
-    public void awaitTermination() throws InterruptedException {
-      cache.awaitTermination();
+        override fun isDisposed(): Boolean {
+            return isDisposed.get()
+        }
     }
 
     /**
-     * Initiates a forceful shutdown in which preexisting and new tasks are cancelled with {@link
-     * CancellationException}. Although forceful, the shutdown process is still not instantaneous;
-     * {@link #isTerminated()} will likely return {@code false} immediately after this method
-     * returns.
+     * Executes a task.
+     * 
+     * @see .execute
      */
-    public void shutdownNow() {
-      cache.shutdownNow();
+    fun execute(key: KeyT?, task: Single<ValueT?>, force: Boolean): Single<ValueT?>? {
+        return execute(
+            key,
+            task,
+            io.reactivex.rxjava3.functions.Action {},
+            io.reactivex.rxjava3.functions.Action {},
+            force
+        )
     }
 
     /**
-     * Returns whether the cache is shutdown. Shutdown cache immediately cancels any new tasks, but
-     * may still have some tasks in the progress.
+     * Executes a task. If the task has already finished, this execution of the task is ignored unless
+     * `force` is true. If the task is in progress this execution of the task is always ignored.
+     * 
+     * 
+     * If the cache is already shutdown, a [CancellationException] will be emitted.
+     * 
+     * @param key identifies the task.
+     * @param onAlreadyRunning callback called when provided task is already running.
+     * @param onAlreadyFinished callback called when provided task is already finished.
+     * @param force re-execute a finished task if set to `true`.
+     * @return a [Single] which turns to completed once the task is finished or propagates the
+     * error if any.
      */
-    public boolean isShutdown() {
-      return cache.isShutdown();
+    fun execute(
+        key: KeyT?,
+        task: Single<ValueT?>,
+        onAlreadyRunning: io.reactivex.rxjava3.functions.Action,
+        onAlreadyFinished: io.reactivex.rxjava3.functions.Action,
+        force: Boolean
+    ): Single<ValueT?>? {
+        return Single.create<ValueT?>(
+            SingleOnSubscribe { emitter: SingleEmitter<ValueT?>? ->
+                synchronized(lock) {
+                    if (state != STATE_ACTIVE) {
+                        emitter.onError(CancellationException("already shutdown"))
+                        return@create
+                    }
+                    if (!force) {
+                        val cached: ValueT? = finished.get(key)
+                        if (cached != null) {
+                            onAlreadyFinished.run()
+                            emitter.onSuccess(cached)
+                            return@create
+                        }
+                    } else {
+                        finished.remove(key)
+                    }
+
+                    var execution = inProgress.get(key)
+                    if (execution != null) {
+                        onAlreadyRunning.run()
+                    } else {
+                        execution = Execution(key, task)
+                        inProgress.put(key, execution)
+                    }
+
+                    // We must subscribe the execution within the scope of lock to avoid race condition
+                    // that:
+                    //    1. Two callers get the same execution instance
+                    //    2. One decides to dispose the execution, since no more observers, the execution
+                    // will change to the terminate state
+                    //    3. Another one try to subscribe, will get "terminated" error.
+                    execution.subscribe(
+                        object : SingleObserver<ValueT?>() {
+                            override fun onSubscribe(d: Disposable) {
+                                emitter.setDisposable(d)
+                            }
+
+                            override fun onSuccess(valueT: ValueT) {
+                                emitter.onSuccess(valueT)
+                            }
+
+                            override fun onError(e: Throwable) {
+                                if (!emitter.isDisposed()) {
+                                    emitter.onError(e)
+                                }
+                            }
+                        })
+                }
+            })
     }
 
     /**
-     * Returns whether the cache is terminated. Terminated cache have no running tasks and relevant
-     * resources released.
+     * Initiates an orderly shutdown in which preexisting tasks continue but new tasks are immediately
+     * cancelled with [CancellationException].
      */
-    public boolean isTerminated() {
-      return cache.isTerminated();
+    fun shutdown() {
+        synchronized(lock) {
+            if (state == STATE_ACTIVE) {
+                state = STATE_SHUTDOWN
+                maybeNotifyTermination()
+            }
+        }
     }
-  }
+
+    /**
+     * Waits for the in-progress tasks to finish. Any tasks that are submitted after the call are not
+     * waited.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun awaitInProgressTasks() {
+        val completable: Completable =
+            Completable.defer(
+                io.reactivex.rxjava3.functions.Supplier {
+                    val executions: com.google.common.collect.ImmutableList<Execution?>?
+                    synchronized(lock) {
+                        executions = com.google.common.collect.ImmutableList.copyOf<Execution?>(inProgress.values())
+                    }
+
+                    if (executions.isEmpty()) {
+                        return@defer Completable.complete()
+                    }
+                    Completable.fromPublisher<ValueT?>(
+                        Flowable.fromIterable<Execution?>(executions)
+                            .flatMapSingle<ValueT?>(io.reactivex.rxjava3.functions.Function { e: Execution? ->
+                                Single.fromObservable<ValueT?>(
+                                    e.completion
+                                )
+                            })
+                    )
+                })
+
+        try {
+            completable.blockingAwait()
+        } catch (e: java.lang.RuntimeException) {
+            val cause: Throwable? = e.getCause()
+            if (cause != null) {
+                com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                    cause,
+                    java.lang.InterruptedException::class.java
+                )
+            }
+            throw e
+        }
+    }
+
+    /** Waits for the channel to become terminated.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun awaitTermination() {
+        val completable: Completable =
+            Completable.create(
+                CompletableOnSubscribe { emitter: CompletableEmitter? ->
+                    synchronized(lock) {
+                        if (state == STATE_TERMINATED) {
+                            // Reduce retained size in case references to the cache are held after shutdown.
+                            terminationSubscriber.trimToSize()
+                            inProgress = HashMap<KeyT?, Execution?>()
+                            finished.clear()
+                            emitter.onComplete()
+                        } else {
+                            terminationSubscriber.add(emitter)
+
+                            emitter.setCancellable(
+                                io.reactivex.rxjava3.functions.Cancellable {
+                                    synchronized(lock) {
+                                        if (state != STATE_TERMINATED) {
+                                            terminationSubscriber.remove(emitter)
+                                        }
+                                    }
+                                })
+                        }
+                    }
+                })
+
+        try {
+            completable.blockingAwait()
+        } catch (e: java.lang.RuntimeException) {
+            val cause: Throwable? = e.getCause()
+            if (cause != null) {
+                com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                    cause,
+                    java.lang.InterruptedException::class.java
+                )
+            }
+            throw e
+        }
+    }
+
+    /**
+     * Initiates a forceful shutdown in which preexisting and new tasks are cancelled with [ ]. Although forceful, the shutdown process is still not instantaneous;
+     * [.isTerminated] will likely return `false` immediately after this method returns.
+     */
+    fun shutdownNow() {
+        shutdown()
+
+        synchronized(lock) {
+            if (state == STATE_SHUTDOWN) {
+                for (execution in com.google.common.collect.ImmutableList.copyOf<Execution?>(inProgress.values())) {
+                    execution.cancel()
+                }
+            }
+        }
+    }
+
+    val isShutdown: Boolean
+        /**
+         * Returns whether the cache is shutdown. Shutdown cache immediately cancels any new tasks, but
+         * may still have some tasks in the progress.
+         */
+        get() {
+            synchronized(lock) {
+                return state == STATE_SHUTDOWN || state == STATE_TERMINATED
+            }
+        }
+
+    val isTerminated: Boolean
+        /**
+         * Returns whether the cache is terminated. Terminated cache have no running tasks and relevant
+         * resources released.
+         */
+        get() {
+            synchronized(lock) {
+                return state == STATE_TERMINATED
+            }
+        }
+
+    @javax.annotation.concurrent.GuardedBy("lock")
+    private fun maybeNotifyTermination() {
+        if (state == STATE_SHUTDOWN && inProgress.isEmpty()) {
+            state = STATE_TERMINATED
+
+            for (emitter in terminationSubscriber) {
+                emitter.onComplete()
+            }
+            terminationSubscriber.clear()
+        }
+    }
+
+    /** An [AsyncTaskCache] without result.  */
+    class NoResult<KeyT>(cache: AsyncTaskCache<KeyT?, java.util.Optional<java.lang.Void?>?>) {
+        private val cache: AsyncTaskCache<KeyT?, java.util.Optional<java.lang.Void?>?>
+
+        init {
+            this.cache = cache
+        }
+
+        /** Same as [AsyncTaskCache.executeIfNot] but operates on [Completable].  */
+        fun executeIfNot(key: KeyT?, task: Completable): Completable? {
+            return Completable.fromSingle<java.util.Optional<java.lang.Void?>?>(
+                cache.executeIfNot(
+                    key,
+                    task.toSingleDefault<java.util.Optional<java.lang.Void?>?>(java.util.Optional.empty<java.lang.Void?>())
+                )
+            )
+        }
+
+        /** Same as [AsyncTaskCache.execute] but operates on [Completable].  */
+        fun execute(key: KeyT?, task: Completable, force: Boolean): Completable? {
+            return execute(
+                key,
+                task,
+                io.reactivex.rxjava3.functions.Action {},
+                io.reactivex.rxjava3.functions.Action {},
+                force
+            )
+        }
+
+        /** Same as [AsyncTaskCache.execute] but operates on [Completable].  */
+        fun execute(
+            key: KeyT?,
+            task: Completable,
+            onAlreadyRunning: io.reactivex.rxjava3.functions.Action,
+            onAlreadyFinished: io.reactivex.rxjava3.functions.Action,
+            force: Boolean
+        ): Completable? {
+            return Completable.fromSingle<java.util.Optional<java.lang.Void?>?>(
+                cache.execute(
+                    key,
+                    task.toSingleDefault<java.util.Optional<java.lang.Void?>?>(java.util.Optional.empty<java.lang.Void?>()),
+                    onAlreadyRunning,
+                    onAlreadyFinished,
+                    force
+                )
+            )
+        }
+
+        val finishedTasks: com.google.common.collect.ImmutableSet<KeyT?>
+            /** Returns a set of keys for tasks which is finished.  */
+            get() = cache.finishedTasks
+
+        val inProgressTasks: com.google.common.collect.ImmutableSet<KeyT?>
+            /** Returns a set of keys for tasks which is still executing.  */
+            get() = cache.inProgressTasks
+
+        /** Returns count of subscribers for a task.  */
+        fun getSubscriberCount(key: KeyT?): Int {
+            return cache.getSubscriberCount(key)
+        }
+
+        /**
+         * Initiates an orderly shutdown in which preexisting tasks continue but new tasks are
+         * immediately cancelled with [CancellationException].
+         */
+        fun shutdown() {
+            cache.shutdown()
+        }
+
+        /**
+         * Waits for the in-progress tasks to finish. Any tasks that are submitted after the call are
+         * not waited.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun awaitInProgressTasks() {
+            cache.awaitInProgressTasks()
+        }
+
+        /** Waits for the cache to become terminated.  */
+        @Throws(java.lang.InterruptedException::class)
+        fun awaitTermination() {
+            cache.awaitTermination()
+        }
+
+        /**
+         * Initiates a forceful shutdown in which preexisting and new tasks are cancelled with [ ]. Although forceful, the shutdown process is still not instantaneous;
+         * [.isTerminated] will likely return `false` immediately after this method
+         * returns.
+         */
+        fun shutdownNow() {
+            cache.shutdownNow()
+        }
+
+        val isShutdown: Boolean
+            /**
+             * Returns whether the cache is shutdown. Shutdown cache immediately cancels any new tasks, but
+             * may still have some tasks in the progress.
+             */
+            get() = cache.isShutdown
+
+        val isTerminated: Boolean
+            /**
+             * Returns whether the cache is terminated. Terminated cache have no running tasks and relevant
+             * resources released.
+             */
+            get() = cache.isTerminated
+
+        companion object {
+            fun <KeyT> create(): NoResult<KeyT?> {
+                return NoResult<KeyT?>(AsyncTaskCache.Companion.create<KeyT?, java.util.Optional<java.lang.Void?>?>())
+            }
+        }
+    }
+
+    companion object {
+        private const val STATE_ACTIVE = 0
+        private const val STATE_SHUTDOWN = 1
+        private const val STATE_TERMINATED = 2
+
+        fun <KeyT, ValueT> create(): AsyncTaskCache<KeyT?, ValueT?> {
+            return AsyncTaskCache<KeyT?, ValueT?>()
+        }
+    }
 }

@@ -11,35 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
-
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
+import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails
 
 /**
- * An interface for building {@link RpcCallDetails}s specialized for a specific gRPC call.
- *
+ * An interface for building [RpcCallDetails]s specialized for a specific gRPC call.
+ * 
  * @param <ReqT> request type of the gRPC call
  * @param <RespT> response type of the gRPC call
- */
-public interface LoggingHandler<ReqT, RespT> {
+</RespT></ReqT> */
+interface LoggingHandler<ReqT, RespT> {
+    /**
+     * Handle logging for an issued message.
+     * 
+     * @param message the issued request message
+     */
+    fun handleReq(message: ReqT?)
 
-  /**
-   * Handle logging for an issued message.
-   *
-   * @param message the issued request message
-   */
-  void handleReq(ReqT message);
+    /**
+     * Handle logging for a received response.
+     * 
+     * @param message the received response message
+     */
+    fun handleResp(message: RespT?)
 
-  /**
-   * Handle logging for a received response.
-   *
-   * @param message the received response message
-   */
-  void handleResp(RespT message);
-
-  /**
-   * Returns a {@link RpcCallDetails} based on the requests and responses handled by this handler.
-   */
-  RpcCallDetails getDetails();
+    /**
+     * Returns a [RpcCallDetails] based on the requests and responses handled by this handler.
+     */
+    val details: RpcCallDetails?
 }

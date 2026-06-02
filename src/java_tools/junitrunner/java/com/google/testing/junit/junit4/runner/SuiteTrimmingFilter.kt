@@ -11,47 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.junit4.runner
 
-package com.google.testing.junit.junit4.runner;
-
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+import org.junit.runner.Description
+import org.junit.runner.manipulation.Filter
 
 /**
  * A filter that decorates another filter, filtering out any suites
  * that contain no tests.
  */
-public final class SuiteTrimmingFilter extends Filter {
-  private final Filter delegate;
+class SuiteTrimmingFilter(delegate: Filter) : Filter() {
+    private val delegate: Filter
 
-  public SuiteTrimmingFilter(Filter delegate) {
-    if (delegate == null) {
-      throw new NullPointerException();
-    }
-    this.delegate = delegate;
-  }
-
-  @Override
-  public String describe() {
-    return delegate.describe();
-  }
-
-  @Override
-  public final boolean shouldRun(Description description) {
-    if (!delegate.shouldRun(description)) {
-      return false;
+    init {
+        if (delegate == null) {
+            throw NullPointerException()
+        }
+        this.delegate = delegate
     }
 
-    if (description.isTest()) {
-      return true;
+    override fun describe(): String? {
+        return delegate.describe()
     }
 
-    // explicitly check if any children want to run
-    for (Description each : description.getChildren()) {
-      if (shouldRun(each)) {
-        return true;
-      }
+    override fun shouldRun(description: Description): Boolean {
+        if (!delegate.shouldRun(description)) {
+            return false
+        }
+
+        if (description.isTest()) {
+            return true
+        }
+
+        // explicitly check if any children want to run
+        for (each in description.getChildren()) {
+            if (shouldRun(each)) {
+                return true
+            }
+        }
+        return false
     }
-    return false;
-  }
 }

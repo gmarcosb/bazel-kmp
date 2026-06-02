@@ -11,68 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
+/** A [TransitiveInfoProvider] that creates extra actions.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class ExtraActionArtifactsProvider private constructor(
+    extraActionArtifacts: NestedSet<Artifact.DerivedArtifact?>?,
+    transitiveExtraActionArtifacts: NestedSet<Artifact.DerivedArtifact?>?
+) : com.google.devtools.build.lib.analysis.TransitiveInfoProvider {
+    /** The outputs of the extra actions associated with this target.  */
+    private val extraActionArtifacts: NestedSet<Artifact.DerivedArtifact?>?
 
-/** A {@link TransitiveInfoProvider} that creates extra actions. */
-@Immutable
-public final class ExtraActionArtifactsProvider implements TransitiveInfoProvider {
-  @SerializationConstant
-  public static final ExtraActionArtifactsProvider EMPTY =
-      new ExtraActionArtifactsProvider(
-          NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-          NestedSetBuilder.emptySet(Order.STABLE_ORDER));
+    private val transitiveExtraActionArtifacts: NestedSet<Artifact.DerivedArtifact?>?
 
-  public static ExtraActionArtifactsProvider create(
-      NestedSet<Artifact.DerivedArtifact> extraActionArtifacts,
-      NestedSet<Artifact.DerivedArtifact> transitiveExtraActionArtifacts) {
-    if (extraActionArtifacts.isEmpty() && transitiveExtraActionArtifacts.isEmpty()) {
-      return EMPTY;
+    /** Use [.create] instead.  */
+    init {
+        this.extraActionArtifacts = extraActionArtifacts
+        this.transitiveExtraActionArtifacts = transitiveExtraActionArtifacts
     }
-    return new ExtraActionArtifactsProvider(extraActionArtifacts, transitiveExtraActionArtifacts);
-  }
 
-  public static ExtraActionArtifactsProvider merge(
-      Iterable<ExtraActionArtifactsProvider> providers) {
-    NestedSetBuilder<Artifact.DerivedArtifact> artifacts = NestedSetBuilder.stableOrder();
-    NestedSetBuilder<Artifact.DerivedArtifact> transitiveExtraActionArtifacts =
-        NestedSetBuilder.stableOrder();
-
-    for (ExtraActionArtifactsProvider provider : providers) {
-      artifacts.addTransitive(provider.getExtraActionArtifacts());
-      transitiveExtraActionArtifacts.addTransitive(provider.getTransitiveExtraActionArtifacts());
+    /** The outputs of the extra actions associated with this target.  */
+    fun getExtraActionArtifacts(): NestedSet<Artifact.DerivedArtifact?>? {
+        return extraActionArtifacts
     }
-    return ExtraActionArtifactsProvider.create(
-        artifacts.build(), transitiveExtraActionArtifacts.build());
-  }
 
-  /** The outputs of the extra actions associated with this target. */
-  private final NestedSet<Artifact.DerivedArtifact> extraActionArtifacts;
+    /** The outputs of the extra actions in the whole transitive closure.  */
+    fun getTransitiveExtraActionArtifacts(): NestedSet<Artifact.DerivedArtifact?>? {
+        return transitiveExtraActionArtifacts
+    }
 
-  private final NestedSet<Artifact.DerivedArtifact> transitiveExtraActionArtifacts;
+    companion object {
+        @SerializationConstant
+        val EMPTY: ExtraActionArtifactsProvider = ExtraActionArtifactsProvider(
+            NestedSetBuilder.emptySet<Artifact.DerivedArtifact?>(com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER),
+            NestedSetBuilder.emptySet<Artifact.DerivedArtifact?>(com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER)
+        )
 
-  /** Use {@link #create} instead. */
-  private ExtraActionArtifactsProvider(
-      NestedSet<Artifact.DerivedArtifact> extraActionArtifacts,
-      NestedSet<Artifact.DerivedArtifact> transitiveExtraActionArtifacts) {
-    this.extraActionArtifacts = extraActionArtifacts;
-    this.transitiveExtraActionArtifacts = transitiveExtraActionArtifacts;
-  }
+        fun create(
+            extraActionArtifacts: NestedSet<Artifact.DerivedArtifact?>,
+            transitiveExtraActionArtifacts: NestedSet<Artifact.DerivedArtifact?>
+        ): ExtraActionArtifactsProvider? {
+            if (extraActionArtifacts.isEmpty() && transitiveExtraActionArtifacts.isEmpty()) {
+                return EMPTY
+            }
+            return ExtraActionArtifactsProvider(extraActionArtifacts, transitiveExtraActionArtifacts)
+        }
 
-  /** The outputs of the extra actions associated with this target. */
-  public NestedSet<Artifact.DerivedArtifact> getExtraActionArtifacts() {
-    return extraActionArtifacts;
-  }
+        fun merge(
+            providers: Iterable<ExtraActionArtifactsProvider>
+        ): ExtraActionArtifactsProvider? {
+            val artifacts: NestedSetBuilder<Artifact.DerivedArtifact?> =
+                NestedSetBuilder.stableOrder<Artifact.DerivedArtifact?>()
+            val transitiveExtraActionArtifacts: NestedSetBuilder<Artifact.DerivedArtifact?> =
+                NestedSetBuilder.stableOrder<Artifact.DerivedArtifact?>()
 
-  /** The outputs of the extra actions in the whole transitive closure. */
-  public NestedSet<Artifact.DerivedArtifact> getTransitiveExtraActionArtifacts() {
-    return transitiveExtraActionArtifacts;
-  }
+            for (provider in providers) {
+                artifacts.addTransitive(provider.getExtraActionArtifacts())
+                transitiveExtraActionArtifacts.addTransitive(provider.getTransitiveExtraActionArtifacts())
+            }
+            return create(
+                artifacts.build(), transitiveExtraActionArtifacts.build()
+            )
+        }
+    }
 }

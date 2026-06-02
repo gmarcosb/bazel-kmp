@@ -11,321 +11,337 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.downloader
 
-package com.google.devtools.build.lib.remote.downloader;
 
-
-import build.bazel.remote.asset.v1.FetchBlobRequest;
-import build.bazel.remote.asset.v1.FetchBlobResponse;
-import build.bazel.remote.asset.v1.FetchGrpc;
-import build.bazel.remote.asset.v1.FetchGrpc.FetchBlockingStub;
-import build.bazel.remote.asset.v1.Qualifier;
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.DigestFunction;
-import build.bazel.remote.execution.v2.RequestMetadata;
-import com.google.auth.Credentials;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Strings;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.bazel.repository.downloader.Downloader;
-import com.google.devtools.build.lib.bazel.repository.downloader.HashOutputStream;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.FetchId;
-import com.google.devtools.build.lib.buildeventstream.FetchEvent;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.remote.ReferenceCountedChannel;
-import com.google.devtools.build.lib.remote.RemoteRetrier;
-import com.google.devtools.build.lib.remote.common.OutputDigestMismatchException;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemoteCacheClient;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.lib.remote.util.Utils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.protobuf.util.Timestamps;
-import com.google.rpc.Code;
-import io.grpc.CallCredentials;
-import io.grpc.Channel;
-import io.grpc.StatusRuntimeException;
-import io.grpc.protobuf.StatusProto;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.URI;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import build.bazel.remote.asset.v1.FetchBlobRequest
+import com.google.auth.Credentials
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.base.Strings
+import com.google.devtools.build.lib.bazel.repository.downloader.Checksum
+import com.google.devtools.build.lib.clock.BlazeClock
+import com.google.devtools.build.lib.events.Event
+import com.google.devtools.build.lib.remote.ReferenceCountedChannel
+import com.google.devtools.build.lib.remote.util.Utils
+import com.google.devtools.build.lib.vfs.Path
+import io.grpc.Channel
+import java.io.OutputStream
+import java.lang.String
+import java.net.URI
+import java.time.Duration
+import java.util.*
+import java.util.function.Predicate
+import kotlin.Any
+import kotlin.Boolean
+import kotlin.RuntimeException
+import kotlin.toString
 
 /**
  * A Downloader implementation that uses Bazel's Remote Execution APIs to delegate downloads of
  * external files to a remote service.
- *
- * <p>See https://github.com/bazelbuild/remote-apis for more details on the exact capabilities and
+ * 
+ * 
+ * See https://github.com/bazelbuild/remote-apis for more details on the exact capabilities and
  * semantics of the Remote Execution API.
  */
-public class GrpcRemoteDownloader implements AutoCloseable, Downloader {
+class GrpcRemoteDownloader(
+    private val buildRequestId: String?,
+    private val commandId: String?,
+    channel: ReferenceCountedChannel,
+    credentials: Optional<CallCredentials?>,
+    retrier: RemoteRetrier,
+    cacheClient: RemoteCacheClient,
+    digestFunction: DigestFunction.Value?,
+    options: RemoteOptions,
+    verboseFailures: Boolean,
+    httpDownloader: Downloader,
+    remoteDownloaderLocalFallback: Boolean
+) : AutoCloseable, Downloader {
+    private val channel: ReferenceCountedChannel
+    private val credentials: Optional<CallCredentials?>
+    private val retrier: RemoteRetrier
+    private val cacheClient: RemoteCacheClient
+    private val digestFunction: DigestFunction.Value?
+    private val options: RemoteOptions
+    private val verboseFailures: Boolean
+    private val httpDownloader: Downloader
+    private val remoteDownloaderLocalFallback: Boolean
 
-  private final String buildRequestId;
-  private final String commandId;
-  private final ReferenceCountedChannel channel;
-  private final Optional<CallCredentials> credentials;
-  private final RemoteRetrier retrier;
-  private final RemoteCacheClient cacheClient;
-  private final DigestFunction.Value digestFunction;
-  private final RemoteOptions options;
-  private final boolean verboseFailures;
-  private final Downloader httpDownloader;
-  private final boolean remoteDownloaderLocalFallback;
+    private val closed: AtomicBoolean = AtomicBoolean()
 
-  private final AtomicBoolean closed = new AtomicBoolean();
-
-  // The `Qualifier::name` field uses well-known string keys to attach arbitrary
-  // key-value metadata to download requests. These are the qualifier names
-  // supported by Bazel.
-  private static final String QUALIFIER_CHECKSUM_SRI = "checksum.sri";
-  private static final String QUALIFIER_CANONICAL_ID = "bazel.canonical_id";
-
-  // The `:` character is not permitted in an HTTP header name. So, we use it to
-  // delimit the qualifier prefix which denotes an HTTP header qualifer from the
-  // header name itself.
-  private static final String QUALIFIER_HTTP_HEADER_PREFIX = "http_header:";
-  // Same as HTTP_HEADER_PREFIX, but only apply for a specific URL.
-  // The index starts from 0 and corresponds to the URL index in the request.
-  // Server should prefer using the URL-specific header value over the generic header
-  // value when both are present.
-  private static final String QUALIFIER_HTTP_HEADER_URL_PREFIX = "http_header_url:";
-
-  public GrpcRemoteDownloader(
-      String buildRequestId,
-      String commandId,
-      ReferenceCountedChannel channel,
-      Optional<CallCredentials> credentials,
-      RemoteRetrier retrier,
-      RemoteCacheClient cacheClient,
-      DigestFunction.Value digestFunction,
-      RemoteOptions options,
-      boolean verboseFailures,
-      Downloader httpDownloader,
-      boolean remoteDownloaderLocalFallback) {
-    this.buildRequestId = buildRequestId;
-    this.commandId = commandId;
-    this.channel = channel;
-    this.credentials = credentials;
-    this.retrier = retrier;
-    this.cacheClient = cacheClient;
-    this.digestFunction = digestFunction;
-    this.options = options;
-    this.verboseFailures = verboseFailures;
-    this.httpDownloader = httpDownloader;
-    this.remoteDownloaderLocalFallback = remoteDownloaderLocalFallback;
-  }
-
-  @Override
-  public void close() {
-    if (closed.getAndSet(true)) {
-      return;
+    init {
+        this.channel = channel
+        this.credentials = credentials
+        this.retrier = retrier
+        this.cacheClient = cacheClient
+        this.digestFunction = digestFunction
+        this.options = options
+        this.verboseFailures = verboseFailures
+        this.httpDownloader = httpDownloader
+        this.remoteDownloaderLocalFallback = remoteDownloaderLocalFallback
     }
-    cacheClient.close();
-    channel.release();
-  }
 
-  @Override
-  public void download(
-      List<URI> urls,
-      Map<String, List<String>> headers,
-      Credentials credentials,
-      Optional<Checksum> checksum,
-      String canonicalId,
-      Path destination,
-      ExtendedEventHandler eventHandler,
-      Map<String, String> clientEnv,
-      Optional<String> type,
-      String context)
-      throws IOException, InterruptedException {
-    // file: URLs can't use the gRPC downloader.
-    if (urls.stream().anyMatch(url -> Objects.equals(url.getScheme(), "file"))) {
-      httpDownloader.download(
-          urls,
-          headers,
-          credentials,
-          checksum,
-          canonicalId,
-          destination,
-          eventHandler,
-          clientEnv,
-          type,
-          context);
-      return;
+    override fun close() {
+        if (closed.getAndSet(true)) {
+            return
+        }
+        cacheClient.close()
+        channel.release()
     }
-    RequestMetadata metadata =
-        TracingMetadataUtils.buildMetadata(
-            buildRequestId,
-            commandId,
-            "remote_downloader",
-            /* mnemonic= */ null,
-            /* label= */ context,
-            /* configurationId= */ null);
-    RemoteActionExecutionContext remoteActionExecutionContext =
-        RemoteActionExecutionContext.create(metadata);
 
-    final FetchBlobRequest request =
-        newFetchBlobRequest(
-            options.getRemoteInstanceName(),
-            options.getRemoteDownloaderPropagateCredentials(),
-            urls,
-            checksum,
-            canonicalId,
-            digestFunction,
-            headers,
-            credentials);
-    String eventUri = urls.getFirst().toString();
-    try {
-      FetchBlobResponse response =
-          retrier.execute(
-              () ->
-                  channel.withChannelBlocking(
-                      channel ->
-                          fetchBlockingStub(remoteActionExecutionContext, channel)
-                              .fetchBlob(request)));
-      if (!response.getUri().isEmpty()) {
-        eventUri = response.getUri();
-      }
-      if (response.getStatus().getCode() == Code.OK_VALUE) {
-        eventHandler.post(new FetchEvent(eventUri, FetchId.Downloader.GRPC, /* success= */ true));
-      } else {
-        throw StatusProto.toStatusRuntimeException(response.getStatus());
-      }
-      final Digest blobDigest = response.getBlobDigest();
+    @Throws(IOException::class, InterruptedException::class)
+    override fun download(
+        urls: MutableList<URI>,
+        headers: MutableMap<String?, MutableList<String?>?>,
+        credentials: Credentials,
+        checksum: Optional<Checksum?>,
+        canonicalId: String?,
+        destination: Path,
+        eventHandler: ExtendedEventHandler,
+        clientEnv: MutableMap<String?, String?>?,
+        type: Optional<String?>?,
+        context: String?
+    ) {
+        // file: URLs can't use the gRPC downloader.
+        if (urls.stream().anyMatch(Predicate { url: URI? -> url!!.getScheme() == "file" })) {
+            httpDownloader.download(
+                urls,
+                headers,
+                credentials,
+                checksum,
+                canonicalId,
+                destination,
+                eventHandler,
+                clientEnv,
+                type,
+                context
+            )
+            return
+        }
+        val metadata: RequestMetadata? =
+            TracingMetadataUtils.buildMetadata(
+                buildRequestId,
+                commandId,
+                "remote_downloader",  /* mnemonic= */
+                null,  /* label= */
+                context,  /* configurationId= */
+                null
+            )
+        val remoteActionExecutionContext: RemoteActionExecutionContext =
+            RemoteActionExecutionContext.Companion.create(metadata)
 
-      var unused =
-          retrier.execute(
-              () -> {
-                try (OutputStream out = newOutputStream(destination, checksum)) {
-                  Utils.getFromFuture(
-                      cacheClient.downloadBlob(remoteActionExecutionContext, blobDigest, out));
-                } catch (OutputDigestMismatchException e) {
-                  e.setOutputPath(destination.getPathString());
-                  throw e;
+        val request: FetchBlobRequest =
+            newFetchBlobRequest(
+                options.getRemoteInstanceName(),
+                options.getRemoteDownloaderPropagateCredentials(),
+                urls,
+                checksum,
+                canonicalId,
+                digestFunction,
+                headers,
+                credentials
+            )
+        var eventUri: String? = urls.getFirst().toString()
+        try {
+            val response: FetchBlobResponse =
+                retrier.execute<FetchBlobResponse, RuntimeException?>(
+                    RetryableCallable {
+                        channel.withChannelBlocking<Any?>(
+                            ReferenceCountedChannel.IOFunction { channel: Channel? ->
+                                fetchBlockingStub(remoteActionExecutionContext, channel)
+                                    .fetchBlob(request)
+                            })
+                    })
+            if (!response.getUri().isEmpty()) {
+                eventUri = response.getUri()
+            }
+            if (response.getStatus().getCode() === Code.OK_VALUE) {
+                eventHandler.post(FetchEvent(eventUri, FetchId.Downloader.GRPC,  /* success= */true))
+            } else {
+                throw StatusProto.toStatusRuntimeException(response.getStatus())
+            }
+            val blobDigest: Digest? = response.getBlobDigest()
+
+            val unused =
+                retrier.execute<Any?, RuntimeException?>(
+                    RetryableCallable {
+                        try {
+                            newOutputStream(destination, checksum).use { out ->
+                                Utils.getFromFuture<Void?>(
+                                    cacheClient.downloadBlob(remoteActionExecutionContext, blobDigest, out)
+                                )
+                            }
+                        } catch (e: OutputDigestMismatchException) {
+                            e.setOutputPath(destination.getPathString())
+                            throw e
+                        }
+                        null
+                    })
+        } catch (e: StatusRuntimeException) {
+            eventHandler.post(FetchEvent(eventUri, FetchId.Downloader.GRPC,  /* success= */false))
+            if (!remoteDownloaderLocalFallback) {
+                if (e is StatusRuntimeException) {
+                    throw IOException(e)
                 }
-                return null;
-              });
-
-    } catch (StatusRuntimeException | IOException e) {
-      eventHandler.post(new FetchEvent(eventUri, FetchId.Downloader.GRPC, /* success= */ false));
-      if (!remoteDownloaderLocalFallback) {
-        if (e instanceof StatusRuntimeException) {
-          throw new IOException(e);
+                throw e
+            }
+            eventHandler.handle(
+                Event.warn("Remote Cache: " + Utils.grpcAwareErrorMessage(e, verboseFailures))
+            )
+            httpDownloader.download(
+                urls,
+                headers,
+                credentials,
+                checksum,
+                canonicalId,
+                destination,
+                eventHandler,
+                clientEnv,
+                type,
+                context
+            )
+        } catch (e: IOException) {
+            eventHandler.post(FetchEvent(eventUri, FetchId.Downloader.GRPC, false))
+            if (!remoteDownloaderLocalFallback) {
+                if (e is StatusRuntimeException) {
+                    throw IOException(e)
+                }
+                throw e
+            }
+            eventHandler.handle(
+                Event.warn("Remote Cache: " + Utils.grpcAwareErrorMessage(e, verboseFailures))
+            )
+            httpDownloader.download(
+                urls,
+                headers,
+                credentials,
+                checksum,
+                canonicalId,
+                destination,
+                eventHandler,
+                clientEnv,
+                type,
+                context
+            )
         }
-        throw e;
-      }
-      eventHandler.handle(
-          Event.warn("Remote Cache: " + Utils.grpcAwareErrorMessage(e, verboseFailures)));
-      httpDownloader.download(
-          urls,
-          headers,
-          credentials,
-          checksum,
-          canonicalId,
-          destination,
-          eventHandler,
-          clientEnv,
-          type,
-          context);
     }
-  }
 
-  @VisibleForTesting
-  static FetchBlobRequest newFetchBlobRequest(
-      String instanceName,
-      boolean remoteDownloaderPropagateCredentials,
-      List<URI> urls,
-      Optional<Checksum> checksum,
-      String canonicalId,
-      DigestFunction.Value digestFunction,
-      Map<String, List<String>> headers,
-      Credentials credentials)
-      throws IOException {
-    FetchBlobRequest.Builder requestBuilder =
-        FetchBlobRequest.newBuilder()
-            .setInstanceName(instanceName)
-            .setDigestFunction(digestFunction);
-    for (int i = 0; i < urls.size(); i++) {
-      var url = urls.get(i);
-      requestBuilder.addUris(url.toString());
+    private fun fetchBlockingStub(
+        context: RemoteActionExecutionContext, channel: Channel?
+    ): FetchBlockingStub {
+        return FetchGrpc.newBlockingStub(channel)
+            .withInterceptors(
+                TracingMetadataUtils.attachMetadataInterceptor(context.getRequestMetadata())
+            )
+            .withInterceptors(TracingMetadataUtils.newDownloaderHeadersInterceptor(options))
+            .withCallCredentials(credentials.orElse(null))
+            .withDeadlineAfter(options.getRemoteTimeout().toSeconds(), TimeUnit.SECONDS)
+    }
 
-      if (!remoteDownloaderPropagateCredentials) {
-        continue;
-      }
-
-      var metadata = credentials.getRequestMetadata(url);
-      for (var entry : metadata.entrySet()) {
-        for (var value : entry.getValue()) {
-          requestBuilder.addQualifiers(
-              Qualifier.newBuilder()
-                  .setName(QUALIFIER_HTTP_HEADER_URL_PREFIX + i + ":" + entry.getKey())
-                  .setValue(value)
-                  .build());
+    @Throws(IOException::class)
+    private fun newOutputStream(destination: Path, checksum: Optional<Checksum?>): OutputStream {
+        var out = destination.getOutputStream()
+        if (checksum.isPresent()) {
+            out = HashOutputStream(out, checksum.get())
         }
-      }
+        return out
     }
 
-    if (checksum.isPresent()) {
-      requestBuilder.addQualifiers(
-          Qualifier.newBuilder()
-              .setName(QUALIFIER_CHECKSUM_SRI)
-              .setValue(checksum.get().toSubresourceIntegrity())
-              .build());
-    } else {
-      // If no checksum is provided, never accept cached content.
-      // Timestamp is offset by an hour to account for clock skew.
-      requestBuilder.setOldestContentAccepted(
-          Timestamps.fromMillis(
-              BlazeClock.instance().now().plus(Duration.ofHours(1)).toEpochMilli()));
+    @VisibleForTesting
+    fun getChannel(): ReferenceCountedChannel {
+        return channel
     }
 
-    if (!Strings.isNullOrEmpty(canonicalId)) {
-      requestBuilder.addQualifiers(
-          Qualifier.newBuilder().setName(QUALIFIER_CANONICAL_ID).setValue(canonicalId).build());
+    companion object {
+        // The `Qualifier::name` field uses well-known string keys to attach arbitrary
+        // key-value metadata to download requests. These are the qualifier names
+        // supported by Bazel.
+        private const val QUALIFIER_CHECKSUM_SRI = "checksum.sri"
+        private const val QUALIFIER_CANONICAL_ID = "bazel.canonical_id"
+
+        // The `:` character is not permitted in an HTTP header name. So, we use it to
+        // delimit the qualifier prefix which denotes an HTTP header qualifer from the
+        // header name itself.
+        private const val QUALIFIER_HTTP_HEADER_PREFIX = "http_header:"
+
+        // Same as HTTP_HEADER_PREFIX, but only apply for a specific URL.
+        // The index starts from 0 and corresponds to the URL index in the request.
+        // Server should prefer using the URL-specific header value over the generic header
+        // value when both are present.
+        private const val QUALIFIER_HTTP_HEADER_URL_PREFIX = "http_header_url:"
+
+        @VisibleForTesting
+        @Throws(IOException::class)
+        fun newFetchBlobRequest(
+            instanceName: String?,
+            remoteDownloaderPropagateCredentials: Boolean,
+            urls: MutableList<URI>,
+            checksum: Optional<Checksum?>,
+            canonicalId: String?,
+            digestFunction: DigestFunction.Value?,
+            headers: MutableMap<String?, MutableList<String?>?>,
+            credentials: Credentials
+        ): FetchBlobRequest {
+            val requestBuilder: FetchBlobRequest.Builder =
+                FetchBlobRequest.newBuilder()
+                    .setInstanceName(instanceName)
+                    .setDigestFunction(digestFunction)
+            for (i in urls.indices) {
+                val url = urls.get(i)
+                requestBuilder.addUris(url.toString())
+
+                if (!remoteDownloaderPropagateCredentials) {
+                    continue
+                }
+
+                val metadata = credentials.getRequestMetadata(url)
+                for (entry in metadata.entrySet()) {
+                    for (value in entry.getValue()) {
+                        requestBuilder.addQualifiers(
+                            Qualifier.newBuilder()
+                                .setName(QUALIFIER_HTTP_HEADER_URL_PREFIX + i + ":" + entry.getKey())
+                                .setValue(value)
+                                .build()
+                        )
+                    }
+                }
+            }
+
+            if (checksum.isPresent()) {
+                requestBuilder.addQualifiers(
+                    Qualifier.newBuilder()
+                        .setName(QUALIFIER_CHECKSUM_SRI)
+                        .setValue(checksum.get().toSubresourceIntegrity())
+                        .build()
+                )
+            } else {
+                // If no checksum is provided, never accept cached content.
+                // Timestamp is offset by an hour to account for clock skew.
+                requestBuilder.setOldestContentAccepted(
+                    Timestamps.fromMillis(
+                        BlazeClock.instance().now()!!.plus(Duration.ofHours(1)).toEpochMilli()
+                    )
+                )
+            }
+
+            if (!Strings.isNullOrEmpty(canonicalId)) {
+                requestBuilder.addQualifiers(
+                    Qualifier.newBuilder().setName(QUALIFIER_CANONICAL_ID).setValue(canonicalId).build()
+                )
+            }
+
+            for (entry in headers.entrySet()) {
+                // https://www.rfc-editor.org/rfc/rfc9110.html#name-field-order permits
+                // merging the field-values with a comma.
+                requestBuilder.addQualifiers(
+                    Qualifier.newBuilder()
+                        .setName(QUALIFIER_HTTP_HEADER_PREFIX + entry.getKey())
+                        .setValue(String.join(",", entry.getValue()))
+                        .build()
+                )
+            }
+
+            return requestBuilder.build()
+        }
     }
-
-    for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
-      // https://www.rfc-editor.org/rfc/rfc9110.html#name-field-order permits
-      // merging the field-values with a comma.
-      requestBuilder.addQualifiers(
-          Qualifier.newBuilder()
-              .setName(QUALIFIER_HTTP_HEADER_PREFIX + entry.getKey())
-              .setValue(String.join(",", entry.getValue()))
-              .build());
-    }
-
-    return requestBuilder.build();
-  }
-
-  private FetchBlockingStub fetchBlockingStub(
-      RemoteActionExecutionContext context, Channel channel) {
-    return FetchGrpc.newBlockingStub(channel)
-        .withInterceptors(
-            TracingMetadataUtils.attachMetadataInterceptor(context.getRequestMetadata()))
-        .withInterceptors(TracingMetadataUtils.newDownloaderHeadersInterceptor(options))
-        .withCallCredentials(credentials.orElse(null))
-        .withDeadlineAfter(options.getRemoteTimeout().toSeconds(), TimeUnit.SECONDS);
-  }
-
-  private OutputStream newOutputStream(Path destination, Optional<Checksum> checksum)
-      throws IOException {
-    OutputStream out = destination.getOutputStream();
-    if (checksum.isPresent()) {
-      out = new HashOutputStream(out, checksum.get());
-    }
-    return out;
-  }
-
-  @VisibleForTesting
-  public ReferenceCountedChannel getChannel() {
-    return channel;
-  }
 }

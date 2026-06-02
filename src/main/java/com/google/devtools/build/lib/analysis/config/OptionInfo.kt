@@ -11,58 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config
 
-package com.google.devtools.build.lib.analysis.config;
+import com.google.devtools.build.lib.analysis.config.FragmentOptions
 
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static java.util.Arrays.stream;
+/** Stores information about a build option gathered via reflection.  */
+class OptionInfo private constructor(
+    optionClass: java.lang.Class<out FragmentOptions?>?,
+    definition: com.google.devtools.common.options.OptionDefinition?
+) {
+    private val optionClass: java.lang.Class<out FragmentOptions?>?
+    private val definition: com.google.devtools.common.options.OptionDefinition?
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.common.options.OptionDefinition;
-import com.google.devtools.common.options.OptionMetadataTag;
-
-/** Stores information about a build option gathered via reflection. */
-public final class OptionInfo {
-  private final Class<? extends FragmentOptions> optionClass;
-  private final OptionDefinition definition;
-
-  private OptionInfo(Class<? extends FragmentOptions> optionClass, OptionDefinition definition) {
-    this.optionClass = optionClass;
-    this.definition = definition;
-  }
-
-  public Class<? extends FragmentOptions> getOptionClass() {
-    return optionClass;
-  }
-
-  public OptionDefinition getDefinition() {
-    return definition;
-  }
-
-  public boolean hasOptionMetadataTag(OptionMetadataTag tag) {
-    return stream(getDefinition().getOptionMetadataTags()).anyMatch(tag::equals);
-  }
-
-  /** For all the options in the BuildOptions, build a map from option name to its information. */
-  public static ImmutableMap<String, OptionInfo> buildMapFrom(BuildOptions buildOptions) {
-    ImmutableMap.Builder<String, OptionInfo> builder = new ImmutableMap.Builder<>();
-
-    ImmutableSet<Class<? extends FragmentOptions>> optionClasses =
-        buildOptions.getNativeOptions().stream()
-            .map(FragmentOptions::getOptionsClass)
-            .collect(toImmutableSet());
-
-    for (Class<? extends FragmentOptions> optionClass : optionClasses) {
-      ImmutableList<? extends OptionDefinition> optionDefinitions =
-          OptionDefinition.getOptionDefinitions(optionClass);
-      for (OptionDefinition def : optionDefinitions) {
-        String optionName = def.getOptionName();
-        builder.put(optionName, new OptionInfo(optionClass, def));
-      }
+    init {
+        this.optionClass = optionClass
+        this.definition = definition
     }
 
-    return builder.build();
-  }
+    fun getOptionClass(): java.lang.Class<out FragmentOptions?>? {
+        return optionClass
+    }
+
+    fun getDefinition(): com.google.devtools.common.options.OptionDefinition? {
+        return definition
+    }
+
+    fun hasOptionMetadataTag(tag: com.google.devtools.common.options.OptionMetadataTag): Boolean {
+        return java.util.Arrays.stream<com.google.devtools.common.options.OptionMetadataTag?>(getDefinition().getOptionMetadataTags())
+            .anyMatch { other: com.google.devtools.common.options.OptionMetadataTag? -> tag.equals(other) }
+    }
+
+    companion object {
+        /** For all the options in the BuildOptions, build a map from option name to its information.  */
+        fun buildMapFrom(buildOptions: BuildOptions): com.google.common.collect.ImmutableMap<String?, OptionInfo?> {
+            val builder: com.google.common.collect.ImmutableMap.Builder<String?, OptionInfo?> =
+                com.google.common.collect.ImmutableMap.Builder<String?, OptionInfo?>()
+
+            val optionClasses: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> =
+                buildOptions.getNativeOptions().stream()
+                    .map(FragmentOptions::getOptionsClass)
+                    .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+
+            for (optionClass in optionClasses) {
+                val optionDefinitions: com.google.common.collect.ImmutableList<out com.google.devtools.common.options.OptionDefinition> =
+                    com.google.devtools.common.options.OptionDefinition.getOptionDefinitions(optionClass)
+                for (def in optionDefinitions) {
+                    val optionName: String? = def.getOptionName()
+                    builder.put(optionName, com.google.devtools.build.lib.analysis.config.OptionInfo(optionClass, def))
+                }
+            }
+
+            return builder.build()
+        }
+    }
 }

@@ -11,93 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.zip
 
-package com.google.devtools.build.zip;
-
-import java.util.Arrays;
+import java.util.*
 
 /**
  * A holder class for extra data in a ZIP entry.
  */
-public final class ExtraData {
-  static final int ID_OFFSET = 0;
-  static final int LENGTH_OFFSET = 2;
-  static final int FIXED_DATA_SIZE = 4;
+class ExtraData {
+    private val index: Int
+    private val buffer: ByteArray
 
-  private final int index;
-  private final byte[] buffer;
-
-  /**
-   * Creates a new {@link ExtraData} record with the specified id and data.
-   *
-   * @param id the ID tag for this extra data record
-   * @param data the data payload for this extra data record
-   */
-  public ExtraData(short id, byte[] data) {
-    if (data.length > 0xffff) {
-      throw new IllegalArgumentException(String.format("Data is too long. Is %d; max %d",
-          data.length, 0xffff));
+    /**
+     * Creates a new [ExtraData] record with the specified id and data.
+     * 
+     * @param id the ID tag for this extra data record
+     * @param data the data payload for this extra data record
+     */
+    constructor(id: Short, data: ByteArray) {
+        require(data.size <= 0xffff) {
+            String.format(
+                "Data is too long. Is %d; max %d",
+                data.size, 0xffff
+            )
+        }
+        index = 0
+        buffer = ByteArray(FIXED_DATA_SIZE + data.size)
+        ZipUtil.shortToLittleEndian(buffer, ID_OFFSET, id)
+        ZipUtil.shortToLittleEndian(buffer, LENGTH_OFFSET, data.size.toShort())
+        System.arraycopy(data, 0, buffer, FIXED_DATA_SIZE, data.size)
     }
-    index = 0;
-    buffer = new byte[FIXED_DATA_SIZE + data.length];
-    ZipUtil.shortToLittleEndian(buffer, ID_OFFSET, id);
-    ZipUtil.shortToLittleEndian(buffer, LENGTH_OFFSET, (short) data.length);
-    System.arraycopy(data, 0, buffer, FIXED_DATA_SIZE, data.length);
-  }
 
-  /**
-   * Creates a new {@link ExtraData} record using the buffer as the backing data store.
-   *
-   * <p><em>NOTE:</em> does not perform any defensive copying. Any modification to the buffer will
-   * alter the extra data record and can make it invalid.
-   *
-   * @param buffer the array containing the extra data record
-   * @param index the index where the extra data record is located
-   * @throws IllegalArgumentException if buffer does not contain a well formed extra data record
-   *    at index
-   */
-  ExtraData(byte[] buffer, int index) {
-    if (index >= buffer.length) {
-      throw new IllegalArgumentException("index past end of buffer");
+    /**
+     * Creates a new [ExtraData] record using the buffer as the backing data store.
+     * 
+     * 
+     * *NOTE:* does not perform any defensive copying. Any modification to the buffer will
+     * alter the extra data record and can make it invalid.
+     * 
+     * @param buffer the array containing the extra data record
+     * @param index the index where the extra data record is located
+     * @throws IllegalArgumentException if buffer does not contain a well formed extra data record
+     * at index
+     */
+    internal constructor(buffer: ByteArray, index: Int) {
+        require(index < buffer.size) { "index past end of buffer" }
+        require(buffer.size - index >= FIXED_DATA_SIZE) { "incomplete extra data entry in buffer" }
+        val length = ZipUtil.getUnsignedShort(buffer, index + LENGTH_OFFSET)
+        require(buffer.size - index - FIXED_DATA_SIZE >= length) { "incomplete extra data entry in buffer" }
+        this.buffer = buffer
+        this.index = index
     }
-    if (buffer.length - index < FIXED_DATA_SIZE) {
-      throw new IllegalArgumentException("incomplete extra data entry in buffer");
+
+    /** Returns the Id of the extra data record.  */
+    fun getId(): Short {
+        return ZipUtil.get16(buffer, index + ID_OFFSET)
     }
-    int length = ZipUtil.getUnsignedShort(buffer, index + LENGTH_OFFSET);
-    if (buffer.length - index - FIXED_DATA_SIZE < length) {
-      throw new IllegalArgumentException("incomplete extra data entry in buffer");
+
+    /** Returns the total length of the extra data record in bytes.  */
+    fun getLength(): Int {
+        return getDataLength() + FIXED_DATA_SIZE
     }
-    this.buffer = buffer;
-    this.index = index;
-  }
 
-  /** Returns the Id of the extra data record. */
-  public short getId() {
-    return ZipUtil.get16(buffer, index + ID_OFFSET);
-  }
+    /** Returns the length of the data payload of the extra data record in bytes.  */
+    fun getDataLength(): Int {
+        return ZipUtil.getUnsignedShort(buffer, index + LENGTH_OFFSET)
+    }
 
-  /** Returns the total length of the extra data record in bytes. */
-  public int getLength() {
-    return getDataLength() + FIXED_DATA_SIZE;
-  }
+    /** Returns a byte array copy of the data payload.  */
+    fun getData(): ByteArray? {
+        return Arrays.copyOfRange(buffer, index + FIXED_DATA_SIZE, index + getLength())
+    }
 
-  /** Returns the length of the data payload of the extra data record in bytes. */
-  public int getDataLength() {
-    return ZipUtil.getUnsignedShort(buffer, index + LENGTH_OFFSET);
-  }
+    /** Returns a byte array copy of the entire record.  */
+    fun getBytes(): ByteArray? {
+        return Arrays.copyOfRange(buffer, index, index + getLength())
+    }
 
-  /** Returns a byte array copy of the data payload. */
-  public byte[] getData() {
-    return Arrays.copyOfRange(buffer, index + FIXED_DATA_SIZE, index + getLength());
-  }
+    /** Returns the byte at index from the entire record.  */
+    fun getByte(index: Int): Byte {
+        return buffer[this.index + index]
+    }
 
-  /** Returns a byte array copy of the entire record. */
-  public byte[] getBytes() {
-    return Arrays.copyOfRange(buffer, index, index + getLength());
-  }
-
-  /** Returns the byte at index from the entire record. */
-  byte getByte(int index) {
-    return buffer[this.index + index];
-  }
+    companion object {
+        const val ID_OFFSET: Int = 0
+        const val LENGTH_OFFSET: Int = 2
+        const val FIXED_DATA_SIZE: Int = 4
+    }
 }

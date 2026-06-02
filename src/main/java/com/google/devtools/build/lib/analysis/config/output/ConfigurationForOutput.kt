@@ -11,256 +11,259 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config.output
 
-package com.google.devtools.build.lib.analysis.config.output;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableSortedMap.toImmutableSortedMap;
-import static com.google.common.collect.ImmutableSortedSet.toImmutableSortedSet;
-import static java.util.Comparator.comparing;
-import static java.util.stream.Collectors.toList;
-
-import com.google.common.base.Verify;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Ordering;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentClassSet;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.SortedSet;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
 /**
- * Data structure defining a {@link BuildConfigurationValue} for the purpose of returning user
+ * Data structure defining a [BuildConfigurationValue] for the purpose of returning user
  * output about the configuration.
- *
- * <p>Includes all data representing a "configuration" and defines their relative structure and list
+ * 
+ * 
+ * Includes all data representing a "configuration" and defines their relative structure and list
  * order.
- *
- * <p>A {@link com.google.devtools.build.lib.runtime.commands.ConfigCommandOutputFormatter} uses
+ * 
+ * 
+ * A [com.google.devtools.build.lib.runtime.commands.ConfigCommandOutputFormatter] uses
  * this to lightly format output from a logically consistent core structure.
  */
-public class ConfigurationForOutput {
-  private final String skyKey;
-  private final String configHash;
-  private final String mnemonic;
-  private final boolean isExec;
-  private final List<FragmentForOutput> fragments;
-  private final List<FragmentOptionsForOutput> fragmentOptions;
+class ConfigurationForOutput(
+  @kotlin.jvm.JvmField private val skyKey: String,
+  @kotlin.jvm.JvmField private val configHash: String,
+  @kotlin.jvm.JvmField private val mnemonic: String?,
+  @kotlin.jvm.JvmField private val isExec: Boolean,
+  fragments: MutableList<FragmentForOutput?>,
+  fragmentOptions: MutableList<FragmentOptionsForOutput?>
+) {
+    private val fragments: MutableList<FragmentForOutput?>
+    private val fragmentOptions: MutableList<FragmentOptionsForOutput?>
 
-  public ConfigurationForOutput(
-      String skyKey,
-      String configHash,
-      String mnemonic,
-      boolean isExec,
-      List<FragmentForOutput> fragments,
-      List<FragmentOptionsForOutput> fragmentOptions) {
-    this.skyKey = skyKey;
-    this.configHash = configHash;
-    this.mnemonic = mnemonic;
-    this.isExec = isExec;
-    this.fragments = fragments;
-    this.fragmentOptions = fragmentOptions;
-  }
-
-  public String getSkyKey() {
-    return skyKey;
-  }
-
-  public String getConfigHash() {
-    return configHash;
-  }
-
-  public String getMnemonic() {
-    return mnemonic;
-  }
-
-  public boolean isExec() {
-    return isExec;
-  }
-
-  public boolean hasTestConfig() {
-    return fragmentOptions.stream()
-        .map(FragmentOptionsForOutput::getName)
-        .anyMatch(name -> name.contains("TestConfiguration"));
-  }
-
-  public List<FragmentForOutput> getFragments() {
-    return fragments;
-  }
-
-  /**
-   * The union of {@link FragmentOptionsForOutput} used by the Fragments associated with this
-   * configuration, sorted by FragmentOptionsForOutput name.
-   */
-  public List<FragmentOptionsForOutput> getFragmentOptions() {
-    return fragmentOptions;
-  }
-
-  @Nullable
-  public FragmentOptionsForOutput fragment(String fragmentName) {
-    return this.fragmentOptions.stream()
-        .filter(fo -> fo.getName().equals(fragmentName))
-        .findFirst()
-        .orElse(null);
-  }
-
-  public SortedSet<String> fragmentOptionNames() {
-    return this.fragmentOptions.stream()
-        .map(FragmentOptionsForOutput::getName)
-        .collect(toImmutableSortedSet(Ordering.natural()));
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (o instanceof ConfigurationForOutput other) {
-      return other.skyKey.equals(skyKey)
-          && other.configHash.equals(configHash)
-          && other.fragments.equals(fragments)
-          && other.fragmentOptions.equals(fragmentOptions);
+    init {
+        this.fragments = fragments
+        this.fragmentOptions = fragmentOptions
     }
-    return false;
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(skyKey, configHash, fragments, fragmentOptions);
-  }
-
-  /** Constructs a {@link ConfigurationForOutput} from the given {@link BuildConfigurationValue}. */
-  public static ConfigurationForOutput getConfigurationForOutput(
-      BuildConfigurationValue buildConfigurationValue) {
-    ImmutableSortedMap<
-            Class<? extends Fragment>, ImmutableSortedSet<Class<? extends FragmentOptions>>>
-        fragmentDefs =
-            buildConfigurationValue.getFragments().keySet().stream()
-                .collect(
-                    toImmutableSortedMap(
-                        FragmentClassSet.LEXICAL_FRAGMENT_SORTER,
-                        fragment -> fragment,
-                        fragment ->
-                            ImmutableSortedSet.copyOf(
-                                comparing(Class::getName), Fragment.requiredOptions(fragment))));
-
-    return getConfigurationForOutput(
-        buildConfigurationValue.getKey(),
-        buildConfigurationValue.checksum(),
-        buildConfigurationValue,
-        fragmentDefs);
-  }
-
-  /** Constructs a {@link ConfigurationForOutput} from the given input data. */
-  public static ConfigurationForOutput getConfigurationForOutput(
-      BuildConfigurationKey skyKey,
-      String configHash,
-      BuildConfigurationValue config,
-      ImmutableSortedMap<
-              Class<? extends Fragment>, ImmutableSortedSet<Class<? extends FragmentOptions>>>
-          fragmentDefs) {
-
-    ImmutableSortedSet.Builder<FragmentForOutput> fragments =
-        ImmutableSortedSet.orderedBy(comparing(e -> e.getName()));
-    for (Map.Entry<Class<? extends Fragment>, ImmutableSortedSet<Class<? extends FragmentOptions>>>
-        entry : fragmentDefs.entrySet()) {
-      fragments.add(
-          new FragmentForOutput(
-              entry.getKey().getName(),
-              entry.getValue().stream().map(Class::getName).collect(toImmutableList())));
+    fun getSkyKey(): String {
+        return skyKey
     }
-    fragmentDefs.entrySet().stream()
-        .filter(entry -> config.hasFragment(entry.getKey()))
-        .forEach(
-            entry ->
+
+    fun getConfigHash(): String {
+        return configHash
+    }
+
+    fun getMnemonic(): String? {
+        return mnemonic
+    }
+
+    fun isExec(): Boolean {
+        return isExec
+    }
+
+    fun hasTestConfig(): Boolean {
+        return fragmentOptions.stream()
+            .map<String?> { obj: FragmentOptionsForOutput? -> obj.getName() }
+            .anyMatch { name: String? -> name.contains("TestConfiguration") }
+    }
+
+    fun getFragments(): MutableList<FragmentForOutput?> {
+        return fragments
+    }
+
+    /**
+     * The union of [FragmentOptionsForOutput] used by the Fragments associated with this
+     * configuration, sorted by FragmentOptionsForOutput name.
+     */
+    fun getFragmentOptions(): MutableList<FragmentOptionsForOutput?> {
+        return fragmentOptions
+    }
+
+    fun fragment(fragmentName: String?): FragmentOptionsForOutput? {
+        return this.fragmentOptions.stream()
+            .filter { fo: FragmentOptionsForOutput? -> fo.getName() == fragmentName }
+            .findFirst()
+            .orElse(null)
+    }
+
+    fun fragmentOptionNames(): SortedSet<String?> {
+        return this.fragmentOptions.stream()
+            .map<String?> { obj: FragmentOptionsForOutput? -> obj.getName() }
+            .collect(com.google.common.collect.ImmutableSortedSet.toImmutableSortedSet<String?>(com.google.common.collect.Ordering.natural<String?>()))
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (o is ConfigurationForOutput) {
+            return o.skyKey == skyKey
+                    && o.configHash == configHash
+                    && o.fragments == fragments
+                    && o.fragmentOptions == fragmentOptions
+        }
+        return false
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(skyKey, configHash, fragments, fragmentOptions)
+    }
+
+    /**
+     * Starlark options don't have configuration fragments. This is just to keep their output
+     * consistent with native options, i.e. to include "user-defined" section in the output list.
+     */
+    @com.google.devtools.common.options.OptionsClass
+    internal object UserDefinedFragment : FragmentOptions() {
+        const val DESCRIPTIVE_NAME: String =
+            "user-defined" // Intentionally empty: we read the actual options directly from BuildOptions.
+    }
+
+    companion object {
+        /** Constructs a [ConfigurationForOutput] from the given [BuildConfigurationValue].  */
+        fun getConfigurationForOutput(
+            buildConfigurationValue: BuildConfigurationValue
+        ): ConfigurationForOutput {
+            val fragmentDefs: com.google.common.collect.ImmutableSortedMap<java.lang.Class<out Fragment?>?, com.google.common.collect.ImmutableSortedSet<java.lang.Class<out FragmentOptions?>?>?> =
+                buildConfigurationValue.getFragments().keySet().stream()
+                    .collect(
+                        com.google.common.collect.ImmutableSortedMap.toImmutableSortedMap<T?, K?, V?>(
+                            FragmentClassSet.Companion.LEXICAL_FRAGMENT_SORTER,
+                            java.util.function.Function { fragment: T? -> fragment },
+                            java.util.function.Function { fragment: T? ->
+                                com.google.common.collect.ImmutableSortedSet.copyOf(
+                                    java.util.Comparator.comparing<T?, U?>(java.util.function.Function { obj: T? -> obj.getName() }),
+                                    Fragment.requiredOptions(fragment)
+                                )
+                            })
+                    )
+
+            return getConfigurationForOutput(
+                buildConfigurationValue.getKey(),
+                buildConfigurationValue.checksum(),
+                buildConfigurationValue,
+                fragmentDefs
+            )
+        }
+
+        /** Constructs a [ConfigurationForOutput] from the given input data.  */
+        fun getConfigurationForOutput(
+            skyKey: BuildConfigurationKey,
+            configHash: String,
+            config: BuildConfigurationValue,
+            fragmentDefs: com.google.common.collect.ImmutableSortedMap<java.lang.Class<out Fragment?>?, com.google.common.collect.ImmutableSortedSet<java.lang.Class<out FragmentOptions?>?>?>
+        ): ConfigurationForOutput {
+            val fragments: com.google.common.collect.ImmutableSortedSet.Builder<FragmentForOutput?> =
+                com.google.common.collect.ImmutableSortedSet.orderedBy<FragmentForOutput?>(
+                    java.util.Comparator.comparing<FragmentForOutput?, String?>(
+                        java.util.function.Function { e: FragmentForOutput? -> e.getName() })
+                )
+            for (entry in fragmentDefs.entries) {
                 fragments.add(
-                    new FragmentForOutput(
-                        entry.getKey().getName(),
-                        entry.getValue().stream().map(Class::getName).collect(toList()))));
+                    FragmentForOutput(
+                        entry.key.getName(),
+                        entry.value.stream()
+                            .map<String?> { obj: java.lang.Class<out FragmentOptions?>? -> obj.getName() }
+                            .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())))
+            }
+            fragmentDefs.entries.stream()
+                .filter { entry: MutableMap.MutableEntry<java.lang.Class<out Fragment?>?, com.google.common.collect.ImmutableSortedSet<java.lang.Class<out FragmentOptions?>?>?>? ->
+                    config.hasFragment(
+                        entry!!.key
+                    )
+                }
+                .forEach { entry: MutableMap.MutableEntry<java.lang.Class<out Fragment?>?, com.google.common.collect.ImmutableSortedSet<java.lang.Class<out FragmentOptions?>?>?>? ->
+                    fragments.add(
+                        FragmentForOutput(
+                            entry!!.key.getName(),
+                            entry.value.stream()
+                                .map<String?> { obj: java.lang.Class<out FragmentOptions?>? -> obj.getName() }
+                                .collect(Collectors.toList())))
+                }
 
-    ImmutableSortedSet.Builder<FragmentOptionsForOutput> fragmentOptions =
-        ImmutableSortedSet.orderedBy(comparing(e -> e.getName()));
-    config.getOptions().getFragmentClasses().stream()
-        .map(optionsClass -> config.getOptions().get(optionsClass))
-        .forEach(
-            fragmentOptionsInstance ->
-                fragmentOptions.add(
-                    new FragmentOptionsForOutput(
-                        fragmentOptionsInstance.getOptionsClass().getName(),
-                        getOrderedNativeOptions(fragmentOptionsInstance))));
-    fragmentOptions.add(
-        new FragmentOptionsForOutput(
-            UserDefinedFragment.DESCRIPTIVE_NAME, getOrderedUserDefinedOptions(config)));
+            val fragmentOptions: com.google.common.collect.ImmutableSortedSet.Builder<FragmentOptionsForOutput?> =
+                com.google.common.collect.ImmutableSortedSet.orderedBy<FragmentOptionsForOutput?>(
+                    java.util.Comparator.comparing<FragmentOptionsForOutput?, String?>(
+                        java.util.function.Function { e: FragmentOptionsForOutput? -> e.getName() })
+                )
+            config.getOptions().getFragmentClasses().stream()
+                .map({ optionsClass -> config.getOptions().get(optionsClass) })
+                .forEach(
+                    { fragmentOptionsInstance ->
+                        fragmentOptions.add(
+                            FragmentOptionsForOutput(
+                                fragmentOptionsInstance.getOptionsClass().getName(),
+                                getOrderedNativeOptions(fragmentOptionsInstance)
+                            )
+                        )
+                    })
+            fragmentOptions.add(
+                FragmentOptionsForOutput(
+                    UserDefinedFragment.DESCRIPTIVE_NAME, getOrderedUserDefinedOptions(config)
+                )
+            )
 
-    return new ConfigurationForOutput(
-        skyKey.toString(),
-        configHash,
-        config.getMnemonic(),
-        config.isExecConfiguration(),
-        fragments.build().asList(),
-        fragmentOptions.build().asList());
-  }
+            return ConfigurationForOutput(
+                skyKey.toString(),
+                configHash,
+                config.getMnemonic(),
+                config.isExecConfiguration(),
+                fragments.build().asList(),
+                fragmentOptions.build().asList()
+            )
+        }
 
-  /**
-   * Returns a {@link FragmentOptions}'s native option settings in canonical order.
-   *
-   * <p>While actual option values are objects, we serialize them to strings to prevent command
-   * output from interpreting them more deeply than we want for simple "name=value" output.
-   */
-  private static ImmutableSortedMap<String, String> getOrderedNativeOptions(
-      FragmentOptions options) {
-    return options.asMap().entrySet().stream()
-        // While technically part of CoreOptions, --define is practically a user-definable flag so
-        // we include it in the user-defined fragment for clarity. See getOrderedUserDefinedOptions.
-        .filter(
-            entry ->
-                !(options.getOptionsClass().equals(CoreOptions.class)
-                    && entry.getKey().equals("define")))
-        .collect(
-            toImmutableSortedMap(
-                Ordering.natural(), Map.Entry::getKey, e -> String.valueOf(e.getValue())));
-  }
+        /**
+         * Returns a [FragmentOptions]'s native option settings in canonical order.
+         * 
+         * 
+         * While actual option values are objects, we serialize them to strings to prevent command
+         * output from interpreting them more deeply than we want for simple "name=value" output.
+         */
+        private fun getOrderedNativeOptions(
+            options: FragmentOptions
+        ): com.google.common.collect.ImmutableSortedMap<String?, String?> {
+            return options.asMap().entries.stream() // While technically part of CoreOptions, --define is practically a user-definable flag so
+                // we include it in the user-defined fragment for clarity. See getOrderedUserDefinedOptions.
+                .filter { entry: MutableMap.MutableEntry<String?, Any?>? ->
+                    !(options.getOptionsClass() == CoreOptions::class.java
+                            && entry!!.key == "define")
+                }
+                .collect(
+                    TODO("Cannot convert element")
+                ) < java.util.Map.Entry < String
+            TODO(
+                """
+                |Cannot convert element
+                |With text:
+                |Object>, String, String>toImmutableSortedMap(
+                |                Ordering.<String>natural(), Map.Entry::getKey, e -> String.valueOf(e.getValue()))
+                """.trimMargin()
+            )
+        }
 
-  /**
-   * Returns a configuration's user-definable settings in canonical order.
-   *
-   * <p>While actual option values are objects, we serialize them to strings to prevent command
-   * output from interpreting them more deeply than we want for simple "name=value" output.
-   */
-  private static ImmutableSortedMap<String, String> getOrderedUserDefinedOptions(
-      BuildConfigurationValue config) {
-    ImmutableSortedMap.Builder<String, String> ans = ImmutableSortedMap.naturalOrder();
+        /**
+         * Returns a configuration's user-definable settings in canonical order.
+         * 
+         * 
+         * While actual option values are objects, we serialize them to strings to prevent command
+         * output from interpreting them more deeply than we want for simple "name=value" output.
+         */
+        private fun getOrderedUserDefinedOptions(
+            config: BuildConfigurationValue
+        ): com.google.common.collect.ImmutableSortedMap<String?, String?> {
+            val ans: com.google.common.collect.ImmutableSortedMap.Builder<String?, String?> =
+                com.google.common.collect.ImmutableSortedMap.naturalOrder<String?, String?>()
 
-    // Starlark-defined options:
-    for (Map.Entry<Label, Object> entry : config.getOptions().getStarlarkOptions().entrySet()) {
-      ans.put(entry.getKey().toString(), String.valueOf(entry.getValue()));
+            // Starlark-defined options:
+            for (entry in config.getOptions().getStarlarkOptions().entrySet()) {
+                ans.put(entry.key.toString(), entry.value.toString())
+            }
+
+            // --define:
+            for (entry in config
+                .getOptions()
+                .get(CoreOptions::class.java)
+                .getNormalizedCommandLineBuildVariables()
+                .entrySet()) {
+                ans.put("--define:" + entry.key, com.google.common.base.Verify.verifyNotNull<String?>(entry.value))
+            }
+            return ans.buildOrThrow()
+        }
     }
-
-    // --define:
-    for (Map.Entry<String, String> entry :
-        config
-            .getOptions()
-            .get(CoreOptions.class)
-            .getNormalizedCommandLineBuildVariables()
-            .entrySet()) {
-      ans.put("--define:" + entry.getKey(), Verify.verifyNotNull(entry.getValue()));
-    }
-    return ans.buildOrThrow();
-  }
-
-  /**
-   * Starlark options don't have configuration fragments. This is just to keep their output
-   * consistent with native options, i.e. to include "user-defined" section in the output list.
-   */
-  @OptionsClass
-  static class UserDefinedFragment extends FragmentOptions {
-    static final String DESCRIPTIVE_NAME = "user-defined";
-    // Intentionally empty: we read the actual options directly from BuildOptions.
-  }
 }

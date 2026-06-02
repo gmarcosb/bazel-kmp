@@ -54,7 +54,7 @@ public abstract class AbstractAttributeMapperTest extends BuildViewTestCase {
 
   @Test
   public void testRuleProperties() {
-    assertThat(mapper.getLabel().getName()).isEqualTo(rule.getName());
+    assertThat(mapper.getLabel().name).isEqualTo(rule.getName());
     assertThat(mapper.getLabel()).isEqualTo(rule.getLabel());
   }
 
@@ -90,7 +90,7 @@ public abstract class AbstractAttributeMapperTest extends BuildViewTestCase {
 
   @Test
   public void testGetAttributeDefinition() {
-    assertThat(mapper.getAttributeDefinition("srcs").getName()).isEqualTo("srcs");
+    assertThat(mapper.getAttributeDefinition("srcs").name).isEqualTo("srcs");
     assertThat(mapper.getAttributeDefinition("nonsense")).isNull();
   }
 

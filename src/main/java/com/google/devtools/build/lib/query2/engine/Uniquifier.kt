@@ -11,34 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
-/** A helper for deduping values. */
+/** A helper for deduping values.  */
 @ThreadSafe
-public interface Uniquifier<T> {
-  /**
-   * Returns whether {@code newElement} has been seen before by {@link #unique(T)} or
-   * {@link #unique(Iterable)}.
-   *
-   * <p>Please note the difference between this method and {@link #unique(T)}!
-   *
-   * <p>This method is inherently racy wrt {@link #unique(T)} and {@link #unique(Iterable)}. Only
-   * use it if you know what you are doing.
-   */
-  boolean uniquePure(T newElement);
+interface Uniquifier<T> {
+    /**
+     * Returns whether `newElement` has been seen before by [.unique] or
+     * [.unique].
+     * 
+     * 
+     * Please note the difference between this method and [.unique]!
+     * 
+     * 
+     * This method is inherently racy wrt [.unique] and [.unique]. Only
+     * use it if you know what you are doing.
+     */
+    fun uniquePure(newElement: T?): Boolean
 
-  /**
-   * Returns whether {@code newElement} has been seen before by {@link #unique(T)} or {@link
-   * #unique(Iterable)}.
-   */
-  boolean unique(T newElement) throws QueryException;
+    /**
+     * Returns whether `newElement` has been seen before by [.unique] or [ ][.unique].
+     */
+    @Throws(QueryException::class)
+    fun unique(newElement: T?): Boolean
 
-  /**
-   * Returns the subset of {@code newElements} that haven't been seen before by {@link #unique(T)}
-   * or {@link #unique(Iterable)}.
-   */
-  ImmutableList<T> unique(Iterable<T> newElements) throws QueryException;
+    /**
+     * Returns the subset of `newElements` that haven't been seen before by [.unique]
+     * or [.unique].
+     */
+    @Throws(QueryException::class)
+    fun unique(newElements: Iterable<T?>?): ImmutableList<T?>?
 }

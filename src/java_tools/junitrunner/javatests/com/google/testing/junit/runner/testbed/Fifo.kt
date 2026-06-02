@@ -11,31 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
-
-import com.google.common.io.ByteStreams;
-import com.google.common.io.Files;
-
-import java.io.File;
-import java.io.IOException;
+import com.google.common.io.ByteStreams
+import com.google.common.io.Files
+import java.io.File
+import java.io.IOException
 
 /**
  * Utility class to synchronize test bed tests and shell tests using a FIFO file.
  */
-public final class Fifo {
-  private static final String FIFO = System.getProperty("test.fifo");
+object Fifo {
+    private val FIFO: String = System.getProperty("test.fifo")
 
-  private Fifo(){}
-
-  /**
-   * Helper method to help with the synchronization between testbed java test and shell tests. It
-   * will block until data is available on the FIFO
-   */
-  static void waitUntilDataAvailable() throws IOException {
-    if (FIFO == null) {
-      throw new IllegalStateException("No fifo specified");
+    /**
+     * Helper method to help with the synchronization between testbed java test and shell tests. It
+     * will block until data is available on the FIFO
+     */
+    @Throws(IOException::class)
+    fun waitUntilDataAvailable() {
+        checkNotNull(FIFO) { "No fifo specified" }
+        Files.asByteSource(File(FIFO)).copyTo(ByteStreams.nullOutputStream())
     }
-    Files.asByteSource(new File(FIFO)).copyTo(ByteStreams.nullOutputStream());
-  }
 }

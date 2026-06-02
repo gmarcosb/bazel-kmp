@@ -11,13 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import java.util.function.BiConsumer;
-
-/** Interface for collecting counter series */
-@SkybridgeInterface
-public interface CounterSeriesCollector {
-  void collect(double deltaNanos, BiConsumer<CounterSeriesTask, Double> consumer);
+/** Interface for collecting counter series  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface CounterSeriesCollector {
+    fun collect(
+        deltaNanos: Double,
+        consumer: java.util.function.BiConsumer<com.google.devtools.build.lib.profiler.CounterSeriesTask?, Double?>?
+    )
 }

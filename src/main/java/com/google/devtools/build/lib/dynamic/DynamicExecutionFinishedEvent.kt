@@ -11,43 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.dynamic;
+package com.google.devtools.build.lib.dynamic
 
-import com.google.devtools.build.lib.actions.DynamicStrategyRegistry.DynamicMode;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.actions.DynamicStrategyRegistry.DynamicMode
+import com.google.devtools.build.lib.events.ExtendedEventHandler
 
-/** Event transporting the data about winner in dynamic execution race. */
-public final class DynamicExecutionFinishedEvent implements Postable {
-  private final String mnemonic;
-  private final String localBranchName;
-  private final String remoteBranchName;
+/** Event transporting the data about winner in dynamic execution race.  */
+class DynamicExecutionFinishedEvent(
+    @kotlin.jvm.JvmField val mnemonic: String?,
+    @kotlin.jvm.JvmField val localBranchName: String?,
+    @kotlin.jvm.JvmField val remoteBranchName: String?,
+    winnerBranchType: DynamicMode?
+) : ExtendedEventHandler.Postable {
+    private val winnerBranchType: DynamicMode?
 
-  private final DynamicMode winnerBranchType;
+    init {
+        this.winnerBranchType = winnerBranchType
+    }
 
-  public DynamicExecutionFinishedEvent(
-      String mnemonic,
-      String localBranchName,
-      String winnerBranchName,
-      DynamicMode winnerBranchType) {
-    this.mnemonic = mnemonic;
-    this.localBranchName = localBranchName;
-    this.remoteBranchName = winnerBranchName;
-    this.winnerBranchType = winnerBranchType;
-  }
-
-  public String getMnemonic() {
-    return mnemonic;
-  }
-
-  public String getLocalBranchName() {
-    return localBranchName;
-  }
-
-  public String getRemoteBranchName() {
-    return remoteBranchName;
-  }
-
-  public DynamicMode getWinnerBranchType() {
-    return winnerBranchType;
-  }
+    fun getWinnerBranchType(): DynamicMode? {
+        return winnerBranchType
+    }
 }

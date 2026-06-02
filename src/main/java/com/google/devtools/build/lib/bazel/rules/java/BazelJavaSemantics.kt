@@ -11,87 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.rules.java
 
-package com.google.devtools.build.lib.bazel.rules.java;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.analysis.constraints.ConstraintConstants.getOsFromConstraintsOrHost
+import com.google.devtools.build.lib.cmdline.Label
+import com.google.devtools.build.lib.packages.Rule
+import com.google.devtools.build.lib.util.OS
+import java.util.*
 
-import static com.google.devtools.build.lib.analysis.constraints.ConstraintConstants.getOsFromConstraintsOrHost;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.rules.java.JavaConfiguration;
-import com.google.devtools.build.lib.rules.java.JavaSemantics;
-import com.google.devtools.build.lib.rules.java.JavaUtil;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.List;
-import java.util.Optional;
-
-/** Semantics for Bazel Java rules */
-public class BazelJavaSemantics implements JavaSemantics {
-
-  /**
-   * {@code C.UTF-8} is now the universally accepted standard UTF-8 locale, to the point where some
-   * minimal Linux distributions no longer ship with {@code en_US.UTF-8}. macOS doesn't have it
-   * though.
-   */
-  private static final ImmutableMap<String, String> DEFAULT_UTF8_ENVIRONMENT =
-      ImmutableMap.of("LC_CTYPE", "C.UTF-8");
-
-  /** macOS doesn't have {@code C.UTF-8}, so we use {@code en_US.UTF-8} instead. */
-  private static final ImmutableMap<String, String> MACOS_UTF8_ENVIRONMENT =
-      ImmutableMap.of("LC_CTYPE", "en_US.UTF-8");
-
-  @SerializationConstant public static final BazelJavaSemantics INSTANCE = new BazelJavaSemantics();
-
-  private BazelJavaSemantics() {}
-
-  private static final String JAVA_TOOLCHAIN_TYPE =
-      Label.parseCanonicalUnchecked("@bazel_tools//tools/jdk:toolchain_type").toString();
-  private static final Label JAVA_RUNITME_TOOLCHAIN_TYPE =
-      Label.parseCanonicalUnchecked("@bazel_tools//tools/jdk:runtime_toolchain_type");
-
-  @Override
-  public String getJavaToolchainType() {
-    return JAVA_TOOLCHAIN_TYPE;
-  }
-
-  @Override
-  public Label getJavaRuntimeToolchainType() {
-    return JAVA_RUNITME_TOOLCHAIN_TYPE;
-  }
-
-  @Override
-  public PathFragment getDefaultJavaResourcePath(PathFragment path) {
-    // Look for src/.../resources to match Maven repository structure.
-    List<String> segments = path.splitToListOfSegments();
-    for (int i = 0; i < segments.size() - 2; ++i) {
-      if (segments.get(i).equals("src") && segments.get(i + 2).equals("resources")) {
-        return path.subFragment(i + 3);
-      }
+/** Semantics for Bazel Java rules  */
+class BazelJavaSemantics private constructor() : JavaSemantics {
+    override fun getDefaultJavaResourcePath(path: PathFragment): PathFragment? {
+        // Look for src/.../resources to match Maven repository structure.
+        val segments: MutableList<String?> = path.splitToListOfSegments()
+        for (i in 0..<segments.size() - 2) {
+            if (segments.get(i) == "src" && segments.get(i + 2) == "resources") {
+                return path.subFragment(i + 3)
+            }
+        }
+        val javaPath: PathFragment? = JavaUtil.getJavaPath(path)
+        return if (javaPath == null) path else javaPath
     }
-    PathFragment javaPath = JavaUtil.getJavaPath(path);
-    return javaPath == null ? path : javaPath;
-  }
 
-  @Override
-  public ImmutableMap<String, String> utf8Environment(PlatformInfo executionPlatform) {
-    return getOsFromConstraintsOrHost(executionPlatform) == OS.DARWIN
-        ? MACOS_UTF8_ENVIRONMENT
-        : DEFAULT_UTF8_ENVIRONMENT;
-  }
+    override fun utf8Environment(executionPlatform: PlatformInfo?): ImmutableMap<String?, String?>? {
+        return if (getOsFromConstraintsOrHost(executionPlatform) === OS.DARWIN)
+            MACOS_UTF8_ENVIRONMENT
+        else
+            DEFAULT_UTF8_ENVIRONMENT
+    }
 
-  @Override
-  public boolean turbineParallelism() {
-    // Disable parallelism
-    // See also https://github.com/bazelbuild/bazel/issues/29350
-    return false;
-  }
+    override fun turbineParallelism(): Boolean {
+        // Disable parallelism
+        // See also https://github.com/bazelbuild/bazel/issues/29350
+        return false
+    }
 
-  @Override
-  public Optional<String> getFixDepsTool(Rule rule, JavaConfiguration javaConfiguration) {
-    return Optional.empty();
-  }
+    override fun getFixDepsTool(rule: Rule?, javaConfiguration: JavaConfiguration?): Optional<String?> {
+        return Optional.empty<String?>()
+    }
+
+    companion object {
+        /**
+         * `C.UTF-8` is now the universally accepted standard UTF-8 locale, to the point where some
+         * minimal Linux distributions no longer ship with `en_US.UTF-8`. macOS doesn't have it
+         * though.
+         */
+        private val DEFAULT_UTF8_ENVIRONMENT: ImmutableMap<String?, String?> =
+            ImmutableMap.of<String?, String?>("LC_CTYPE", "C.UTF-8")
+
+        /** macOS doesn't have `C.UTF-8`, so we use `en_US.UTF-8` instead.  */
+        private val MACOS_UTF8_ENVIRONMENT: ImmutableMap<String?, String?> =
+            ImmutableMap.of<String?, String?>("LC_CTYPE", "en_US.UTF-8")
+
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val INSTANCE: BazelJavaSemantics = BazelJavaSemantics()
+
+        val javaToolchainType: String =
+            Label.Companion.parseCanonicalUnchecked("@bazel_tools//tools/jdk:toolchain_type").toString()
+            get() = Companion.field
+        val javaRuntimeToolchainType: Label? =
+            Label.Companion.parseCanonicalUnchecked("@bazel_tools//tools/jdk:runtime_toolchain_type")
+            get() = Companion.field
+    }
 }

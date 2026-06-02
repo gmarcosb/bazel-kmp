@@ -426,7 +426,7 @@ public class BuildDriverFunction implements SkyFunction {
         target =
             ((PackageValue) env.getValue(label.getPackageIdentifier()))
                 .getPackage()
-                .getTarget(label.getName());
+                .getTarget(label.name);
       } catch (NoSuchTargetException e) {
         throw new IllegalStateException(
             "Target should already be verified and available for top level ConfiguredTarget: "
@@ -564,7 +564,7 @@ public class BuildDriverFunction implements SkyFunction {
     if (env.valuesMissing() || environmentCompatibility == null) {
       return null;
     }
-    if (environmentCompatibility.isCompatible()) {
+    if (environmentCompatibility.isCompatible) {
       return true;
     }
     if (environmentCompatibility.severeMissingEnvironments() == null) {
@@ -591,7 +591,7 @@ public class BuildDriverFunction implements SkyFunction {
       return null;
     }
     Package pkg = packageValue.getPackage();
-    return pkg.getTarget(label.getName());
+    return pkg.getTarget(label.name);
   }
 
   private void requestConfiguredTargetExecution(

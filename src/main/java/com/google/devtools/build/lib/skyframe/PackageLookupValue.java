@@ -418,7 +418,7 @@ public abstract class PackageLookupValue implements SkyValue {
         PathFragment subpackagePathFragment = subpackageIdentifier.getSourceRoot();
         if (subpackagePathFragment.startsWith(labelRootPathFragment)) {
           PathFragment labelNameInSubpackage =
-              PathFragment.create(label.getName())
+              PathFragment.create(label.name)
                   .subFragment(
                       subpackagePathFragment.segmentCount() - labelRootPathFragment.segmentCount());
           message += "; perhaps you meant to put the" + " colon here: '";

@@ -12,50 +12,55 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import java.util.Optional;
+import com.google.auto.value.AutoBuilder
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
  * Identifies a repo rule.
- *
+ * 
  * @param bzlFileLabel The label pointing to the .bzl file defining the repo rule.
  * @param ruleName The name of the repo rule.
  */
 @AutoCodec
-public record RepoRuleId(Label bzlFileLabel, String ruleName) {
-  @Override
-  public String toString() {
-    return bzlFileLabel.getUnambiguousCanonicalForm() + "%" + ruleName;
-  }
-
-  public static Builder builder() {
-    return new AutoBuilder_RepoRuleId_Builder();
-  }
-
-  public Builder toBuilder() {
-    return new AutoBuilder_RepoRuleId_Builder(this);
-  }
-
-  /** Builder type for {@link RepoRuleId}. */
-  @AutoBuilder
-  public abstract static class Builder {
-    public abstract Builder bzlFileLabel(Label value);
-
-    public abstract Label bzlFileLabel();
-
-    public abstract Builder ruleName(String value);
-
-    abstract Optional<String> ruleName();
-
-    public boolean isRuleNameSet() {
-      return ruleName().isPresent();
+class RepoRuleId(bzlFileLabel: com.google.devtools.build.lib.cmdline.Label?, ruleName: String?) {
+    override fun toString(): String {
+        return bzlFileLabel.getUnambiguousCanonicalForm() + "%" + ruleName
     }
 
-    public abstract RepoRuleId build();
-  }
+    fun toBuilder(): Builder {
+        return AutoBuilder_RepoRuleId_Builder(this)
+    }
+
+    /** Builder type for [RepoRuleId].  */
+    @AutoBuilder
+    abstract class Builder {
+        abstract fun bzlFileLabel(value: com.google.devtools.build.lib.cmdline.Label?): Builder?
+
+        abstract fun bzlFileLabel(): com.google.devtools.build.lib.cmdline.Label?
+
+        abstract fun ruleName(value: String?): Builder?
+
+        abstract fun ruleName(): java.util.Optional<String?>?
+
+        val isRuleNameSet: Boolean
+            get() = ruleName().isPresent()
+
+        abstract fun build(): RepoRuleId?
+    }
+
+    val bzlFileLabel: com.google.devtools.build.lib.cmdline.Label?
+    val ruleName: String?
+
+    init {
+        this.bzlFileLabel = bzlFileLabel
+        this.ruleName = ruleName
+    }
+
+    companion object {
+        fun builder(): Builder {
+            return AutoBuilder_RepoRuleId_Builder()
+        }
+    }
 }

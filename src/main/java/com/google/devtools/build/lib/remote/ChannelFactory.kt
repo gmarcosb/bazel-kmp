@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions;
-import io.grpc.ClientInterceptor;
-import io.grpc.ManagedChannel;
-import java.io.IOException;
-import java.util.List;
+import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions
 
-/** A factory interface for creating a {@link ManagedChannel}. */
-public interface ChannelFactory {
-  ManagedChannel newChannel(
-      String target, String proxy, AuthAndTLSOptions options, List<ClientInterceptor> interceptors)
-      throws IOException;
+/** A factory interface for creating a [ManagedChannel].  */
+interface ChannelFactory {
+    @Throws(IOException::class)
+    fun newChannel(
+        target: String?, proxy: String?, options: AuthAndTLSOptions?, interceptors: MutableList<ClientInterceptor?>?
+    ): ManagedChannel?
 }

@@ -11,19 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config.transitions;
+package com.google.devtools.build.lib.analysis.config.transitions
 
-import com.google.devtools.build.lib.analysis.DependencyKind;
-import com.google.devtools.build.lib.cmdline.Label;
+import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition
 
-/** Observes transitions for Cquery. */
-public interface TransitionCollector {
-  public static final TransitionCollector NULL_TRANSITION_COLLECTOR = (k, l, transition) -> {};
+/** Observes transitions for Cquery.  */
+interface TransitionCollector {
+    /**
+     * The implementation of dependency resolution calls this as transitions are created.
+     * 
+     * 
+     * This does not need to be called for no or null transitions.
+     */
+    fun acceptTransition(
+        kind: com.google.devtools.build.lib.analysis.DependencyKind?,
+        label: com.google.devtools.build.lib.cmdline.Label?,
+        transition: ConfigurationTransition?
+    )
 
-  /**
-   * The implementation of dependency resolution calls this as transitions are created.
-   *
-   * <p>This does not need to be called for no or null transitions.
-   */
-  void acceptTransition(DependencyKind kind, Label label, ConfigurationTransition transition);
+    companion object {
+        @kotlin.jvm.JvmField
+        val NULL_TRANSITION_COLLECTOR: TransitionCollector =
+            TransitionCollector { k: com.google.devtools.build.lib.analysis.DependencyKind?, l: com.google.devtools.build.lib.cmdline.Label?, transition: ConfigurationTransition? -> }
+    }
 }

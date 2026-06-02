@@ -170,11 +170,11 @@ public class RegisteredExecutionPlatformsFunction implements SkyFunction {
       return null;
     }
     ImmutableList.Builder<TargetPattern> executionPlatforms = ImmutableList.builder();
-    for (Module module : bazelDepGraphValue.getDepGraph().values()) {
+    for (Module module : bazelDepGraphValue.depGraph.values()) {
       TargetPattern.Parser parser =
           new TargetPattern.Parser(
               PathFragment.EMPTY_FRAGMENT,
-              bazelDepGraphValue.getCanonicalRepoNameLookup().inverse().get(module.getKey()),
+              bazelDepGraphValue.canonicalRepoNameLookup.inverse().get(module.getKey()),
               bazelDepGraphValue.getFullRepoMapping(module.getKey()));
       for (String pattern : module.getExecutionPlatformsToRegister()) {
         try {

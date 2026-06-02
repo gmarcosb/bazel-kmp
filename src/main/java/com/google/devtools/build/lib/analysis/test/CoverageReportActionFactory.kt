@@ -11,94 +11,80 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Actions;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactFactory;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.skyframe.CoverageReportValue;
-import java.util.Collection;
-import java.util.List;
-import javax.annotation.Nullable;
+/** A factory class to create coverage report actions.  */
+interface CoverageReportActionFactory {
+    /**
+     * Wraps the necessary actions to get a coverage report as well as the final output artifacts. The
+     * lcovWriteAction creates a file containing a set of lcov files. This file is used as an input
+     * artifact for coverageReportAction. We are only interested about the output artifacts from
+     * coverageReportAction.
+     */
+    class CoverageReportActionsWrapper(
+        baselineReportAction: ActionAnalysisMetadata,
+        coverageReportAction: ActionAnalysisMetadata,
+        intermediateActions: MutableList<ActionAnalysisMetadata?>,
+        actionKeyContext: ActionKeyContext?
+    ) {
+        private val baselineReportAction: ActionAnalysisMetadata
+        private val coverageReportAction: ActionAnalysisMetadata
+        private val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>
 
-/** A factory class to create coverage report actions. */
-public interface CoverageReportActionFactory {
-  /**
-   * Wraps the necessary actions to get a coverage report as well as the final output artifacts. The
-   * lcovWriteAction creates a file containing a set of lcov files. This file is used as an input
-   * artifact for coverageReportAction. We are only interested about the output artifacts from
-   * coverageReportAction.
-   */
-  final class CoverageReportActionsWrapper {
-    private final ActionAnalysisMetadata baselineReportAction;
-    private final ActionAnalysisMetadata coverageReportAction;
-    private final ImmutableList<ActionAnalysisMetadata> actions;
+        init {
+            this.baselineReportAction = baselineReportAction
+            this.coverageReportAction = coverageReportAction
+            this.actions =
+                com.google.common.collect.ImmutableList.builder<ActionAnalysisMetadata?>()
+                    .add(baselineReportAction)
+                    .add(coverageReportAction)
+                    .addAll(intermediateActions)
+                    .build()
+            try {
+                Actions.assignOwnersAndThrowIfConflict(
+                    actionKeyContext, actions, CoverageReportValue.COVERAGE_REPORT_KEY
+                )
+            } catch (e: ActionConflictException) {
+                throw java.lang.IllegalStateException(e)
+            } catch (e: Actions.ArtifactGeneratedByOtherRuleException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
 
-    public CoverageReportActionsWrapper(
-        ActionAnalysisMetadata baselineReportAction,
-        ActionAnalysisMetadata coverageReportAction,
-        List<ActionAnalysisMetadata> intermediateActions,
-        ActionKeyContext actionKeyContext)
-        throws InterruptedException {
-      this.baselineReportAction = baselineReportAction;
-      this.coverageReportAction = coverageReportAction;
-      this.actions =
-          ImmutableList.<ActionAnalysisMetadata>builder()
-              .add(baselineReportAction)
-              .add(coverageReportAction)
-              .addAll(intermediateActions)
-              .build();
-      try {
-        Actions.assignOwnersAndThrowIfConflict(
-            actionKeyContext, actions, CoverageReportValue.COVERAGE_REPORT_KEY);
-      } catch (ActionConflictException | Actions.ArtifactGeneratedByOtherRuleException e) {
-        throw new IllegalStateException(e);
-      }
+        fun getActions(): com.google.common.collect.ImmutableList<ActionAnalysisMetadata?> {
+            return actions
+        }
+
+        val coverageOutputs: Iterable<Artifact>
+            get() = com.google.common.collect.Iterables.concat(
+                baselineReportAction.getOutputs(),
+                coverageReportAction.getOutputs()
+            )
+
+        val baselineReportArtifact: Artifact
+            get() = baselineReportAction.getPrimaryOutput()
+
+        val coverageReportArtifact: Artifact
+            get() = coverageReportAction.getPrimaryOutput()
     }
 
-    public ImmutableList<ActionAnalysisMetadata> getActions() {
-      return actions;
-    }
-
-    public Iterable<Artifact> getCoverageOutputs() {
-      return Iterables.concat(baselineReportAction.getOutputs(), coverageReportAction.getOutputs());
-    }
-
-    public Artifact getBaselineReportArtifact() {
-      return baselineReportAction.getPrimaryOutput();
-    }
-
-    public Artifact getCoverageReportArtifact() {
-      return coverageReportAction.getPrimaryOutput();
-    }
-  }
-
-  /**
-   * Returns a CoverageReportActionsWrapper. May return null if it's not necessary to create such
-   * Actions based on the input parameters and some other data available to the factory
-   * implementation, such as command line options.
-   */
-  @Nullable
-  CoverageReportActionsWrapper createCoverageReportActionsWrapper(
-      EventHandler eventHandler,
-      EventBus eventBus,
-      BlazeDirectories directories,
-      Collection<ConfiguredTarget> configuredTargets,
-      Collection<ConfiguredTarget> targetsToTest,
-      ArtifactFactory artifactFactory,
-      ActionKeyContext actionKeyContext,
-      ActionLookupKey actionLookupKey,
-      String workspaceName)
-      throws InterruptedException;
+    /**
+     * Returns a CoverageReportActionsWrapper. May return null if it's not necessary to create such
+     * Actions based on the input parameters and some other data available to the factory
+     * implementation, such as command line options.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun createCoverageReportActionsWrapper(
+        eventHandler: com.google.devtools.build.lib.events.EventHandler?,
+        eventBus: com.google.common.eventbus.EventBus?,
+        directories: BlazeDirectories?,
+        configuredTargets: MutableCollection<ConfiguredTarget?>?,
+        targetsToTest: MutableCollection<ConfiguredTarget?>?,
+        artifactFactory: ArtifactFactory?,
+        actionKeyContext: ActionKeyContext?,
+        actionLookupKey: ActionLookupKey?,
+        workspaceName: String?
+    ): CoverageReportActionsWrapper?
 }

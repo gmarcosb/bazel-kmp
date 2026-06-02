@@ -11,30 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor
 
 /**
- * This event is fired from {@link
- * com.google.devtools.build.lib.platform.SystemMemoryPressureModule#memoryPressureCallback} to
+ * This event is fired from [ ][com.google.devtools.build.lib.platform.SystemMemoryPressureModule.memoryPressureCallback] to
  * indicate that a memory pressure event has occurred.
  */
-public class SystemMemoryPressureEvent implements ExtendedEventHandler.Postable {
+class SystemMemoryPressureEvent(level: com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level) :
+    Postable {
+    private val level: com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level
 
-  private final Level level;
+    init {
+        this.level = level
+    }
 
-  public SystemMemoryPressureEvent(Level level) {
-    this.level = level;
-  }
+    fun level(): com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level {
+        return level
+    }
 
-  public Level level() {
-    return level;
-  }
-
-  public String logString() {
-    return "SystemMemoryPressureEvent: " + level.logString();
-  }
+    fun logString(): String {
+        return "SystemMemoryPressureEvent: " + level.logString()
+    }
 }

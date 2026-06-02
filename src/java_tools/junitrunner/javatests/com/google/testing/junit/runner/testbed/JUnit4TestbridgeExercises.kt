@@ -11,30 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
-
-import static org.junit.Assert.fail;
-
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.Assert
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
  * A JUnit4-style test meant to be invoked by junit4_testbridge_tests.sh.
  */
-@RunWith(JUnit4.class)
-public class JUnit4TestbridgeExercises {
-  @Test
-  public void testPass() {}
+@RunWith(JUnit4::class)
+class JUnit4TestbridgeExercises {
+    @Test
+    fun testPass() {
+    }
 
-  @Test
-  public void testFailOnce() {
-    fail();
-  }
+    @Test
+    fun testFailOnce() {
+        Assert.fail()
+    }
 
-  @Test
-  public void testFailAgain() {
-    fail();
-  }
+    @Test
+    fun testFailAgain() {
+        Assert.fail()
+    }
 }

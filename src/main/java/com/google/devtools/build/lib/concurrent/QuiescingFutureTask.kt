@@ -11,90 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
-
-import com.google.errorprone.annotations.ForOverride;
-import com.google.errorprone.annotations.Keep;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.util.concurrent.Executor;
+package com.google.devtools.build.lib.concurrent
 
 /**
  * A future that tracks in-flight tasks and completes when the tasks quiesce or an error occurs.
- *
- * <p>Unlike {@link QuiescingFuture}, this class is itself a task that can be submitted to an {@link
- * Executor}.
- *
- * <p>This class uses the "pre-increment" pattern (initializing {@code taskCount} to 1) to prevent
- * premature completion during initialization. However, it <b>automatically</b> offsets this by
- * calling {@link #decrement} at the end of {@link #run} (after {@link #arrangeSubtasks}). Unlike
- * {@link QuiescingFuture}, users of {@link QuiescingFutureTask} do <b>not</b> need to call {@link
- * #decrement} manually to offset the initial count.
+ * 
+ * 
+ * Unlike [QuiescingFuture], this class is itself a task that can be submitted to an [ ].
+ * 
+ * 
+ * This class uses the "pre-increment" pattern (initializing `taskCount` to 1) to prevent
+ * premature completion during initialization. However, it **automatically** offsets this by
+ * calling [.decrement] at the end of [.run] (after [.arrangeSubtasks]). Unlike
+ * [QuiescingFuture], users of [QuiescingFutureTask] do **not** need to call [ ][.decrement] manually to offset the initial count.
  */
-public abstract class QuiescingFutureTask<T> extends AbstractQuiescingFuture<T> {
-  private static final VarHandle STATE_HANDLE;
+abstract class QuiescingFutureTask<T>
+/**
+ * Constructor.
+ * 
+ * @param getValueExecutor runner for running [.getValue] or [.doneWithError].
+ */
+    (getValueExecutor: java.util.concurrent.Executor?) :
+    com.google.devtools.build.lib.concurrent.AbstractQuiescingFuture<T?>(getValueExecutor,  /* taskCount= */1) {
+    /** State used to distinguish between the initial run and subsequent completion runs.  */
+    @com.google.errorprone.annotations.Keep // used via STATE_HANDLE
+    @kotlin.concurrent.Volatile
+    private var state = 0
 
-  /** State used to distinguish between the initial run and subsequent completion runs. */
-  @Keep // used via STATE_HANDLE
-  private volatile int state = 0;
+    /**
+     * Arranges subtasks.
+     * 
+     * 
+     * Implementations should call [.increment] for each subtask and [.decrement] once
+     * the subtask completes.
+     * 
+     * 
+     * Note: The base class's [.run] method automatically calls [.decrement] to offset
+     * the initial count after this method completes.
+     * 
+     * 
+     * If this method fails with an unchecked exception, the future is failed immediately. In this
+     * case, there's no guarantee that [.doneWithError] is called.
+     */
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun arrangeSubtasks()
 
-  /**
-   * Constructor.
-   *
-   * @param getValueExecutor runner for running {@link #getValue} or {@link #doneWithError}.
-   */
-  public QuiescingFutureTask(Executor getValueExecutor) {
-    super(getValueExecutor, /* taskCount= */ 1);
-  }
-
-  /**
-   * Arranges subtasks.
-   *
-   * <p>Implementations should call {@link #increment} for each subtask and {@link #decrement} once
-   * the subtask completes.
-   *
-   * <p>Note: The base class's {@link #run} method automatically calls {@link #decrement} to offset
-   * the initial count after this method completes.
-   *
-   * <p>If this method fails with an unchecked exception, the future is failed immediately. In this
-   * case, there's no guarantee that {@link #doneWithError} is called.
-   */
-  @ForOverride
-  protected abstract void arrangeSubtasks();
-
-  /**
-   * Called to either arrange subtasks or handle quiescence.
-   *
-   * <p>Unlike {@link QuiescingFuture}, this method is used for both the initial setup (by
-   * submitting this task to an executor) and for finalization (when the task count reaches zero).
-   *
-   * <ul>
-   *   <li><b>INITIAL (0):</b> The first call to this method executes {@link #arrangeSubtasks} and
-   *       then calls {@link #decrement} to offset the initial count.
-   *   <li><b>ARRANGED (1):</b> Subsequent calls to this method (triggered when the task count
-   *       reaches zero) will execute the completion logic via {@link #handleQuiescence}.
-   * </ul>
-   */
-  @Override
-  public final void run() {
-    if (STATE_HANDLE.compareAndSet(this, 0, 1)) {
-      try {
-        arrangeSubtasks();
-        decrement();
-      } catch (Throwable t) {
-        notifyException(t);
-      }
-    } else {
-      handleQuiescence();
+    /**
+     * Called to either arrange subtasks or handle quiescence.
+     * 
+     * 
+     * Unlike [QuiescingFuture], this method is used for both the initial setup (by
+     * submitting this task to an executor) and for finalization (when the task count reaches zero).
+     * 
+     * 
+     *  * **INITIAL (0):** The first call to this method executes [.arrangeSubtasks] and
+     * then calls [.decrement] to offset the initial count.
+     *  * **ARRANGED (1):** Subsequent calls to this method (triggered when the task count
+     * reaches zero) will execute the completion logic via [.handleQuiescence].
+     * 
+     */
+    override fun run() {
+        if (com.google.devtools.build.lib.concurrent.QuiescingFutureTask.Companion.STATE_HANDLE.compareAndSet(
+                this,
+                0,
+                1
+            )
+        ) {
+            try {
+                arrangeSubtasks()
+                decrement()
+            } catch (t: Throwable) {
+                notifyException(t)
+            }
+        } else {
+            handleQuiescence()
+        }
     }
-  }
 
-  static {
-    MethodHandles.Lookup lookup = MethodHandles.lookup();
-    try {
-      STATE_HANDLE = lookup.findVarHandle(QuiescingFutureTask.class, "state", int.class);
-    } catch (ReflectiveOperationException e) {
-      throw new ExceptionInInitializerError(e);
+    companion object {
+        private val STATE_HANDLE: java.lang.invoke.VarHandle
+
+        init {
+            val lookup: java.lang.invoke.MethodHandles.Lookup = java.lang.invoke.MethodHandles.lookup()
+            try {
+                com.google.devtools.build.lib.concurrent.QuiescingFutureTask.Companion.STATE_HANDLE =
+                    lookup.findVarHandle(
+                        com.google.devtools.build.lib.concurrent.QuiescingFutureTask::class.java,
+                        "state",
+                        Int::class.javaPrimitiveType
+                    )
+            } catch (e: java.lang.ReflectiveOperationException) {
+                throw java.lang.ExceptionInInitializerError(e)
+            }
+        }
     }
-  }
 }

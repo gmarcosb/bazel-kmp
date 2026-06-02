@@ -171,7 +171,7 @@ public final class BugReportTest {
 
   @Before
   public void setup() throws Exception {
-    when(mockRuntime.getProductName()).thenReturn("myProductName");
+    when(mockRuntime.productName).thenReturn("myProductName");
     BugReport.setRuntime(mockRuntime);
 
     exitCodeFile = tmp.newFolder().toPath().resolve("exit_code_to_use_on_abrupt_exit");

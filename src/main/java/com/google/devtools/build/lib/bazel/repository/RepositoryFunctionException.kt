@@ -11,52 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.repository;
+package com.google.devtools.build.lib.bazel.repository
 
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.repository.ExternalPackageException;
-import com.google.devtools.build.lib.skyframe.AlreadyReportedException;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import java.io.IOException;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.packages.NoSuchPackageException
+import com.google.devtools.build.lib.repository.ExternalPackageException
+import com.google.devtools.build.lib.skyframe.AlreadyReportedException
+import com.google.devtools.build.skyframe.SkyFunctionException
+import com.google.devtools.build.skyframe.SkyFunctionException.Transience
+import java.io.IOException
 
 /**
  * Exception thrown when something goes wrong accessing a remote repository.
- *
- * <p>This exception should be used by child classes to limit the types of exceptions {@link
- * RepositoryFetchFunction} has to know how to catch.
+ * 
+ * 
+ * This exception should be used by child classes to limit the types of exceptions [ ] has to know how to catch.
  */
-public class RepositoryFunctionException extends SkyFunctionException {
+class RepositoryFunctionException : SkyFunctionException {
+    /** Error reading or writing to the filesystem.  */
+    constructor(cause: IOException?, transience: Transience?) : super(cause, transience)
 
-  /** Error reading or writing to the filesystem. */
-  public RepositoryFunctionException(IOException cause, Transience transience) {
-    super(cause, transience);
-  }
+    constructor(cause: net.starlark.java.eval.EvalException?, transience: Transience?) : super(cause, transience)
 
-  public RepositoryFunctionException(EvalException cause, Transience transience) {
-    super(cause, transience);
-  }
+    constructor(cause: AlreadyReportedRepositoryAccessException?, transience: Transience?) : super(cause, transience)
 
-  public RepositoryFunctionException(
-      AlreadyReportedRepositoryAccessException cause, Transience transience) {
-    super(cause, transience);
-  }
-
-  /**
-   * Encapsulates the exceptions that arise when accessing a repository. Error reporting should ONLY
-   * be handled in {@link RepositoryFetchFunction}.
-   */
-  public static class AlreadyReportedRepositoryAccessException extends AlreadyReportedException {
-    public AlreadyReportedRepositoryAccessException(Exception e) {
-      super(e.getMessage(), e.getCause());
-      checkState(
-          e instanceof NoSuchPackageException
-              || e instanceof IOException
-              || e instanceof EvalException
-              || e instanceof ExternalPackageException,
-          e);
+    /**
+     * Encapsulates the exceptions that arise when accessing a repository. Error reporting should ONLY
+     * be handled in [RepositoryFetchFunction].
+     */
+    class AlreadyReportedRepositoryAccessException(e: java.lang.Exception) :
+        AlreadyReportedException(e.getMessage(), e.getCause()) {
+        init {
+            com.google.common.base.Preconditions.checkState(
+                e is NoSuchPackageException
+                        || e is IOException
+                        || e is net.starlark.java.eval.EvalException
+                        || e is ExternalPackageException,
+                e
+            )
+        }
     }
-  }
 }

@@ -11,22 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import java.util.OptionalLong;
+import com.google.devtools.build.lib.packages.Packageoid
+import java.util.OptionalLong
 
 /**
  * Estimates "package overhead", which is a rough approximation of the memory and general accounting
  * costs associated with a loaded package or package piece.
- *
- * <p>Estimates are not intended to be perfect but should be reproducible. Some things may be
+ * 
+ * 
+ * Estimates are not intended to be perfect but should be reproducible. Some things may be
  * over-accounted, some things under, with the expectation that it all comes out roughly even in the
  * end.
  */
-public interface PackageOverheadEstimator {
+interface PackageOverheadEstimator {
+    /** Returns the estimated package overhead, or empty if not calculated.  */
+    fun estimatePackageOverhead(pkg: Packageoid?): OptionalLong?
 
-  PackageOverheadEstimator NOOP_ESTIMATOR = (pkg) -> OptionalLong.empty();
-
-  /** Returns the estimated package overhead, or empty if not calculated. */
-  OptionalLong estimatePackageOverhead(Packageoid pkg);
+    companion object {
+        @kotlin.jvm.JvmField
+        val NOOP_ESTIMATOR: PackageOverheadEstimator =
+            PackageOverheadEstimator { pkg: Packageoid? -> OptionalLong.empty() }
+    }
 }

@@ -11,113 +11,113 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-package com.google.devtools.build.lib.authandtls.credentialhelper;
-
-import com.github.benmanes.caffeine.cache.Cache;
-import com.google.auth.Credentials;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.URI;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelper
+import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperEnvironment
+import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperProvider
+import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsResponse
+import java.io.IOException
+import java.io.UncheckedIOException
 
 /**
- * Implementation of {@link Credentials} which fetches credentials by invoking a {@code credential
- * helper} as subprocess, falling back to another {@link Credentials} if no suitable helper exists.
+ * Implementation of [Credentials] which fetches credentials by invoking a `credential helper` as subprocess, falling back to another [Credentials] if no suitable helper exists.
  */
-public class CredentialHelperCredentials extends Credentials {
-  private final CredentialHelperProvider credentialHelperProvider;
-  private final CredentialHelperEnvironment credentialHelperEnvironment;
-  private final Cache<URI, GetCredentialsResponse> credentialCache;
-  private final Optional<Credentials> fallbackCredentials;
+class CredentialHelperCredentials(
+    credentialHelperProvider: CredentialHelperProvider?,
+    credentialHelperEnvironment: CredentialHelperEnvironment?,
+    credentialCache: com.github.benmanes.caffeine.cache.Cache<java.net.URI?, GetCredentialsResponse?>?,
+    fallbackCredentials: java.util.Optional<com.google.auth.Credentials?>?
+) : com.google.auth.Credentials() {
+    private val credentialHelperProvider: CredentialHelperProvider
+    private val credentialHelperEnvironment: CredentialHelperEnvironment
+    private val credentialCache: com.github.benmanes.caffeine.cache.Cache<java.net.URI?, GetCredentialsResponse?>
+    private val fallbackCredentials: java.util.Optional<com.google.auth.Credentials?>
 
-  public CredentialHelperCredentials(
-      CredentialHelperProvider credentialHelperProvider,
-      CredentialHelperEnvironment credentialHelperEnvironment,
-      Cache<URI, GetCredentialsResponse> credentialCache,
-      Optional<Credentials> fallbackCredentials) {
-    this.credentialHelperProvider = Preconditions.checkNotNull(credentialHelperProvider);
-    this.credentialHelperEnvironment = Preconditions.checkNotNull(credentialHelperEnvironment);
-    this.credentialCache = Preconditions.checkNotNull(credentialCache);
-    this.fallbackCredentials = Preconditions.checkNotNull(fallbackCredentials);
-  }
-
-  @Override
-  public String getAuthenticationType() {
-    if (fallbackCredentials.isPresent()) {
-      return "credential-helper-with-fallback-" + fallbackCredentials.get().getAuthenticationType();
+    init {
+        this.credentialHelperProvider =
+            com.google.common.base.Preconditions.checkNotNull<CredentialHelperProvider>(credentialHelperProvider)
+        this.credentialHelperEnvironment =
+            com.google.common.base.Preconditions.checkNotNull<CredentialHelperEnvironment>(credentialHelperEnvironment)
+        this.credentialCache =
+            com.google.common.base.Preconditions.checkNotNull<com.github.benmanes.caffeine.cache.Cache<java.net.URI?, GetCredentialsResponse?>>(
+                credentialCache
+            )
+        this.fallbackCredentials =
+            com.google.common.base.Preconditions.checkNotNull<java.util.Optional<com.google.auth.Credentials?>>(
+                fallbackCredentials
+            )
     }
 
-    return "credential-helper";
-  }
+    val authenticationType: String
+        get() {
+            if (fallbackCredentials.isPresent()) {
+                return "credential-helper-with-fallback-" + fallbackCredentials.get().getAuthenticationType()
+            }
 
-  @Override
-  @SuppressWarnings("unchecked") // Map<String, ImmutableList<String>> to Map<String<List<String>>
-  public Map<String, List<String>> getRequestMetadata(URI uri) throws IOException {
-    Preconditions.checkNotNull(uri);
+            return "credential-helper"
+        }
 
-    GetCredentialsResponse response;
-    try {
-      response = credentialCache.get(uri, this::getCredentialsFromHelper);
-    } catch (UncheckedIOException e) {
-      throw e.getCause();
-    }
-    if (response != null) {
-      return (Map) response.headers();
-    }
+    @Throws(IOException::class)  // Map<String, ImmutableList<String>> to Map<String<List<String>>
+    override fun getRequestMetadata(uri: java.net.URI?): MutableMap<String?, MutableList<String?>?>? {
+        com.google.common.base.Preconditions.checkNotNull<java.net.URI?>(uri)
 
-    if (fallbackCredentials.isPresent()) {
-      return fallbackCredentials.get().getRequestMetadata(uri);
-    }
+        val response: GetCredentialsResponse?
+        try {
+            response = credentialCache.get(
+                uri,
+                java.util.function.Function { uri: java.net.URI? -> this.getCredentialsFromHelper(uri) })
+        } catch (e: UncheckedIOException) {
+            throw e.getCause()
+        }
+        if (response != null) {
+            return response.headers as MutableMap<*, *>?
+        }
 
-    return ImmutableMap.of();
-  }
+        if (fallbackCredentials.isPresent()) {
+            return fallbackCredentials.get().getRequestMetadata(uri)
+        }
 
-  @Nullable
-  private GetCredentialsResponse getCredentialsFromHelper(URI uri) {
-    Preconditions.checkNotNull(uri);
-
-    Optional<CredentialHelper> maybeCredentialHelper =
-        credentialHelperProvider.findCredentialHelper(uri);
-    if (maybeCredentialHelper.isEmpty()) {
-      return null;
-    }
-    CredentialHelper credentialHelper = maybeCredentialHelper.get();
-
-    GetCredentialsResponse response;
-    try {
-      response = credentialHelper.getCredentials(credentialHelperEnvironment, uri);
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
-    if (response == null) {
-      return null;
+        return com.google.common.collect.ImmutableMap.of<String?, MutableList<String?>?>()
     }
 
-    return response;
-  }
+    private fun getCredentialsFromHelper(uri: java.net.URI?): GetCredentialsResponse? {
+        com.google.common.base.Preconditions.checkNotNull<java.net.URI?>(uri)
 
-  @Override
-  public boolean hasRequestMetadata() {
-    return true;
-  }
+        val maybeCredentialHelper: java.util.Optional<CredentialHelper> =
+            credentialHelperProvider.findCredentialHelper(uri)
+        if (maybeCredentialHelper.isEmpty()) {
+            return null
+        }
+        val credentialHelper: CredentialHelper = maybeCredentialHelper.get()
 
-  @Override
-  public boolean hasRequestMetadataOnly() {
-    return false;
-  }
+        val response: GetCredentialsResponse?
+        try {
+            response = credentialHelper.getCredentials(credentialHelperEnvironment, uri)
+        } catch (e: IOException) {
+            throw UncheckedIOException(e)
+        }
+        if (response == null) {
+            return null
+        }
 
-  @Override
-  public void refresh() throws IOException {
-    if (fallbackCredentials.isPresent()) {
-      fallbackCredentials.get().refresh();
+        return response
     }
 
-    credentialCache.invalidateAll();
-  }
+    override fun hasRequestMetadata(): Boolean {
+        return true
+    }
+
+    override fun hasRequestMetadataOnly(): Boolean {
+        return false
+    }
+
+    @Throws(IOException::class)
+    override fun refresh() {
+        if (fallbackCredentials.isPresent()) {
+            fallbackCredentials.get().refresh()
+        }
+
+        credentialCache.invalidateAll()
+    }
 }

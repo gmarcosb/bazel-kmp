@@ -11,17 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
+import BuildEventStreamProtos.BuildEvent
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
-import java.util.Collection;
-
-/** Interface for {@link BuildEvent}s that reference build configurations */
-public interface BuildEventWithConfiguration extends BuildEvent {
-  /**
-   * The configurations the event mentions, and hence should be introduced in the stream before this
-   * event; they are abstracted as {@link BuildEvent}, as for the build event stream the only thing
-   * we care is how they get presenteded in the protocol.
-   */
-  Collection<BuildEvent> getConfigurations();
+/** Interface for [BuildEvent]s that reference build configurations  */
+interface BuildEventWithConfiguration : BuildEvent {
+    /**
+     * The configurations the event mentions, and hence should be introduced in the stream before this
+     * event; they are abstracted as [BuildEvent], as for the build event stream the only thing
+     * we care is how they get presenteded in the protocol.
+     */
+    @kotlin.jvm.JvmField
+    val configurations: MutableCollection<BuildEvent>?
 }

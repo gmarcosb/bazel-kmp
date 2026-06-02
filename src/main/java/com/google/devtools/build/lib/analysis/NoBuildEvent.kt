@@ -11,92 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.buildeventstream.ProgressEvent;
-import com.google.protobuf.util.Timestamps;
-
-/** This event raised to indicate that no build will be happening for the given command. */
-public final class NoBuildEvent implements BuildEvent {
-  private final String id;
-  private final String command;
-  private final Long startTimeMillis;
-  private final boolean separateFinishedEvent;
-  private final boolean showProgress;
-
-  public NoBuildEvent(
-      String command,
-      Long startTimeMillis,
-      boolean separateFinishedEvent,
-      boolean showProgress,
-      String id) {
-    this.command = command;
-    this.startTimeMillis = startTimeMillis;
-    this.separateFinishedEvent = separateFinishedEvent;
-    this.showProgress = showProgress;
-    this.id = id;
-  }
-
-  public NoBuildEvent(String command, Long startTimeMillis, boolean separateFinishedEvent) {
-    this(command, startTimeMillis, separateFinishedEvent, false, null);
-  }
-
-  public NoBuildEvent() {
-    this(null, null, false);
-  }
-
-  @Override
-  public ImmutableList<BuildEventId> getChildrenEvents() {
-    if (separateFinishedEvent) {
-      return ImmutableList.of(
-          ProgressEvent.INITIAL_PROGRESS_UPDATE, BuildEventIdUtil.buildFinished());
-    } else {
-      return ImmutableList.of(ProgressEvent.INITIAL_PROGRESS_UPDATE);
+/** This event raised to indicate that no build will be happening for the given command.  */
+class NoBuildEvent @kotlin.jvm.JvmOverloads constructor(
+    private val command: String? = null,
+    private val startTimeMillis: Long? = null,
+    private val separateFinishedEvent: Boolean = false,
+    private val showProgress: Boolean = false,
+    private val id: String? = null
+) : BuildEvent {
+    override fun getChildrenEvents(): com.google.common.collect.ImmutableList<BuildEventId?> {
+        if (separateFinishedEvent) {
+            return com.google.common.collect.ImmutableList.of<BuildEventId?>(
+                ProgressEvent.INITIAL_PROGRESS_UPDATE, BuildEventIdUtil.buildFinished()
+            )
+        } else {
+            return com.google.common.collect.ImmutableList.of<BuildEventId?>(ProgressEvent.INITIAL_PROGRESS_UPDATE)
+        }
     }
-  }
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.buildStartedId();
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.BuildStarted.Builder started =
-        BuildEventStreamProtos.BuildStarted.newBuilder()
-            .setBuildToolVersion(BlazeVersionInfo.instance().getVersion());
-    if (command != null) {
-      started.setCommand(command);
+    override fun getEventId(): BuildEventId? {
+        return BuildEventIdUtil.buildStartedId()
     }
-    if (startTimeMillis != null) {
-      started
-          .setStartTimeMillis(startTimeMillis)
-          .setStartTime(Timestamps.fromMillis(startTimeMillis));
-    }
-    if (id != null) {
-      started.setUuid(id);
-    }
-    started.setServerPid(ProcessHandle.current().pid());
-    return GenericBuildEvent.protoChaining(this).setStarted(started.build()).build();
-  }
 
-  /**
-   * Iff true, clients will expect to a receive a separate {@link
-   * com.google.devtools.build.lib.buildeventstream.BuildCompletingEvent}.
-   */
-  public boolean separateFinishedEvent() {
-    return separateFinishedEvent;
-  }
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        val started: BuildEventStreamProtos.BuildStarted.Builder =
+            BuildEventStreamProtos.BuildStarted.newBuilder()
+                .setBuildToolVersion(BlazeVersionInfo.instance().getVersion())
+        if (command != null) {
+            started.setCommand(command)
+        }
+        if (startTimeMillis != null) {
+            started
+                .setStartTimeMillis(startTimeMillis)
+                .setStartTime(Timestamps.fromMillis(startTimeMillis))
+        }
+        if (id != null) {
+            started.setUuid(id)
+        }
+        started.setServerPid(java.lang.ProcessHandle.current().pid())
+        return GenericBuildEvent.protoChaining(this).setStarted(started.build()).build()
+    }
 
-  public boolean showProgress() {
-    return showProgress;
-  }
+    /**
+     * Iff true, clients will expect to a receive a separate [ ].
+     */
+    fun separateFinishedEvent(): Boolean {
+        return separateFinishedEvent
+    }
+
+    fun showProgress(): Boolean {
+        return showProgress
+    }
 }

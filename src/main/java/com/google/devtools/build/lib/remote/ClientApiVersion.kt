@@ -11,134 +11,135 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.collect.Comparators.max;
-import static com.google.common.collect.Comparators.min;
+import build.bazel.remote.execution.v2.ServerCapabilities
 
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import javax.annotation.Nullable;
+/** Represents a range of the Remote Execution API that client supports.  */
+class ClientApiVersion(low: ApiVersion, high: ApiVersion) {
+    private val low: ApiVersion
+    private val high: ApiVersion
 
-/** Represents a range of the Remote Execution API that client supports. */
-public class ClientApiVersion {
-  private final ApiVersion low;
-  private final ApiVersion high;
-
-  public static final ClientApiVersion current =
-      new ClientApiVersion(ApiVersion.low, ApiVersion.high);
-
-  public ClientApiVersion(ApiVersion low, ApiVersion high) {
-    this.low = low;
-    this.high = high;
-  }
-
-  public ApiVersion getLow() {
-    return low;
-  }
-
-  public ApiVersion getHigh() {
-    return high;
-  }
-
-  public boolean isSupported(ApiVersion version) {
-    return low.compareTo(version) <= 0 && high.compareTo(version) >= 0;
-  }
-
-  static class ServerSupportedStatus {
-    private enum State {
-      SUPPORTED,
-      UNSUPPORTED,
-      DEPRECATED,
+    init {
+        this.low = low
+        this.high = high
     }
 
-    private final String message;
-    private final State state;
-    private final ApiVersion highestSupportedVersion;
-
-    private ServerSupportedStatus(State state, String message, ApiVersion highestSupportedVersion) {
-      this.state = state;
-      this.message = message;
-      this.highestSupportedVersion = highestSupportedVersion;
+    fun getLow(): ApiVersion {
+        return low
     }
 
-    public static ServerSupportedStatus supported(ApiVersion highestSupportedVersion) {
-      return new ServerSupportedStatus(State.SUPPORTED, "", highestSupportedVersion);
+    fun getHigh(): ApiVersion {
+        return high
     }
 
-    public static ServerSupportedStatus unsupported(
-        ApiVersion clientLow, ApiVersion clientHigh, ApiVersion serverLow, ApiVersion serverHigh) {
-      return new ServerSupportedStatus(
-          State.UNSUPPORTED,
-          String.format(
-              "The client supported API versions, %s to %s, is not supported by the server, %s to"
-                  + " %s. Please switch to a different server or upgrade Bazel.",
-              clientLow, clientHigh, serverLow, serverHigh),
-          null);
+    fun isSupported(version: ApiVersion?): Boolean {
+        return low.compareTo(version) <= 0 && high.compareTo(version) >= 0
     }
 
-    public static ServerSupportedStatus deprecated(
-        ApiVersion clientHigh, ApiVersion serverLow, ApiVersion serverHigh) {
-      return new ServerSupportedStatus(
-          State.DEPRECATED,
-          String.format(
-              "The highest API version Bazel support %s is deprecated by the server. "
-                  + "Please upgrade to server's recommended version: %s to %s.",
-              clientHigh, serverLow, serverHigh),
-          clientHigh);
+    internal class ServerSupportedStatus private constructor(
+        private val state: State?,
+        val message: String?,
+        highestSupportedVersion: ApiVersion?
+    ) {
+        private enum class State {
+            SUPPORTED,
+            UNSUPPORTED,
+            DEPRECATED,
+        }
+
+        private val highestSupportedVersion: ApiVersion?
+
+        init {
+            this.highestSupportedVersion = highestSupportedVersion
+        }
+
+        fun getHighestSupportedVersion(): ApiVersion? {
+            return highestSupportedVersion
+        }
+
+        val isSupported: Boolean
+            get() = state == com.google.devtools.build.lib.remote.ClientApiVersion.ServerSupportedStatus.State.SUPPORTED
+
+        val isDeprecated: Boolean
+            get() = state == com.google.devtools.build.lib.remote.ClientApiVersion.ServerSupportedStatus.State.DEPRECATED
+
+        val isUnsupported: Boolean
+            get() = state == com.google.devtools.build.lib.remote.ClientApiVersion.ServerSupportedStatus.State.UNSUPPORTED
+
+        companion object {
+            fun supported(highestSupportedVersion: ApiVersion?): ServerSupportedStatus {
+                return ServerSupportedStatus(
+                    com.google.devtools.build.lib.remote.ClientApiVersion.ServerSupportedStatus.State.SUPPORTED,
+                    "",
+                    highestSupportedVersion
+                )
+            }
+
+            fun unsupported(
+                clientLow: ApiVersion?, clientHigh: ApiVersion?, serverLow: ApiVersion?, serverHigh: ApiVersion?
+            ): ServerSupportedStatus {
+                return ServerSupportedStatus(
+                    com.google.devtools.build.lib.remote.ClientApiVersion.ServerSupportedStatus.State.UNSUPPORTED,
+                    java.lang.String.format(
+                        "The client supported API versions, %s to %s, is not supported by the server, %s to"
+                                + " %s. Please switch to a different server or upgrade Bazel.",
+                        clientLow, clientHigh, serverLow, serverHigh
+                    ),
+                    null
+                )
+            }
+
+            fun deprecated(
+                clientHigh: ApiVersion?, serverLow: ApiVersion?, serverHigh: ApiVersion?
+            ): ServerSupportedStatus {
+                return ServerSupportedStatus(
+                    com.google.devtools.build.lib.remote.ClientApiVersion.ServerSupportedStatus.State.DEPRECATED,
+                    java.lang.String.format(
+                        "The highest API version Bazel support %s is deprecated by the server. "
+                                + "Please upgrade to server's recommended version: %s to %s.",
+                        clientHigh, serverLow, serverHigh
+                    ),
+                    clientHigh
+                )
+            }
+        }
     }
 
-    public String getMessage() {
-      return message;
+    // highestSupportedVersion compares the client's supported versions against the input low and high
+    // versions and returns the highest supported version. If the client's supported versions are not
+    // supported by the server, it returns null.
+    private fun highestSupportedVersion(serverLow: ApiVersion?, serverHigh: ApiVersion?): ApiVersion? {
+        val higestLow: ApiVersion = com.google.common.collect.Comparators.max<ApiVersion>(this.low, serverLow)
+        val lowestHigh: ApiVersion = com.google.common.collect.Comparators.min<ApiVersion>(this.high, serverHigh)
+
+        return if (higestLow.compareTo(lowestHigh) <= 0) lowestHigh else null
     }
 
-    public ApiVersion getHighestSupportedVersion() {
-      return highestSupportedVersion;
+    fun checkServerSupportedVersions(cap: ServerCapabilities): ServerSupportedStatus {
+        val serverLow: ApiVersion = ApiVersion(cap.getLowApiVersion())
+        val serverHigh: ApiVersion = ApiVersion(cap.getHighApiVersion())
+
+        var highest: ApiVersion? = highestSupportedVersion(serverLow, serverHigh)
+        if (highest != null) {
+            return ServerSupportedStatus.Companion.supported(highest)
+        }
+
+        val deprecated: ApiVersion? =
+            if (cap.hasDeprecatedApiVersion()) ApiVersion(cap.getDeprecatedApiVersion()) else null
+        if (deprecated == null) {
+            return ServerSupportedStatus.Companion.unsupported(this.low, this.high, serverLow, serverHigh)
+        }
+
+        highest = highestSupportedVersion(deprecated, serverHigh)
+        if (highest != null) {
+            return ServerSupportedStatus.Companion.deprecated(highest, serverLow, serverHigh)
+        }
+
+        return ServerSupportedStatus.Companion.unsupported(this.low, this.high, serverLow, serverHigh)
     }
 
-    public boolean isSupported() {
-      return state == State.SUPPORTED;
+    companion object {
+        val current: ClientApiVersion = ClientApiVersion(ApiVersion.Companion.low, ApiVersion.Companion.high)
     }
-
-    public boolean isDeprecated() {
-      return state == State.DEPRECATED;
-    }
-
-    public boolean isUnsupported() {
-      return state == State.UNSUPPORTED;
-    }
-  }
-
-  // highestSupportedVersion compares the client's supported versions against the input low and high
-  // versions and returns the highest supported version. If the client's supported versions are not
-  // supported by the server, it returns null.
-  @Nullable
-  private ApiVersion highestSupportedVersion(ApiVersion serverLow, ApiVersion serverHigh) {
-    var higestLow = max(this.low, serverLow);
-    var lowestHigh = min(this.high, serverHigh);
-
-    return higestLow.compareTo(lowestHigh) <= 0 ? lowestHigh : null;
-  }
-
-  public ServerSupportedStatus checkServerSupportedVersions(ServerCapabilities cap) {
-    var serverLow = new ApiVersion(cap.getLowApiVersion());
-    var serverHigh = new ApiVersion(cap.getHighApiVersion());
-
-    var highest = highestSupportedVersion(serverLow, serverHigh);
-    if (highest != null) {
-      return ServerSupportedStatus.supported(highest);
-    }
-
-    var deprecated =
-        cap.hasDeprecatedApiVersion() ? new ApiVersion(cap.getDeprecatedApiVersion()) : null;
-    if (deprecated == null) {
-      return ServerSupportedStatus.unsupported(this.low, this.high, serverLow, serverHigh);
-    }
-
-    highest = highestSupportedVersion(deprecated, serverHigh);
-    if (highest != null) {
-      return ServerSupportedStatus.deprecated(highest, serverLow, serverHigh);
-    }
-
-    return ServerSupportedStatus.unsupported(this.low, this.high, serverLow, serverHigh);
-  }
 }

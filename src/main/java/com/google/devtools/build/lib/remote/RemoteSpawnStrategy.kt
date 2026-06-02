@@ -11,23 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import com.google.devtools.build.lib.exec.AbstractSpawnStrategy;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.SpawnRunner;
+import com.google.devtools.build.lib.exec.AbstractSpawnStrategy
 
 /**
  * Strategy that uses a distributed cache for sharing action input and output files. Optionally this
  * strategy also support offloading the work to a remote worker.
  */
-final class RemoteSpawnStrategy extends AbstractSpawnStrategy {
-  RemoteSpawnStrategy(SpawnRunner spawnRunner, ExecutionOptions executionOptions) {
-    super(spawnRunner, executionOptions);
-  }
-
-  @Override
-  public String toString() {
-    return "remote";
-  }
+internal class RemoteSpawnStrategy(spawnRunner: SpawnRunner?, executionOptions: ExecutionOptions?) :
+    AbstractSpawnStrategy(spawnRunner, executionOptions) {
+    override fun toString(): String {
+        return "remote"
+    }
 }

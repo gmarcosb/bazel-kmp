@@ -11,48 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.auto.value.AutoBuilder;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.cmdline.Label;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory
 
 /**
- * Helper class which contains data used by a {@link TransitionFactory} to create a transition for
+ * Helper class which contains data used by a [TransitionFactory] to create a transition for
  * attributes.
- *
- * @param attributes Returns the {@link AttributeMap} which can be used to create a transition.
- * @param executionPlatform Returns the {@link Label} of the execution platform used by the
- *     configured target this transition factory is part of.
- * @param analysisData Optional parameter to let callers instantiate objects that the {@code
- *     lib.packages} library can't resolve. This class is both defined in {@code lib.packages} and
- *     referenced by other files in that package.
- *     <p>Callers are responsible for ensuring correct casting between writes and reads.
+ * 
+ * @param attributes Returns the [AttributeMap] which can be used to create a transition.
+ * @param executionPlatform Returns the [Label] of the execution platform used by the
+ * configured target this transition factory is part of.
+ * @param analysisData Optional parameter to let callers instantiate objects that the `lib.packages` library can't resolve. This class is both defined in `lib.packages` and
+ * referenced by other files in that package.
+ * 
+ * Callers are responsible for ensuring correct casting between writes and reads.
  */
-public record AttributeTransitionData(
-    @Nullable AttributeMap attributes,
-    @Nullable Label executionPlatform,
-    @Nullable Object analysisData)
-    implements TransitionFactory.Data {
+class AttributeTransitionData(
+    attributes: com.google.devtools.build.lib.packages.AttributeMap?,
+    executionPlatform: Label?,
+    analysisData: Any?
+) : TransitionFactory.Data {
+    /** Builder class for [AttributeTransitionData].  */
+    @AutoBuilder
+    abstract class Builder {
+        /** Sets the attributes.  */
+        abstract fun attributes(attributes: com.google.devtools.build.lib.packages.AttributeMap?): Builder?
 
-  /** Returns a new {@link Builder} for {@link AttributeTransitionData}. */
-  public static Builder builder() {
-    return new AutoBuilder_AttributeTransitionData_Builder();
-  }
+        /** Sets the execution platform label.  */
+        abstract fun executionPlatform(executionPlatform: Label?): Builder?
 
-  /** Builder class for {@link AttributeTransitionData}. */
-  @AutoBuilder
-  public abstract static class Builder {
-    /** Sets the attributes. */
-    public abstract Builder attributes(@Nullable AttributeMap attributes);
+        abstract fun analysisData(analysisData: Any?): Builder?
 
-    /** Sets the execution platform label. */
-    public abstract Builder executionPlatform(@Nullable Label executionPlatform);
+        /** Returns the new [AttributeTransitionData].  */
+        abstract fun build(): AttributeTransitionData?
+    }
 
-    public abstract Builder analysisData(Object analysisData);
+    val attributes: com.google.devtools.build.lib.packages.AttributeMap?
+    val executionPlatform: Label?
+    val analysisData: Any?
 
-    /** Returns the new {@link AttributeTransitionData}. */
-    public abstract AttributeTransitionData build();
-  }
+    init {
+        this.attributes = attributes
+        this.executionPlatform = executionPlatform
+        this.analysisData = analysisData
+    }
+
+    companion object {
+        /** Returns a new [Builder] for [AttributeTransitionData].  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return AutoBuilder_AttributeTransitionData_Builder()
+        }
+    }
 }

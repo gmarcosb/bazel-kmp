@@ -11,21 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.metrics.criticalpath.AggregatedCriticalPath;
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import com.google.devtools.build.lib.metrics.criticalpath.AggregatedCriticalPath
 
-/** An event that contains the critical path of a build. */
-public final class CriticalPathEvent implements ExtendedEventHandler.Postable {
-
-  private final AggregatedCriticalPath criticalPath;
-
-  public CriticalPathEvent(AggregatedCriticalPath criticalPath) {
-    this.criticalPath = criticalPath;
-  }
-
-  public AggregatedCriticalPath getCriticalPath() {
-    return criticalPath;
-  }
-}
+/** An event that contains the critical path of a build.  */
+class CriticalPathEvent(@kotlin.jvm.JvmField val criticalPath: AggregatedCriticalPath?) : ExtendedEventHandler.Postable

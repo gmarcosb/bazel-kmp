@@ -11,39 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query.output
 
-package com.google.devtools.build.lib.query2.query.output;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.LabelPrinter;
+internal class RankAndLabel(val rank: Int, label: Label) : Comparable<RankAndLabel?> {
+    private val label: Label
 
-class RankAndLabel implements Comparable<RankAndLabel> {
-  private final int rank;
-  private final Label label;
-
-  RankAndLabel(int rank, Label label) {
-    this.rank = rank;
-    this.label = label;
-  }
-
-  int getRank() {
-    return rank;
-  }
-
-  @Override
-  public int compareTo(RankAndLabel o) {
-    if (this.rank != o.rank) {
-      return this.rank - o.rank;
+    init {
+        this.label = label
     }
-    return this.label.compareTo(o.label);
-  }
 
-  @Override
-  public String toString() {
-    throw new UnsupportedOperationException("Use toString(LabelPrinter) instead");
-  }
+    override fun compareTo(o: RankAndLabel): Int {
+        if (this.rank != o.rank) {
+            return this.rank - o.rank
+        }
+        return this.label.compareTo(o.label)
+    }
 
-  public String toString(LabelPrinter labelPrinter) {
-    return rank + " " + labelPrinter.toString(label);
-  }
+    override fun toString(): String {
+        throw UnsupportedOperationException("Use toString(LabelPrinter) instead")
+    }
+
+    fun toString(labelPrinter: LabelPrinter): String {
+        return rank.toString() + " " + labelPrinter.toString(label)
+    }
 }

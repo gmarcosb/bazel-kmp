@@ -11,256 +11,225 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.actions.TemplateExpansionException;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment;
-import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment.TopLevelConfigurations;
-import com.google.devtools.build.lib.query2.aquery.ActionGraphProtoOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.aquery.ActionGraphQueryEnvironment;
-import com.google.devtools.build.lib.query2.aquery.AqueryActionFilter;
-import com.google.devtools.build.lib.query2.aquery.AqueryOptions;
-import com.google.devtools.build.lib.query2.engine.ActionFilterFunction;
-import com.google.devtools.build.lib.query2.engine.FunctionExpression;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.QueryRuntimeHelper;
-import com.google.devtools.build.lib.runtime.QueryRuntimeHelper.QueryRuntimeHelperException;
-import com.google.devtools.build.lib.server.FailureDetails.ActionQuery;
-import com.google.devtools.build.lib.server.FailureDetails.ActionQuery.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator;
-import com.google.devtools.build.lib.skyframe.SequencedSkyframeExecutor;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.ActionGraphDump;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryConsumingOutputHandler;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryOutputHandler;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryOutputHandler.OutputType;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.InvalidAqueryOutputFormatException;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.util.Optional;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.actions.CommandLineExpansionException
 
-/** Performs {@code aquery} processing. */
-public final class AqueryProcessor extends PostAnalysisQueryProcessor<ConfiguredTargetValue> {
-  private final AqueryActionFilter actionFilters;
+/** Performs `aquery` processing.  */
+class AqueryProcessor(
+    queryExpression: QueryExpression?,
+    mainRepoTargetParser: com.google.devtools.build.lib.cmdline.TargetPattern.Parser?
+) : PostAnalysisQueryProcessor<ConfiguredTargetValue?>(queryExpression, mainRepoTargetParser) {
+    private val actionFilters: AqueryActionFilter?
 
-  public AqueryProcessor(
-      @Nullable QueryExpression queryExpression, TargetPattern.Parser mainRepoTargetParser)
-      throws AqueryActionFilterException {
-    super(queryExpression, mainRepoTargetParser);
-    actionFilters = buildActionFilters(queryExpression);
-  }
-
-  @Override
-  protected AqueryOptions getQueryOptions(CommandEnvironment env) {
-    return env.getOptions().getOptions(AqueryOptions.class);
-  }
-
-  /** Outputs the current action graph from Skyframe. */
-  public BlazeCommandResult dumpActionGraphFromSkyframe(CommandEnvironment env) {
-    AqueryOptions aqueryOptions = getQueryOptions(env);
-    try (QueryRuntimeHelper queryRuntimeHelper =
-        env.getRuntime().getQueryRuntimeHelperFactory().create(env, aqueryOptions)) {
-
-      PrintStream printStream =
-          queryRuntimeHelper.getOutputStreamForQueryOutput() == null
-              ? null
-              : new PrintStream(queryRuntimeHelper.getOutputStreamForQueryOutput());
-
-      try (AqueryOutputHandler aqueryOutputHandler =
-          ActionGraphProtoOutputFormatterCallback.constructAqueryOutputHandler(
-              OutputType.fromString(aqueryOptions.getOutputFormat()),
-              queryRuntimeHelper.getOutputStreamForQueryOutput(),
-              printStream)) {
-        ActionGraphDump actionGraphDump =
-            new ActionGraphDump(
-                aqueryOptions.getIncludeCommandline(),
-                aqueryOptions.getIncludeArtifacts(),
-                aqueryOptions.getIncludePrunedInputs(),
-                actionFilters,
-                aqueryOptions.getIncludeParamFiles(),
-                aqueryOptions.getIncludeFileWriteContents(),
-                aqueryOutputHandler,
-                env.getReporter());
-        dumpActionGraph(env, aqueryOutputHandler, actionGraphDump);
-
-      } catch (InvalidAqueryOutputFormatException e) {
-        String message =
-            "--skyframe_state must be used with --output=proto|textproto|jsonproto. "
-                + e.getMessage();
-        env.getReporter().handle(Event.error(message));
-        return getFailureResult(message, Code.SKYFRAME_STATE_PREREQ_UNMET);
-      }
-      return BlazeCommandResult.success();
-    } catch (CommandLineExpansionException e) {
-      String message = "Error while parsing command: " + e.getMessage();
-      env.getReporter().handle(Event.error(message));
-      return getFailureResult(message, Code.COMMAND_LINE_EXPANSION_FAILURE);
-    } catch (TemplateExpansionException e) {
-      String message = "Error while expanding template: " + e.getMessage();
-      env.getReporter().handle(Event.error(message));
-      return getFailureResult(message, Code.TEMPLATE_EXPANSION_FAILURE);
-    } catch (IOException e) {
-      String message =
-          "Error while emitting output: "
-              + (e.getMessage() != null ? e.getMessage() : e.getClass().getName());
-      env.getReporter().handle(Event.error(message));
-      return getFailureResult(message, Code.OUTPUT_FAILURE);
-    } catch (QueryRuntimeHelperException e) {
-      env.getReporter().handle(Event.error(e.getMessage()));
-      return BlazeCommandResult.failureDetail(e.getFailureDetail());
-    }
-  }
-
-  public static void dumpActionGraph(
-      CommandEnvironment env,
-      AqueryOutputHandler aqueryOutputHandler,
-      ActionGraphDump actionGraphDump)
-      throws CommandLineExpansionException, TemplateExpansionException, IOException {
-    if (aqueryOutputHandler instanceof AqueryConsumingOutputHandler) {
-      ((SequencedSkyframeExecutor) env.getSkyframeExecutor())
-          .dumpSkyframeStateInParallel(
-              actionGraphDump, (AqueryConsumingOutputHandler) aqueryOutputHandler);
-    } else {
-      ((SequencedSkyframeExecutor) env.getSkyframeExecutor()).dumpSkyframeState(actionGraphDump);
-    }
-  }
-
-  @Override
-  protected PostAnalysisQueryEnvironment<ConfiguredTargetValue> getQueryEnvironment(
-      BuildRequest request,
-      CommandEnvironment env,
-      TopLevelConfigurations topLevelConfigurations,
-      ImmutableMap<String, BuildConfigurationValue> transitiveConfigurations,
-      ImmutableMap<AspectKeyCreator.AspectKey, ConfiguredAspect> topLevelAspects,
-      WalkableGraph walkableGraph) {
-    ImmutableList<QueryFunction> extraFunctions =
-        new ImmutableList.Builder<QueryFunction>()
-            .addAll(ActionGraphQueryEnvironment.AQUERY_FUNCTIONS)
-            .addAll(env.getRuntime().getQueryFunctions())
-            .build();
-    AqueryOptions aqueryOptions = request.getOptions(AqueryOptions.class);
-
-    StarlarkSemantics starlarkSemantics =
-        env.getSkyframeExecutor()
-            .getEffectiveStarlarkSemantics(env.getOptions().getOptions(BuildLanguageOptions.class));
-    ActionGraphQueryEnvironment queryEnvironment =
-        new ActionGraphQueryEnvironment(
-            request.getKeepGoing(),
-            env.getReporter(),
-            extraFunctions,
-            topLevelConfigurations,
-            transitiveConfigurations,
-            mainRepoTargetParser,
-            env.getPackageManager().getPackagePath(),
-            () -> walkableGraph,
-            aqueryOptions,
-            request
-                .getOptions(AqueryOptions.class)
-                .getLabelPrinter(starlarkSemantics, mainRepoTargetParser.getRepoMapping()));
-    queryEnvironment.setActionFilters(actionFilters);
-
-    return queryEnvironment;
-  }
-
-  /**
-   * Return the action filters in the form { inputs: <pattern>, outputs: <pattern>, ... }
-   *
-   * @param queryExpression The query expression from aquery command
-   * @return the action filters
-   * @throws AqueryActionFilterException if an aquery filter function is preceded by any other
-   *     function types
-   */
-  private AqueryActionFilter buildActionFilters(@Nullable QueryExpression queryExpression)
-      throws AqueryActionFilterException {
-    AqueryActionFilter.Builder actionFiltersBuilder = AqueryActionFilter.builder();
-
-    if (!(queryExpression instanceof FunctionExpression)) {
-      return actionFiltersBuilder.build();
+    init {
+        actionFilters = buildActionFilters(queryExpression)
     }
 
-    Optional<FunctionExpression> functionExpressionOptional =
-        Optional.of((FunctionExpression) queryExpression);
+    override fun getQueryOptions(env: CommandEnvironment): AqueryOptions? {
+        return env.getOptions().getOptions<AqueryOptions?>(AqueryOptions::class.java)
+    }
 
-    FunctionExpression nonAqueryFilterFunctionExpression = null;
-
-    // Unwrap the function layers
-    // Validate that aquery filter functions (inputs, outputs, mnemonics) are not preceded
-    // by any other function types
-    while (functionExpressionOptional.isPresent()) {
-      FunctionExpression functionExpression = functionExpressionOptional.get();
-
-      if (functionExpression.getFunction() instanceof ActionFilterFunction actionFilterFunction) {
-        if (nonAqueryFilterFunctionExpression != null) {
-          throw new AqueryActionFilterException(
-              "aquery filter functions (inputs, outputs, mnemonic) produce actions, and therefore "
-                  + "can't be the input of other function types: "
-                  + nonAqueryFilterFunctionExpression.getFunction().getName());
-        }
-
-        String patternString = functionExpression.getArgs().get(0).getWord();
+    /** Outputs the current action graph from Skyframe.  */
+    fun dumpActionGraphFromSkyframe(env: CommandEnvironment): BlazeCommandResult {
+        val aqueryOptions: AqueryOptions? = getQueryOptions(env)
         try {
-          actionFiltersBuilder.put(actionFilterFunction.getName(), Pattern.compile(patternString));
-        } catch (PatternSyntaxException e) {
-          throw new AqueryActionFilterException("Wrong query syntax: " + e.getMessage());
+            env.getRuntime().getQueryRuntimeHelperFactory().create(env, aqueryOptions).use { queryRuntimeHelper ->
+                val printStream: PrintStream? =
+                    if (queryRuntimeHelper.getOutputStreamForQueryOutput() == null)
+                        null
+                    else
+                        PrintStream(queryRuntimeHelper.getOutputStreamForQueryOutput())
+                try {
+                    ActionGraphProtoOutputFormatterCallback.constructAqueryOutputHandler(
+                        AqueryOutputHandler.OutputType.fromString(aqueryOptions.getOutputFormat()),
+                        queryRuntimeHelper.getOutputStreamForQueryOutput(),
+                        printStream
+                    ).use { aqueryOutputHandler ->
+                        val actionGraphDump: ActionGraphDump =
+                            ActionGraphDump(
+                                aqueryOptions.getIncludeCommandline(),
+                                aqueryOptions.getIncludeArtifacts(),
+                                aqueryOptions.getIncludePrunedInputs(),
+                                actionFilters,
+                                aqueryOptions.getIncludeParamFiles(),
+                                aqueryOptions.getIncludeFileWriteContents(),
+                                aqueryOutputHandler,
+                                env.getReporter()
+                            )
+                        dumpActionGraph(env, aqueryOutputHandler, actionGraphDump)
+                    }
+                } catch (e: InvalidAqueryOutputFormatException) {
+                    val message =
+                        ("--skyframe_state must be used with --output=proto|textproto|jsonproto. "
+                                + e.getMessage())
+                    env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+                    return getFailureResult(message, Code.SKYFRAME_STATE_PREREQ_UNMET)
+                }
+                return BlazeCommandResult.success()
+            }
+        } catch (e: CommandLineExpansionException) {
+            val message = "Error while parsing command: " + e.getMessage()
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+            return getFailureResult(message, Code.COMMAND_LINE_EXPANSION_FAILURE)
+        } catch (e: TemplateExpansionException) {
+            val message = "Error while expanding template: " + e.getMessage()
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+            return getFailureResult(message, Code.TEMPLATE_EXPANSION_FAILURE)
+        } catch (e: IOException) {
+            val message =
+                ("Error while emitting output: "
+                        + (if (e.getMessage() != null) e.getMessage() else e.getClass().getName()))
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+            return getFailureResult(message, Code.OUTPUT_FAILURE)
+        } catch (e: QueryRuntimeHelperException) {
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(e.getMessage()))
+            return BlazeCommandResult.failureDetail(e.getFailureDetail())
         }
-      } else {
-        nonAqueryFilterFunctionExpression = functionExpression;
-      }
-
-      functionExpressionOptional = getNextFunctionExpression(functionExpression);
     }
 
-    return actionFiltersBuilder.build();
-  }
+    override fun getQueryEnvironment(
+        request: BuildRequest,
+        env: CommandEnvironment,
+        topLevelConfigurations: TopLevelConfigurations?,
+        transitiveConfigurations: com.google.common.collect.ImmutableMap<String?, BuildConfigurationValue?>?,
+        topLevelAspects: com.google.common.collect.ImmutableMap<AspectKey?, ConfiguredAspect?>?,
+        walkableGraph: WalkableGraph?
+    ): PostAnalysisQueryEnvironment<ConfiguredTargetValue?> {
+        val extraFunctions: com.google.common.collect.ImmutableList<QueryFunction?> =
+            com.google.common.collect.ImmutableList.Builder<QueryFunction?>()
+                .addAll(ActionGraphQueryEnvironment.AQUERY_FUNCTIONS)
+                .addAll(env.getRuntime().getQueryFunctions())
+                .build()
+        val aqueryOptions: AqueryOptions? = request.getOptions<AqueryOptions?>(AqueryOptions::class.java)
 
-  /**
-   * Unwrap input {@code functionExpression} to get the next FunctionExpression in the query
-   *
-   * @param functionExpression the current function expression
-   * @return the Optional of the next FunctionExpression in the query
-   */
-  private Optional<FunctionExpression> getNextFunctionExpression(
-      FunctionExpression functionExpression) {
-    for (Argument arg : functionExpression.getArgs()) {
-      if (arg.getType() == ArgumentType.EXPRESSION
-          && arg.getExpression() instanceof FunctionExpression) {
-        return Optional.of((FunctionExpression) arg.getExpression());
-      }
+        val starlarkSemantics: net.starlark.java.eval.StarlarkSemantics? =
+            env.getSkyframeExecutor()
+                .getEffectiveStarlarkSemantics(
+                    env.getOptions().getOptions<BuildLanguageOptions?>(BuildLanguageOptions::class.java)
+                )
+        val queryEnvironment: ActionGraphQueryEnvironment =
+            ActionGraphQueryEnvironment(
+                request.getKeepGoing(),
+                env.getReporter(),
+                extraFunctions,
+                topLevelConfigurations,
+                transitiveConfigurations,
+                mainRepoTargetParser,
+                env.getPackageManager().getPackagePath(),
+                java.util.function.Supplier { walkableGraph },
+                aqueryOptions,
+                request
+                    .getOptions<AqueryOptions?>(AqueryOptions::class.java)
+                    .getLabelPrinter(starlarkSemantics, mainRepoTargetParser.getRepoMapping())
+            )
+        queryEnvironment.setActionFilters(actionFilters)
+
+        return queryEnvironment
     }
-    return Optional.empty();
-  }
 
-  /** Custom exception class for aquery filtering */
-  public static class AqueryActionFilterException extends Exception {
-    AqueryActionFilterException(String message) {
-      super(message);
+    /**
+     * Return the action filters in the form { inputs: <pattern>, outputs: <pattern>, ... }
+     * 
+     * @param queryExpression The query expression from aquery command
+     * @return the action filters
+     * @throws AqueryActionFilterException if an aquery filter function is preceded by any other
+     * function types
+    </pattern></pattern> */
+    @Throws(AqueryActionFilterException::class)
+    private fun buildActionFilters(queryExpression: QueryExpression?): AqueryActionFilter? {
+        val actionFiltersBuilder: com.google.devtools.build.lib.query2.aquery.AqueryActionFilter.Builder =
+            AqueryActionFilter.builder()
+
+        if (queryExpression !is FunctionExpression) {
+            return actionFiltersBuilder.build()
+        }
+
+        var functionExpressionOptional: java.util.Optional<FunctionExpression> =
+            java.util.Optional.of<FunctionExpression?>(queryExpression as FunctionExpression)
+
+        var nonAqueryFilterFunctionExpression: FunctionExpression? = null
+
+        // Unwrap the function layers
+        // Validate that aquery filter functions (inputs, outputs, mnemonics) are not preceded
+        // by any other function types
+        while (functionExpressionOptional.isPresent()) {
+            val functionExpression: FunctionExpression = functionExpressionOptional.get()
+
+            if (functionExpression.getFunction() is ActionFilterFunction) {
+                if (nonAqueryFilterFunctionExpression != null) {
+                    throw AqueryActionFilterException(
+                        ("aquery filter functions (inputs, outputs, mnemonic) produce actions, and therefore "
+                                + "can't be the input of other function types: "
+                                + nonAqueryFilterFunctionExpression.getFunction().getName())
+                    )
+                }
+
+                val patternString: String? = functionExpression.getArgs().get(0).getWord()
+                try {
+                    actionFiltersBuilder.put(
+                        actionFilterFunction.getName(),
+                        java.util.regex.Pattern.compile(patternString)
+                    )
+                } catch (e: PatternSyntaxException) {
+                    throw AqueryActionFilterException("Wrong query syntax: " + e.getMessage())
+                }
+            } else {
+                nonAqueryFilterFunctionExpression = functionExpression
+            }
+
+            functionExpressionOptional = getNextFunctionExpression(functionExpression)
+        }
+
+        return actionFiltersBuilder.build()
     }
-  }
 
-  private static BlazeCommandResult getFailureResult(String message, Code detailedCode) {
-    return BlazeCommandResult.failureDetail(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setActionQuery(ActionQuery.newBuilder().setCode(detailedCode))
-            .build());
-  }
+    /**
+     * Unwrap input `functionExpression` to get the next FunctionExpression in the query
+     * 
+     * @param functionExpression the current function expression
+     * @return the Optional of the next FunctionExpression in the query
+     */
+    private fun getNextFunctionExpression(
+        functionExpression: FunctionExpression
+    ): java.util.Optional<FunctionExpression> {
+        for (arg in functionExpression.getArgs()) {
+            if (arg.getType() == QueryEnvironment.ArgumentType.EXPRESSION
+                && arg.getExpression() is FunctionExpression
+            ) {
+                return java.util.Optional.of<FunctionExpression?>(arg.getExpression() as FunctionExpression?)
+            }
+        }
+        return java.util.Optional.empty<FunctionExpression?>()
+    }
+
+    /** Custom exception class for aquery filtering  */
+    class AqueryActionFilterException internal constructor(message: String?) : java.lang.Exception(message)
+
+    companion object {
+        @Throws(CommandLineExpansionException::class, TemplateExpansionException::class, IOException::class)
+        fun dumpActionGraph(
+            env: CommandEnvironment,
+            aqueryOutputHandler: AqueryOutputHandler?,
+            actionGraphDump: ActionGraphDump?
+        ) {
+            if (aqueryOutputHandler is AqueryConsumingOutputHandler) {
+                (env.getSkyframeExecutor() as SequencedSkyframeExecutor)
+                    .dumpSkyframeStateInParallel(
+                        actionGraphDump, aqueryOutputHandler as AqueryConsumingOutputHandler
+                    )
+            } else {
+                (env.getSkyframeExecutor() as SequencedSkyframeExecutor).dumpSkyframeState(actionGraphDump)
+            }
+        }
+
+        private fun getFailureResult(message: String?, detailedCode: Code?): BlazeCommandResult {
+            return BlazeCommandResult.failureDetail(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setActionQuery(ActionQuery.newBuilder().setCode(detailedCode))
+                    .build()
+            )
+        }
+    }
 }

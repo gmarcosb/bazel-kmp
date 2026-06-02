@@ -11,71 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.common.base.Strings;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.BuildConfiguration.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.server.FailureDetails
 
 /**
  * Thrown if the configuration options lead to an invalid configuration, or if any of the
  * configuration labels cannot be loaded.
  */
-public class InvalidConfigurationException extends Exception implements DetailedException {
+class InvalidConfigurationException : java.lang.Exception, DetailedException {
+    private val detailedExitCode: DetailedExitCode?
 
-  @Nullable private final DetailedExitCode detailedExitCode;
+    constructor(message: String?) : super(message) {
+        this.detailedExitCode = null
+    }
 
-  public InvalidConfigurationException(String message) {
-    super(message);
-    this.detailedExitCode = null;
-  }
+    constructor(message: String?, code: Code?) : super(message) {
+        this.detailedExitCode = createDetailedExitCode(message, code)
+    }
 
-  public InvalidConfigurationException(String message, Code code) {
-    super(message);
-    this.detailedExitCode = createDetailedExitCode(message, code);
-  }
+    constructor(message: String?, cause: Throwable?) : super(message, cause) {
+        this.detailedExitCode = null
+    }
 
-  public InvalidConfigurationException(String message, Throwable cause) {
-    super(message, cause);
-    this.detailedExitCode = null;
-  }
+    constructor(message: String?, code: Code?, cause: Throwable?) : super(message, cause) {
+        this.detailedExitCode = createDetailedExitCode(message, code)
+    }
 
-  public InvalidConfigurationException(String message, Code code, Throwable cause) {
-    super(message, cause);
-    this.detailedExitCode = createDetailedExitCode(message, code);
-  }
+    constructor(cause: Throwable) : super(cause.message, cause) {
+        this.detailedExitCode = null
+    }
 
-  public InvalidConfigurationException(Throwable cause) {
-    super(cause.getMessage(), cause);
-    this.detailedExitCode = null;
-  }
+    constructor(code: Code?, cause: Throwable) : super(cause.message, cause) {
+        this.detailedExitCode = createDetailedExitCode(cause.message, code)
+    }
 
-  public InvalidConfigurationException(Code code, Throwable cause) {
-    super(cause.getMessage(), cause);
-    this.detailedExitCode = createDetailedExitCode(cause.getMessage(), code);
-  }
+    constructor(detailedExitCode: DetailedExitCode?, cause: Throwable) : super(cause.message, cause) {
+        this.detailedExitCode = detailedExitCode
+    }
 
-  public InvalidConfigurationException(DetailedExitCode detailedExitCode, Throwable cause) {
-    super(cause.getMessage(), cause);
-    this.detailedExitCode = detailedExitCode;
-  }
+    override fun getDetailedExitCode(): DetailedExitCode {
+        return if (detailedExitCode != null)
+            detailedExitCode
+        else
+            createDetailedExitCode(message, Code.INVALID_CONFIGURATION)
+    }
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode != null
-        ? detailedExitCode
-        : createDetailedExitCode(getMessage(), Code.INVALID_CONFIGURATION);
-  }
-
-  private static DetailedExitCode createDetailedExitCode(@Nullable String message, Code code) {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(Strings.nullToEmpty(message))
-            .setBuildConfiguration(FailureDetails.BuildConfiguration.newBuilder().setCode(code))
-            .build());
-  }
+    companion object {
+        private fun createDetailedExitCode(message: String?, code: Code?): DetailedExitCode {
+            return DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(com.google.common.base.Strings.nullToEmpty(message))
+                    .setBuildConfiguration(FailureDetails.BuildConfiguration.newBuilder().setCode(code))
+                    .build()
+            )
+        }
+    }
 }

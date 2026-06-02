@@ -11,210 +11,185 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.remote.RemoteScrubbing.Config;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.protobuf.TextFormat;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionOwner
 
 /**
- * The {@link Scrubber} implements scrubbing of remote cache keys.
- *
- * <p>See the documentation for the {@code --experimental_remote_scrub_config} flag for more
+ * The [Scrubber] implements scrubbing of remote cache keys.
+ * 
+ * 
+ * See the documentation for the `--experimental_remote_scrub_config` flag for more
  * information.
  */
-public final class Scrubber {
+class Scrubber @com.google.common.annotations.VisibleForTesting internal constructor(configProto: Config) {
+    /** An error that occurred while parsing the scrubbing configuration.  */
+    class ConfigParseException private constructor(message: String?, cause: Throwable?) :
+        java.lang.Exception(message, cause)
 
-  /** An error that occurred while parsing the scrubbing configuration. */
-  public static class ConfigParseException extends Exception {
+    private val spawnScrubbers: com.google.common.collect.ImmutableList<SpawnScrubber>
 
-    private ConfigParseException(String message, Throwable cause) {
-      super(message, cause);
-    }
-  }
-
-  private final ImmutableList<SpawnScrubber> spawnScrubbers;
-
-  @VisibleForTesting
-  Scrubber(Config configProto) {
-    ArrayList<SpawnScrubber> spawnScrubbers = new ArrayList<>();
-    for (Config.Rule ruleProto : configProto.getRulesList()) {
-      spawnScrubbers.add(new SpawnScrubber(ruleProto));
-    }
-    // Reverse the order so that later rules supersede earlier ones.
-    Collections.reverse(spawnScrubbers);
-    this.spawnScrubbers = ImmutableList.copyOf(spawnScrubbers);
-  }
-
-  /**
-   * Constructs a {@link Scrubber} from the given configuration file, which must contain a {@link
-   * Config} protocol buffer in text format.
-   */
-  public static Scrubber parse(String configPath) throws ConfigParseException {
-    try (BufferedReader reader = Files.newBufferedReader(Paths.get(configPath))) {
-      var builder = Config.newBuilder();
-      TextFormat.getParser().merge(reader, builder);
-      return new Scrubber(builder.build());
-    } catch (IOException e) {
-      throw new ConfigParseException(e.getMessage(), e);
-    } catch (PatternSyntaxException e) {
-      throw new ConfigParseException(
-          String.format("in regex '%s': %s", e.getPattern(), e.getMessage()), e);
-    }
-  }
-
-  /**
-   * Returns a {@link SpawnScrubber} suitable for a {@link Spawn}, or {@code null} if the spawn does
-   * not need to be scrubbed.
-   */
-  @Nullable
-  public SpawnScrubber forSpawn(Spawn spawn) {
-    for (SpawnScrubber spawnScrubber : spawnScrubbers) {
-      if (spawnScrubber.matches(spawn)) {
-        return spawnScrubber;
-      }
-    }
-    return null;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    return o instanceof Scrubber that && spawnScrubbers.equals(that.spawnScrubbers);
-  }
-
-  @Override
-  public int hashCode() {
-    return spawnScrubbers.hashCode();
-  }
-
-  /**
-   * Encapsulates a set of transformations required to scrub the remote cache key for a set of
-   * spawns.
-   */
-  public static final class SpawnScrubber {
-
-    private final Pattern mnemonicPattern;
-    private final Pattern labelPattern;
-    private final Pattern kindPattern;
-    private final boolean matchTools;
-
-    private final ImmutableList<Pattern> omittedInputPatterns;
-    private final ImmutableMap<Pattern, String> argReplacements;
-    private final String salt;
-
-    private SpawnScrubber(Config.Rule ruleProto) {
-      Config.Matcher matcherProto = ruleProto.getMatcher();
-      this.mnemonicPattern = Pattern.compile(emptyToAll(matcherProto.getMnemonic()));
-      this.labelPattern = Pattern.compile(emptyToAll(matcherProto.getLabel()));
-      this.kindPattern = Pattern.compile(emptyToAll(matcherProto.getKind()));
-      this.matchTools = matcherProto.getMatchTools();
-
-      Config.Transform transformProto = ruleProto.getTransform();
-      this.omittedInputPatterns =
-          transformProto.getOmittedInputsList().stream()
-              .map(Pattern::compile)
-              .collect(toImmutableList());
-      this.argReplacements =
-          transformProto.getArgReplacementsList().stream()
-              .collect(toImmutableMap(r -> Pattern.compile(r.getSource()), r -> r.getTarget()));
-      this.salt = ruleProto.getTransform().getSalt();
-    }
-
-    private String emptyToAll(String s) {
-      return s.isEmpty() ? ".*" : s;
-    }
-
-    /** Whether this scrubber applies to the given {@link Spawn}. */
-    private boolean matches(Spawn spawn) {
-      String mnemonic = spawn.getMnemonic();
-      ActionOwner actionOwner = spawn.getResourceOwner().getOwner();
-      String label = actionOwner.getLabel().getCanonicalForm();
-      String kind = actionOwner.getTargetKind();
-      boolean isForTool = actionOwner.isBuildConfigurationForTool();
-
-      return (!isForTool || matchTools)
-          && mnemonicPattern.matcher(mnemonic).matches()
-          && labelPattern.matcher(label).matches()
-          && kindPattern.matcher(kind).matches();
-    }
-
-    /** Whether an input with the given exec-relative path should be omitted from the cache key. */
-    public boolean shouldOmitInput(PathFragment execPath) {
-      for (Pattern pattern : omittedInputPatterns) {
-        if (pattern.matcher(execPath.getPathString()).matches()) {
-          return true;
+    init {
+        val spawnScrubbers: java.util.ArrayList<SpawnScrubber?> = java.util.ArrayList<SpawnScrubber?>()
+        for (ruleProto in configProto.getRulesList()) {
+            spawnScrubbers.add(SpawnScrubber(ruleProto))
         }
-      }
-      return false;
+        // Reverse the order so that later rules supersede earlier ones.
+        Collections.reverse(spawnScrubbers)
+        this.spawnScrubbers = com.google.common.collect.ImmutableList.copyOf<SpawnScrubber?>(spawnScrubbers)
     }
 
-    /** Transforms a command line argument. */
-    public String transformArgument(String arg) {
-      for (Map.Entry<Pattern, String> entry : argReplacements.entrySet()) {
-        Pattern pattern = entry.getKey();
-        String replacement = entry.getValue();
-        // Don't use Pattern#replaceFirst because it allows references to capture groups.
-        Matcher m = pattern.matcher(arg);
-        if (m.find()) {
-          arg = arg.substring(0, m.start()) + replacement + arg.substring(m.end());
+    /**
+     * Returns a [SpawnScrubber] suitable for a [Spawn], or `null` if the spawn does
+     * not need to be scrubbed.
+     */
+    fun forSpawn(spawn: Spawn): SpawnScrubber? {
+        for (spawnScrubber in spawnScrubbers) {
+            if (spawnScrubber.matches(spawn)) {
+                return spawnScrubber
+            }
         }
-      }
-      return arg;
+        return null
     }
 
-    /** Returns the scrubbing salt. */
-    public String getSalt() {
-      return salt;
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        return o is Scrubber && spawnScrubbers == o.spawnScrubbers
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      return o instanceof SpawnScrubber that
-          && matchTools == that.matchTools
-          && Objects.equals(mnemonicPattern, that.mnemonicPattern)
-          && Objects.equals(labelPattern, that.labelPattern)
-          && Objects.equals(kindPattern, that.kindPattern)
-          && Objects.equals(omittedInputPatterns, that.omittedInputPatterns)
-          && Objects.equals(argReplacements, that.argReplacements)
-          && Objects.equals(salt, that.salt);
+    override fun hashCode(): Int {
+        return spawnScrubbers.hashCode()
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(
-          mnemonicPattern,
-          labelPattern,
-          kindPattern,
-          matchTools,
-          omittedInputPatterns,
-          argReplacements,
-          salt);
+    /**
+     * Encapsulates a set of transformations required to scrub the remote cache key for a set of
+     * spawns.
+     */
+    class SpawnScrubber private constructor(ruleProto: Config.Rule) {
+        private val mnemonicPattern: java.util.regex.Pattern
+        private val labelPattern: java.util.regex.Pattern
+        private val kindPattern: java.util.regex.Pattern
+        private val matchTools: Boolean
+
+        private val omittedInputPatterns: com.google.common.collect.ImmutableList<java.util.regex.Pattern>
+        private val argReplacements: com.google.common.collect.ImmutableMap<java.util.regex.Pattern?, String?>
+
+        /** Returns the scrubbing salt.  */
+        val salt: String?
+
+        init {
+            val matcherProto: Config.Matcher = ruleProto.getMatcher()
+            this.mnemonicPattern = java.util.regex.Pattern.compile(emptyToAll(matcherProto.getMnemonic()))
+            this.labelPattern = java.util.regex.Pattern.compile(emptyToAll(matcherProto.getLabel()))
+            this.kindPattern = java.util.regex.Pattern.compile(emptyToAll(matcherProto.getKind()))
+            this.matchTools = matcherProto.getMatchTools()
+
+            val transformProto: Config.Transform = ruleProto.getTransform()
+            this.omittedInputPatterns =
+                transformProto.getOmittedInputsList().stream()
+                    .map(java.util.regex.Pattern::compile)
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            this.argReplacements =
+                transformProto.getArgReplacementsList().stream()
+                    .collect(com.google.common.collect.ImmutableMap.toImmutableMap<T?, K?, V?>(java.util.function.Function { r: T? ->
+                        java.util.regex.Pattern.compile(
+                            r.getSource()
+                        )
+                    }, java.util.function.Function { r: T? -> r.getTarget() }))
+            this.salt = ruleProto.getTransform().getSalt()
+        }
+
+        private fun emptyToAll(s: String): String {
+            return if (s.isEmpty()) ".*" else s
+        }
+
+        /** Whether this scrubber applies to the given [Spawn].  */
+        private fun matches(spawn: Spawn): Boolean {
+            val mnemonic: String? = spawn.getMnemonic()
+            val actionOwner: ActionOwner = spawn.getResourceOwner().getOwner()
+            val label: String? = actionOwner.getLabel().getCanonicalForm()
+            val kind: String? = actionOwner.getTargetKind()
+            val isForTool: Boolean = actionOwner.isBuildConfigurationForTool()
+
+            return (!isForTool || matchTools)
+                    && mnemonicPattern.matcher(mnemonic).matches()
+                    && labelPattern.matcher(label).matches()
+                    && kindPattern.matcher(kind).matches()
+        }
+
+        /** Whether an input with the given exec-relative path should be omitted from the cache key.  */
+        fun shouldOmitInput(execPath: PathFragment): Boolean {
+            for (pattern in omittedInputPatterns) {
+                if (pattern.matcher(execPath.getPathString()).matches()) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        /** Transforms a command line argument.  */
+        fun transformArgument(arg: String): String {
+            var arg = arg
+            for (entry in argReplacements.entrySet()) {
+                val pattern: java.util.regex.Pattern = entry.getKey()
+                val replacement: String? = entry.getValue()
+                // Don't use Pattern#replaceFirst because it allows references to capture groups.
+                val m: java.util.regex.Matcher = pattern.matcher(arg)
+                if (m.find()) {
+                    arg = arg.substring(0, m.start()) + replacement + arg.substring(m.end())
+                }
+            }
+            return arg
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            return o is SpawnScrubber
+                    && matchTools == o.matchTools && mnemonicPattern == o.mnemonicPattern
+                    && labelPattern == o.labelPattern
+                    && kindPattern == o.kindPattern
+                    && omittedInputPatterns == o.omittedInputPatterns
+                    && argReplacements == o.argReplacements
+                    && salt == o.salt
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(
+                mnemonicPattern,
+                labelPattern,
+                kindPattern,
+                matchTools,
+                omittedInputPatterns,
+                argReplacements,
+                salt
+            )
+        }
     }
-  }
+
+    companion object {
+        /**
+         * Constructs a [Scrubber] from the given configuration file, which must contain a [ ] protocol buffer in text format.
+         */
+        @Throws(ConfigParseException::class)
+        fun parse(configPath: String?): Scrubber {
+            try {
+                java.nio.file.Files.newBufferedReader(Paths.get(configPath)).use { reader ->
+                    val builder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                        Config.newBuilder()
+                    TextFormat.getParser().merge(reader, builder)
+                    return Scrubber(builder.build())
+                }
+            } catch (e: IOException) {
+                throw ConfigParseException(e.getMessage(), e)
+            } catch (e: PatternSyntaxException) {
+                throw ConfigParseException(
+                    java.lang.String.format("in regex '%s': %s", e.getPattern(), e.getMessage()), e
+                )
+            }
+        }
+    }
 }

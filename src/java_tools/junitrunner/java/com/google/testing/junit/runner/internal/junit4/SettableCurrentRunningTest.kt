@@ -11,15 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.internal.junit4
 
-package com.google.testing.junit.runner.internal.junit4;
-
-import com.google.testing.junit.runner.util.CurrentRunningTest;
-import com.google.testing.junit.runner.util.TestNameProvider;
+import com.google.testing.junit.runner.util.CurrentRunningTest
 
 /**
- * A {@link CurrentRunningTest} variant that allows to set the testNameProvider via a method call.
+ * A [CurrentRunningTest] variant that allows to set the testNameProvider via a method call.
  */
-public abstract class SettableCurrentRunningTest extends CurrentRunningTest {
-  protected abstract void setGlobalTestNameProvider(TestNameProvider provider);
+abstract class SettableCurrentRunningTest : CurrentRunningTest() {
+    abstract fun setGlobalTestNameProvider(provider: TestNameProvider?)
 }

@@ -11,161 +11,161 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Splitter;
-import com.google.common.base.Verify;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkAttributeTransitionProvider;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.BzlLoadFailedException;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.starlark.StarlarkAttributeTransitionProvider
 
 /**
  * Utility class for loading a Starlark exec transition from source and making it available as an
- * {@link StarlarkAttributeTransitionProvider}.
+ * [StarlarkAttributeTransitionProvider].
  */
-public final class StarlarkExecTransitionLoader {
-
-  /** Thrown when the Starlark transition failed to load. */
-  public static class StarlarkExecTransitionLoadingException extends Exception {
-    public StarlarkExecTransitionLoadingException(String context, String ref, String message) {
-      this(
-          String.format(
-              "Bad Starlark transition reference from %s: %s. %s.", context, ref, message));
-    }
-
-    public StarlarkExecTransitionLoadingException(String message) {
-      super(message);
-    }
-
-    public StarlarkExecTransitionLoadingException(Throwable cause) {
-      super(cause);
-    }
-  }
-
-  /** Caller-provided logic for Skyframe-evaluating {@link BzlLoadValue.Key}s. */
-  public interface BzlFileLoader {
+object StarlarkExecTransitionLoader {
     /**
-     * Loads the given {@link BzlLoadValue.Key}. Returns null if not all Skyframe deps are ready.
+     * Loads the Starlark transition that implements execution transition logic according to [ ][CoreOptions.starlarkExecConfig].
+     * 
+     * @param options the current configured target's [BuildOptions]. This is used to find the
+     * value for [CoreOptions.starlarkExecConfig].
+     * @param bzlFileLoader caller-provided logic for loading [BzlLoadValue.Key] skyvalues.
+     * @return null if Skyframe deps need loading. A filled [Optional] if this build implements
+     * the exec transition with a Starlark transition. An empty [Optional] if this build
+     * implements the exec transition with native logic.
+     * @throws StarlarkExecTransitionLoadingException if the desired transition isn't a valid Starlark
+     * exec transition.
      */
-    @Nullable
-    BzlLoadValue getValue(BzlLoadValue.Key key)
-        throws BzlLoadFailedException, InterruptedException, StarlarkExecTransitionLoadingException;
-  }
-
-  /**
-   * Loads the Starlark transition that implements execution transition logic according to {@link
-   * CoreOptions#starlarkExecConfig}.
-   *
-   * @param options the current configured target's {@link BuildOptions}. This is used to find the
-   *     value for {@link CoreOptions#starlarkExecConfig}.
-   * @param bzlFileLoader caller-provided logic for loading {@link BzlLoadValue.Key} skyvalues.
-   * @return null if Skyframe deps need loading. A filled {@link Optional} if this build implements
-   *     the exec transition with a Starlark transition. An empty {@link Optional} if this build
-   *     implements the exec transition with native logic.
-   * @throws StarlarkExecTransitionLoadingException if the desired transition isn't a valid Starlark
-   *     exec transition.
-   */
-  @Nullable
-  public static Optional<StarlarkAttributeTransitionProvider> loadStarlarkExecTransition(
-      @Nullable BuildOptions options, BzlFileLoader bzlFileLoader)
-      throws StarlarkExecTransitionLoadingException, InterruptedException {
-    if (options == null || options.equals(CommonOptions.EMPTY_OPTIONS)) {
-      return Optional.empty();
-    }
-    String userRef =
-        Verify.verifyNotNull(
-            options.get(CoreOptions.class).getStarlarkExecConfig(),
-            "Cannot apply the exec transition since no transition is defined for this build.");
-    final String flagName = "--experimental_exec_config";
-    TransitionReference parsedRef = TransitionReference.create(userRef, flagName);
-    BzlLoadValue bzlValue;
-    try {
-      bzlValue =
-          bzlFileLoader.getValue(
-              Objects.equals(parsedRef.bzlFile().getRepository(), RepositoryName.BUILTINS)
-                  ? BzlLoadValue.keyForBuiltins(parsedRef.bzlFile())
-                  : BzlLoadValue.keyForBuild(parsedRef.bzlFile()));
-    } catch (BzlLoadFailedException e) {
-      throw new StarlarkExecTransitionLoadingException(flagName, userRef, e.getMessage());
-    }
-    if (bzlValue == null) {
-      return null;
-    }
-    Object transition = bzlValue.getModule().getGlobal(parsedRef.starlarkSymbolName());
-    if (transition == null) {
-      throw new StarlarkExecTransitionLoadingException(
-          flagName,
-          userRef,
-          String.format("%s not found in %s", parsedRef.starlarkSymbolName(), parsedRef.bzlFile()));
-    } else if (!(transition instanceof StarlarkDefinedConfigTransition)) {
-      throw new StarlarkExecTransitionLoadingException(
-          flagName, userRef, parsedRef.starlarkSymbolName() + " is not a Starlark transition");
-    }
-    return Optional.of(
-        new StarlarkExecTransitionProvider((StarlarkDefinedConfigTransition) transition));
-  }
-
-  /** A marker class to distinguish the exec transition from other starlark transitions. */
-  static class StarlarkExecTransitionProvider extends StarlarkAttributeTransitionProvider {
-    StarlarkExecTransitionProvider(StarlarkDefinedConfigTransition execTransition) {
-      super(execTransition);
+    @Throws(StarlarkExecTransitionLoadingException::class, java.lang.InterruptedException::class)
+    fun loadStarlarkExecTransition(
+        options: BuildOptions?, bzlFileLoader: BzlFileLoader
+    ): java.util.Optional<StarlarkAttributeTransitionProvider?>? {
+        if (options == null || options.equals(CommonOptions.EMPTY_OPTIONS)) {
+            return java.util.Optional.empty<StarlarkAttributeTransitionProvider?>()
+        }
+        val userRef: String =
+            com.google.common.base.Verify.verifyNotNull<T>(
+                options.get(CoreOptions::class.java).getStarlarkExecConfig(),
+                "Cannot apply the exec transition since no transition is defined for this build."
+            )
+        val flagName = "--experimental_exec_config"
+        val parsedRef = TransitionReference.Companion.create(userRef, flagName)
+        val bzlValue: BzlLoadValue?
+        try {
+            bzlValue =
+                bzlFileLoader.getValue(
+                    if (parsedRef.bzlFile.getRepository() == RepositoryName.BUILTINS)
+                        BzlLoadValue.keyForBuiltins(parsedRef.bzlFile)
+                    else
+                        BzlLoadValue.keyForBuild(parsedRef.bzlFile)
+                )
+        } catch (e: BzlLoadFailedException) {
+            throw StarlarkExecTransitionLoadingException(flagName, userRef, e.getMessage())
+        }
+        if (bzlValue == null) {
+            return null
+        }
+        val transition: Any? = bzlValue.getModule().getGlobal(parsedRef.starlarkSymbolName)
+        if (transition == null) {
+            throw StarlarkExecTransitionLoadingException(
+                flagName,
+                userRef,
+                java.lang.String.format("%s not found in %s", parsedRef.starlarkSymbolName, parsedRef.bzlFile)
+            )
+        } else if (transition !is StarlarkDefinedConfigTransition) {
+            throw StarlarkExecTransitionLoadingException(
+                flagName, userRef, parsedRef.starlarkSymbolName + " is not a Starlark transition"
+            )
+        }
+        return java.util.Optional.of<T?>(
+            StarlarkExecTransitionProvider(transition as StarlarkDefinedConfigTransition)
+        )
     }
 
-    @Override
-    public boolean allowImmutableFlagChanges() {
-      // The exec transition must be allowed to change otherwise immutable flags.
-      return true;
+    /** Thrown when the Starlark transition failed to load.  */
+    class StarlarkExecTransitionLoadingException : java.lang.Exception {
+        constructor(context: String?, ref: String?, message: String?) : this(
+            java.lang.String.format(
+                "Bad Starlark transition reference from %s: %s. %s.", context, ref, message
+            )
+        )
+
+        constructor(message: String?) : super(message)
+
+        constructor(cause: Throwable?) : super(cause)
     }
 
-    @Override
-    public boolean isExecTransitionProvider() {
-      return true;
+    /** Caller-provided logic for Skyframe-evaluating [BzlLoadValue.Key]s.  */
+    interface BzlFileLoader {
+        /**
+         * Loads the given [BzlLoadValue.Key]. Returns null if not all Skyframe deps are ready.
+         */
+        @Throws(
+            BzlLoadFailedException::class,
+            java.lang.InterruptedException::class,
+            StarlarkExecTransitionLoadingException::class
+        )
+        fun getValue(key: com.google.devtools.build.lib.skyframe.BzlLoadValue.Key?): BzlLoadValue?
     }
-  }
 
-  /**
-   * Structured form of a Starlark transition reference.
-   *
-   * <p>In other words, structured form of <code>//pkg:def.bzl%transition_name</code>
-   *
-   * @param bzlFile The .bzl file where this transition is defined.
-   * @param starlarkSymbolName The transition's Starlark symbol name.
-   */
-  record TransitionReference(Label bzlFile, String starlarkSymbolName) {
-    TransitionReference {
-      requireNonNull(bzlFile, "bzlFile");
-      requireNonNull(starlarkSymbolName, "starlarkSymbolName");
+    /** A marker class to distinguish the exec transition from other starlark transitions.  */
+    internal class StarlarkExecTransitionProvider(execTransition: StarlarkDefinedConfigTransition?) :
+        StarlarkAttributeTransitionProvider(execTransition) {
+        public override fun allowImmutableFlagChanges(): Boolean {
+            // The exec transition must be allowed to change otherwise immutable flags.
+            return true
+        }
+
+        public override fun isExecTransitionProvider(): Boolean {
+            return true
+        }
     }
 
     /**
-     * Returns a structured form of a user-specified Starlark transition reference.
-     *
-     * @throws StarlarkExecTransitionLoadingException on parsing errors.
+     * Structured form of a Starlark transition reference.
+     * 
+     * 
+     * In other words, structured form of `//pkg:def.bzl%transition_name`
+     * 
+     * @param bzlFile The .bzl file where this transition is defined.
+     * @param starlarkSymbolName The transition's Starlark symbol name.
      */
-    static TransitionReference create(String userRef, String context)
-        throws StarlarkExecTransitionLoadingException {
-      List<String> splitval = Splitter.on('%').splitToList(userRef);
-      if (splitval.size() < 2 || splitval.get(1).isEmpty()) {
-        throw new StarlarkExecTransitionLoadingException(
-            context, userRef, "Doesn't match expected form //pkg:file.bzl%%symbol");
-      }
-      try {
-        return new TransitionReference(Label.parseCanonical(splitval.get(0)), splitval.get(1));
-      } catch (LabelSyntaxException e) {
-        throw new StarlarkExecTransitionLoadingException(
-            context, userRef, String.format("Bad label %s: %s", splitval.get(0), e.getMessage()));
-      }
-    }
-  }
+    @kotlin.jvm.JvmRecord
+    internal data class TransitionReference(
+        bzlFile: com.google.devtools.build.lib.cmdline.Label?,
+        starlarkSymbolName: String?
+    ) {
+        val bzlFile: com.google.devtools.build.lib.cmdline.Label?
+        val starlarkSymbolName: String?
 
-  private StarlarkExecTransitionLoader() {}
+        init {
+            this.starlarkSymbolName = starlarkSymbolName
+            this.bzlFile = bzlFile
+            java.util.Objects.requireNonNull<com.google.devtools.build.lib.cmdline.Label?>(bzlFile, "bzlFile")
+            java.util.Objects.requireNonNull<String?>(starlarkSymbolName, "starlarkSymbolName")
+        }
+
+        companion object {
+            /**
+             * Returns a structured form of a user-specified Starlark transition reference.
+             * 
+             * @throws StarlarkExecTransitionLoadingException on parsing errors.
+             */
+            @Throws(StarlarkExecTransitionLoadingException::class)
+            fun create(userRef: String, context: String?): TransitionReference {
+                val splitval: MutableList<String?> = com.google.common.base.Splitter.on('%').splitToList(userRef)
+                if (splitval.size() < 2 || splitval.get(1).isEmpty()) {
+                    throw StarlarkExecTransitionLoadingException(
+                        context, userRef, "Doesn't match expected form //pkg:file.bzl%%symbol"
+                    )
+                }
+                try {
+                    return TransitionReference(
+                        com.google.devtools.build.lib.cmdline.Label.parseCanonical(splitval.get(0)),
+                        splitval.get(1)
+                    )
+                } catch (e: LabelSyntaxException) {
+                    throw StarlarkExecTransitionLoadingException(
+                        context, userRef, java.lang.String.format("Bad label %s: %s", splitval.get(0), e.getMessage())
+                    )
+                }
+            }
+        }
+    }
 }

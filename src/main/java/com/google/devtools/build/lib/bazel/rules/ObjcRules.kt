@@ -11,40 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.rules;
+package com.google.devtools.build.lib.bazel.rules
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses.EmptyRule;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
-import com.google.devtools.build.lib.rules.apple.AppleConfiguration;
-import com.google.devtools.build.lib.rules.core.CoreRules;
-import com.google.devtools.build.lib.rules.objc.AppleStarlarkCommon;
-import com.google.devtools.build.lib.rules.objc.ObjcConfiguration;
-import com.google.devtools.build.lib.starlarkbuildapi.objc.AppleBootstrap;
+import com.google.devtools.build.lib.analysis.BaseRuleClasses.EmptyRule
 
-/** Rules for Objective-C support in Bazel. */
-public class ObjcRules implements RuleSet {
-  public static final ObjcRules INSTANCE = new ObjcRules();
+/** Rules for Objective-C support in Bazel.  */
+class ObjcRules private constructor() : RuleSet {
+    public override fun init(builder: ConfiguredRuleClassProvider.Builder) {
+        builder.addConfigurationFragment(ObjcConfiguration::class.java)
+        builder.addConfigurationFragment(AppleConfiguration::class.java)
 
-  private ObjcRules() {
-    // Use the static INSTANCE field instead.
-  }
+        builder.addRuleDefinition(object : EmptyRule("objc_import") {})
+        builder.addRuleDefinition(object : EmptyRule("objc_library") {})
 
-  @Override
-  public void init(ConfiguredRuleClassProvider.Builder builder) {
-    builder.addConfigurationFragment(ObjcConfiguration.class);
-    builder.addConfigurationFragment(AppleConfiguration.class);
+        builder.addStarlarkBuiltinsInternal("apple_common", AppleStarlarkCommon())
+        builder.addStarlarkBootstrap(AppleBootstrap())
+    }
 
-    builder.addRuleDefinition(new EmptyRule("objc_import") {});
-    builder.addRuleDefinition(new EmptyRule("objc_library") {});
+    public override fun requires(): com.google.common.collect.ImmutableList<RuleSet?> {
+        return com.google.common.collect.ImmutableList.of<E?>(CoreRules.INSTANCE, CcRules.Companion.INSTANCE)
+    }
 
-    builder.addStarlarkBuiltinsInternal("apple_common", new AppleStarlarkCommon());
-    builder.addStarlarkBootstrap(new AppleBootstrap());
-  }
-
-  @Override
-  public ImmutableList<RuleSet> requires() {
-    return ImmutableList.of(CoreRules.INSTANCE, CcRules.INSTANCE);
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: ObjcRules = ObjcRules()
+    }
 }

@@ -2011,7 +2011,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
       EvaluationContext evaluationContext =
           newEvaluationContextBuilder()
               .setKeepGoing(options.getOptions(KeepGoingOption.class).getKeepGoing())
-              .setParallelism(options.getOptions(BuildRequestOptions.class).getJobs())
+              .setParallelism(options.getOptions(BuildRequestOptions.class).jobs)
               .setEventHandler(reporter)
               .setExecutionPhase()
               .build();
@@ -2079,7 +2079,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
       return evaluate(
           testKeys,
           /* keepGoing= */ options.getOptions(KeepGoingOption.class).getKeepGoing(),
-          /* numThreads= */ options.getOptions(BuildRequestOptions.class).getJobs(),
+          /* numThreads= */ options.getOptions(BuildRequestOptions.class).jobs,
           reporter);
     } finally {
       // Also releases thread locks.
@@ -2387,7 +2387,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
         newEvaluationContextBuilder()
             .setParallelism(executors.analysisParallelism())
             .setKeepGoing(keepGoing)
-            .setExecutor(executors.getAnalysisExecutor())
+            .setExecutor(executors.analysisExecutor)
             .setEventHandler(eventHandler)
             .build();
     EvaluationResult<ActionLookupValue> result =
@@ -3334,7 +3334,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
     EvaluationResult<BazelDepGraphValue> evalResult =
         evaluate(
             ImmutableList.of(BazelDepGraphValue.KEY), false, DEFAULT_THREAD_COUNT, eventHandler);
-    var bzlmodDepGraph = evalResult.get(BazelDepGraphValue.KEY).getDepGraph();
+    var bzlmodDepGraph = evalResult.get(BazelDepGraphValue.KEY).depGraph;
     LinkedHashMap<String, String> aliasesMap = new LinkedHashMap<>();
     var rootModule = bzlmodDepGraph.entrySet().iterator().next().getValue();
     for (var module : bzlmodDepGraph.entrySet()) {
@@ -3801,7 +3801,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
       }
     }
     BuildRequestOptions buildRequestOptions = options.getOptions(BuildRequestOptions.class);
-    int fsvcThreads = buildRequestOptions == null ? 200 : buildRequestOptions.getFsvcThreads();
+    int fsvcThreads = buildRequestOptions == null ? 200 : buildRequestOptions.fsvcThreads;
     try (SilentCloseable c =
         Profiler.instance().profile("handleDiffsWithCompleteDiffInformation")) {
       handleDiffsWithCompleteDiffInformation(tsgm, modifiedFilesByPathEntry, fsvcThreads);
@@ -3829,7 +3829,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
           tsgm,
           pathEntriesWithoutDiffInformation,
           packageOptions.getCheckOutputFiles(),
-          repoOptions != null && repoOptions.getCheckExternalRepositoryFiles(),
+          repoOptions != null && repoOptions.checkExternalRepositoryFiles,
           packageOptions.getCheckExternalOtherFiles(),
           fsvcThreads);
     } finally {

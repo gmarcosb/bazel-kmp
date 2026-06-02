@@ -11,67 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-package com.google.devtools.build.lib.authandtls.credentialhelper;
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions
+import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialCacheExpiry
+import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsResponse
+import com.google.devtools.build.lib.authandtls.credentialhelper.WallTicker
+import com.google.devtools.build.lib.runtime.BlazeModule
+import com.google.devtools.build.lib.runtime.CommandEnvironment
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.clock.JavaClock;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.common.options.OptionsBase;
-import java.net.URI;
-import java.time.Duration;
+/** A module whose sole purpose is to hold the credential cache which is shared by other modules.  */
+class CredentialModule @com.google.common.annotations.VisibleForTesting internal constructor(clock: com.google.devtools.build.lib.clock.Clock?) :
+    BlazeModule() {
+    private val credentialCacheExpiry: CredentialCacheExpiry
+    private val credentialCache: com.github.benmanes.caffeine.cache.Cache<java.net.URI?, GetCredentialsResponse?>
+    private var lastDefaultCacheDuration: java.time.Duration = java.time.Duration.ZERO
 
-/** A module whose sole purpose is to hold the credential cache which is shared by other modules. */
-public class CredentialModule extends BlazeModule {
-  private final CredentialCacheExpiry credentialCacheExpiry;
-  private final Cache<URI, GetCredentialsResponse> credentialCache;
-  private Duration lastDefaultCacheDuration = Duration.ZERO;
+    constructor() : this(com.google.devtools.build.lib.clock.JavaClock())
 
-  public CredentialModule() {
-    this(new JavaClock());
-  }
-
-  @VisibleForTesting
-  CredentialModule(Clock clock) {
-    this.credentialCacheExpiry = new CredentialCacheExpiry();
-    this.credentialCache =
-        Caffeine.newBuilder()
-            .ticker(new WallTicker(clock))
-            .expireAfter(credentialCacheExpiry)
-            .build();
-  }
-
-  /** Returns the credential cache. */
-  public Cache<URI, GetCredentialsResponse> getCredentialCache() {
-    return credentialCache;
-  }
-
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getCommonCommandOptions() {
-    return ImmutableList.of(AuthAndTLSOptions.class);
-  }
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    Duration defaultCacheDuration =
-        env.getOptions().getOptions(AuthAndTLSOptions.class).getCredentialHelperCacheTimeout();
-
-    boolean defaultCacheDurationChanged = !defaultCacheDuration.equals(lastDefaultCacheDuration);
-    lastDefaultCacheDuration = defaultCacheDuration;
-
-    // Clear the cache on clean or when the default cache duration changes.
-    if (env.getCommandName().equals("clean") || defaultCacheDurationChanged) {
-      credentialCache.invalidateAll();
-      credentialCache.cleanUp();
+    init {
+        this.credentialCacheExpiry = CredentialCacheExpiry()
+        this.credentialCache =
+            Caffeine.newBuilder()
+                .ticker(WallTicker(clock))
+                .expireAfter<java.net.URI?, GetCredentialsResponse?>(credentialCacheExpiry)
+                .build<java.net.URI?, GetCredentialsResponse?>()
     }
 
-    // Update the expiration policy for future entries.
-    credentialCacheExpiry.setDefaultCacheDuration(defaultCacheDuration);
-  }
+    /** Returns the credential cache.  */
+    fun getCredentialCache(): com.github.benmanes.caffeine.cache.Cache<java.net.URI?, GetCredentialsResponse?> {
+        return credentialCache
+    }
+
+    val commonCommandOptions: Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase>>
+        get() = com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+            AuthAndTLSOptions::class.java
+        )
+
+    override fun beforeCommand(env: CommandEnvironment) {
+        val defaultCacheDuration: java.time.Duration =
+            env.getOptions().getOptions<AuthAndTLSOptions?>(AuthAndTLSOptions::class.java)
+                .getCredentialHelperCacheTimeout()
+
+        val defaultCacheDurationChanged = defaultCacheDuration != lastDefaultCacheDuration
+        lastDefaultCacheDuration = defaultCacheDuration
+
+        // Clear the cache on clean or when the default cache duration changes.
+        if (env.getCommandName() == "clean" || defaultCacheDurationChanged) {
+            credentialCache.invalidateAll()
+            credentialCache.cleanUp()
+        }
+
+        // Update the expiration policy for future entries.
+        credentialCacheExpiry.setDefaultCacheDuration(defaultCacheDuration)
+    }
 }

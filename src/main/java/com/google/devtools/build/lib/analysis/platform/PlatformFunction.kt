@@ -11,123 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
-
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.config.CommonOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.Label.PackageContext;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.lib.skyframe.PackageValue;
-import com.google.devtools.build.lib.skyframe.RepositoryMappingValue;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
 /**
- * Validates that a {@link Label} is a platform, then requests its {@link ConfiguredTargetKey}.
- * Extracts the {@link PlatformInfo} from the analyzed configured target and parses any {@link
- * PlatformInfo#flags()}.
+ * Validates that a [Label] is a platform, then requests its [ConfiguredTargetKey].
+ * Extracts the [PlatformInfo] from the analyzed configured target and parses any [ ][PlatformInfo.flags].
  */
-public final class PlatformFunction implements SkyFunction {
+class PlatformFunction : SkyFunction {
+    @Throws(PlatformFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): PlatformValue? {
+        val params: com.google.devtools.build.lib.analysis.platform.PlatformValue.Key =
+            skyKey.argument() as com.google.devtools.build.lib.analysis.platform.PlatformValue.Key
+        val platformLabel: com.google.devtools.build.lib.cmdline.Label = params.label()
+        val pkgId: PackageIdentifier = platformLabel.getPackageIdentifier()
 
-  /** Returns the {@link ConfiguredTargetKey} requested when evaluating the given platform. */
-  public static ConfiguredTargetKey configuredTargetDep(Label platformLabel) {
-    // Platforms do not rely on the configuration. Use a dummy blank configuration to reduce the
-    // number of skyframe nodes created.
-    return ConfiguredTargetKey.builder()
-        .setLabel(platformLabel)
-        .setConfigurationKey(BuildConfigurationKey.create(CommonOptions.EMPTY_OPTIONS))
-        .build();
-  }
+        // Load the Package first to verify the Target. The ConfiguredTarget should not be loaded until
+        // after verification. See https://github.com/bazelbuild/bazel/pull/10307.
+        //
+        // In distributed analysis, these packages will be duplicated across shards.
+        val target: com.google.devtools.build.lib.packages.Target
+        try {
+            val pkgValue: PackageValue? =
+                env.getValueOrThrow<NoSuchPackageException?>(pkgId, NoSuchPackageException::class.java) as PackageValue?
+            if (pkgValue == null) {
+                return null
+            }
+            target = pkgValue.getPackage().getTarget(platformLabel.getName())
+        } catch (e: NoSuchPackageException) {
+            throw PlatformFunctionException(InvalidPlatformException(e))
+        } catch (e: NoSuchTargetException) {
+            throw PlatformFunctionException(InvalidPlatformException(e))
+        }
 
-  @Nullable
-  @Override
-  public PlatformValue compute(SkyKey skyKey, Environment env)
-      throws PlatformFunctionException, InterruptedException {
-    PlatformValue.Key params = (PlatformValue.Key) skyKey.argument();
-    var platformLabel = params.label();
-    var pkgId = platformLabel.getPackageIdentifier();
+        if (!PlatformLookupUtil.hasPlatformInfo(target)) {
+            throw PlatformFunctionException(InvalidPlatformException(platformLabel))
+        }
 
-    // Load the Package first to verify the Target. The ConfiguredTarget should not be loaded until
-    // after verification. See https://github.com/bazelbuild/bazel/pull/10307.
-    //
-    // In distributed analysis, these packages will be duplicated across shards.
-    Target target;
-    try {
-      var pkgValue = (PackageValue) env.getValueOrThrow(pkgId, NoSuchPackageException.class);
-      if (pkgValue == null) {
-        return null;
-      }
-      target = pkgValue.getPackage().getTarget(platformLabel.getName());
-    } catch (NoSuchPackageException | NoSuchTargetException e) {
-      throw new PlatformFunctionException(new InvalidPlatformException(e));
+        val configuredTarget: ConfiguredTarget
+        try {
+            val configuredTargetValue: ConfiguredTargetValue? =
+                env.getValueOrThrow<E?>(
+                    configuredTargetDep(platformLabel), ConfiguredValueCreationException::class.java
+                ) as ConfiguredTargetValue?
+            if (configuredTargetValue == null) {
+                return null
+            }
+            configuredTarget = configuredTargetValue.getConfiguredTarget()
+        } catch (e: ConfiguredValueCreationException) {
+            throw PlatformFunctionException(InvalidPlatformException(platformLabel, e))
+        }
+
+        val platformInfo: com.google.devtools.build.lib.analysis.platform.PlatformInfo? =
+            PlatformProviderUtils.platform(configuredTarget)
+        if (platformInfo == null) {
+            throw PlatformFunctionException(
+                InvalidPlatformException(configuredTarget.getLabel())
+            )
+        }
+
+        if (platformInfo.flags().isEmpty()) {
+            return PlatformValue.Companion.noFlags(platformInfo)
+        }
+
+        val repoMappingValue: RepositoryMappingValue? =
+            env.getValue(RepositoryMappingValue.key(platformLabel.getRepository())) as RepositoryMappingValue?
+        if (repoMappingValue == null) {
+            return null
+        }
+
+        val parsedFlagsKey: ParsedFlagsValue.Key? =
+            ParsedFlagsValue.Key.create(
+                platformInfo.flags(),
+                PackageContext.of(
+                    pkgId,
+                    repoMappingValue.repositoryMapping
+                ),  // Include default values so that any flags explicitly reset to the default are kept.
+                /* includeDefaultValues= */
+                true,
+                params.flagAliasMappings()
+            )
+        val parsedFlagsValue: ParsedFlagsValue? = env.getValue(parsedFlagsKey) as ParsedFlagsValue?
+        if (parsedFlagsValue == null) {
+            return null
+        }
+
+        return PlatformValue.Companion.withFlags(platformInfo, parsedFlagsValue)
     }
 
-    if (!PlatformLookupUtil.hasPlatformInfo(target)) {
-      throw new PlatformFunctionException(new InvalidPlatformException(platformLabel));
-    }
+    private class PlatformFunctionException(cause: InvalidPlatformException?) :
+        SkyFunctionException(cause, Transience.PERSISTENT)
 
-    ConfiguredTarget configuredTarget;
-    try {
-      var configuredTargetValue =
-          (ConfiguredTargetValue)
-              env.getValueOrThrow(
-                  configuredTargetDep(platformLabel), ConfiguredValueCreationException.class);
-      if (configuredTargetValue == null) {
-        return null;
-      }
-      configuredTarget = configuredTargetValue.getConfiguredTarget();
-    } catch (ConfiguredValueCreationException e) {
-      throw new PlatformFunctionException(new InvalidPlatformException(platformLabel, e));
+    companion object {
+        /** Returns the [ConfiguredTargetKey] requested when evaluating the given platform.  */
+        fun configuredTargetDep(platformLabel: com.google.devtools.build.lib.cmdline.Label?): ConfiguredTargetKey? {
+            // Platforms do not rely on the configuration. Use a dummy blank configuration to reduce the
+            // number of skyframe nodes created.
+            return ConfiguredTargetKey.builder()
+                .setLabel(platformLabel)
+                .setConfigurationKey(BuildConfigurationKey.create(CommonOptions.EMPTY_OPTIONS))
+                .build()
+        }
     }
-
-    PlatformInfo platformInfo = PlatformProviderUtils.platform(configuredTarget);
-    if (platformInfo == null) {
-      throw new PlatformFunctionException(
-          new InvalidPlatformException(configuredTarget.getLabel()));
-    }
-
-    if (platformInfo.flags().isEmpty()) {
-      return PlatformValue.noFlags(platformInfo);
-    }
-
-    var repoMappingValue =
-        (RepositoryMappingValue)
-            env.getValue(RepositoryMappingValue.key(platformLabel.getRepository()));
-    if (repoMappingValue == null) {
-      return null;
-    }
-
-    var parsedFlagsKey =
-        ParsedFlagsValue.Key.create(
-            platformInfo.flags(),
-            PackageContext.of(pkgId, repoMappingValue.repositoryMapping()),
-            // Include default values so that any flags explicitly reset to the default are kept.
-            /* includeDefaultValues= */ true,
-            params.flagAliasMappings());
-    var parsedFlagsValue = (ParsedFlagsValue) env.getValue(parsedFlagsKey);
-    if (parsedFlagsValue == null) {
-      return null;
-    }
-
-    return PlatformValue.withFlags(platformInfo, parsedFlagsValue);
-  }
-
-  private static final class PlatformFunctionException extends SkyFunctionException {
-    PlatformFunctionException(InvalidPlatformException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-  }
 }

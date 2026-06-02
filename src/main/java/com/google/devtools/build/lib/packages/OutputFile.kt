@@ -11,293 +11,269 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.List;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+/** A generated file that is the output of a rule.  */
+abstract class OutputFile private constructor(
+    label: Label,
+    generatingRule: com.google.devtools.build.lib.packages.Rule,
+    outputKey: String?
+) : FileTarget(generatingRule.getPackageoid(), label) {
+    private val generatingRule: com.google.devtools.build.lib.packages.Rule
+    private val outputKey: String?
 
-/** A generated file that is the output of a rule. */
-public abstract class OutputFile extends FileTarget {
-
-  /**
-   * Constructs an implicit output file with the given label, which must be in the generating rule's
-   * package.
-   *
-   * @param outputKey either the map key returned by {@link
-   *     ImplicitOutputsFunction.StarlarkImplicitOutputsFunction#calculateOutputs} or the empty
-   *     string for natively defined implicit outputs
-   */
-  static OutputFile createImplicit(Label label, Rule generatingRule, String outputKey) {
-    return new Implicit(label, generatingRule, outputKey);
-  }
-
-  /**
-   * Constructs an explicit output file with the given label, which must be in the generating rule's
-   * package.
-   *
-   * @param attrName the output attribute's name; used as the {@linkplain #getOutputKey output key}
-   */
-  static OutputFile createExplicit(Label label, Rule generatingRule, String attrName) {
-    return new Explicit(label, generatingRule, attrName);
-  }
-
-  private final Rule generatingRule;
-  private final String outputKey;
-
-  private OutputFile(Label label, Rule generatingRule, String outputKey) {
-    super(generatingRule.getPackageoid(), label);
-    this.generatingRule = generatingRule;
-    this.outputKey = outputKey;
-  }
-
-  @Override
-  @Nullable
-  public final RuleVisibility getRawVisibility() {
-    return generatingRule.getRawVisibility();
-  }
-
-  @Override
-  public final RuleVisibility getDefaultVisibility() {
-    if (generatingRule.containsErrors()) {
-      // If the generating rule is in error, the default visibility might not be resolvable.
-      return RuleVisibility.PRIVATE;
-    }
-    return generatingRule.getDefaultVisibility();
-  }
-
-  @Override
-  public final RuleVisibility getVisibility() {
-    if (generatingRule.containsErrors()) {
-      // If the generating rule is in error, the visibility might not be resolvable.
-      return RuleVisibility.PRIVATE;
-    }
-    return generatingRule.getVisibility();
-  }
-
-  @Override
-  public final Iterable<Label> getVisibilityDependencyLabels() {
-    if (generatingRule.containsErrors()) {
-      // If the generating rule is in error, the visibility deps might not be resolvable.
-      return ImmutableList.of();
-    }
-    return generatingRule.getVisibilityDependencyLabels();
-  }
-
-  @Override
-  public final List<Label> getVisibilityDeclaredLabels() {
-    return generatingRule.getVisibilityDeclaredLabels();
-  }
-
-  @Override
-  public final boolean isConfigurable() {
-    return true;
-  }
-
-  /** Returns the rule which generates this output file. */
-  public final Rule getGeneratingRule() {
-    return generatingRule;
-  }
-
-  @Override
-  public final Packageoid getPackageoid() {
-    return generatingRule.getPackageoid();
-  }
-
-  @Override
-  public Package.Metadata getPackageMetadata() {
-    return generatingRule.getPackageMetadata();
-  }
-
-  @Override
-  public Package.Declarations getPackageDeclarations() {
-    return generatingRule.getPackageDeclarations();
-  }
-
-  /**
-   * A kind of output file.
-   *
-   * <p>The FILESET kind is only supported for a non-open-sourced {@code fileset} rule.
-   */
-  public enum Kind {
-    FILE,
-    FILESET
-  }
-
-  /** Returns the kind of this output file. */
-  public final Kind getKind() {
-    return generatingRule.getRuleClassObject().getOutputFileKind();
-  }
-
-  @Override
-  public final String getTargetKind() {
-    return targetKind();
-  }
-
-  @Override
-  public final Rule getAssociatedRule() {
-    return generatingRule;
-  }
-
-  @Override
-  public final Location getLocation() {
-    return generatingRule.getLocation();
-  }
-
-  @Override
-  public final boolean isOutputFile() {
-    return true;
-  }
-
-  @Override
-  public final Label getGeneratingRuleLabel() {
-    return generatingRule.getLabel();
-  }
-
-  @Override
-  public final String getDeprecationWarning() {
-    return generatingRule.getDeprecationWarning();
-  }
-
-  @Override
-  public final boolean isTestOnly() {
-    return generatingRule.isTestOnly();
-  }
-
-  @Override
-  public final boolean satisfies(RequiredProviders required) {
-    return generatingRule.satisfies(required);
-  }
-
-  @Override
-  public final TestTimeout getTestTimeout() {
-    return TestTimeout.getTestTimeout(generatingRule);
-  }
-
-  @Override
-  public AdvertisedProviderSet getAdvertisedProviders() {
-    return generatingRule.getAdvertisedProviders();
-  }
-
-  /**
-   * Returns this output file's output key.
-   *
-   * <p>An output key is an identifier used to access the output in {@code ctx.outputs}, or the
-   * empty string in the case of an output that's not exposed there. For explicit outputs, the
-   * output key is the name of the attribute under which that output appears. For Starlark-defined
-   * implicit outputs, the output key is determined by the dict returned from the Starlark function.
-   * Native-defined implicit outputs are not named in this manner, and so are invisible to {@code
-   * ctx.outputs} and use the empty string key. (It'd be pathological for the empty string to be
-   * used as a key in the other two cases, but this class makes no attempt to prohibit that.)
-   */
-  final String getOutputKey() {
-    return outputKey;
-  }
-
-  abstract boolean isImplicit();
-
-  /** Returns the target kind for all output files. */
-  public static String targetKind() {
-    return "generated file";
-  }
-
-  @Override
-  public TargetData reduceForSerialization() {
-    return new OutputFileData(getLocation(), getLabel(), generatingRule.reduceForSerialization());
-  }
-
-  private static final class Implicit extends OutputFile {
-
-    Implicit(Label label, Rule generatingRule, String outputKey) {
-      super(label, generatingRule, outputKey);
+    init {
+        this.generatingRule = generatingRule
+        this.outputKey = outputKey
     }
 
-    @Override
-    boolean isImplicit() {
-      return true;
-    }
-  }
-
-  private static final class Explicit extends OutputFile {
-
-    Explicit(Label label, Rule generatingRule, String attrName) {
-      super(label, generatingRule, attrName);
+    override fun getRawVisibility(): RuleVisibility? {
+        return generatingRule.getRawVisibility()
     }
 
-    @Override
-    boolean isImplicit() {
-      return false;
-    }
-  }
-
-  private static class OutputFileData implements TargetData {
-    private final Location location;
-    private final Label label;
-    // TODO(b/297857068): ensure this is not duplicated on deserialization.
-    private final TargetData generatingRuleData;
-
-    private OutputFileData(Location location, Label label, TargetData generatingRuleData) {
-      this.location = location;
-      this.label = label;
-      this.generatingRuleData = generatingRuleData;
+    override fun getDefaultVisibility(): RuleVisibility? {
+        if (generatingRule.containsErrors()) {
+            // If the generating rule is in error, the default visibility might not be resolvable.
+            return RuleVisibility.Companion.PRIVATE
+        }
+        return generatingRule.getDefaultVisibility()
     }
 
-    @Override
-    public String getTargetKind() {
-      return targetKind();
+    override fun getVisibility(): RuleVisibility? {
+        if (generatingRule.containsErrors()) {
+            // If the generating rule is in error, the visibility might not be resolvable.
+            return RuleVisibility.Companion.PRIVATE
+        }
+        return generatingRule.getVisibility()
     }
 
-    @Override
-    public Location getLocation() {
-      return location;
+    override fun getVisibilityDependencyLabels(): Iterable<Label?>? {
+        if (generatingRule.containsErrors()) {
+            // If the generating rule is in error, the visibility deps might not be resolvable.
+            return com.google.common.collect.ImmutableList.of<Label?>()
+        }
+        return generatingRule.getVisibilityDependencyLabels()
     }
 
-    @Override
-    public Label getLabel() {
-      return label;
+    override fun getVisibilityDeclaredLabels(): MutableList<Label?>? {
+        return generatingRule.getVisibilityDeclaredLabels()
     }
 
-    @Override
-    public boolean isFile() {
-      return true;
+    override fun isConfigurable(): Boolean {
+        return true
     }
 
-    @Override
-    public boolean isOutputFile() {
-      return true;
+    /** Returns the rule which generates this output file.  */
+    fun getGeneratingRule(): com.google.devtools.build.lib.packages.Rule {
+        return generatingRule
     }
 
-    @Override
-    public Label getGeneratingRuleLabel() {
-      return generatingRuleData.getLabel();
+    override fun getPackageoid(): Packageoid? {
+        return generatingRule.getPackageoid()
     }
 
-    @Override
-    public String getDeprecationWarning() {
-      return generatingRuleData.getDeprecationWarning();
+    override fun getPackageMetadata(): com.google.devtools.build.lib.packages.Package.Metadata? {
+        return generatingRule.getPackageMetadata()
     }
 
-    @Override
-    public boolean isTestOnly() {
-      return generatingRuleData.isTestOnly();
+    override fun getPackageDeclarations(): Declarations? {
+        return generatingRule.getPackageDeclarations()
     }
 
-    @Override
-    public final boolean satisfies(RequiredProviders required) {
-      return generatingRuleData.satisfies(required);
+    /**
+     * A kind of output file.
+     * 
+     * 
+     * The FILESET kind is only supported for a non-open-sourced `fileset` rule.
+     */
+    enum class Kind {
+        FILE,
+        FILESET
     }
 
-    @Override
-    public TestTimeout getTestTimeout() {
-      return generatingRuleData.getTestTimeout();
+    /** Returns the kind of this output file.  */
+    fun getKind(): Kind? {
+        return generatingRule.getRuleClassObject().getOutputFileKind()
     }
 
-    @Override
-    public AdvertisedProviderSet getAdvertisedProviders() {
-      return generatingRuleData.getAdvertisedProviders();
+    override fun getTargetKind(): String {
+        return targetKind()
     }
-  }
+
+    override fun getAssociatedRule(): com.google.devtools.build.lib.packages.Rule {
+        return generatingRule
+    }
+
+    override fun getLocation(): net.starlark.java.syntax.Location? {
+        return generatingRule.getLocation()
+    }
+
+    override fun isOutputFile(): Boolean {
+        return true
+    }
+
+    override fun getGeneratingRuleLabel(): Label? {
+        return generatingRule.getLabel()
+    }
+
+    override fun getDeprecationWarning(): String? {
+        return generatingRule.getDeprecationWarning()
+    }
+
+    override fun isTestOnly(): Boolean {
+        return generatingRule.isTestOnly()
+    }
+
+    override fun satisfies(required: RequiredProviders): Boolean {
+        return generatingRule.satisfies(required)
+    }
+
+    override fun getTestTimeout(): TestTimeout? {
+        return TestTimeout.Companion.getTestTimeout(generatingRule)
+    }
+
+    override fun getAdvertisedProviders(): AdvertisedProviderSet? {
+        return generatingRule.getAdvertisedProviders()
+    }
+
+    /**
+     * Returns this output file's output key.
+     * 
+     * 
+     * An output key is an identifier used to access the output in `ctx.outputs`, or the
+     * empty string in the case of an output that's not exposed there. For explicit outputs, the
+     * output key is the name of the attribute under which that output appears. For Starlark-defined
+     * implicit outputs, the output key is determined by the dict returned from the Starlark function.
+     * Native-defined implicit outputs are not named in this manner, and so are invisible to `ctx.outputs` and use the empty string key. (It'd be pathological for the empty string to be
+     * used as a key in the other two cases, but this class makes no attempt to prohibit that.)
+     */
+    fun getOutputKey(): String? {
+        return outputKey
+    }
+
+    abstract fun isImplicit(): Boolean
+
+    override fun reduceForSerialization(): TargetData {
+        return OutputFileData(getLocation(), getLabel(), generatingRule.reduceForSerialization())
+    }
+
+    private class Implicit(
+        label: Label,
+        generatingRule: com.google.devtools.build.lib.packages.Rule,
+        outputKey: String?
+    ) : OutputFile(label, generatingRule, outputKey) {
+        override fun isImplicit(): Boolean {
+            return true
+        }
+    }
+
+    private class Explicit(
+        label: Label,
+        generatingRule: com.google.devtools.build.lib.packages.Rule,
+        attrName: String?
+    ) : OutputFile(label, generatingRule, attrName) {
+        override fun isImplicit(): Boolean {
+            return false
+        }
+    }
+
+    private class OutputFileData(
+        location: net.starlark.java.syntax.Location?,
+        label: Label?,
+        generatingRuleData: TargetData
+    ) : TargetData {
+        private val location: net.starlark.java.syntax.Location?
+        private val label: Label?
+
+        // TODO(b/297857068): ensure this is not duplicated on deserialization.
+        private val generatingRuleData: TargetData
+
+        init {
+            this.location = location
+            this.label = label
+            this.generatingRuleData = generatingRuleData
+        }
+
+        override fun getTargetKind(): String {
+            return targetKind()
+        }
+
+        override fun getLocation(): net.starlark.java.syntax.Location? {
+            return location
+        }
+
+        override fun getLabel(): Label? {
+            return label
+        }
+
+        override fun isFile(): Boolean {
+            return true
+        }
+
+        override fun isOutputFile(): Boolean {
+            return true
+        }
+
+        override fun getGeneratingRuleLabel(): Label? {
+            return generatingRuleData.getLabel()
+        }
+
+        override fun getDeprecationWarning(): String? {
+            return generatingRuleData.getDeprecationWarning()
+        }
+
+        override fun isTestOnly(): Boolean {
+            return generatingRuleData.isTestOnly()
+        }
+
+        override fun satisfies(required: RequiredProviders?): Boolean {
+            return generatingRuleData.satisfies(required)
+        }
+
+        override fun getTestTimeout(): TestTimeout? {
+            return generatingRuleData.getTestTimeout()
+        }
+
+        override fun getAdvertisedProviders(): AdvertisedProviderSet? {
+            return generatingRuleData.getAdvertisedProviders()
+        }
+    }
+
+    companion object {
+        /**
+         * Constructs an implicit output file with the given label, which must be in the generating rule's
+         * package.
+         * 
+         * @param outputKey either the map key returned by [     ][ImplicitOutputsFunction.StarlarkImplicitOutputsFunction.calculateOutputs] or the empty
+         * string for natively defined implicit outputs
+         */
+        fun createImplicit(
+            label: Label,
+            generatingRule: com.google.devtools.build.lib.packages.Rule,
+            outputKey: String?
+        ): OutputFile {
+            return com.google.devtools.build.lib.packages.OutputFile.Implicit(label, generatingRule, outputKey)
+        }
+
+        /**
+         * Constructs an explicit output file with the given label, which must be in the generating rule's
+         * package.
+         * 
+         * @param attrName the output attribute's name; used as the [output key][.getOutputKey]
+         */
+        fun createExplicit(
+            label: Label,
+            generatingRule: com.google.devtools.build.lib.packages.Rule,
+            attrName: String?
+        ): OutputFile {
+            return com.google.devtools.build.lib.packages.OutputFile.Explicit(label, generatingRule, attrName)
+        }
+
+        /** Returns the target kind for all output files.  */
+        fun targetKind(): String {
+            return "generated file"
+        }
+    }
 }

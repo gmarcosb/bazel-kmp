@@ -11,176 +11,187 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-package com.google.devtools.build.lib.authandtls.credentialhelper;
+import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperEnvironment
+import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperException
+import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsRequest
+import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsResponse
+import com.google.devtools.build.lib.shell.Subprocess
+import com.google.devtools.build.lib.shell.SubprocessBuilder
+import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
+import java.io.IOException
+import java.io.OutputStreamWriter
+import java.util.Locale
 
-import static com.google.devtools.build.lib.profiler.ProfilerTask.CREDENTIAL_HELPER;
-import static java.nio.charset.StandardCharsets.UTF_8;
+/** Wraps an external tool used to obtain credentials.  */
+@com.google.errorprone.annotations.Immutable
+class CredentialHelper internal constructor(path: com.google.devtools.build.lib.vfs.Path?) {
+    // `Path` is immutable, but not annotated.
+    private val path: com.google.devtools.build.lib.vfs.Path
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.io.CharStreams;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.shell.Subprocess;
-import com.google.devtools.build.lib.shell.SubprocessBuilder;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.errorprone.annotations.Immutable;
-import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.Reader;
-import java.io.Writer;
-import java.net.URI;
-import java.util.Locale;
-import java.util.Objects;
-
-/** Wraps an external tool used to obtain credentials. */
-@Immutable
-public final class CredentialHelper {
-  private static final Gson GSON = new Gson();
-
-  // `Path` is immutable, but not annotated.
-  @SuppressWarnings("Immutable")
-  private final Path path;
-
-  CredentialHelper(Path path) {
-    this.path = Preconditions.checkNotNull(path);
-  }
-
-  @VisibleForTesting
-  public Path getPath() {
-    return path;
-  }
-
-  /**
-   * Fetches credentials for the specified {@link URI} by invoking the credential helper as
-   * subprocess according to the <a
-   * href="https://github.com/bazelbuild/proposals/blob/main/designs/2022-06-07-bazel-credential-helpers.md">credential
-   * helper protocol</a>.
-   *
-   * @param environment The environment to run the subprocess in.
-   * @param uri The {@link URI} to fetch credentials for.
-   * @return The response from the subprocess.
-   */
-  public GetCredentialsResponse getCredentials(CredentialHelperEnvironment environment, URI uri)
-      throws IOException {
-    Preconditions.checkNotNull(environment);
-    Preconditions.checkNotNull(uri);
-
-    try (SilentCloseable c =
-        Profiler.instance().profile(CREDENTIAL_HELPER, "calling credential helper")) {
-      Subprocess process;
-
-      try {
-        process = spawnSubprocess(environment, "get");
-      } catch (IOException e) {
-        throw new CredentialHelperException(
-            String.format(
-                Locale.US,
-                "Failed to get credentials for '%s' from helper '%s': %s",
-                uri,
-                path,
-                e.getMessage()));
-      }
-
-      try (Reader stdout = new InputStreamReader(process.getInputStream(), UTF_8);
-          Reader stderr = new InputStreamReader(process.getErrorStream(), UTF_8)) {
-        try (Writer stdin = new OutputStreamWriter(process.getOutputStream(), UTF_8)) {
-          GSON.toJson(GetCredentialsRequest.newBuilder().setUri(uri).build(), stdin);
-        } catch (IOException e) {
-          // This can happen if the helper prints a static set of credentials without reading from
-          // stdin (e.g., with a simple shell script running `echo "{...}"`). This is fine to
-          // ignore.
-        }
-
-        try {
-          process.waitFor();
-        } catch (InterruptedException e) {
-          throw new CredentialHelperException(
-              String.format(
-                  Locale.US,
-                  "Failed to get credentials for '%s' from helper '%s': process was interrupted",
-                  uri,
-                  path));
-        }
-
-        if (process.timedout()) {
-          throw new CredentialHelperException(
-              String.format(
-                  Locale.US,
-                  "Failed to get credentials for '%s' from helper '%s': process timed out",
-                  uri,
-                  path));
-        }
-        if (process.exitValue() != 0) {
-          throw new CredentialHelperException(
-              String.format(
-                  Locale.US,
-                  "Failed to get credentials for '%s' from helper '%s': process exited with code"
-                      + " %d. stderr: %s",
-                  uri,
-                  path,
-                  process.exitValue(),
-                  CharStreams.toString(stderr)));
-        }
-
-        try {
-          GetCredentialsResponse response = GSON.fromJson(stdout, GetCredentialsResponse.class);
-          if (response == null) {
-            throw new CredentialHelperException(
-                String.format(
-                    Locale.US,
-                    "Failed to get credentials for '%s' from helper '%s': process exited without"
-                        + " output. stderr: %s",
-                    uri,
-                    path,
-                    CharStreams.toString(stderr)));
-          }
-          return response;
-        } catch (JsonSyntaxException e) {
-          throw new CredentialHelperException(
-              String.format(
-                  Locale.US,
-                  "Failed to get credentials for '%s' from helper '%s': error parsing output."
-                      + " stderr: %s",
-                  uri,
-                  path,
-                  CharStreams.toString(stderr)),
-              e);
-        }
-      }
-    }
-  }
-
-  private Subprocess spawnSubprocess(CredentialHelperEnvironment environment, String... args)
-      throws IOException {
-    Preconditions.checkNotNull(environment);
-    Preconditions.checkNotNull(args);
-
-    return new SubprocessBuilder(environment.clientEnvironment())
-        .setArgv(ImmutableList.<String>builder().add(path.getPathString()).add(args).build())
-        .setWorkingDirectory(
-            environment.workspacePath() != null ? environment.workspacePath().getPathFile() : null)
-        .setEnv(environment.clientEnvironment())
-        .setTimeoutMillis(environment.helperExecutionTimeout().toMillis())
-        .start();
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (o instanceof CredentialHelper that) {
-      return Objects.equals(this.getPath(), that.getPath());
+    init {
+        this.path = com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.Path>(path)
     }
 
-    return false;
-  }
+    @com.google.common.annotations.VisibleForTesting
+    fun getPath(): com.google.devtools.build.lib.vfs.Path {
+        return path
+    }
 
-  @Override
-  public int hashCode() {
-    return Objects.hashCode(getPath());
-  }
+    /**
+     * Fetches credentials for the specified [URI] by invoking the credential helper as
+     * subprocess according to the [credential
+     * helper protocol](https://github.com/bazelbuild/proposals/blob/main/designs/2022-06-07-bazel-credential-helpers.md).
+     * 
+     * @param environment The environment to run the subprocess in.
+     * @param uri The [URI] to fetch credentials for.
+     * @return The response from the subprocess.
+     */
+    @Throws(IOException::class)
+    fun getCredentials(environment: CredentialHelperEnvironment?, uri: java.net.URI?): GetCredentialsResponse {
+        com.google.common.base.Preconditions.checkNotNull<CredentialHelperEnvironment?>(environment)
+        com.google.common.base.Preconditions.checkNotNull<java.net.URI?>(uri)
+
+        com.google.devtools.build.lib.profiler.Profiler.instance()
+            .profile(com.google.devtools.build.lib.profiler.ProfilerTask.CREDENTIAL_HELPER, "calling credential helper")
+            .use { c ->
+                val process: Subprocess
+                try {
+                    process = spawnSubprocess(environment, "get")
+                } catch (e: IOException) {
+                    throw CredentialHelperException(
+                        java.lang.String.format(
+                            Locale.US,
+                            "Failed to get credentials for '%s' from helper '%s': %s",
+                            uri,
+                            path,
+                            e.getMessage()
+                        )
+                    )
+                }
+                java.io.InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8)
+                    .use { stdout ->
+                        java.io.InputStreamReader(process.getErrorStream(), java.nio.charset.StandardCharsets.UTF_8)
+                            .use { stderr ->
+                                try {
+                                    OutputStreamWriter(
+                                        process.getOutputStream(),
+                                        java.nio.charset.StandardCharsets.UTF_8
+                                    ).use { stdin ->
+                                        GSON.toJson(
+                                            GetCredentialsRequest.Companion.newBuilder().setUri(uri).build(),
+                                            stdin
+                                        )
+                                    }
+                                } catch (e: IOException) {
+                                    // This can happen if the helper prints a static set of credentials without reading from
+                                    // stdin (e.g., with a simple shell script running `echo "{...}"`). This is fine to
+                                    // ignore.
+                                }
+                                try {
+                                    process.waitFor()
+                                } catch (e: java.lang.InterruptedException) {
+                                    throw CredentialHelperException(
+                                        java.lang.String.format(
+                                            Locale.US,
+                                            "Failed to get credentials for '%s' from helper '%s': process was interrupted",
+                                            uri,
+                                            path
+                                        )
+                                    )
+                                }
+
+                                if (process.timedout()) {
+                                    throw CredentialHelperException(
+                                        java.lang.String.format(
+                                            Locale.US,
+                                            "Failed to get credentials for '%s' from helper '%s': process timed out",
+                                            uri,
+                                            path
+                                        )
+                                    )
+                                }
+                                if (process.exitValue() != 0) {
+                                    throw CredentialHelperException(
+                                        java.lang.String.format(
+                                            Locale.US,
+                                            "Failed to get credentials for '%s' from helper '%s': process exited with code"
+                                                    + " %d. stderr: %s",
+                                            uri,
+                                            path,
+                                            process.exitValue(),
+                                            com.google.common.io.CharStreams.toString(stderr)
+                                        )
+                                    )
+                                }
+                                try {
+                                    val response: GetCredentialsResponse = GSON.fromJson<GetCredentialsResponse>(
+                                        stdout,
+                                        GetCredentialsResponse::class.java
+                                    )
+                                    if (response == null) {
+                                        throw CredentialHelperException(
+                                            java.lang.String.format(
+                                                Locale.US,
+                                                "Failed to get credentials for '%s' from helper '%s': process exited without"
+                                                        + " output. stderr: %s",
+                                                uri,
+                                                path,
+                                                com.google.common.io.CharStreams.toString(stderr)
+                                            )
+                                        )
+                                    }
+                                    return response
+                                } catch (e: JsonSyntaxException) {
+                                    throw CredentialHelperException(
+                                        java.lang.String.format(
+                                            Locale.US,
+                                            "Failed to get credentials for '%s' from helper '%s': error parsing output."
+                                                    + " stderr: %s",
+                                            uri,
+                                            path,
+                                            com.google.common.io.CharStreams.toString(stderr)
+                                        ),
+                                        e
+                                    )
+                                }
+                            }
+                    }
+            }
+    }
+
+    @Throws(IOException::class)
+    private fun spawnSubprocess(environment: CredentialHelperEnvironment?, vararg args: String?): Subprocess {
+        com.google.common.base.Preconditions.checkNotNull<CredentialHelperEnvironment?>(environment)
+        com.google.common.base.Preconditions.checkNotNull<Array<String?>?>(args)
+
+        return SubprocessBuilder(environment.clientEnvironment)
+            .setArgv(
+                com.google.common.collect.ImmutableList.builder<String?>().add(path.getPathString()).add(*args).build()
+            )
+            .setWorkingDirectory(
+                if (environment.workspacePath != null) environment.workspacePath.getPathFile() else null
+            )
+            .setEnv(environment.clientEnvironment)
+            .setTimeoutMillis(environment.helperExecutionTimeout.toMillis())
+            .start()
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (o is CredentialHelper) {
+            return this.getPath() == o.getPath()
+        }
+
+        return false
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hashCode(getPath())
+    }
+
+    companion object {
+        private val GSON: Gson = Gson()
+    }
 }

@@ -12,33 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod.modcommand
 
-package com.google.devtools.build.lib.bazel.bzlmod.modcommand;
-
-import com.google.devtools.build.lib.server.FailureDetails.ModCommand.Code;
+import com.google.devtools.build.lib.server.FailureDetails.ModCommand.Code
 
 /**
  * Exception thrown when a user-input argument is invalid (wrong number of arguments or the
  * specified modules do not exist).
  */
-public class InvalidArgumentException extends Exception {
-  private final Code code;
+class InvalidArgumentException : Exception {
+    private val code: Code?
 
-  public InvalidArgumentException(String message, Code code, Exception cause) {
-    super(message, cause);
-    this.code = code;
-  }
+    constructor(message: String?, code: Code?, cause: Exception?) : super(message, cause) {
+        this.code = code
+    }
 
-  public InvalidArgumentException(String message, Code code) {
-    super(message);
-    this.code = code;
-  }
+    @kotlin.jvm.JvmOverloads
+    constructor(message: String?, code: Code? = Code.INVALID_ARGUMENTS) : super(message) {
+        this.code = code
+    }
 
-  public InvalidArgumentException(String message) {
-    this(message, Code.INVALID_ARGUMENTS);
-  }
-
-  public Code getCode() {
-    return code;
-  }
+    fun getCode(): Code? {
+        return code
+    }
 }

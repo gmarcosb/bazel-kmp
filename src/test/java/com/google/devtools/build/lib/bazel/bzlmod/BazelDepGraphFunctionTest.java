@@ -201,7 +201,7 @@ public class BazelDepGraphFunctionTest extends FoundationTestCase {
       fail(result.getError().toString());
     }
     BazelDepGraphValue value = result.get(BazelDepGraphValue.KEY);
-    assertThat(value.getCanonicalRepoNameLookup())
+    assertThat(value.canonicalRepoNameLookup)
         .containsExactly(
             RepositoryName.MAIN,
             ModuleKey.ROOT,
@@ -213,7 +213,7 @@ public class BazelDepGraphFunctionTest extends FoundationTestCase {
             createModuleKey("rules_cc", "1.0"),
             RepositoryName.create("rules_java+"),
             createModuleKey("rules_java", ""));
-    assertThat(value.getAbridgedModules())
+    assertThat(value.abridgedModules)
         .containsExactlyElementsIn(
             depGraph.values().stream().map(AbridgedModule::from).collect(toImmutableList()));
   }

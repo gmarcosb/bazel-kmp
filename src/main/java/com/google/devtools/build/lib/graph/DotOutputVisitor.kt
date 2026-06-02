@@ -12,55 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // All Rights Reserved.
+package com.google.devtools.build.lib.graph
 
-package com.google.devtools.build.lib.graph;
-
-import java.io.PrintWriter;
+import java.io.PrintWriter
 
 /**
- *  <p> An implementation of GraphVisitor for displaying graphs in dot
- *  format. </p>
+ * 
+ *  An implementation of GraphVisitor for displaying graphs in dot
+ * format. 
  */
-public class DotOutputVisitor<T> implements GraphVisitor<T> {
+open class DotOutputVisitor<T>
+/**
+ * Constructs a dot output visitor.
+ * 
+ * 
+ * The visitor writes to writer 'out', and rendering node labels as strings using the specified
+ * displayer, 'disp'.
+ */(@kotlin.jvm.JvmField protected val out: PrintWriter, @kotlin.jvm.JvmField protected val lineTerminator: String?, private val disp: LabelSerializer<T?>) :
+    GraphVisitor<T?> {
+    private val closeAtEnd = false
 
-  /**
-   * Constructs a dot output visitor.
-   *
-   * <p>The visitor writes to writer 'out', and rendering node labels as strings using the specified
-   * displayer, 'disp'.
-   */
-  public DotOutputVisitor(PrintWriter out, String lineTerminator, LabelSerializer<T> disp) {
-    this.out = out;
-    this.lineTerminator = lineTerminator;
-    this.disp = disp;
-  }
-
-  private final LabelSerializer<T> disp;
-  protected final PrintWriter out;
-  protected final String lineTerminator;
-  private boolean closeAtEnd = false;
-
-  @Override
-  public void beginVisit() {
-    out.printf("digraph mygraph {%s", lineTerminator);
-  }
-
-  @Override
-  public void endVisit() {
-    out.printf("}%s", lineTerminator);
-    out.flush();
-    if (closeAtEnd) {
-      out.close();
+    override fun beginVisit() {
+        out.printf("digraph mygraph {%s", lineTerminator)
     }
-  }
 
-  @Override
-  public void visitEdge(Node<T> lhs, Node<T> rhs) {
-    out.printf("  \"%s\" -> \"%s\"%s", disp.serialize(lhs), disp.serialize(rhs), lineTerminator);
-  }
+    override fun endVisit() {
+        out.printf("}%s", lineTerminator)
+        out.flush()
+        if (closeAtEnd) {
+            out.close()
+        }
+    }
 
-  @Override
-  public void visitNode(Node<T> node) {
-    out.printf("  \"%s\"%s", disp.serialize(node), lineTerminator);
-  }
+    override fun visitEdge(lhs: Node<T?>?, rhs: Node<T?>?) {
+        out.printf("  \"%s\" -> \"%s\"%s", disp.serialize(lhs), disp.serialize(rhs), lineTerminator)
+    }
+
+    override fun visitNode(node: Node<T?>?) {
+        out.printf("  \"%s\"%s", disp.serialize(node), lineTerminator)
+    }
 }

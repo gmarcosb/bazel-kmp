@@ -11,57 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import java.util.List;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.base.Predicate
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture
 
 /**
  * An executables(x) filter expression, which returns all the executables (not including tests) in
  * set x.
- *
+ * 
  * <pre>expr ::= EXECUTABLES '(' expr ')'</pre>
  */
-public class ExecutablesFunction implements QueryFunction {
-  @VisibleForTesting
-  public ExecutablesFunction() {}
+class ExecutablesFunction @VisibleForTesting constructor() : QueryFunction {
+    override fun getName(): String {
+        return "executables"
+    }
 
-  @Override
-  public String getName() {
-    return "executables";
-  }
+    override fun getMandatoryArguments(): Int {
+        return 1
+    }
 
-  @Override
-  public int getMandatoryArguments() {
-    return 1;
-  }
+    override fun getArgumentTypes(): MutableList<QueryEnvironment.ArgumentType?> {
+        return ImmutableList.of<QueryEnvironment.ArgumentType?>(QueryEnvironment.ArgumentType.EXPRESSION)
+    }
 
-  @Override
-  public List<ArgumentType> getArgumentTypes() {
-    return ImmutableList.of(ArgumentType.EXPRESSION);
-  }
+    override fun <T> eval(
+        env: QueryEnvironment<T?>,
+        context: QueryExpressionContext<T?>?,
+        expression: QueryExpression?,
+        args: MutableList<QueryEnvironment.Argument?>,
+        callback: Callback<T?>
+    ): QueryTaskFuture<Void?>? {
+        val accessor = env.getAccessor()
 
-  @Override
-  public <T> QueryTaskFuture<Void> eval(
-      QueryEnvironment<T> env,
-      QueryExpressionContext<T> context,
-      QueryExpression expression,
-      List<Argument> args,
-      Callback<T> callback) {
-    TargetAccessor<T> accessor = env.getAccessor();
-
-    return env.eval(
-        args.get(0).getExpression(),
-        context,
-        partialResult -> {
-          callback.process(Iterables.filter(partialResult, accessor::isExecutableNonTestRule));
-        });
-  }
+        return env.eval(
+            args.get(0)!!.getExpression(),
+            context,
+            Callback { partialResult: Iterable<T?>? ->
+                callback.process(
+                    Iterables.filter<T?>(
+                        partialResult,
+                        Predicate { target: T? -> accessor.isExecutableNonTestRule(target) })
+                )
+            })
+    }
 }

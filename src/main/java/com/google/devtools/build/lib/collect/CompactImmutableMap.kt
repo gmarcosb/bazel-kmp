@@ -11,45 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.collect;
-
-import java.util.Iterator;
+package com.google.devtools.build.lib.collect
 
 /**
  * A minimal map interface that avoids methods whose implementation tends to force GC churn, or
  * otherwise overly constrain implementation freedom.
  */
-public interface CompactImmutableMap<K, V> extends Iterable<K> {
+interface CompactImmutableMap<K, V> : Iterable<K?> {
+    fun containsKey(key: K?): Boolean {
+        return get(key) != null
+    }
 
-  default boolean containsKey(K key) {
-    return get(key) != null;
-  }
+    fun get(key: K?): V?
 
-  V get(K key);
+    fun size(): Int
 
-  int size();
+    fun keyAt(index: Int): K?
 
-  K keyAt(int index);
+    fun valueAt(index: Int): V?
 
-  V valueAt(int index);
+    override fun iterator(): MutableIterator<K?> {
+        return object : MutableIterator<K?> {
+            val index: Int = 0
 
-  @Override
-  default Iterator<K> iterator() {
-    return new Iterator<K>() {
-      int index = 0;
+            override fun hasNext(): Boolean {
+                return index < size()
+            }
 
-      @Override
-      public boolean hasNext() {
-        return index < size();
-      }
-
-      @Override
-      public K next() {
-        K key = keyAt(index);
-        ++index;
-        return key;
-      }
-    };
-  }
+            override fun next(): K? {
+                val key = keyAt(index)
+                ++index
+                return key
+            }
+        }
+    }
 }

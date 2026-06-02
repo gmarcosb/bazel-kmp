@@ -12,137 +12,194 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode;
-import com.google.devtools.build.lib.cmdline.LabelConstants;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.server.FailureDetails.ExternalDeps.Code;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue.Precomputed;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.gson.JsonSyntaxException;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.FileValue
 
 /**
- * Reads the contents of the lockfiles into {@link BazelLockFileValue}s.
- *
- * <p>See {@link BazelLockFileValue} for more information.
+ * Reads the contents of the lockfiles into [BazelLockFileValue]s.
+ * 
+ * 
+ * See [BazelLockFileValue] for more information.
  */
-public class BazelLockFileFunction implements SkyFunction {
+class BazelLockFileFunction(
+    rootDirectory: com.google.devtools.build.lib.vfs.Path?,
+    outputBase: com.google.devtools.build.lib.vfs.Path?
+) : SkyFunction {
+    private val rootDirectory: com.google.devtools.build.lib.vfs.Path?
+    private val outputBase: com.google.devtools.build.lib.vfs.Path?
 
-  public static final Precomputed<LockfileMode> LOCKFILE_MODE = new Precomputed<>("lockfile_mode");
-
-  private static final Pattern LOCKFILE_VERSION_PATTERN =
-      Pattern.compile("\"lockFileVersion\":\\s*(\\d+)");
-
-  private static final Pattern POSSIBLE_MERGE_CONFLICT_PATTERN =
-      Pattern.compile("<<<<<<<|=======|" + Pattern.quote("|||||||") + "|>>>>>>>");
-
-  private final Path rootDirectory;
-  private final Path outputBase;
-
-  public BazelLockFileFunction(Path rootDirectory, Path outputBase) {
-    this.rootDirectory = rootDirectory;
-    this.outputBase = outputBase;
-  }
-
-  @Override
-  @Nullable
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws BazelLockfileFunctionException, InterruptedException {
-    boolean forHiddenLockfile = skyKey == BazelLockFileValue.HIDDEN_KEY;
-    RootedPath lockfilePath =
-        RootedPath.toRootedPath(
-            Root.fromPath(forHiddenLockfile ? outputBase : rootDirectory),
-            LabelConstants.MODULE_LOCKFILE_NAME);
-
-    // Add dependency on the lockfile to recognize changes to it
-    if (env.getValue(FileValue.key(lockfilePath)) == null) {
-      return null;
+    init {
+        this.rootDirectory = rootDirectory
+        this.outputBase = outputBase
     }
 
-    try (SilentCloseable c =
-        Profiler.instance()
-            .profile(
-                ProfilerTask.BZLMOD,
-                forHiddenLockfile ? "parse hidden lockfile" : "parse lockfile")) {
-      return getLockfileValue(
-          lockfilePath, forHiddenLockfile ? LockfileMode.UPDATE : LOCKFILE_MODE.get(env));
-    } catch (IOException
-        | JsonSyntaxException
-        | NullPointerException
-        | IllegalArgumentException e) {
-      if (forHiddenLockfile) {
-        return BazelLockFileValue.EMPTY_LOCKFILE;
-      }
-      String actionSuffix;
-      if (e.getMessage() != null
-          && POSSIBLE_MERGE_CONFLICT_PATTERN.matcher(e.getMessage()).find()) {
-        actionSuffix =
-            " This looks like a merge conflict. See"
-                + " https://bazel.build/external/lockfile#merge-conflicts for advice.";
-      } else {
-        actionSuffix = " Try deleting it and rerun the build.";
-      }
-      throw new BazelLockfileFunctionException(
-          ExternalDepsException.withMessage(
-              Code.BAD_LOCKFILE,
-              "Failed to read and parse the MODULE.bazel.lock file with error: %s.%s",
-              e.getMessage(),
-              actionSuffix),
-          Transience.PERSISTENT);
-    }
-  }
+    @Throws(BazelLockfileFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: SkyFunction.Environment): SkyValue? {
+        val forHiddenLockfile = skyKey === BazelLockFileValue.Companion.HIDDEN_KEY
+        val lockfilePath: RootedPath =
+            RootedPath.toRootedPath(
+                Root.fromPath(if (forHiddenLockfile) outputBase else rootDirectory),
+                LabelConstants.MODULE_LOCKFILE_NAME
+            )
 
-  public static BazelLockFileValue getLockfileValue(
-      RootedPath lockfilePath, LockfileMode lockfileMode)
-      throws IOException, BazelLockfileFunctionException {
-    try {
-      String json = FileSystemUtils.readContent(lockfilePath.asPath(), UTF_8);
-      Matcher matcher = LOCKFILE_VERSION_PATTERN.matcher(json);
-      int version = matcher.find() ? Integer.parseInt(matcher.group(1)) : -1;
-      if (version == BazelLockFileValue.LOCK_FILE_VERSION) {
-        return GsonTypeAdapterUtil.LOCKFILE_GSON.fromJson(json, BazelLockFileValue.class);
-      } else {
-        // This is an old version, its information can't be used.
-        if (lockfileMode == LockfileMode.ERROR) {
-          throw new BazelLockfileFunctionException(
-              ExternalDepsException.withMessage(
-                  Code.BAD_LOCKFILE,
-                  "The version of MODULE.bazel.lock is not supported by this version of Bazel."
-                      + " Please run `bazel mod deps --lockfile_mode=update` to update your"
-                      + " lockfile."),
-              Transience.PERSISTENT);
+        // Add dependency on the lockfile to recognize changes to it
+        if (env.getValue(FileValue.key(lockfilePath)) == null) {
+            return null
         }
-        return BazelLockFileValue.EMPTY_LOCKFILE;
-      }
-    } catch (FileNotFoundException e) {
-      return BazelLockFileValue.EMPTY_LOCKFILE;
-    }
-  }
 
-  static final class BazelLockfileFunctionException extends SkyFunctionException {
-
-    BazelLockfileFunctionException(ExternalDepsException cause, Transience transience) {
-      super(cause, transience);
+        try {
+            com.google.devtools.build.lib.profiler.Profiler.instance()
+                .profile(
+                    com.google.devtools.build.lib.profiler.ProfilerTask.BZLMOD,
+                    if (forHiddenLockfile) "parse hidden lockfile" else "parse lockfile"
+                ).use { c ->
+                    return getLockfileValue(
+                        lockfilePath, if (forHiddenLockfile) LockfileMode.UPDATE else LOCKFILE_MODE.get(env)
+                    )
+                }
+        } catch (e: IOException) {
+            if (forHiddenLockfile) {
+                return BazelLockFileValue.Companion.EMPTY_LOCKFILE
+            }
+            val actionSuffix: String?
+            if (e.getMessage() != null
+                && POSSIBLE_MERGE_CONFLICT_PATTERN.matcher(e.getMessage()).find()
+            ) {
+                actionSuffix =
+                    (" This looks like a merge conflict. See"
+                            + " https://bazel.build/external/lockfile#merge-conflicts for advice.")
+            } else {
+                actionSuffix = " Try deleting it and rerun the build."
+            }
+            throw BazelLockfileFunctionException(
+                ExternalDepsException.Companion.withMessage(
+                    Code.BAD_LOCKFILE,
+                    "Failed to read and parse the MODULE.bazel.lock file with error: %s.%s",
+                    e.getMessage(),
+                    actionSuffix
+                ),
+                Transience.PERSISTENT
+            )
+        } catch (e: JsonSyntaxException) {
+            if (forHiddenLockfile) {
+                return BazelLockFileValue.Companion.EMPTY_LOCKFILE
+            }
+            val actionSuffix: String?
+            if (e.getMessage() != null
+                && POSSIBLE_MERGE_CONFLICT_PATTERN.matcher(e.getMessage()).find()
+            ) {
+                actionSuffix =
+                    (" This looks like a merge conflict. See"
+                            + " https://bazel.build/external/lockfile#merge-conflicts for advice.")
+            } else {
+                actionSuffix = " Try deleting it and rerun the build."
+            }
+            throw BazelLockfileFunctionException(
+                ExternalDepsException.Companion.withMessage(
+                    Code.BAD_LOCKFILE,
+                    "Failed to read and parse the MODULE.bazel.lock file with error: %s.%s",
+                    e.getMessage(),
+                    actionSuffix
+                ),
+                Transience.PERSISTENT
+            )
+        } catch (e: java.lang.NullPointerException) {
+            if (forHiddenLockfile) {
+                return BazelLockFileValue.Companion.EMPTY_LOCKFILE
+            }
+            val actionSuffix: String?
+            if (e.getMessage() != null
+                && POSSIBLE_MERGE_CONFLICT_PATTERN.matcher(e.getMessage()).find()
+            ) {
+                actionSuffix =
+                    (" This looks like a merge conflict. See"
+                            + " https://bazel.build/external/lockfile#merge-conflicts for advice.")
+            } else {
+                actionSuffix = " Try deleting it and rerun the build."
+            }
+            throw BazelLockfileFunctionException(
+                ExternalDepsException.Companion.withMessage(
+                    Code.BAD_LOCKFILE,
+                    "Failed to read and parse the MODULE.bazel.lock file with error: %s.%s",
+                    e.getMessage(),
+                    actionSuffix
+                ),
+                Transience.PERSISTENT
+            )
+        } catch (e: java.lang.IllegalArgumentException) {
+            if (forHiddenLockfile) {
+                return BazelLockFileValue.Companion.EMPTY_LOCKFILE
+            }
+            val actionSuffix: String?
+            if (e.getMessage() != null
+                && POSSIBLE_MERGE_CONFLICT_PATTERN.matcher(e.getMessage()).find()
+            ) {
+                actionSuffix =
+                    (" This looks like a merge conflict. See"
+                            + " https://bazel.build/external/lockfile#merge-conflicts for advice.")
+            } else {
+                actionSuffix = " Try deleting it and rerun the build."
+            }
+            throw BazelLockfileFunctionException(
+                ExternalDepsException.Companion.withMessage(
+                    Code.BAD_LOCKFILE,
+                    "Failed to read and parse the MODULE.bazel.lock file with error: %s.%s",
+                    e.getMessage(),
+                    actionSuffix
+                ),
+                Transience.PERSISTENT
+            )
+        }
     }
-  }
+
+    internal class BazelLockfileFunctionException(cause: ExternalDepsException?, transience: Transience?) :
+        SkyFunctionException(cause, transience)
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val LOCKFILE_MODE: Precomputed<LockfileMode?> = Precomputed<LockfileMode?>("lockfile_mode")
+
+        private val LOCKFILE_VERSION_PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile("\"lockFileVersion\":\\s*(\\d+)")
+
+        private val POSSIBLE_MERGE_CONFLICT_PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile("<<<<<<<|=======|" + java.util.regex.Pattern.quote("|||||||") + "|>>>>>>>")
+
+        @Throws(IOException::class, BazelLockfileFunctionException::class)
+        fun getLockfileValue(
+            lockfilePath: RootedPath, lockfileMode: LockfileMode?
+        ): BazelLockFileValue? {
+            try {
+                val json: String = com.google.devtools.build.lib.vfs.FileSystemUtils.readContent(
+                    lockfilePath.asPath(),
+                    java.nio.charset.StandardCharsets.UTF_8
+                )
+                val matcher: java.util.regex.Matcher = LOCKFILE_VERSION_PATTERN.matcher(json)
+                val version = if (matcher.find()) java.lang.Integer.parseInt(matcher.group(1)) else -1
+                if (version == BazelLockFileValue.Companion.LOCK_FILE_VERSION) {
+                    return GsonTypeAdapterUtil.LOCKFILE_GSON.fromJson<BazelLockFileValue?>(
+                        json,
+                        BazelLockFileValue::class.java
+                    )
+                } else {
+                    // This is an old version, its information can't be used.
+                    if (lockfileMode == LockfileMode.ERROR) {
+                        throw BazelLockfileFunctionException(
+                            ExternalDepsException.Companion.withMessage(
+                                Code.BAD_LOCKFILE,
+                                ("The version of MODULE.bazel.lock is not supported by this version of Bazel."
+                                        + " Please run `bazel mod deps --lockfile_mode=update` to update your"
+                                        + " lockfile.")
+                            ),
+                            Transience.PERSISTENT
+                        )
+                    }
+                    return BazelLockFileValue.Companion.EMPTY_LOCKFILE
+                }
+            } catch (e: FileNotFoundException) {
+                return BazelLockFileValue.Companion.EMPTY_LOCKFILE
+            }
+        }
+    }
 }

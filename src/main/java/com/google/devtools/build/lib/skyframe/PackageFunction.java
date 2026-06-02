@@ -884,7 +884,7 @@ public abstract class PackageFunction implements SkyFunction {
         continue;
       }
       List<PackageLookupValue.Key> subpackagePackageLookupKeys = new ArrayList<>();
-      String labelName = label.getName();
+      String labelName = label.name;
       PathFragment labelAsRelativePath = PathFragment.create(labelName).getParentDirectory();
       PathFragment subpackagePath = pkgDir;
       for (String segment : labelAsRelativePath.segments()) {
@@ -1048,7 +1048,7 @@ public abstract class PackageFunction implements SkyFunction {
         PackageIdentifier preludePackage =
             PackageIdentifier.create(
                 packageId.getRepository(), rawPreludeLabel.getPackageFragment());
-        preludeLabel = Label.createUnvalidated(preludePackage, rawPreludeLabel.getName());
+        preludeLabel = Label.createUnvalidated(preludePackage, rawPreludeLabel.name);
         Module prelude;
         try {
           prelude = loadPrelude(env, packageId, preludeLabel, bzlLoadFunctionForInlining);

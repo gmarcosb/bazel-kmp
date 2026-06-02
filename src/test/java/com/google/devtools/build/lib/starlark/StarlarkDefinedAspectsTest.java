@@ -459,7 +459,7 @@ MyAspect = aspect(
                 ((Depset) nameSet).toList(),
                 o -> {
                   assertThat(o).isInstanceOf(Label.class);
-                  return ((Label) o).getName();
+                  return ((Label) o).name;
                 }));
 
     assertThat(names).containsAtLeast("xxx", "yyy");
@@ -2574,7 +2574,7 @@ my_rule = rule(
                 ((Depset) names).toList(),
                 o -> {
                   assertThat(o).isInstanceOf(Label.class);
-                  return ((Label) o).getName();
+                  return ((Label) o).name;
                 }))
         .containsExactly("foo", "bar", "tool");
   }
@@ -10251,7 +10251,7 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
     for (Map.Entry<AspectKey, ConfiguredAspect> entry : aspectsMap.entrySet()) {
       AspectClass aspectClass = entry.getKey().getAspectClass();
       if (aspectClass instanceof StarlarkAspectClass starlarkAspectClass) {
-        String aspectExportedName = starlarkAspectClass.getExportedName();
+        String aspectExportedName = starlarkAspectClass.exportedName;
         if (aspectExportedName.equals(aspectName)) {
           return entry.getValue();
         }
@@ -10265,8 +10265,8 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
     for (Map.Entry<AspectKey, ConfiguredAspect> entry : aspectsMap.entrySet()) {
       AspectClass aspectClass = entry.getKey().getAspectClass();
       if (aspectClass instanceof StarlarkAspectClass starlarkAspectClass) {
-        String aspectExportedName = starlarkAspectClass.getExportedName();
-        String target = entry.getKey().getLabel().getName();
+        String aspectExportedName = starlarkAspectClass.exportedName;
+        String target = entry.getKey().getLabel().name;
         if (aspectExportedName.equals(aspectName) && target.equals(targetName)) {
           return entry.getValue();
         }

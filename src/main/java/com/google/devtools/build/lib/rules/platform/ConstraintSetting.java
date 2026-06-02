@@ -87,7 +87,7 @@ public class ConstraintSetting implements RuleConfiguredTargetFactory {
         defaultConstraintValue.getPackageIdentifier());
     Package pkg = packageNode.getPackage();
     try {
-      pkg.getTarget(defaultConstraintValue.getName());
+      pkg.getTarget(defaultConstraintValue.name);
     } catch (NoSuchTargetException e) {
       throw ruleContext.throwWithAttributeError(
           ConstraintSettingRule.DEFAULT_CONSTRAINT_VALUE_ATTR,

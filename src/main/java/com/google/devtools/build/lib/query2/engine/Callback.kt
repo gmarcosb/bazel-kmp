@@ -11,24 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.devtools.build.lib.cmdline.BatchCallback;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
+import com.google.devtools.build.lib.cmdline.BatchCallback
 
 /**
- * Query callback to be called by a {@link QueryExpression} when it has part of the computation
- * result. Assuming the {@code QueryEnvironment} supports it, it would allow the caller to stream
+ * Query callback to be called by a [QueryExpression] when it has part of the computation
+ * result. Assuming the `QueryEnvironment` supports it, it would allow the caller to stream
  * the results.
  */
 @ThreadSafe
-public interface Callback<T> extends BatchCallback<T, QueryException> {
-
-  /**
-   * According to the {@link BatchCallback} interface, repeated elements may be passed in here.
-   * However, {@code QueryExpression}s calling the callback do not need to maintain this property,
-   * as the {@code QueryEnvironment} should filter out duplicates.
-   */
-  @Override
-  void process(Iterable<T> partialResult) throws QueryException, InterruptedException;
+interface Callback<T> : BatchCallback<T?, QueryException?> {
+    /**
+     * According to the [BatchCallback] interface, repeated elements may be passed in here.
+     * However, `QueryExpression`s calling the callback do not need to maintain this property,
+     * as the `QueryEnvironment` should filter out duplicates.
+     */
+    @Throws(QueryException::class, InterruptedException::class)
+    public override fun process(partialResult: Iterable<T?>?)
 }

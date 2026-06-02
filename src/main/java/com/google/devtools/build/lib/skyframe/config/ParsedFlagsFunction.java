@@ -162,7 +162,7 @@ public final class ParsedFlagsFunction implements SkyFunction {
         if (pkg == null) {
           return null;
         }
-        return pkg.getPackage().getTarget(asLabel.getName());
+        return pkg.getPackage().getTarget(asLabel.name);
       } catch (NoSuchPackageException | NoSuchTargetException e) {
         throw new TargetParsingException(
             String.format("Failed to load %s", name), e, DEPENDENCY_NOT_FOUND);

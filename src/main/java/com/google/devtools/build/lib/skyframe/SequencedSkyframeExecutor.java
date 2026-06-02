@@ -353,7 +353,7 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
 
   private static boolean rewindingEnabled(OptionsProvider options) {
     var buildRequestOptions = options.getOptions(BuildRequestOptions.class);
-    return buildRequestOptions != null && buildRequestOptions.getRewindLostInputs();
+    return buildRequestOptions != null && buildRequestOptions.rewindLostInputs;
   }
 
   /**
@@ -574,7 +574,7 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
 
   private static void addStarlarkProviders(
       TransitiveInfoProviderMap providers, Multiset<StarlarkProvider> starlarkProviders) {
-    for (int i = 0; i < providers.getProviderCount(); i++) {
+    for (int i = 0; i < providers.providerCount; i++) {
       if (providers.getProviderInstanceAt(i) instanceof StarlarkInfo info
           && info.getProvider() instanceof StarlarkProvider provider
           && !provider.getLocation().file().startsWith("/virtual_builtins_bzl/")) {

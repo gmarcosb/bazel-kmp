@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // All Rights Reserved.
+package com.google.devtools.build.lib.graph
 
-package com.google.devtools.build.lib.graph;
-
-/** An interface for specifying a user-defined serialization of graph node labels as strings. */
-@FunctionalInterface
-public interface LabelSerializer<T> {
-
-  /**
-   *  Returns the serialized form of the label of the specified node.
-   */
-  String serialize(Node<T> node);
+/** An interface for specifying a user-defined serialization of graph node labels as strings.  */
+fun interface LabelSerializer<T> {
+    /**
+     * Returns the serialized form of the label of the specified node.
+     */
+    fun serialize(node: Node<T?>?): String?
 }

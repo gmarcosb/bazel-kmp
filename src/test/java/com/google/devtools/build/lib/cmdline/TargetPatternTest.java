@@ -295,8 +295,8 @@ public class TargetPatternTest {
 
   private static TargetsBelowDirectory parseAsTBD(String pattern) throws TargetParsingException {
     TargetPattern parsedPattern = TargetPattern.defaultParser().parse(pattern);
-    assertThat(parsedPattern.getType()).isEqualTo(TargetPattern.Type.TARGETS_BELOW_DIRECTORY);
-    assertThat(parsedPattern.getOriginalPattern()).isEqualTo(pattern);
+    assertThat(parsedPattern.type).isEqualTo(TargetPattern.Type.TARGETS_BELOW_DIRECTORY);
+    assertThat(parsedPattern.originalPattern).isEqualTo(pattern);
     return (TargetsBelowDirectory) parsedPattern;
   }
 

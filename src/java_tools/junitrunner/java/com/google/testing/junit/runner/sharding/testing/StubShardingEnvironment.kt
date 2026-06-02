@@ -11,43 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding.testing
 
-package com.google.testing.junit.runner.sharding.testing;
-
-import com.google.testing.junit.runner.sharding.ShardingEnvironment;
+import com.google.testing.junit.runner.sharding.ShardingEnvironment
 
 /**
  * Stub sharding environment.
  */
-public class StubShardingEnvironment extends ShardingEnvironment {
-  private boolean shardingEnabled = false;
+class StubShardingEnvironment : ShardingEnvironment() {
+    private var shardingEnabled = false
 
-  @Override
-  public boolean isShardingEnabled() {
-    return shardingEnabled;
-  }
-  
-  public void setIsShardingEnabled(boolean shardingEnabled) {
-    this.shardingEnabled = shardingEnabled;
-  }
+    public override fun isShardingEnabled(): Boolean {
+        return shardingEnabled
+    }
 
-  @Override
-  public void touchShardFile() {
-    // Noop.
-  }
+    fun setIsShardingEnabled(shardingEnabled: Boolean) {
+        this.shardingEnabled = shardingEnabled
+    }
 
-  @Override
-  public int getShardIndex() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun touchShardFile() {
+        // Noop.
+    }
 
-  @Override
-  public int getTotalShards() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getShardIndex(): Int {
+        throw UnsupportedOperationException()
+    }
 
-  @Override
-  public String getTestShardingStrategy() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getTotalShards(): Int {
+        throw UnsupportedOperationException()
+    }
+
+    public override fun getTestShardingStrategy(): String? {
+        throw UnsupportedOperationException()
+    }
 }

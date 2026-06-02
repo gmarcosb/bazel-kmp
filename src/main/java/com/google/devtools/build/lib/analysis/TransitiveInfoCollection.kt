@@ -11,54 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.RequiredProviders;
-import com.google.devtools.build.lib.starlarkbuildapi.core.TransitiveInfoCollectionApi;
-import net.starlark.java.eval.StarlarkIndexable;
+import com.google.devtools.build.lib.packages.RequiredProviders
+import com.google.devtools.build.lib.packages.StarlarkProviderIdentifier
+import com.google.devtools.build.lib.starlarkbuildapi.core.TransitiveInfoCollectionApi
 
 /**
- * Multiple {@link TransitiveInfoProvider}s bundled together.
- *
- * <p>Represents the information made available by a {@link ConfiguredTarget} to other ones that
- * depend on it. For more information about the analysis phase, see {@link
- * com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory}.
- *
- * <p>Implementations of build rules should <b>not</b> hold on to references to the {@link
- * TransitiveInfoCollection}s representing their direct prerequisites in order to reduce their
+ * Multiple [TransitiveInfoProvider]s bundled together.
+ * 
+ * 
+ * Represents the information made available by a [ConfiguredTarget] to other ones that
+ * depend on it. For more information about the analysis phase, see [ ].
+ * 
+ * 
+ * Implementations of build rules should **not** hold on to references to the [ ]s representing their direct prerequisites in order to reduce their
  * memory footprint (otherwise, the referenced object could refer one of its direct dependencies in
  * turn, thereby making the size of the objects reachable from a single instance unbounded).
- *
+ * 
  * @see com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory
+ * 
  * @see TransitiveInfoProvider
  */
-public interface TransitiveInfoCollection
-    extends StarlarkIndexable, ProviderCollection, TransitiveInfoCollectionApi {
+interface TransitiveInfoCollection
 
-  /**
-   * Returns the label associated with this prerequisite.
-   */
-  Label getLabel();
+    : net.starlark.java.eval.StarlarkIndexable, ProviderCollection, TransitiveInfoCollectionApi {
+    /**
+     * Returns the label associated with this prerequisite.
+     */
+    @kotlin.jvm.JvmField
+    val label: com.google.devtools.build.lib.cmdline.Label?
 
-  /**
-   * Checks whether this {@link TransitiveInfoCollection} satisfies given {@link RequiredProviders}.
-   */
-  default boolean satisfies(RequiredProviders providers) {
-    return providers.isSatisfiedBy(
-        aClass -> getProvider(aClass) != null, id -> this.get(id) != null);
-  }
+    /**
+     * Checks whether this [TransitiveInfoCollection] satisfies given [RequiredProviders].
+     */
+    fun satisfies(providers: RequiredProviders): Boolean {
+        return providers.isSatisfiedBy(
+            java.util.function.Predicate { aClass: java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>? ->
+                getProvider(
+                    aClass
+                ) != null
+            }, java.util.function.Predicate { id: StarlarkProviderIdentifier? -> this.get(id) != null })
+    }
 
-  /**
-   * Returns providers that this {@link TransitiveInfoCollection} misses from a given {@link
-   * RequiredProviders}.
-   *
-   * <p>If none are missing, returns {@link RequiredProviders} that accept any set of providers.
-   */
-  default RequiredProviders missingProviders(RequiredProviders providers) {
-    return providers.getMissing(
-        aClass -> getProvider(aClass.asSubclass(TransitiveInfoProvider.class)) != null,
-        id -> this.get(id) != null);
-  }
+    /**
+     * Returns providers that this [TransitiveInfoCollection] misses from a given [ ].
+     * 
+     * 
+     * If none are missing, returns [RequiredProviders] that accept any set of providers.
+     */
+    fun missingProviders(providers: RequiredProviders): RequiredProviders? {
+        return providers.getMissing(
+            java.util.function.Predicate { aClass: java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>? ->
+                getProvider(
+                    aClass.asSubclass<U?>(com.google.devtools.build.lib.analysis.TransitiveInfoProvider::class.java)
+                ) != null
+            },
+            java.util.function.Predicate { id: StarlarkProviderIdentifier? -> this.get(id) != null })
+    }
 }

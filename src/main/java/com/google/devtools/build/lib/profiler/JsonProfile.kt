@@ -11,135 +11,152 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler
 
-package com.google.devtools.build.lib.profiler;
-
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-
-import com.google.devtools.build.lib.profiler.statistics.PhaseSummaryStatistics;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.JsonToken;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.time.Duration;
-import java.util.List;
-import java.util.zip.GZIPInputStream;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.profiler.TraceEvent
+import com.google.devtools.build.lib.profiler.statistics.PhaseSummaryStatistics
+import com.google.gson.stream.JsonReader
+import java.io.BufferedReader
+import java.io.FileInputStream
+import java.io.IOException
+import java.util.zip.GZIPInputStream
 
 /**
  * Utility class to handle parsing the JSON trace profiles.
- *
- * <p>The format itself is documented in
+ * 
+ * 
+ * The format itself is documented in
  * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
  */
-public final class JsonProfile {
-  private BuildMetadata buildMetadata;
-  private PhaseSummaryStatistics phaseSummaryStatistics;
-  private List<TraceEvent> traceEvents;
+class JsonProfile(inputStream: java.io.InputStream) {
+    private var buildMetadata: BuildMetadata? = null
+    private var phaseSummaryStatistics: PhaseSummaryStatistics? = null
+    private var traceEvents: MutableList<TraceEvent>? = null
 
-  public JsonProfile(File profileFile) throws IOException {
-    this(getInputStream(profileFile));
-  }
+    constructor(profileFile: java.io.File) : this(getInputStream(profileFile))
 
-  public JsonProfile(InputStream inputStream) throws IOException {
-    try (JsonReader reader =
-        new JsonReader(new BufferedReader(new InputStreamReader(inputStream, ISO_8859_1)))) {
-      if (reader.peek() == JsonToken.BEGIN_OBJECT) {
-        reader.beginObject();
-        while (reader.hasNext()) {
-          String objectKey = reader.nextName();
-          if ("otherData".equals(objectKey)) {
-            buildMetadata = parseBuildMetadata(reader);
-          } else if ("traceEvents".equals(objectKey)) {
-            traceEvents = TraceEvent.parseTraceEvents(reader);
-            phaseSummaryStatistics = new PhaseSummaryStatistics();
-            TraceEvent lastPhaseEvent = null;
-            Duration maxEndTime = Duration.ZERO;
-            for (TraceEvent traceEvent : traceEvents) {
-              if (traceEvent.timestamp() != null) {
-                Duration curEndTime = traceEvent.timestamp();
-                if (traceEvent.duration() != null) {
-                  curEndTime = curEndTime.plus(traceEvent.duration());
+    init {
+        JsonReader(
+            BufferedReader(
+                java.io.InputStreamReader(
+                    inputStream,
+                    java.nio.charset.StandardCharsets.ISO_8859_1
+                )
+            )
+        ).use { reader ->
+            if (reader.peek() == com.google.gson.stream.JsonToken.BEGIN_OBJECT) {
+                reader.beginObject()
+                while (reader.hasNext()) {
+                    val objectKey: String? = reader.nextName()
+                    if ("otherData" == objectKey) {
+                        buildMetadata = parseBuildMetadata(reader)
+                    } else if ("traceEvents" == objectKey) {
+                        traceEvents = TraceEvent.Companion.parseTraceEvents(reader)
+                        phaseSummaryStatistics = PhaseSummaryStatistics()
+                        var lastPhaseEvent: TraceEvent? = null
+                        var maxEndTime: java.time.Duration = java.time.Duration.ZERO
+                        for (traceEvent in traceEvents!!) {
+                            if (traceEvent.timestamp != null) {
+                                var curEndTime: java.time.Duration = traceEvent.timestamp
+                                if (traceEvent.duration != null) {
+                                    curEndTime = curEndTime.plus(traceEvent.duration)
+                                }
+                                if (curEndTime.compareTo(maxEndTime) > 0) {
+                                    maxEndTime = curEndTime
+                                }
+                            }
+                            if (com.google.devtools.build.lib.profiler.ProfilerTask.PHASE.description == traceEvent.category) {
+                                if (lastPhaseEvent != null) {
+                                    phaseSummaryStatistics.addProfilePhase(
+                                        com.google.devtools.build.lib.profiler.ProfilePhase.Companion.getPhaseFromDescription(
+                                            lastPhaseEvent.name
+                                        ),
+                                        traceEvent.timestamp.minus(lastPhaseEvent.timestamp)
+                                    )
+                                }
+                                lastPhaseEvent = traceEvent
+                            }
+                        }
+                        if (lastPhaseEvent != null) {
+                            phaseSummaryStatistics.addProfilePhase(
+                                com.google.devtools.build.lib.profiler.ProfilePhase.Companion.getPhaseFromDescription(
+                                    lastPhaseEvent.name
+                                ),
+                                maxEndTime.minus(lastPhaseEvent.timestamp)
+                            )
+                        }
+                    } else {
+                        reader.skipValue()
+                    }
                 }
-                if (curEndTime.compareTo(maxEndTime) > 0) {
-                  maxEndTime = curEndTime;
-                }
-              }
-              if (ProfilerTask.PHASE.description.equals(traceEvent.category())) {
-                if (lastPhaseEvent != null) {
-                  phaseSummaryStatistics.addProfilePhase(
-                      ProfilePhase.getPhaseFromDescription(lastPhaseEvent.name()),
-                      traceEvent.timestamp().minus(lastPhaseEvent.timestamp()));
-                }
-                lastPhaseEvent = traceEvent;
-              }
             }
-            if (lastPhaseEvent != null) {
-              phaseSummaryStatistics.addProfilePhase(
-                  ProfilePhase.getPhaseFromDescription(lastPhaseEvent.name()),
-                  maxEndTime.minus(lastPhaseEvent.timestamp()));
-            }
-          } else {
-            reader.skipValue();
-          }
         }
-      }
-    }
-    if (traceEvents == null) {
-      throw new IOException("Corrupted profile file: couldn't find 'traceEvents'.");
-    }
-  }
-
-  private static InputStream getInputStream(File profileFile) throws IOException {
-    InputStream inputStream = new FileInputStream(profileFile);
-    if (profileFile.getName().endsWith(".gz")) {
-      inputStream = new GZIPInputStream(inputStream);
-    }
-    return inputStream;
-  }
-
-  private static BuildMetadata parseBuildMetadata(JsonReader reader) throws IOException {
-    reader.beginObject();
-    String buildId = null;
-    String date = null;
-    String outputBase = null;
-    while (reader.hasNext()) {
-      switch (reader.nextName()) {
-        case "build_id" -> buildId = reader.nextString();
-        case "date" -> date = reader.nextString();
-        case "output_base" -> outputBase = reader.nextString();
-        default -> reader.skipValue();
-      }
-    }
-    reader.endObject();
-
-    return BuildMetadata.create(buildId, date, outputBase);
-  }
-
-  public PhaseSummaryStatistics getPhaseSummaryStatistics() {
-    return phaseSummaryStatistics;
-  }
-
-  public List<TraceEvent> getTraceEvents() {
-    return traceEvents;
-  }
-
-  @Nullable
-  public BuildMetadata getBuildMetadata() {
-    return buildMetadata;
-  }
-
-  /** Value class to hold build metadata (id, date, output base) if available. */
-  public record BuildMetadata(
-      @Nullable String buildId, @Nullable String date, @Nullable String outputBase) {
-    public static BuildMetadata create(
-        @Nullable String buildId, @Nullable String date, @Nullable String outputBase) {
-      return new BuildMetadata(buildId, date, outputBase);
+        if (traceEvents == null) {
+            throw IOException("Corrupted profile file: couldn't find 'traceEvents'.")
+        }
     }
 
-  }
+    fun getPhaseSummaryStatistics(): PhaseSummaryStatistics {
+        return phaseSummaryStatistics
+    }
+
+    fun getTraceEvents(): MutableList<TraceEvent> {
+        return traceEvents
+    }
+
+    fun getBuildMetadata(): BuildMetadata? {
+        return buildMetadata
+    }
+
+    /** Value class to hold build metadata (id, date, output base) if available.  */
+    @kotlin.jvm.JvmRecord
+    data class BuildMetadata(buildId: String?, date: String?, outputBase: String?) {
+        val buildId: String?
+        val date: String?
+        val outputBase: String?
+
+        init {
+            this.buildId = buildId
+            this.date = date
+            this.outputBase = outputBase
+        }
+
+        companion object {
+            fun create(
+                buildId: String?, date: String?, outputBase: String?
+            ): BuildMetadata {
+                return BuildMetadata(buildId, date, outputBase)
+            }
+        }
+    }
+
+    companion object {
+        @Throws(IOException::class)
+        private fun getInputStream(profileFile: java.io.File): java.io.InputStream {
+            var inputStream: java.io.InputStream = FileInputStream(profileFile)
+            if (profileFile.getName().endsWith(".gz")) {
+                inputStream = GZIPInputStream(inputStream)
+            }
+            return inputStream
+        }
+
+        @Throws(IOException::class)
+        private fun parseBuildMetadata(reader: JsonReader): BuildMetadata {
+            reader.beginObject()
+            var buildId: String? = null
+            var date: String? = null
+            var outputBase: String? = null
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "build_id" -> buildId = reader.nextString()
+                    "date" -> date = reader.nextString()
+                    "output_base" -> outputBase = reader.nextString()
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            return BuildMetadata.Companion.create(buildId, date, outputBase)
+        }
+    }
 }

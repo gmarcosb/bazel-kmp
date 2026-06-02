@@ -2289,9 +2289,8 @@ public class ConfigurableAttributesTest extends BuildViewTestCase {
         .containsExactly(Label.parseCanonicalUnchecked("//foo:foo.cc"));
     assertThat(attributesFromUnsimplifiedSelects.get("link_extra_lib", BuildType.LABEL))
         .isEqualTo(
-            attributesFromUnsimplifiedSelects
-                .getAttributeDefinition("link_extra_lib")
-                .getDefaultValueUnchecked());
+                attributesFromUnsimplifiedSelects
+                    .getAttributeDefinition("link_extra_lib").defaultValueUnchecked);
 
     setBuildLanguageOptions("--incompatible_simplify_unconditional_selects_in_rule_attrs=true");
     AttributeMap attributesFromSimplifiedSelects =

@@ -11,237 +11,216 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark
 
-package com.google.devtools.build.lib.analysis.starlark;
-
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.starlark.annotations.StarlarkConfigurationField;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.packages.Attribute.AbstractLabelLateBoundDefault;
-import com.google.devtools.build.lib.packages.Attribute.LateBoundDefault;
-import com.google.devtools.build.lib.packages.AttributeMap;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.starlarkbuildapi.LateBoundDefaultApi;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.Map;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
-import net.starlark.java.annot.StarlarkAnnotations;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.analysis.starlark.annotations.StarlarkConfigurationField
 
 /**
- * An implementation of {@link LateBoundDefault} which obtains a late-bound attribute value (of type
+ * An implementation of [LateBoundDefault] which obtains a late-bound attribute value (of type
  * 'label') specifically by Starlark configuration fragment name and field name, as registered by
- * {@link StarlarkConfigurationField}.
- *
- * <p>For example, a StarlarkLateBoundDefault on "java" and "toolchain" would require a valid
- * configuration fragment named "java" with a method annotated with {@link
- * StarlarkConfigurationField} of name "toolchain". This {@link LateBoundDefault} would provide a
+ * [StarlarkConfigurationField].
+ * 
+ * 
+ * For example, a StarlarkLateBoundDefault on "java" and "toolchain" would require a valid
+ * configuration fragment named "java" with a method annotated with [ ] of name "toolchain". This [LateBoundDefault] would provide a
  * late-bound dependency (defined by the label returned by that configuration field) in the current
  * target configuration.
  */
-@Immutable
-public class StarlarkLateBoundDefault<FragmentT> extends AbstractLabelLateBoundDefault<FragmentT>
-    implements LateBoundDefaultApi {
+@javax.annotation.concurrent.Immutable
+class StarlarkLateBoundDefault<FragmentT> private constructor(
+    defaultVal: com.google.devtools.build.lib.cmdline.Label?,
+    fragmentClass: java.lang.Class<FragmentT?>?,
+    method: java.lang.reflect.Method,
+    fragmentName: String?,
+    fragmentFieldName: String?
+) : AbstractLabelLateBoundDefault<FragmentT?>(fragmentClass, defaultVal), LateBoundDefaultApi {
+    private val method: java.lang.reflect.Method
 
-  private final Method method;
-  private final String fragmentName;
-  private final String fragmentFieldName;
+    /**
+     * Returns the Starlark name of the configuration fragment that this late bound default requires.
+     */
+    val fragmentName: String?
 
-  @Override
-  public Label resolve(Rule rule, AttributeMap attributes, FragmentT config) {
-    try {
-      Object result = method.invoke(config);
-      return (Label) result;
-    } catch (IllegalAccessException | InvocationTargetException e) {
-      // Configuration field methods should not throw either of these exceptions.
-      throw new AssertionError("Method invocation failed: " + e);
+    /**
+     * Returns the Starlark name of the configuration field name, as registered by [ ] annotation on the configuration fragment.
+     */
+    val fragmentFieldName: String?
+
+    override fun resolve(
+        rule: com.google.devtools.build.lib.packages.Rule?,
+        attributes: com.google.devtools.build.lib.packages.AttributeMap?,
+        config: FragmentT?
+    ): com.google.devtools.build.lib.cmdline.Label? {
+        try {
+            val result: Any? = method.invoke(config)
+            return result as com.google.devtools.build.lib.cmdline.Label?
+        } catch (e: java.lang.IllegalAccessException) {
+            // Configuration field methods should not throw either of these exceptions.
+            throw java.lang.AssertionError("Method invocation failed: " + e)
+        } catch (e: java.lang.reflect.InvocationTargetException) {
+            throw java.lang.AssertionError("Method invocation failed: " + e)
+        }
     }
-  }
 
-  /** Returns the {@link StarlarkConfigurationField} annotation corresponding to this method. */
-  @Nullable
-  private static Label getDefaultLabel(
-      StarlarkConfigurationField annotation, RepositoryName toolsRepository) {
-    if (annotation.defaultLabel().isEmpty()) {
-      return null;
-    }
-    Label defaultLabel =
-        annotation.defaultInToolRepository()
-            ? Label.parseCanonicalUnchecked(toolsRepository + annotation.defaultLabel())
-            : Label.parseCanonicalUnchecked(annotation.defaultLabel());
-    return defaultLabel;
-  }
-
-  private StarlarkLateBoundDefault(
-      StarlarkConfigurationField annotation,
-      Class<FragmentT> fragmentClass,
-      String fragmentName,
-      Method method,
-      RepositoryName toolsRepository) {
-    this(
+    private constructor(
+        annotation: StarlarkConfigurationField,
+        fragmentClass: java.lang.Class<FragmentT?>?,
+        fragmentName: String?,
+        method: java.lang.reflect.Method?,
+        toolsRepository: RepositoryName?
+    ) : this(
         getDefaultLabel(annotation, toolsRepository),
         fragmentClass,
         method,
         fragmentName,
-        annotation.name());
-  }
+        annotation.name()
+    )
 
-  private StarlarkLateBoundDefault(
-      Label defaultVal,
-      Class<FragmentT> fragmentClass,
-      Method method,
-      String fragmentName,
-      String fragmentFieldName) {
-    super(fragmentClass, defaultVal);
-    this.method = method;
-    this.fragmentName = fragmentName;
-    this.fragmentFieldName = fragmentFieldName;
-  }
-
-  /**
-   * Returns the Starlark name of the configuration fragment that this late bound default requires.
-   */
-  public String getFragmentName() {
-    return fragmentName;
-  }
-
-  /**
-   * Returns the Starlark name of the configuration field name, as registered by {@link
-   * StarlarkConfigurationField} annotation on the configuration fragment.
-   */
-  public String getFragmentFieldName() {
-    return fragmentFieldName;
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<late-bound default>");
-  }
-
-  /**
-   * An exception thrown if a user specifies an invalid configuration field identifier.
-   *
-   * @see StarlarkConfigurationField
-   */
-  public static class InvalidConfigurationFieldException extends Exception {
-    public InvalidConfigurationFieldException(String message) {
-      super(message);
-    }
-  }
-
-
-  private static class CacheKey {
-    private final Class<?> fragmentClass;
-    private final RepositoryName toolsRepository;
-
-    private CacheKey(Class<?> fragmentClass, RepositoryName toolsRepository) {
-      this.fragmentClass = fragmentClass;
-      this.toolsRepository = toolsRepository;
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("<late-bound default>")
     }
 
-    @Override
-    public boolean equals(Object object) {
-      if (object == this) {
-        return true;
-      } else if (!(object instanceof CacheKey cacheKey)) {
-        return false;
-      } else {
-        return fragmentClass.equals(cacheKey.fragmentClass)
-            && toolsRepository.equals(cacheKey.toolsRepository);
-      }
-    }
+    /**
+     * An exception thrown if a user specifies an invalid configuration field identifier.
+     * 
+     * @see StarlarkConfigurationField
+     */
+    class InvalidConfigurationFieldException(message: String?) : java.lang.Exception(message)
 
-    @Override
-    public int hashCode() {
-      int result = fragmentClass.hashCode();
-      result = 31 * result + toolsRepository.hashCode();
-      return result;
-    }
-  }
 
-  /**
-   * A cache for efficient {@link StarlarkLateBoundDefault} loading by configuration fragment. Each
-   * configuration fragment class key is mapped to a {@link Map} where keys are configuration field
-   * Starlark names, and values are the {@link StarlarkLateBoundDefault}s. Methods must be annotated
-   * with {@link StarlarkConfigurationField} to be considered.
-   */
-  private static final LoadingCache<CacheKey, Map<String, StarlarkLateBoundDefault<?>>> fieldCache =
-      Caffeine.newBuilder()
-          .initialCapacity(10)
-          .maximumSize(100)
-          .build(
-              key -> {
-                ImmutableMap.Builder<String, StarlarkLateBoundDefault<?>> lateBoundDefaultMap =
-                    new ImmutableMap.Builder<>();
-                Class<?> fragmentClass = key.fragmentClass;
-                StarlarkBuiltin fragmentModule =
-                    StarlarkAnnotations.getStarlarkBuiltin(fragmentClass);
+    private class CacheKey(fragmentClass: java.lang.Class<*>, toolsRepository: RepositoryName) {
+        private val fragmentClass: java.lang.Class<*>
+        private val toolsRepository: RepositoryName
 
-                if (fragmentModule != null) {
-                  for (Method method : fragmentClass.getMethods()) {
-                    if (method.isAnnotationPresent(StarlarkConfigurationField.class)) {
-                      // TODO(b/68817606): Use annotation processors to verify these constraints.
-                      Preconditions.checkArgument(
-                          method.getReturnType() == Label.class,
-                          "Method %s must have return type 'Label'",
-                          method);
-                      Preconditions.checkArgument(
-                          method.getParameterTypes().length == 0,
-                          "Method %s must not accept arguments",
-                          method);
-
-                      StarlarkConfigurationField configField =
-                          method.getAnnotation(StarlarkConfigurationField.class);
-                      lateBoundDefaultMap.put(
-                          configField.name(),
-                          new StarlarkLateBoundDefault<>(
-                              configField,
-                              fragmentClass,
-                              fragmentModule.name(),
-                              method,
-                              key.toolsRepository));
-                    }
-                  }
-                }
-                return lateBoundDefaultMap.buildOrThrow();
-              });
-
-  /**
-   * Returns a {@link LateBoundDefault} which obtains a late-bound attribute value (of type 'label')
-   * specifically by Starlark configuration fragment name and field name, as registered by {@link
-   * StarlarkConfigurationField}.
-   *
-   * @param fragmentClass the configuration fragment class, which must have a valid Starlark name
-   * @param fragmentFieldName the configuration field name, as registered by {@link
-   *     StarlarkConfigurationField} annotation
-   * @param toolsRepository the Bazel tools repository path fragment
-   * @throws InvalidConfigurationFieldException if there is no valid configuration field with the
-   *     given fragment class and field name
-   */
-  @SuppressWarnings("unchecked")
-  public static <FragmentT> StarlarkLateBoundDefault<FragmentT> forConfigurationField(
-      Class<FragmentT> fragmentClass, String fragmentFieldName, RepositoryName toolsRepository)
-      throws InvalidConfigurationFieldException {
-      CacheKey cacheKey = new CacheKey(fragmentClass, toolsRepository);
-      StarlarkLateBoundDefault<?> resolver = fieldCache.get(cacheKey).get(fragmentFieldName);
-      if (resolver == null) {
-        StarlarkBuiltin moduleAnnotation = StarlarkAnnotations.getStarlarkBuiltin(fragmentClass);
-        if (moduleAnnotation == null) {
-          throw new AssertionError("fragment class must have a valid Starlark name");
+        init {
+            this.fragmentClass = fragmentClass
+            this.toolsRepository = toolsRepository
         }
-        throw new InvalidConfigurationFieldException(
-            String.format("invalid configuration field name '%s' on fragment '%s'",
-                fragmentFieldName, moduleAnnotation.name()));
-      }
-      return (StarlarkLateBoundDefault<FragmentT>) resolver; // unchecked cast
-  }
 
+        override fun equals(`object`: Any?): Boolean {
+            if (`object` === this) {
+                return true
+            } else if (`object` !is CacheKey) {
+                return false
+            } else {
+                return fragmentClass == `object`.fragmentClass
+                        && toolsRepository == `object`.toolsRepository
+            }
+        }
+
+        override fun hashCode(): Int {
+            var result: Int = fragmentClass.hashCode()
+            result = 31 * result + toolsRepository.hashCode()
+            return result
+        }
+    }
+
+    init {
+        this.method = method
+        this.fragmentName = fragmentName
+        this.fragmentFieldName = fragmentFieldName
+    }
+
+    companion object {
+        /** Returns the [StarlarkConfigurationField] annotation corresponding to this method.  */
+        private fun getDefaultLabel(
+            annotation: StarlarkConfigurationField, toolsRepository: RepositoryName?
+        ): com.google.devtools.build.lib.cmdline.Label? {
+            if (annotation.defaultLabel().isEmpty()) {
+                return null
+            }
+            val defaultLabel: com.google.devtools.build.lib.cmdline.Label? =
+                if (annotation.defaultInToolRepository())
+                    com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked(toolsRepository + annotation.defaultLabel())
+                else
+                    com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked(annotation.defaultLabel())
+            return defaultLabel
+        }
+
+        /**
+         * A cache for efficient [StarlarkLateBoundDefault] loading by configuration fragment. Each
+         * configuration fragment class key is mapped to a [Map] where keys are configuration field
+         * Starlark names, and values are the [StarlarkLateBoundDefault]s. Methods must be annotated
+         * with [StarlarkConfigurationField] to be considered.
+         */
+        private val fieldCache: com.github.benmanes.caffeine.cache.LoadingCache<CacheKey?, MutableMap<String?, StarlarkLateBoundDefault<*>?>?> =
+            Caffeine.newBuilder()
+                .initialCapacity(10)
+                .maximumSize(100)
+                .build<CacheKey?, MutableMap<String?, StarlarkLateBoundDefault<*>?>?>(
+                    com.github.benmanes.caffeine.cache.CacheLoader { key: CacheKey? ->
+                        val lateBoundDefaultMap: com.google.common.collect.ImmutableMap.Builder<String?, StarlarkLateBoundDefault<*>?> =
+                            com.google.common.collect.ImmutableMap.Builder<String?, StarlarkLateBoundDefault<*>?>()
+                        val fragmentClass: java.lang.Class<*> = key.fragmentClass
+                        val fragmentModule: net.starlark.java.annot.StarlarkBuiltin? =
+                            net.starlark.java.annot.StarlarkAnnotations.getStarlarkBuiltin(fragmentClass)
+
+                        if (fragmentModule != null) {
+                            for (method in fragmentClass.getMethods()) {
+                                if (method.isAnnotationPresent(StarlarkConfigurationField::class.java)) {
+                                    // TODO(b/68817606): Use annotation processors to verify these constraints.
+                                    com.google.common.base.Preconditions.checkArgument(
+                                        method.getReturnType() == com.google.devtools.build.lib.cmdline.Label::class.java,
+                                        "Method %s must have return type 'Label'",
+                                        method
+                                    )
+                                    com.google.common.base.Preconditions.checkArgument(
+                                        method.getParameterTypes().size == 0,
+                                        "Method %s must not accept arguments",
+                                        method
+                                    )
+
+                                    val configField: StarlarkConfigurationField =
+                                        method.getAnnotation<T>(StarlarkConfigurationField::class.java)
+                                    lateBoundDefaultMap.put(
+                                        configField.name(),
+                                        StarlarkLateBoundDefault<Any?>(
+                                            configField,
+                                            fragmentClass,
+                                            fragmentModule.name,
+                                            method,
+                                            key.toolsRepository
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        lateBoundDefaultMap.buildOrThrow()
+                    })
+
+        /**
+         * Returns a [LateBoundDefault] which obtains a late-bound attribute value (of type 'label')
+         * specifically by Starlark configuration fragment name and field name, as registered by [ ].
+         * 
+         * @param fragmentClass the configuration fragment class, which must have a valid Starlark name
+         * @param fragmentFieldName the configuration field name, as registered by [     ] annotation
+         * @param toolsRepository the Bazel tools repository path fragment
+         * @throws InvalidConfigurationFieldException if there is no valid configuration field with the
+         * given fragment class and field name
+         */
+        @Throws(InvalidConfigurationFieldException::class)
+        fun <FragmentT> forConfigurationField(
+            fragmentClass: java.lang.Class<FragmentT?>, fragmentFieldName: String?, toolsRepository: RepositoryName
+        ): StarlarkLateBoundDefault<FragmentT?> {
+            val cacheKey: CacheKey = com.google.devtools.build.lib.analysis.starlark.StarlarkLateBoundDefault.CacheKey(
+                fragmentClass,
+                toolsRepository
+            )
+            val resolver: StarlarkLateBoundDefault<*>? = fieldCache.get(cacheKey).get(fragmentFieldName)
+            if (resolver == null) {
+                val moduleAnnotation: net.starlark.java.annot.StarlarkBuiltin? =
+                    net.starlark.java.annot.StarlarkAnnotations.getStarlarkBuiltin(fragmentClass)
+                if (moduleAnnotation == null) {
+                    throw java.lang.AssertionError("fragment class must have a valid Starlark name")
+                }
+                throw InvalidConfigurationFieldException(
+                    String.format(
+                        "invalid configuration field name '%s' on fragment '%s'",
+                        fragmentFieldName, moduleAnnotation.name
+                    )
+                )
+            }
+            return resolver as StarlarkLateBoundDefault<FragmentT?> // unchecked cast
+        }
+    }
 }

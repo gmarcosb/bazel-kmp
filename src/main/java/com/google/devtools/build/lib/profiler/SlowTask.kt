@@ -11,17 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
+/** A task that was very slow.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+@kotlin.jvm.JvmRecord
+data class SlowTask(
+    durationNanos: Long,
+    description: String?,
+    type: com.google.devtools.build.lib.profiler.ProfilerTask?
+) : Comparable<SlowTask?> {
+    override fun compareTo(other: SlowTask): Int {
+        return java.lang.Long.compare(this.durationNanos, other.durationNanos)
+    }
 
-/** A task that was very slow. */
-@SkybridgeInterface
-public record SlowTask(long durationNanos, String description, ProfilerTask type)
-    implements Comparable<SlowTask> {
+    val durationNanos: Long
+    val description: String?
+    val type: com.google.devtools.build.lib.profiler.ProfilerTask?
 
-  @Override
-  public int compareTo(SlowTask other) {
-    return Long.compare(durationNanos(), other.durationNanos());
-  }
+    init {
+        this.durationNanos = durationNanos
+        this.description = description
+        this.type = type
+    }
 }

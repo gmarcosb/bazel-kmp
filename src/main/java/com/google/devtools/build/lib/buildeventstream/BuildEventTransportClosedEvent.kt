@@ -11,25 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventstream;
+package com.google.devtools.build.lib.buildeventstream
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.buildeventstream.BuildEventTransport
 
 /**
- * An event signaling that a {@link BuildEventTransport} has been closed.
+ * An event signaling that a [BuildEventTransport] has been closed.
  */
-public class BuildEventTransportClosedEvent implements Postable {
+class BuildEventTransportClosedEvent(transport: BuildEventTransport?) :
+    com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    private val transport: BuildEventTransport?
 
-  private final BuildEventTransport transport;
+    init {
+        this.transport = transport
+    }
 
-  public BuildEventTransportClosedEvent(BuildEventTransport transport) {
-    this.transport = transport;
-  }
-
-  /**
-   * Returns the {@link BuildEventTransport} that has been closed.
-   */
-  public BuildEventTransport transport() {
-    return transport;
-  }
+    /**
+     * Returns the [BuildEventTransport] that has been closed.
+     */
+    fun transport(): BuildEventTransport? {
+        return transport
+    }
 }

@@ -12,129 +12,128 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkList;
+import com.google.devtools.build.lib.bazel.bzlmod.ArchiveRepoSpecBuilder.RemoteFile
+import com.google.devtools.build.lib.bazel.bzlmod.RepoRuleId
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
 
 /**
- * Builder for a {@link RepoSpec} object that indicates how to materialize a repo corresponding to a
- * {@code git_repository} repo rule call.
+ * Builder for a [RepoSpec] object that indicates how to materialize a repo corresponding to a
+ * `git_repository` repo rule call.
  */
-public class GitRepoSpecBuilder {
+class GitRepoSpecBuilder {
+    private val attrBuilder: net.starlark.java.eval.Dict.Builder<String?, Any?> =
+        net.starlark.java.eval.Dict.builder<String?, Any?>()
 
-  public static final RepoRuleId GIT_REPOSITORY =
-      new RepoRuleId(
-          Label.parseCanonicalUnchecked("@@bazel_tools//tools/build_defs/repo:git.bzl"),
-          "git_repository");
-
-  private final Dict.Builder<String, Object> attrBuilder = Dict.builder();
-
-  public GitRepoSpecBuilder() {}
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setRemote(String remoteRepoUrl) {
-    return setAttr("remote", remoteRepoUrl);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setCommit(String gitCommitHash) {
-    return setAttr("commit", gitCommitHash);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setShallowSince(String shallowSince) {
-    return setAttr("shallow_since", shallowSince);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setTag(String tag) {
-    return setAttr("tag", tag);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setInitSubmodules(boolean initSubmodules) {
-    setAttr("init_submodules", initSubmodules);
-    setAttr("recursive_init_submodules", initSubmodules);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setVerbose(boolean verbose) {
-    return setAttr("verbose", verbose);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setStripPrefix(String stripPrefix) {
-    return setAttr("strip_prefix", stripPrefix);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setAddPrefix(String addPrefix) {
-    return setAttr("add_prefix", addPrefix);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setRemotePatches(ImmutableMap<String, String> remotePatches) {
-    return setAttr("remote_patches", remotePatches);
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setRemoteModuleFile(
-      ArchiveRepoSpecBuilder.RemoteFile remoteModuleFile) {
-    setAttr("remote_module_file_urls", remoteModuleFile.urls());
-    setAttr("remote_module_file_integrity", remoteModuleFile.integrity());
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public GitRepoSpecBuilder setRemotePatchStrip(int remotePatchStrip) {
-    return setAttr("remote_patch_strip", remotePatchStrip);
-  }
-
-  public RepoSpec build() {
-    return new RepoSpec(GIT_REPOSITORY, AttributeValues.create(attrBuilder.buildImmutable()));
-  }
-
-  @CanIgnoreReturnValue
-  private GitRepoSpecBuilder setAttr(String name, String value) {
-    if (value != null && !value.isEmpty()) {
-      attrBuilder.put(name, value);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemote(remoteRepoUrl: String?): GitRepoSpecBuilder {
+        return setAttr("remote", remoteRepoUrl)
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  private GitRepoSpecBuilder setAttr(String name, boolean value) {
-    attrBuilder.put(name, value);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  private GitRepoSpecBuilder setAttr(String name, List<?> value) {
-    if (value != null && !value.isEmpty()) {
-      attrBuilder.put(name, StarlarkList.immutableCopyOf(value));
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setCommit(gitCommitHash: String?): GitRepoSpecBuilder {
+        return setAttr("commit", gitCommitHash)
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  private GitRepoSpecBuilder setAttr(String name, ImmutableMap<?, ?> value) {
-    if (value != null && !value.isEmpty()) {
-      attrBuilder.put(name, Dict.immutableCopyOf(value));
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setShallowSince(shallowSince: String?): GitRepoSpecBuilder {
+        return setAttr("shallow_since", shallowSince)
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  private GitRepoSpecBuilder setAttr(String name, int value) {
-    attrBuilder.put(name, StarlarkInt.of(value));
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setTag(tag: String?): GitRepoSpecBuilder {
+        return setAttr("tag", tag)
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setInitSubmodules(initSubmodules: Boolean): GitRepoSpecBuilder {
+        setAttr("init_submodules", initSubmodules)
+        setAttr("recursive_init_submodules", initSubmodules)
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setVerbose(verbose: Boolean): GitRepoSpecBuilder {
+        return setAttr("verbose", verbose)
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setStripPrefix(stripPrefix: String?): GitRepoSpecBuilder {
+        return setAttr("strip_prefix", stripPrefix)
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setAddPrefix(addPrefix: String?): GitRepoSpecBuilder {
+        return setAttr("add_prefix", addPrefix)
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemotePatches(remotePatches: com.google.common.collect.ImmutableMap<String?, String?>?): GitRepoSpecBuilder {
+        return setAttr("remote_patches", remotePatches)
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemoteModuleFile(
+        remoteModuleFile: RemoteFile
+    ): GitRepoSpecBuilder {
+        setAttr("remote_module_file_urls", remoteModuleFile.urls)
+        setAttr("remote_module_file_integrity", remoteModuleFile.integrity)
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemotePatchStrip(remotePatchStrip: Int): GitRepoSpecBuilder {
+        return setAttr("remote_patch_strip", remotePatchStrip)
+    }
+
+    fun build(): RepoSpec {
+        return RepoSpec(
+            GIT_REPOSITORY,
+            com.google.devtools.build.lib.bazel.bzlmod.AttributeValues.Companion.create(attrBuilder.buildImmutable())
+        )
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    private fun setAttr(name: String?, value: String?): GitRepoSpecBuilder {
+        if (value != null && !value.isEmpty()) {
+            attrBuilder.put(name, value)
+        }
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    private fun setAttr(name: String?, value: Boolean): GitRepoSpecBuilder {
+        attrBuilder.put(name, value)
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    private fun setAttr(name: String?, value: MutableList<*>?): GitRepoSpecBuilder {
+        if (value != null && !value.isEmpty()) {
+            attrBuilder.put(name, net.starlark.java.eval.StarlarkList.immutableCopyOf(value))
+        }
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    private fun setAttr(name: String?, value: com.google.common.collect.ImmutableMap<*, *>?): GitRepoSpecBuilder {
+        if (value != null && !value.isEmpty()) {
+            attrBuilder.put(name, net.starlark.java.eval.Dict.immutableCopyOf(value))
+        }
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    private fun setAttr(name: String?, value: Int): GitRepoSpecBuilder {
+        attrBuilder.put(name, net.starlark.java.eval.StarlarkInt.of(value))
+        return this
+    }
+
+    companion object {
+        val GIT_REPOSITORY: RepoRuleId = RepoRuleId(
+            com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked("@@bazel_tools//tools/build_defs/repo:git.bzl"),
+            "git_repository"
+        )
+    }
 }

@@ -11,17 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import java.util.List;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * A visibility level governing the loading of a .bzl module.
- *
- * <p>This is just a container for a list of PackageSpecifications; the scope of visibility is the
+ * 
+ * 
+ * This is just a container for a list of PackageSpecifications; the scope of visibility is the
  * union of all specifications.
  */
 // TODO(brandjon): If we ever support negation then this class would become a bit fancier -- it'd
@@ -31,74 +29,70 @@ import java.util.List;
 // TODO(brandjon): If we have a large allowlist consumed by many .bzl files, we may end up with many
 // copies of the allowlist embedded in different instances of this class. Consider more aggressive
 // interning.
-public abstract class BzlVisibility {
+abstract class BzlVisibility private constructor() {
+    /**
+     * Returns whether the given package's BUILD and .bzl files may load the .bzl according to this
+     * visibility restriction. This does not include cases where `pkg` is the same package as
+     * the one containing the .bzl (i.e. this method may return false in that case).
+     */
+    abstract fun allowsPackage(pkg: PackageIdentifier?): Boolean
 
-  private BzlVisibility() {}
+    /**
+     * A visibility that decides whether a package's BUILD and .bzl files may load the .bzl by
+     * checking the package against a set of [PackageSpecifications]s.
+     */
+    private class ListBzlVisibility(specs: MutableList<PackageSpecification?>) : BzlVisibility() {
+        private val specs: com.google.common.collect.ImmutableList<PackageSpecification>
 
-  /**
-   * Returns whether the given package's BUILD and .bzl files may load the .bzl according to this
-   * visibility restriction. This does not include cases where {@code pkg} is the same package as
-   * the one containing the .bzl (i.e. this method may return false in that case).
-   */
-  public abstract boolean allowsPackage(PackageIdentifier pkg);
-
-  /**
-   * Returns a (possibly interned) {@code BzlVisibility} that allows access as per the given package
-   * specifications.
-   */
-  public static BzlVisibility of(List<PackageSpecification> specs) {
-    if (specs.isEmpty()
-        || (specs.size() == 1 && specs.get(0) instanceof PackageSpecification.NoPackages)) {
-      return PRIVATE;
-    }
-    for (PackageSpecification spec : specs) {
-      if (spec instanceof PackageSpecification.AllPackages) {
-        return PUBLIC;
-      }
-    }
-    return new ListBzlVisibility(specs);
-  }
-
-  /** A visibility indicating that everyone may load the .bzl */
-  public static final BzlVisibility PUBLIC =
-      new BzlVisibility() {
-        @Override
-        public boolean allowsPackage(PackageIdentifier pkg) {
-          return true;
+        init {
+            this.specs = com.google.common.collect.ImmutableList.copyOf<PackageSpecification?>(specs)
         }
-      };
 
-  /**
-   * A visibility indicating that only BUILD and .bzl files within the same package (not including
-   * subpackages) may load the .bzl.
-   */
-  public static final BzlVisibility PRIVATE =
-      new BzlVisibility() {
-        @Override
-        public boolean allowsPackage(PackageIdentifier pkg) {
-          return false;
+        override fun allowsPackage(pkg: PackageIdentifier?): Boolean {
+            for (spec in specs) {
+                if (spec.containsPackage(pkg)) {
+                    return true
+                }
+            }
+            return false
         }
-      };
-
-  /**
-   * A visibility that decides whether a package's BUILD and .bzl files may load the .bzl by
-   * checking the package against a set of {@link PackageSpecifications}s.
-   */
-  private static class ListBzlVisibility extends BzlVisibility {
-    private final ImmutableList<PackageSpecification> specs;
-
-    public ListBzlVisibility(List<PackageSpecification> specs) {
-      this.specs = ImmutableList.copyOf(specs);
     }
 
-    @Override
-    public boolean allowsPackage(PackageIdentifier pkg) {
-      for (PackageSpecification spec : specs) {
-        if (spec.containsPackage(pkg)) {
-          return true;
+    companion object {
+        /**
+         * Returns a (possibly interned) `BzlVisibility` that allows access as per the given package
+         * specifications.
+         */
+        fun of(specs: MutableList<PackageSpecification?>): BzlVisibility {
+            if (specs.isEmpty()
+                || (specs.size == 1 && specs.get(0) is NoPackages)
+            ) {
+                return PRIVATE
+            }
+            for (spec in specs) {
+                if (spec is AllPackages) {
+                    return PUBLIC
+                }
+            }
+            return ListBzlVisibility(specs)
         }
-      }
-      return false;
+
+        /** A visibility indicating that everyone may load the .bzl  */
+        @kotlin.jvm.JvmField
+        val PUBLIC: BzlVisibility = object : BzlVisibility() {
+            override fun allowsPackage(pkg: PackageIdentifier?): Boolean {
+                return true
+            }
+        }
+
+        /**
+         * A visibility indicating that only BUILD and .bzl files within the same package (not including
+         * subpackages) may load the .bzl.
+         */
+        val PRIVATE: BzlVisibility = object : BzlVisibility() {
+            override fun allowsPackage(pkg: PackageIdentifier?): Boolean {
+                return false
+            }
+        }
     }
-  }
 }

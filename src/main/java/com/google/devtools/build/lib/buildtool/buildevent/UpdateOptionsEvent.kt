@@ -11,19 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
-import com.google.devtools.common.options.OptionsParsingResult;
+import com.google.devtools.common.options.OptionsParsingResult
 
-/** Event that is fired when the options are updated. */
-public class UpdateOptionsEvent {
-  private final OptionsParsingResult options;
-
-  public UpdateOptionsEvent(OptionsParsingResult options) {
-    this.options = options;
-  }
-
-  public OptionsParsingResult getOptions() {
-    return options;
-  }
-}
+/** Event that is fired when the options are updated.  */
+class UpdateOptionsEvent(val options: OptionsParsingResult?)

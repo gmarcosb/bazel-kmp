@@ -11,104 +11,136 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Objects;
-import java.util.Optional;
+import com.google.devtools.build.lib.analysis.platform.PlatformValue
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * A platform's {@link PlatformInfo} along with its parsed flags.
- *
+ * A platform's [PlatformInfo] along with its parsed flags.
+ * 
  * @param parsedFlags Only present if the platform specifies flags.
  */
 @AutoCodec
-public record PlatformValue(PlatformInfo platformInfo, Optional<ParsedFlagsValue> parsedFlags)
-    implements SkyValue {
-  public PlatformValue {
-    requireNonNull(platformInfo, "platformInfo");
-    requireNonNull(parsedFlags, "parsedFlags");
-  }
+class PlatformValue(
+    platformInfo: com.google.devtools.build.lib.analysis.platform.PlatformInfo?,
+    parsedFlags: java.util.Optional<ParsedFlagsValue?>?
+) : SkyValue {
+    /** Key definition.  */
+    @AutoCodec
+    class Key private constructor(
+        label: com.google.devtools.build.lib.cmdline.Label?,
+        flagAliasMappings: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.cmdline.Label?>?
+    ) : SkyKey {
+        private val label: com.google.devtools.build.lib.cmdline.Label
+        private val flagAliasMappings: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.cmdline.Label?>? =
+            null
+        private val hashCode: Int
 
-  static PlatformValue noFlags(PlatformInfo platformInfo) {
-    return new PlatformValue(platformInfo, /* parsedFlags= */ Optional.empty());
-  }
+        init {
+            .also {
+                this.label = it
+            }<Label> java . util . Objects . requireNonNull < com . google . devtools . build . lib . cmdline . Label ? > (label)
+            TODO(
+                """
+                |Cannot convert element
+                |With text:
+                |this.flagAliasMappings = <ImmutableMap<String, Label>>requireNonNull(flagAliasMappings);
+                """.trimMargin()
+            )
+            this.hashCode = java.util.Objects.hash(label, flagAliasMappings)
+        }
 
-  static PlatformValue withFlags(PlatformInfo platformInfo, ParsedFlagsValue parsedFlags) {
-    return new PlatformValue(platformInfo, Optional.of(parsedFlags));
-  }
+        fun label(): com.google.devtools.build.lib.cmdline.Label {
+            return label
+        }
 
-  public static Key key(Label platformLabel, ImmutableMap<String, Label> flagAliasMappings) {
-    return Key.create(platformLabel, flagAliasMappings);
-  }
+        fun flagAliasMappings(): com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.cmdline.Label?> {
+            return flagAliasMappings
+        }
 
-  /** Key definition. */
-  @AutoCodec
-  public static final class Key implements SkyKey {
-    private static final SkyKeyInterner<Key> interner = new SkyKeyInterner<>();
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.PLATFORM
+        }
 
-    private final Label label;
-    private final ImmutableMap<String, Label> flagAliasMappings;
-    private final int hashCode;
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.analysis.platform.PlatformValue.Key.Companion.interner
 
-    private Key(Label label, ImmutableMap<String, Label> flagAliasMappings) {
-      this.label = requireNonNull(label);
-      this.flagAliasMappings = requireNonNull(flagAliasMappings);
-      this.hashCode = Objects.hash(label, flagAliasMappings);
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is Key) {
+                return false
+            }
+            return label == o.label && flagAliasMappings == o.flagAliasMappings
+        }
+
+        override fun hashCode(): Int {
+            return hashCode
+        }
+
+        override fun toString(): String {
+            return "Key[label=" + label + ", flagAliasMappings=" + flagAliasMappings + "]"
+        }
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKeyInterner<Key?>()
+
+            @AutoCodec.Instantiator
+            fun create(
+                label: com.google.devtools.build.lib.cmdline.Label?,
+                flagAliasMappings: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.cmdline.Label?>?
+            ): Key? {
+                return com.google.devtools.build.lib.analysis.platform.PlatformValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.analysis.platform.PlatformValue.Key(
+                        label,
+                        flagAliasMappings
+                    )
+                )
+            }
+        }
     }
 
-    @AutoCodec.Instantiator
-    static Key create(Label label, ImmutableMap<String, Label> flagAliasMappings) {
-      return interner.intern(new Key(label, flagAliasMappings));
+    val platformInfo: com.google.devtools.build.lib.analysis.platform.PlatformInfo?
+    val parsedFlags: java.util.Optional<ParsedFlagsValue?>?
+
+    init {
+        this.parsedFlags = parsedFlags
+        this.platformInfo = platformInfo
+        java.util.Objects.requireNonNull<com.google.devtools.build.lib.analysis.platform.PlatformInfo?>(
+            platformInfo,
+            "platformInfo"
+        )
+        java.util.Objects.requireNonNull<java.util.Optional<ParsedFlagsValue?>?>(parsedFlags, "parsedFlags")
     }
 
-    public Label label() {
-      return label;
-    }
+    companion object {
+        fun noFlags(platformInfo: com.google.devtools.build.lib.analysis.platform.PlatformInfo?): PlatformValue {
+            return PlatformValue(platformInfo,  /* parsedFlags= */java.util.Optional.empty<ParsedFlagsValue?>())
+        }
 
-    public ImmutableMap<String, Label> flagAliasMappings() {
-      return flagAliasMappings;
-    }
+        fun withFlags(
+            platformInfo: com.google.devtools.build.lib.analysis.platform.PlatformInfo?,
+            parsedFlags: ParsedFlagsValue
+        ): PlatformValue {
+            return PlatformValue(platformInfo, java.util.Optional.of<ParsedFlagsValue?>(parsedFlags))
+        }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.PLATFORM;
+        fun key(
+            platformLabel: com.google.devtools.build.lib.cmdline.Label?,
+            flagAliasMappings: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.cmdline.Label?>?
+        ): Key? {
+            return com.google.devtools.build.lib.analysis.platform.PlatformValue.Key.Companion.create(
+                platformLabel,
+                flagAliasMappings
+            )
+        }
     }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof Key key)) {
-        return false;
-      }
-      return label.equals(key.label) && flagAliasMappings.equals(key.flagAliasMappings);
-    }
-
-    @Override
-    public int hashCode() {
-      return hashCode;
-    }
-
-    @Override
-    public String toString() {
-      return "Key[label=" + label + ", flagAliasMappings=" + flagAliasMappings + "]";
-    }
-  }
 }

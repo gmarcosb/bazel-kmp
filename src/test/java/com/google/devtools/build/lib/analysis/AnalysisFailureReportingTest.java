@@ -81,7 +81,7 @@ public class AnalysisFailureReportingTest extends AnalysisTestCase {
 
     Cause cause = Iterables.getOnlyElement(topLevelCauses);
     assertThat(cause).isInstanceOf(LoadingFailedCause.class);
-    assertThat(cause.getLabel()).isEqualTo(topLevel);
+    assertThat(cause.label).isEqualTo(topLevel);
     assertThat(((LoadingFailedCause) cause).getMessage())
         .isEqualTo(
             "Target '//foo:foo' contains an error and its package is in error: //foo:foo: missing"
@@ -317,8 +317,7 @@ public class AnalysisFailureReportingTest extends AnalysisTestCase {
       // possibly transitioned ID which is hard to retrieve from the graph if analysis of that
       // target fails. This method simply extracts them from the event ID.
       return getOnlyElement(events.entries())
-          .getValue()
-          .getIdProto()
+          .getValue().idProto
           .getConfiguredLabel()
           .getConfiguration();
     }

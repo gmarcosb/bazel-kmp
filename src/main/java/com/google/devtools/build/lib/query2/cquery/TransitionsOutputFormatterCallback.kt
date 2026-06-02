@@ -11,150 +11,146 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.cquery;
+package com.google.devtools.build.lib.query2.cquery
 
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.OptionsDiff;
-import com.google.devtools.build.lib.analysis.config.StarlarkTransitionCache;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.constraints.IncompatibleTargetChecker;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.query2.cquery.CqueryTransitionResolver.EvaluateException;
-import com.google.devtools.build.lib.query2.cquery.CqueryTransitionResolver.ResolvedTransition;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import java.io.OutputStream;
-import java.util.HashMap;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
 /**
- * Output formatter that prints {@link ConfigurationTransition} information for rule configured
+ * Output formatter that prints [ConfigurationTransition] information for rule configured
  * targets in the results of a cquery call.
  */
-class TransitionsOutputFormatterCallback extends CqueryThreadsafeCallback {
+internal class TransitionsOutputFormatterCallback(
+    eventHandler: ExtendedEventHandler?,
+    options: CqueryOptions?,
+    out: java.io.OutputStream?,
+    skyframeExecutor: SkyframeExecutor,
+    accessor: TargetAccessor<CqueryNode?>?,
+    ruleClassProvider: RuleClassProvider?,
+    labelPrinter: LabelPrinter
+) : CqueryThreadsafeCallback(eventHandler, options, out, skyframeExecutor, accessor,  /* uniquifyResults= */false) {
+    private val partialResultMap: HashMap<Label?, Target>
+    private val ruleClassProvider: RuleClassProvider?
+    private val labelPrinter: LabelPrinter
+    private val transitionCache: StarlarkTransitionCache
 
-  private final HashMap<Label, Target> partialResultMap;
-  private final RuleClassProvider ruleClassProvider;
-  private final LabelPrinter labelPrinter;
-  private final StarlarkTransitionCache transitionCache;
+    val name: String
+        get() = "transitions"
 
-  @Override
-  public String getName() {
-    return "transitions";
-  }
-
-  /**
-   * @param accessor provider of query result configured targets.
-   */
-  TransitionsOutputFormatterCallback(
-      ExtendedEventHandler eventHandler,
-      CqueryOptions options,
-      OutputStream out,
-      SkyframeExecutor skyframeExecutor,
-      TargetAccessor<CqueryNode> accessor,
-      RuleClassProvider ruleClassProvider,
-      LabelPrinter labelPrinter) {
-    super(eventHandler, options, out, skyframeExecutor, accessor, /* uniquifyResults= */ false);
-    this.ruleClassProvider = ruleClassProvider;
-    this.partialResultMap = new HashMap<>();
-    this.labelPrinter = labelPrinter;
-    this.transitionCache = skyframeExecutor.getSkyframeBuildView().getStarlarkTransitionCache();
-  }
-
-  @Override
-  public void processOutput(Iterable<CqueryNode> partialResult) throws InterruptedException {
-    CqueryOptions.Transitions verbosity = options.getTransitions();
-    if (verbosity.equals(CqueryOptions.Transitions.NONE)) {
-      eventHandler.handle(
-          Event.error(
-              "Instead of using --output=transitions, set the --transitions"
-                  + " flag explicitly to 'lite' or 'full'"));
-      return;
+    /**
+     * @param accessor provider of query result configured targets.
+     */
+    init {
+        this.ruleClassProvider = ruleClassProvider
+        this.partialResultMap = HashMap<Label?, Target>()
+        this.labelPrinter = labelPrinter
+        this.transitionCache = skyframeExecutor.getSkyframeBuildView().getStarlarkTransitionCache()
     }
-    partialResult.forEach(
-        kct -> partialResultMap.put(kct.getOriginalLabel(), accessor.getTarget(kct)));
-    for (CqueryNode keyedConfiguredTarget : partialResult) {
-      Target target = partialResultMap.get(keyedConfiguredTarget.getOriginalLabel());
-      BuildConfigurationValue config =
-          getConfiguration(keyedConfiguredTarget.getConfigurationKey());
-      addResult(
-          getRuleClassTransition(keyedConfiguredTarget, target)
-              + String.format(
-                  "%s (%s)",
-                  labelPrinter.toString(keyedConfiguredTarget.getOriginalLabel()),
-                  shortId(config)));
-      ImmutableSet<ResolvedTransition> dependencies;
-      try {
-        // We don't actually use fromOptions in our implementation of
-        // DependencyResolver but passing to avoid passing a null and since we have the information
-        // anyway.
-        dependencies =
-            new CqueryTransitionResolver(
-                    eventHandler, accessor, this, ruleClassProvider, transitionCache)
-                .dependencies(keyedConfiguredTarget);
-      } catch (EvaluateException e) {
-        eventHandler.handle(
-            Event.error(
-                String.format(
-                    "Failed to evaluate %s: %s", keyedConfiguredTarget.getOriginalLabel(), e)));
-        return;
-      } catch (IncompatibleTargetChecker.IncompatibleTargetException e) {
-        eventHandler.handle(
-            Event.warn(
-                String.format(
-                    "Skipping dependencies of incompatible target %s",
-                    keyedConfiguredTarget.getOriginalLabel())));
-        return;
-      }
-      for (ResolvedTransition dep : dependencies) {
-        addResult(
-            "  "
-                .concat(dep.attributeName())
-                .concat("#")
-                .concat(labelPrinter.toString(dep.label()))
-                .concat("#")
-                .concat(dep.transitionName())
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun processOutput(partialResult: Iterable<CqueryNode>) {
+        val verbosity: Transitions = options.getTransitions()
+        if (verbosity == Transitions.NONE) {
+            eventHandler.handle(
+                com.google.devtools.build.lib.events.Event.error(
+                    "Instead of using --output=transitions, set the --transitions"
+                            + " flag explicitly to 'lite' or 'full'"
+                )
+            )
+            return
+        }
+        partialResult.forEach(
+            java.util.function.Consumer { kct: CqueryNode? ->
+                partialResultMap.put(
+                    kct.getOriginalLabel(),
+                    accessor.getTarget(kct)
+                )
+            })
+        for (keyedConfiguredTarget in partialResult) {
+            val target: Target = partialResultMap.get(keyedConfiguredTarget.getOriginalLabel())
+            val config: BuildConfigurationValue? =
+                getConfiguration(keyedConfiguredTarget.getConfigurationKey())
+            addResult(
+                getRuleClassTransition(keyedConfiguredTarget, target)
+                        + java.lang.String.format(
+                    "%s (%s)",
+                    labelPrinter.toString(keyedConfiguredTarget.getOriginalLabel()),
+                    CqueryThreadsafeCallback.Companion.shortId(config)
+                )
+            )
+            val dependencies: com.google.common.collect.ImmutableSet<ResolvedTransition>
+            try {
+                // We don't actually use fromOptions in our implementation of
+                // DependencyResolver but passing to avoid passing a null and since we have the information
+                // anyway.
+                dependencies =
+                    CqueryTransitionResolver(
+                        eventHandler, accessor, this, ruleClassProvider, transitionCache
+                    )
+                        .dependencies(keyedConfiguredTarget)
+            } catch (e: EvaluateException) {
+                eventHandler.handle(
+                    com.google.devtools.build.lib.events.Event.error(
+                        java.lang.String.format(
+                            "Failed to evaluate %s: %s", keyedConfiguredTarget.getOriginalLabel(), e
+                        )
+                    )
+                )
+                return
+            } catch (e: IncompatibleTargetChecker.IncompatibleTargetException) {
+                eventHandler.handle(
+                    com.google.devtools.build.lib.events.Event.warn(
+                        java.lang.String.format(
+                            "Skipping dependencies of incompatible target %s",
+                            keyedConfiguredTarget.getOriginalLabel()
+                        )
+                    )
+                )
+                return
+            }
+            for (dep in dependencies) {
+                addResult(
+                    "  "
+                        .concat(dep.attributeName())
+                        .concat("#")
+                        .concat(labelPrinter.toString(dep.label()))
+                        .concat("#")
+                        .concat(dep.transitionName())
+                        .concat(" -> ")
+                        .concat(
+                            dep.options().stream().map<Any?>(BuildOptions::shortId).collect(Collectors.joining(", "))
+                        )
+                )
+                if (verbosity == Transitions.LITE) {
+                    continue
+                }
+                var diff: OptionsDiff = OptionsDiff()
+                for (options in dep.options()) {
+                    diff = OptionsDiff.diff(diff, config.getOptions(), options)
+                }
+                diff.getPrettyPrintList().forEach({ singleDiff -> addResult("    " + singleDiff) })
+            }
+        }
+    }
+
+    companion object {
+        private fun getRuleClassTransition(ct: CqueryNode, target: Target): String? {
+            val rule: Rule? = target.getAssociatedRule()
+            if (rule == null) {
+                return ""
+            }
+
+            val factory: TransitionFactory<RuleTransitionData?> =
+                rule.getRuleClassObject().getTransitionFactory()
+            return factory
+                .create(
+                    RuleTransitionData.create(
+                        target.getAssociatedRule(),  /* configConditions= */
+                        null,
+                        ct.getConfigurationKey().getOptionsChecksum()
+                    )
+                )
+                .getName()
                 .concat(" -> ")
-                .concat(dep.options().stream().map(BuildOptions::shortId).collect(joining(", "))));
-        if (verbosity == CqueryOptions.Transitions.LITE) {
-          continue;
         }
-        OptionsDiff diff = new OptionsDiff();
-        for (BuildOptions options : dep.options()) {
-          diff = OptionsDiff.diff(diff, config.getOptions(), options);
-        }
-        diff.getPrettyPrintList().forEach(singleDiff -> addResult("    " + singleDiff));
-      }
     }
-  }
-
-  private static String getRuleClassTransition(CqueryNode ct, Target target) {
-    Rule rule = target.getAssociatedRule();
-    if (rule == null) {
-      return "";
-    }
-
-    TransitionFactory<RuleTransitionData> factory =
-        rule.getRuleClassObject().getTransitionFactory();
-    return factory
-        .create(
-            RuleTransitionData.create(
-                target.getAssociatedRule(),
-                /* configConditions= */ null,
-                ct.getConfigurationKey().getOptionsChecksum()))
-        .getName()
-        .concat(" -> ");
-  }
 }

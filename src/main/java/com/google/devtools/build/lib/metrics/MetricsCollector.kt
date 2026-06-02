@@ -11,827 +11,766 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.metrics;
+package com.google.devtools.build.lib.metrics
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.util.Objects.requireNonNull;
+import com.google.devtools.build.lib.actions.ActionCompletionEvent
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultiset;
-import com.google.common.eventbus.AllowConcurrentEvents;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.actions.ActionCompletionEvent;
-import com.google.devtools.build.lib.actions.ActionResultReceivedEvent;
-import com.google.devtools.build.lib.actions.AnalysisGraphStatsEvent;
-import com.google.devtools.build.lib.actions.DynamicStrategyRegistry.DynamicMode;
-import com.google.devtools.build.lib.actions.TotalAndConfiguredTargetOnlyMetric;
-import com.google.devtools.build.lib.actions.cache.PostableActionCacheStats;
-import com.google.devtools.build.lib.analysis.AnalysisPhaseCompleteEvent;
-import com.google.devtools.build.lib.analysis.AnalysisPhaseStartedEvent;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.ActionSummary;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.ActionSummary.ActionData;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.ActionSummary.RunnerCount;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.ArtifactMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BuildGraphMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BuildGraphMetrics.AspectCount;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BuildGraphMetrics.RuleClassCount;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BuildGraphMetrics.StarlarkProviderStats;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.CumulativeMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.Distribution;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.DynamicExecutionMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.MemoryMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.MemoryMetrics.GarbageMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.NetworkMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.PackageMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.RemoteAnalysisCacheStatistics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.RemoteAnalysisCacheStatistics.Entry;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.TargetMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.TimingMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerPoolMetrics;
-import com.google.devtools.build.lib.buildtool.CommandPrecompleteEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.CriticalPathEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.ExecutionPhaseCompleteEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.ExecutionStartingEvent;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.clock.BlazeClock.NanosToMillisSinceEpochConverter;
-import com.google.devtools.build.lib.dynamic.DynamicExecutionFinishedEvent;
-import com.google.devtools.build.lib.metrics.MetricsModule.Options;
-import com.google.devtools.build.lib.metrics.PostGCMemoryUseRecorder.PeakHeap;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.metrics.ExtremaPackageMetricsRecorder;
-import com.google.devtools.build.lib.packages.metrics.PackageLoadMetrics;
-import com.google.devtools.build.lib.packages.metrics.PackageMetricsPackageLoadingListener;
-import com.google.devtools.build.lib.packages.metrics.PackageMetricsRecorder;
-import com.google.devtools.build.lib.profiler.MemoryProfiler;
-import com.google.devtools.build.lib.profiler.NetworkMetricsCollector;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.LocationPrinter;
-import com.google.devtools.build.lib.runtime.SpawnStats;
-import com.google.devtools.build.lib.skyframe.ExecutionFinishedEvent;
-import com.google.devtools.build.lib.skyframe.SkyframeStats;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.SomeExecutionStartedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetPendingExecutionEvent;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheClient;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingEventListener;
-import com.google.devtools.build.lib.util.Bucket;
-import com.google.devtools.build.lib.worker.WorkerProcessMetrics;
-import com.google.devtools.build.lib.worker.WorkerProcessMetricsCollector;
-import com.google.devtools.build.lib.worker.WorkerProcessStatus;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyframeGraphStatsEvent;
-import com.google.devtools.build.skyframe.SkyframeGraphStatsEvent.EvaluationStats;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.protobuf.util.Durations;
-import java.time.Duration;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAccumulator;
-import java.util.function.LongConsumer;
-import java.util.stream.Stream;
+internal class MetricsCollector @com.google.errorprone.annotations.CanIgnoreReturnValue private constructor(
+    env: CommandEnvironment,
+    numAnalyses: AtomicInteger,
+    numBuilds: AtomicInteger
+) {
+    private val env: CommandEnvironment
+    private val recordMetricsForAllMnemonics: Boolean
+    private val recordSkyframeMetrics: Boolean
 
-class MetricsCollector {
+    // For ActionSummary.
+    private val actionStatsMap: ConcurrentHashMap<String?, ActionStats> = ConcurrentHashMap<String?, ActionStats>()
 
-  private final CommandEnvironment env;
-  private final boolean recordMetricsForAllMnemonics;
-  private final boolean recordSkyframeMetrics;
-  // For ActionSummary.
-  private final ConcurrentHashMap<String, ActionStats> actionStatsMap = new ConcurrentHashMap<>();
+    // For CumulativeMetrics.
+    private val numAnalyses: AtomicInteger
+    private val numBuilds: AtomicInteger
 
-  // For CumulativeMetrics.
-  private final AtomicInteger numAnalyses;
-  private final AtomicInteger numBuilds;
+    private val actionSummary: ActionSummary.Builder = ActionSummary.newBuilder()
+    private val targetMetrics: TargetMetrics.Builder = TargetMetrics.newBuilder()
+    private val packageMetrics: PackageMetrics.Builder = PackageMetrics.newBuilder()
+    private val bzlMetrics: BzlMetrics.Builder = BzlMetrics.newBuilder()
 
-  private final ActionSummary.Builder actionSummary = ActionSummary.newBuilder();
-  private final TargetMetrics.Builder targetMetrics = TargetMetrics.newBuilder();
-  private final PackageMetrics.Builder packageMetrics = PackageMetrics.newBuilder();
-  private final BzlMetrics.Builder bzlMetrics = BzlMetrics.newBuilder();
+    private val timingMetrics: TimingMetrics.Builder = TimingMetrics.newBuilder()
+    private val artifactMetrics: ArtifactMetrics.Builder = ArtifactMetrics.newBuilder()
+    private val buildGraphMetrics: BuildGraphMetrics.Builder = BuildGraphMetrics.newBuilder()
+    private val dynamicExecutionStats = DynamicExecutionStats()
+    private val spawnStats: SpawnStats = SpawnStats()
 
-  private final TimingMetrics.Builder timingMetrics = TimingMetrics.newBuilder();
-  private final ArtifactMetrics.Builder artifactMetrics = ArtifactMetrics.newBuilder();
-  private final BuildGraphMetrics.Builder buildGraphMetrics = BuildGraphMetrics.newBuilder();
-  private final DynamicExecutionStats dynamicExecutionStats = new DynamicExecutionStats();
-  private final SpawnStats spawnStats = new SpawnStats();
-  // Skymeld-specific: we don't have an ExecutionStartingEvent for skymeld, so we have to use
-  // TopLevelTargetExecutionStartedEvent. This AtomicBoolean is so that we only account for the
-  // build once.
-  private final AtomicBoolean buildAccountedFor;
+    // Skymeld-specific: we don't have an ExecutionStartingEvent for skymeld, so we have to use
+    // TopLevelTargetExecutionStartedEvent. This AtomicBoolean is so that we only account for the
+    // build once.
+    private val buildAccountedFor: AtomicBoolean
 
-  // Identify when the actual actions execution starts (excluding workspace status actions).
-  private final AtomicBoolean executionStarted;
+    // Identify when the actual actions execution starts (excluding workspace status actions).
+    private val executionStarted: AtomicBoolean
 
-  @CanIgnoreReturnValue
-  private MetricsCollector(
-      CommandEnvironment env, AtomicInteger numAnalyses, AtomicInteger numBuilds) {
-    this.env = env;
-    Options options = env.getOptions().getOptions(Options.class);
-    this.recordMetricsForAllMnemonics =
-        options != null && options.getRecordMetricsForAllMnemonics();
-    this.recordSkyframeMetrics = options != null && options.getRecordSkyframeMetrics();
-    this.numAnalyses = numAnalyses;
-    this.numBuilds = numBuilds;
-    env.getEventBus().register(this);
-    WorkerProcessMetricsCollector.instance().setClock(env.getClock());
-    this.buildAccountedFor = new AtomicBoolean();
-    this.executionStarted = new AtomicBoolean();
-  }
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    @kotlin.jvm.Synchronized
+    fun logAnalysisStartingEvent(event: AnalysisPhaseStartedEvent?) {
+        numAnalyses.getAndIncrement()
+    }
 
-  static void installInEnv(
-      CommandEnvironment env, AtomicInteger numAnalyses, AtomicInteger numBuilds) {
-    new MetricsCollector(env, numAnalyses, numBuilds);
-  }
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    fun onAnalysisPhaseComplete(event: AnalysisPhaseCompleteEvent) {
+        val actionsConstructed: TotalAndConfiguredTargetOnlyMetric = event.getActionsConstructed()
+        actionSummary
+            .setActionsCreated(actionsConstructed.total())
+            .setActionsCreatedNotIncludingAspects(actionsConstructed.configuredTargetsOnly())
+        val targetsConfigured: TotalAndConfiguredTargetOnlyMetric = event.getTargetsConfigured()
+        targetMetrics
+            .setTargetsConfigured(targetsConfigured.total())
+            .setTargetsConfiguredNotIncludingAspects(targetsConfigured.configuredTargetsOnly())
+        timingMetrics.setAnalysisPhaseTimeInMs(event.getTimeInMs())
 
-  @SuppressWarnings("unused")
-  @Subscribe
-  public synchronized void logAnalysisStartingEvent(AnalysisPhaseStartedEvent event) {
-    numAnalyses.getAndIncrement();
-  }
+        packageMetrics.setPackagesLoaded(event.getPkgManagerStats().getPackagesSuccessfullyLoaded())
 
-  @SuppressWarnings("unused")
-  @Subscribe
-  public void onAnalysisPhaseComplete(AnalysisPhaseCompleteEvent event) {
-    TotalAndConfiguredTargetOnlyMetric actionsConstructed = event.getActionsConstructed();
-    actionSummary
-        .setActionsCreated(actionsConstructed.total())
-        .setActionsCreatedNotIncludingAspects(actionsConstructed.configuredTargetsOnly());
-    TotalAndConfiguredTargetOnlyMetric targetsConfigured = event.getTargetsConfigured();
-    targetMetrics
-        .setTargetsConfigured(targetsConfigured.total())
-        .setTargetsConfiguredNotIncludingAspects(targetsConfigured.configuredTargetsOnly());
-    timingMetrics.setAnalysisPhaseTimeInMs(event.getTimeInMs());
+        if (PackageMetricsPackageLoadingListener.Companion.getInstance().getPublishPackageMetricsInBep()) {
+            val recorder: PackageMetricsRecorder? =
+                PackageMetricsPackageLoadingListener.Companion.getInstance().getPackageMetricsRecorder()
+            if (recorder != null) {
+                var metrics: java.util.stream.Stream<PackageLoadMetrics?> = recorder.getPackageLoadMetrics().stream()
 
-    packageMetrics.setPackagesLoaded(event.getPkgManagerStats().getPackagesSuccessfullyLoaded());
-
-    if (PackageMetricsPackageLoadingListener.getInstance().getPublishPackageMetricsInBep()) {
-      PackageMetricsRecorder recorder =
-          PackageMetricsPackageLoadingListener.getInstance().getPackageMetricsRecorder();
-      if (recorder != null) {
-        Stream<PackageLoadMetrics> metrics = recorder.getPackageLoadMetrics().stream();
-
-        if (recorder.getRecorderType() == PackageMetricsRecorder.Type.ONLY_EXTREMES) {
-          ExtremaPackageMetricsRecorder extremaPackageMetricsRecorder =
-              (ExtremaPackageMetricsRecorder) recorder;
-          // Safeguard: we have 5 metrics, so print at most 5 times the number of packages as being
-          // tracked per metric.
-          metrics = metrics.limit(5L * extremaPackageMetricsRecorder.getNumPackagesToTrack());
+                if (recorder.getRecorderType() == com.google.devtools.build.lib.packages.metrics.PackageMetricsRecorder.Type.ONLY_EXTREMES) {
+                    val extremaPackageMetricsRecorder: ExtremaPackageMetricsRecorder =
+                        recorder as ExtremaPackageMetricsRecorder
+                    // Safeguard: we have 5 metrics, so print at most 5 times the number of packages as being
+                    // tracked per metric.
+                    metrics = metrics.limit(5L * extremaPackageMetricsRecorder.getNumPackagesToTrack())
+                }
+                metrics.forEach(packageMetrics::addPackageLoadMetrics)
+                bzlMetrics.mergeFrom(recorder.getBzlMetrics())
+            }
         }
-        metrics.forEach(packageMetrics::addPackageLoadMetrics);
-        bzlMetrics.mergeFrom(recorder.getBzlMetrics());
-      }
-    }
 
-    ImmutableMap<String, Integer> actionsConstructedByMnemonic =
-        event.getActionsConstructedByMnemonic();
-    for (var entry : actionsConstructedByMnemonic.entrySet()) {
-      ActionStats actionStats = actionStatsMap.computeIfAbsent(entry.getKey(), ActionStats::new);
-      actionStats.numActionsRegistered.addAndGet(entry.getValue());
-    }
-  }
-
-  @SuppressWarnings("unused")
-  @Subscribe
-  public synchronized void logAnalysisGraphStats(AnalysisGraphStatsEvent event) {
-    // Check only one event per build. No proto3 check for presence, so check for not-default value.
-    if (buildGraphMetrics.getActionLookupValueCount() > 0) {
-      BugReport.sendBugReport(
-          new IllegalStateException(
-              "Already initialized build graph metrics builder: "
-                  + buildGraphMetrics
-                  + ", "
-                  + event.getBuildGraphMetrics()));
-    }
-    buildGraphMetrics.mergeFrom(event.getBuildGraphMetrics());
-  }
-
-  @SuppressWarnings("unused")
-  @Subscribe
-  public synchronized void logExecutionStartingEvent(ExecutionStartingEvent event) {
-    numBuilds.getAndIncrement();
-  }
-
-  // Skymeld-specific: we don't have an ExecutionStartingEvent for skymeld, so we have to use
-  // TopLevelTargetExecutionStartedEvent
-  @Subscribe
-  public synchronized void handleExecutionPhaseStart(
-      @SuppressWarnings("unused") TopLevelTargetPendingExecutionEvent event) {
-    if (buildAccountedFor.compareAndSet(/* expectedValue= */ false, /* newValue= */ true)) {
-      numBuilds.getAndIncrement();
-    }
-  }
-
-  @Subscribe
-  public void onSomeExecutionStarted(SomeExecutionStartedEvent event) {
-    if (event.countedInExecutionTime()) {
-      if (executionStarted.compareAndSet(false, true)) {
-        Duration elapsedWallTime = Profiler.instance().getProfileElapsedTime();
-        if (elapsedWallTime != null) {
-          timingMetrics.setActionsExecutionStartInMs(elapsedWallTime.toMillis());
+        val actionsConstructedByMnemonic: com.google.common.collect.ImmutableMap<String?, Int?> =
+            event.getActionsConstructedByMnemonic()
+        for (entry in actionsConstructedByMnemonic.entries) {
+            val actionStats: ActionStats =
+                actionStatsMap.computeIfAbsent(entry.key) { mnemonic: String? -> ActionStats(mnemonic) }
+            actionStats.numActionsRegistered.addAndGet(entry.value.toLong())
         }
-      }
     }
-  }
 
-  @Subscribe
-  public void handleExecutionPhaseComplete(ExecutionPhaseCompleteEvent event) {
-    timingMetrics.setExecutionPhaseTimeInMs(event.getTimeInMs());
-  }
-
-  @SuppressWarnings("unused")
-  @Subscribe
-  @AllowConcurrentEvents
-  public void onActionComplete(ActionCompletionEvent event) {
-    ActionStats actionStats =
-        actionStatsMap.computeIfAbsent(event.getAction().getMnemonic(), ActionStats::new);
-    actionStats.numActionsExecuted.incrementAndGet();
-    actionStats.firstStarted.accumulate(event.getRelativeActionStartTimeNanos());
-    actionStats.lastEnded.accumulate(BlazeClock.nanoTime());
-    spawnStats.incrementActionCount();
-  }
-
-  @Subscribe
-  @AllowConcurrentEvents
-  public void actionResultReceived(ActionResultReceivedEvent event) {
-    spawnStats.countActionResult(event.getActionResult());
-    ActionStats actionStats =
-        actionStatsMap.computeIfAbsent(event.getAction().getMnemonic(), ActionStats::new);
-    int systemTime = event.getActionResult().cumulativeCommandExecutionSystemTimeInMs();
-    if (systemTime > 0) {
-      actionStats.systemTime.addAndGet(systemTime);
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    @kotlin.jvm.Synchronized
+    fun logAnalysisGraphStats(event: AnalysisGraphStatsEvent) {
+        // Check only one event per build. No proto3 check for presence, so check for not-default value.
+        if (buildGraphMetrics.getActionLookupValueCount() > 0) {
+            BugReport.sendBugReport(
+                java.lang.IllegalStateException(
+                    ("Already initialized build graph metrics builder: "
+                            + buildGraphMetrics
+                            + ", "
+                            + event.getBuildGraphMetrics())
+                )
+            )
+        }
+        buildGraphMetrics.mergeFrom(event.getBuildGraphMetrics())
     }
-    int userTime = event.getActionResult().cumulativeCommandExecutionUserTimeInMs();
-    if (userTime > 0) {
-      actionStats.userTime.addAndGet(userTime);
+
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    @kotlin.jvm.Synchronized
+    fun logExecutionStartingEvent(event: ExecutionStartingEvent?) {
+        numBuilds.getAndIncrement()
     }
-  }
 
-  @SuppressWarnings("unused")
-  @Subscribe
-  public void onExecutionComplete(ExecutionFinishedEvent event) {
-    artifactMetrics
-        .setSourceArtifactsRead(event.sourceArtifactsRead())
-        .setOutputArtifactsSeen(event.outputArtifactsSeen())
-        .setOutputArtifactsFromActionCache(event.outputArtifactsFromActionCache())
-        .setTopLevelArtifacts(event.topLevelArtifacts());
-  }
+    // Skymeld-specific: we don't have an ExecutionStartingEvent for skymeld, so we have to use
+    // TopLevelTargetExecutionStartedEvent
+    @com.google.common.eventbus.Subscribe
+    @kotlin.jvm.Synchronized
+    fun handleExecutionPhaseStart(
+        @Suppress("unused") event: TopLevelTargetPendingExecutionEvent?
+    ) {
+        if (buildAccountedFor.compareAndSet( /* expectedValue= */false,  /* newValue= */true)) {
+            numBuilds.getAndIncrement()
+        }
+    }
 
-  @SuppressWarnings("unused")
-  @Subscribe
-  public void onDynamicExecutionFinishedEvent(DynamicExecutionFinishedEvent event) {
-    dynamicExecutionStats.update(
-        event.getMnemonic(),
-        event.getLocalBranchName(),
-        event.getRemoteBranchName(),
-        event.getWinnerBranchType());
-  }
+    @com.google.common.eventbus.Subscribe
+    fun onSomeExecutionStarted(event: SomeExecutionStartedEvent) {
+        if (event.countedInExecutionTime) {
+            if (executionStarted.compareAndSet(false, true)) {
+                val elapsedWallTime: java.time.Duration? =
+                    com.google.devtools.build.lib.profiler.Profiler.Companion.instance().getProfileElapsedTime()
+                if (elapsedWallTime != null) {
+                    timingMetrics.setActionsExecutionStartInMs(elapsedWallTime.toMillis())
+                }
+            }
+        }
+    }
 
-  private ImmutableList<BuildMetrics.EvaluationStat> toEvaluationStats(
-      ImmutableMap<SkyFunctionName, Integer> map) {
-    return map.entrySet().stream()
-        .map(
-            e ->
+    @com.google.common.eventbus.Subscribe
+    fun handleExecutionPhaseComplete(event: ExecutionPhaseCompleteEvent) {
+        timingMetrics.setExecutionPhaseTimeInMs(event.timeInMs)
+    }
+
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun onActionComplete(event: ActionCompletionEvent) {
+        val actionStats: ActionStats =
+            actionStatsMap.computeIfAbsent(
+                event.getAction().getMnemonic()
+            ) { mnemonic: String? -> ActionStats(mnemonic) }
+        actionStats.numActionsExecuted.incrementAndGet()
+        actionStats.firstStarted.accumulate(event.getRelativeActionStartTimeNanos())
+        actionStats.lastEnded.accumulate(com.google.devtools.build.lib.clock.BlazeClock.nanoTime())
+        spawnStats.incrementActionCount()
+    }
+
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun actionResultReceived(event: ActionResultReceivedEvent) {
+        spawnStats.countActionResult(event.getActionResult())
+        val actionStats: ActionStats =
+            actionStatsMap.computeIfAbsent(
+                event.getAction().getMnemonic()
+            ) { mnemonic: String? -> ActionStats(mnemonic) }
+        val systemTime: Int = event.getActionResult().cumulativeCommandExecutionSystemTimeInMs()
+        if (systemTime > 0) {
+            actionStats.systemTime.addAndGet(systemTime.toLong())
+        }
+        val userTime: Int = event.getActionResult().cumulativeCommandExecutionUserTimeInMs()
+        if (userTime > 0) {
+            actionStats.userTime.addAndGet(userTime.toLong())
+        }
+    }
+
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    fun onExecutionComplete(event: ExecutionFinishedEvent) {
+        artifactMetrics
+            .setSourceArtifactsRead(event.sourceArtifactsRead)
+            .setOutputArtifactsSeen(event.outputArtifactsSeen)
+            .setOutputArtifactsFromActionCache(event.outputArtifactsFromActionCache)
+            .setTopLevelArtifacts(event.topLevelArtifacts)
+    }
+
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    fun onDynamicExecutionFinishedEvent(event: DynamicExecutionFinishedEvent) {
+        dynamicExecutionStats.update(
+            event.mnemonic,
+            event.localBranchName,
+            event.remoteBranchName,
+            event.getWinnerBranchType()
+        )
+    }
+
+    private fun toEvaluationStats(
+        map: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>
+    ): com.google.common.collect.ImmutableList<BuildMetrics.EvaluationStat?> {
+        return map.entries.stream()
+            .map<Any?> { e: MutableMap.MutableEntry<SkyFunctionName?, Int?>? ->
                 BuildMetrics.EvaluationStat.newBuilder()
-                    .setSkyfunctionName(e.getKey().getName())
-                    .setCount(e.getValue())
-                    .build())
-        .collect(toImmutableList());
-  }
-
-  @SuppressWarnings("unused")
-  @Subscribe
-  public void onSkyframeGraphStats(SkyframeGraphStatsEvent event) {
-    EvaluationStats evaluationStats = event.getEvaluationStats();
-    buildGraphMetrics.addAllDirtiedValues(toEvaluationStats(evaluationStats.dirtied()));
-    buildGraphMetrics.addAllChangedValues(toEvaluationStats(evaluationStats.changed()));
-    buildGraphMetrics.addAllBuiltValues(toEvaluationStats(evaluationStats.built()));
-    buildGraphMetrics.addAllCleanedValues(toEvaluationStats(evaluationStats.cleaned()));
-    buildGraphMetrics.addAllEvaluatedValues(toEvaluationStats(evaluationStats.evaluated()));
-    buildGraphMetrics.setPostInvocationSkyframeNodeCount(event.getGraphSize());
-  }
-
-  // This needs to be done in CommandPrecompleteEvent because the metrics are reported on the BEP,
-  // which is closed in BlazeModule.afterCommand().
-  @SuppressWarnings("unused")
-  @Subscribe
-  public void onCommandPrecompleteEvent(CommandPrecompleteEvent event) {
-    env.getEventBus().post(new BuildMetricsEvent(createBuildMetrics()));
-  }
-
-  @Subscribe
-  public void onCriticalPath(CriticalPathEvent event) {
-    com.google.protobuf.Duration protoDuration =
-        Durations.fromNanos(event.getCriticalPath().getAggregatedElapsedTime().toNanos());
-    timingMetrics.setCriticalPathTime(protoDuration);
-  }
-
-  @SuppressWarnings("unused")
-  @Subscribe
-  private void logActionCacheStatistics(PostableActionCacheStats stats) {
-    actionSummary.setActionCacheStatistics(stats.asProto());
-  }
-
-  private BuildMetrics createBuildMetrics() {
-    ImmutableList<WorkerProcessMetrics> workerProcessMetrics =
-        WorkerProcessMetricsCollector.instance().collectMetrics();
-    // Restrict the number of WorkerMetrics that we report based on a predefined prioritization so
-    // that we don't spam the BEP in the event that something like a kill-create cycle happens.
-    ImmutableList<WorkerMetrics> workerMetrics =
-        WorkerProcessMetricsCollector.limitWorkerMetricsToPublish(
-            workerProcessMetrics.stream()
-                .map(WorkerProcessMetrics::toProto)
-                .collect(toImmutableList()),
-            WorkerProcessMetricsCollector.MAX_PUBLISHED_WORKER_METRICS);
-
-    addSkyframeStats(buildGraphMetrics);
-
-    RemoteAnalysisCacheStatistics remoteAnalysisCacheStatistics = collectRemoteAnalysisCacheStats();
-
-    BuildMetrics.Builder buildMetrics =
-        BuildMetrics.newBuilder()
-            .setActionSummary(finishActionSummary())
-            .setMemoryMetrics(createMemoryMetrics())
-            .setTargetMetrics(targetMetrics.build())
-            .setPackageMetrics(packageMetrics.build())
-            .setBzlMetrics(bzlMetrics.build())
-            .setTimingMetrics(finishTimingMetrics())
-            .setCumulativeMetrics(createCumulativeMetrics())
-            .setArtifactMetrics(artifactMetrics.build())
-            .setBuildGraphMetrics(buildGraphMetrics.build())
-            .addAllWorkerMetrics(workerMetrics)
-            .setWorkerPoolMetrics(createWorkerPoolMetrics(workerProcessMetrics))
-            .setDynamicExecutionMetrics(dynamicExecutionStats.toMetrics())
-            .setRemoteAnalysisCacheStatistics(remoteAnalysisCacheStatistics);
-
-    NetworkMetrics networkMetrics = NetworkMetricsCollector.instance().collectMetrics();
-    if (networkMetrics != null) {
-      buildMetrics.setNetworkMetrics(networkMetrics);
+                    .setSkyfunctionName(e!!.key.getName())
+                    .setCount(e.value)
+                    .build()
+            }
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
     }
 
-    return buildMetrics.build();
-  }
-
-  private Distribution computeDistributionProto(ImmutableList<Bucket> buckets) {
-    Distribution.Builder result = Distribution.newBuilder();
-
-    for (var b : buckets) {
-      result.addHistogramBucket(
-          Distribution.HistogramBucket.newBuilder()
-              .setMin(b.minInclusive())
-              .setMax(b.maxExclusive())
-              .setCount(b.count())
-              .build());
-    }
-    return result.build();
-  }
-
-  private RemoteAnalysisCacheStatistics collectRemoteAnalysisCacheStats() {
-    RemoteAnalysisCachingEventListener listener = env.getRemoteAnalysisCachingEventListener();
-    RemoteAnalysisCacheStatistics.Builder result =
-        RemoteAnalysisCacheStatistics.newBuilder()
-            .setCacheHits(listener.getCacheHits().size())
-            .setCacheMisses(listener.getCacheMisses().size());
-
-    for (var entry : listener.getMissesByReason().entrySet()) {
-      result.addCacheMissesByReason(
-          Entry.newBuilder()
-              .setKey(entry.getKey().name())
-              .setValue(entry.getValue().get())
-              .build());
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    fun onSkyframeGraphStats(event: SkyframeGraphStatsEvent) {
+        val evaluationStats: EvaluationStats = event.getEvaluationStats()
+        buildGraphMetrics.addAllDirtiedValues(toEvaluationStats(evaluationStats.dirtied))
+        buildGraphMetrics.addAllChangedValues(toEvaluationStats(evaluationStats.changed))
+        buildGraphMetrics.addAllBuiltValues(toEvaluationStats(evaluationStats.built))
+        buildGraphMetrics.addAllCleanedValues(toEvaluationStats(evaluationStats.cleaned))
+        buildGraphMetrics.addAllEvaluatedValues(toEvaluationStats(evaluationStats.evaluated))
+        buildGraphMetrics.setPostInvocationSkyframeNodeCount(event.getGraphSize())
     }
 
-    for (var entry : listener.getMissesBySkyFunctionName().entrySet()) {
-      result.addCacheMissesBySkyfunction(
-          Entry.newBuilder()
-              .setKey(entry.getKey().getName())
-              .setValue(entry.getValue().get())
-              .build());
+    // This needs to be done in CommandPrecompleteEvent because the metrics are reported on the BEP,
+    // which is closed in BlazeModule.afterCommand().
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    fun onCommandPrecompleteEvent(event: CommandPrecompleteEvent?) {
+        env.getEventBus().post(BuildMetricsEvent(createBuildMetrics()))
     }
 
-    for (var entry : listener.getHitsBySkyFunctionName().entrySet()) {
-      result.addCacheHitsBySkyfunction(
-          Entry.newBuilder()
-              .setKey(entry.getKey().getName())
-              .setValue(entry.getValue().get())
-              .build());
+    @com.google.common.eventbus.Subscribe
+    fun onCriticalPath(event: CriticalPathEvent) {
+        val protoDuration: com.google.protobuf.Duration? =
+            Durations.fromNanos(event.criticalPath.getAggregatedElapsedTime().toNanos())
+        timingMetrics.setCriticalPathTime(protoDuration)
     }
 
-    FingerprintValueStore.Stats fvsStats =
-        env.getRemoteAnalysisCachingEventListener().getFingerprintValueStoreStats();
-    result
-        .setValueStoreValueBytesReceived(fvsStats.valueBytesReceived())
-        .setValueStoreValueBytesSent(fvsStats.valueBytesSent())
-        .setValueStoreKeyBytesSent(fvsStats.keyBytesSent())
-        .setValueStoreWriteOps(fvsStats.entriesWritten())
-        .setValueStoreReadOpsSuccessful(fvsStats.entriesFound())
-        .setValueStoreReadOpsNotFound(fvsStats.entriesNotFound())
-        .setValueStoreReadBatches(fvsStats.getBatches())
-        .setValueStoreWriteBatches(fvsStats.setBatches())
-        .setValueStoreReadLatencyMicros(computeDistributionProto(fvsStats.getLatencyMicros()))
-        .setValueStoreReadBatchLatencyMicros(
-            computeDistributionProto(fvsStats.getBatchLatencyMicros()))
-        .setValueStoreWriteLatencyMicros(computeDistributionProto(fvsStats.setLatencyMicros()))
-        .setValueStoreWriteBatchLatencyMicros(
-            computeDistributionProto(fvsStats.setBatchLatencyMicros()));
-
-    RemoteAnalysisCacheClient.Stats raccStats =
-        env.getRemoteAnalysisCachingEventListener().getRemoteAnalysisCacheStats();
-    result
-        .setAnalysisCacheBytesReceived(raccStats.bytesReceived())
-        .setAnalysisCacheKeyBytesSent(raccStats.bytesSent())
-        .setAnalysisCacheOps(raccStats.requestsSent())
-        .setAnalysisCacheBatches(raccStats.batches())
-        .setAnalysisCacheReadLatencyMicros(computeDistributionProto(raccStats.latencyMicros()))
-        .setAnalysisCacheReadBatchLatencyMicros(
-            computeDistributionProto(raccStats.batchLatencyMicros()))
-        .setMetadataLookupResult(raccStats.matchStatus());
-
-    RemoteAnalysisCacheStatistics.InvalidationLookupMetrics invalidationMetrics =
-        listener.getInvalidationLookupMetrics();
-    if (invalidationMetrics != null) {
-      result.setInvalidationLookupMetrics(invalidationMetrics);
+    @Suppress("unused")
+    @com.google.common.eventbus.Subscribe
+    private fun logActionCacheStatistics(stats: PostableActionCacheStats) {
+        actionSummary.setActionCacheStatistics(stats.asProto())
     }
 
-    return result.build();
-  }
+    private fun createBuildMetrics(): BuildMetrics {
+        val workerProcessMetrics: com.google.common.collect.ImmutableList<WorkerProcessMetrics> =
+            WorkerProcessMetricsCollector.instance().collectMetrics()
+        // Restrict the number of WorkerMetrics that we report based on a predefined prioritization so
+        // that we don't spam the BEP in the event that something like a kill-create cycle happens.
+        val workerMetrics: com.google.common.collect.ImmutableList<WorkerMetrics?>? =
+            WorkerProcessMetricsCollector.limitWorkerMetricsToPublish(
+                workerProcessMetrics.stream()
+                    .map<WorkerMetrics?> { obj: WorkerProcessMetrics? -> obj.toProto() }
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<WorkerMetrics?>()),
+                WorkerProcessMetricsCollector.MAX_PUBLISHED_WORKER_METRICS)
 
-  private ActionData buildActionData(ActionStats actionStats) {
-    NanosToMillisSinceEpochConverter nanosToMillisSinceEpochConverter =
-        BlazeClock.createNanosToMillisSinceEpochConverter();
-    long numActionsExecuted = actionStats.numActionsExecuted.get();
-    ActionData.Builder builder =
-        ActionData.newBuilder()
-            .setMnemonic(actionStats.mnemonic)
-            .setActionsExecuted(numActionsExecuted)
-            .setActionsCreated(actionStats.numActionsRegistered.get());
+        addSkyframeStats(buildGraphMetrics)
 
-    if (numActionsExecuted > 0) {
-      builder
-          .setFirstStartedMs(
-              nanosToMillisSinceEpochConverter.toEpochMillis(actionStats.firstStarted.longValue()))
-          .setLastEndedMs(
-              nanosToMillisSinceEpochConverter.toEpochMillis(actionStats.lastEnded.longValue()));
-    }
+        val remoteAnalysisCacheStatistics: RemoteAnalysisCacheStatistics = collectRemoteAnalysisCacheStats()
 
-    long systemTime = actionStats.systemTime.get();
-    if (systemTime > 0) {
-      builder.setSystemTime(Durations.fromMillis(systemTime));
-    }
-    long userTime = actionStats.userTime.get();
-    if (userTime > 0) {
-      builder.setUserTime(Durations.fromMillis(userTime));
-    }
-    return builder.build();
-  }
+        val buildMetrics: BuildMetrics.Builder =
+            BuildMetrics.newBuilder()
+                .setActionSummary(finishActionSummary())
+                .setMemoryMetrics(createMemoryMetrics())
+                .setTargetMetrics(targetMetrics.build())
+                .setPackageMetrics(packageMetrics.build())
+                .setBzlMetrics(bzlMetrics.build())
+                .setTimingMetrics(finishTimingMetrics())
+                .setCumulativeMetrics(createCumulativeMetrics())
+                .setArtifactMetrics(artifactMetrics.build())
+                .setBuildGraphMetrics(buildGraphMetrics.build())
+                .addAllWorkerMetrics(workerMetrics)
+                .setWorkerPoolMetrics(createWorkerPoolMetrics(workerProcessMetrics))
+                .setDynamicExecutionMetrics(dynamicExecutionStats.toMetrics())
+                .setRemoteAnalysisCacheStatistics(remoteAnalysisCacheStatistics)
 
-  private static final int MAX_ACTION_DATA = 20;
-
-  private ActionSummary finishActionSummary() {
-    Stream<ActionStats> actionStatsStream = actionStatsMap.values().stream();
-
-    if (!recordMetricsForAllMnemonics) {
-      actionStatsStream =
-          actionStatsStream
-              .sorted(Comparator.comparingLong(a -> -a.numActionsExecuted.get()))
-              .limit(MAX_ACTION_DATA);
-    }
-
-    actionStatsStream.forEach(action -> actionSummary.addActionData(buildActionData(action)));
-
-    ImmutableMap<String, Integer> spawnSummary = spawnStats.getSummary();
-    actionSummary.setActionsExecuted(spawnSummary.getOrDefault("total", 0));
-    spawnSummary
-        .entrySet()
-        .forEach(
-            e -> {
-              RunnerCount.Builder builder = RunnerCount.newBuilder();
-              builder.setName(e.getKey()).setCount(e.getValue());
-              String execKind = spawnStats.getExecKindFor(e.getKey());
-              if (execKind != null) {
-                builder.setExecKind(execKind);
-              }
-              actionSummary.addRunnerCount(builder.build());
-            });
-    return actionSummary.build();
-  }
-
-  private void addSkyframeStats(BuildGraphMetrics.Builder builder) {
-    // short-circuit if not requested
-    if (!recordSkyframeMetrics) {
-      return;
-    }
-
-    // NOTE: This can potentially unintentionally consume a pending Exception by
-    // calling getSkyframeStats, with our Reporter which ends up consuming the
-    // analysis failure unintentionally.  So if our CommandEnvironment has a
-    // pending exception, don't touch the Skyframe executor.
-    if (env.getPendingException() != null) {
-      return;
-    }
-
-    // getSkyframeStats return Nullable for unsupported implementations, so
-    // ensure we get stats before proceeding.
-    SkyframeStats skyframeStats = env.getSkyframeExecutor().getSkyframeStats();
-    if (skyframeStats == null) {
-      return;
-    }
-
-    skyframeStats
-        .ruleStats()
-        .forEach(
-            a ->
-                builder.addRuleClass(
-                    RuleClassCount.newBuilder()
-                        .setKey(a.getKey())
-                        .setRuleClass(a.getName())
-                        .setCount(a.getCount())
-                        .setActionCount(a.getActionCount())
-                        .build()));
-    skyframeStats
-        .aspectStats()
-        .forEach(
-            a ->
-                builder.addAspect(
-                    AspectCount.newBuilder()
-                        .setKey(a.getKey())
-                        .setAspectName(a.getName())
-                        .setCount(a.getCount())
-                        .setActionCount(a.getActionCount())
-                        .build()));
-
-    ImmutableMultiset<StarlarkProvider> starlarkProviders = skyframeStats.starlarkProviders();
-    StarlarkProviderStats.Builder providerStats =
-        builder.getStarlarkProviderStatsBuilder().setTotalCount(starlarkProviders.size());
-    LocationPrinter printer =
-        new LocationPrinter(
-            /* attemptToPrintRelativePaths= */ true,
-            env.getDirectories().getWorkspace().asFragment());
-    printer.packageLocatorCreated(env.getPackageLocator());
-    starlarkProviders.forEachEntry(
-        (provider, count) -> {
-          var providerBuilder =
-              providerStats
-                  .addProvidersBuilder()
-                  .setName(provider.getName())
-                  .setLocation(printer.getLocationString(provider.getLocation()))
-                  .setCount(count);
-          ImmutableList<String> fields = provider.getFields();
-          if (fields != null) {
-            providerBuilder.getSchemaBuilder().setFieldCount(fields.size());
-          }
-        });
-  }
-
-  private static MemoryMetrics createMemoryMetrics() {
-    MemoryMetrics.Builder memoryMetrics = MemoryMetrics.newBuilder();
-    if (MemoryProfiler.instance().getHeapUsedMemoryAtFinish() > 0) {
-      memoryMetrics.setUsedHeapSizePostBuild(MemoryProfiler.instance().getHeapUsedMemoryAtFinish());
-    }
-    setPeakHeapSize(
-        PostGCMemoryUseRecorder.get().getPeakPostGcHeap(), memoryMetrics::setPeakPostGcHeapSize);
-
-    if (memoryMetrics.getPeakPostGcHeapSize() < memoryMetrics.getUsedHeapSizePostBuild()) {
-      // If we just did a GC and computed the heap size, update the one we got from the GC
-      // notification (which may arrive too late for this specific GC).
-      memoryMetrics.setPeakPostGcHeapSize(memoryMetrics.getUsedHeapSizePostBuild());
-    }
-
-    setPeakHeapSize(
-        PostGCMemoryUseRecorder.get().getPeakPostGcHeapTenuredSpace(),
-        memoryMetrics::setPeakPostGcTenuredSpaceHeapSize);
-
-    setPeakHeapSize(
-        PostGCMemoryUseRecorder.get().getPeakPostGcHeapDuringExecution(),
-        memoryMetrics::setPeakPostGcHeapSizeDuringExecution);
-
-    setPeakHeapSize(
-        PostGCMemoryUseRecorder.get().getPeakPostGcHeapTenuredSpaceDuringExecution(),
-        memoryMetrics::setPeakPostGcTenuredSpaceHeapSizeDuringExecution);
-
-    Map<String, Long> garbageStats = PostGCMemoryUseRecorder.get().getGarbageStats();
-    for (Map.Entry<String, Long> garbageEntry : garbageStats.entrySet()) {
-      GarbageMetrics.Builder garbageMetrics = GarbageMetrics.newBuilder();
-      garbageMetrics.setType(garbageEntry.getKey()).setGarbageCollected(garbageEntry.getValue());
-      memoryMetrics.addGarbageMetrics(garbageMetrics.build());
-    }
-
-    return memoryMetrics.build();
-  }
-
-  private static void setPeakHeapSize(Optional<PeakHeap> peakHeap, LongConsumer setter) {
-    peakHeap.ifPresent(peak -> setter.accept(peak.bytes()));
-  }
-
-  private CumulativeMetrics createCumulativeMetrics() {
-    return CumulativeMetrics.newBuilder()
-        .setNumAnalyses(numAnalyses.get())
-        .setNumBuilds(numBuilds.get())
-        .build();
-  }
-
-  private TimingMetrics finishTimingMetrics() {
-    Duration elapsedWallTime = Profiler.instance().getProfileElapsedTime();
-    if (elapsedWallTime != null) {
-      timingMetrics.setWallTimeInMs(elapsedWallTime.toMillis());
-    }
-    Duration cpuTime = Profiler.instance().getServerProcessCpuTime();
-    if (cpuTime != null) {
-      timingMetrics.setCpuTimeInMs(cpuTime.toMillis());
-    }
-    return timingMetrics.build();
-  }
-
-  /** Creates the WorkerPoolMetrics by aggregating the collected WorkerProcessMetrics. */
-  static WorkerPoolMetrics createWorkerPoolMetrics(
-      ImmutableList<WorkerProcessMetrics> collectedWorkerProcessMetrics) {
-    HashMap<Integer, WorkerPoolStats> aggregatedPoolStats = new HashMap<>();
-    for (WorkerProcessMetrics wpm : collectedWorkerProcessMetrics) {
-      WorkerPoolStats poolStats =
-          aggregatedPoolStats.computeIfAbsent(
-              wpm.getWorkerKeyHash(), (hash) -> new WorkerPoolStats(wpm.getMnemonic(), hash));
-      poolStats.update(wpm);
-    }
-    return WorkerPoolMetrics.newBuilder()
-        .addAllWorkerPoolStats(
-            aggregatedPoolStats.values().stream()
-                .map(WorkerPoolStats::build)
-                .collect(toImmutableList()))
-        .build();
-  }
-
-  private static class WorkerPoolStats {
-    private int createdCount;
-    private int destroyedCount;
-    private int evictedCount;
-    private int userExecExceptionDestroyedCount;
-    private int ioExceptionDestroyedCount;
-    private int interruptedExceptionDestroyedCount;
-    private int unknownDestroyedCount;
-    private int aliveCount;
-    private final String mnemonic;
-
-    private final int hash;
-
-    WorkerPoolStats(String mnemonic, int hash) {
-      this.mnemonic = mnemonic;
-      this.hash = hash;
-    }
-
-    void update(WorkerProcessMetrics wpm) {
-      int numWorkers = wpm.getWorkerIds().size();
-      if (wpm.isNewlyCreated()) {
-        createdCount += numWorkers;
-      }
-      WorkerProcessStatus status = wpm.getStatus();
-      if (status.isKilled()) {
-        switch (status.get()) {
-          // If the process is killed due to a specific reason, we attribute the cause to all
-          // workers of that process (plural in the case of multiplex workers).
-
-          case KILLED_UNKNOWN -> unknownDestroyedCount += numWorkers;
-          case KILLED_DUE_TO_INTERRUPTED_EXCEPTION ->
-              interruptedExceptionDestroyedCount += numWorkers;
-          case KILLED_DUE_TO_IO_EXCEPTION -> ioExceptionDestroyedCount += numWorkers;
-          case KILLED_DUE_TO_MEMORY_PRESSURE -> evictedCount += numWorkers;
-          case KILLED_DUE_TO_USER_EXEC_EXCEPTION -> userExecExceptionDestroyedCount += numWorkers;
-          default -> {}
+        val networkMetrics: NetworkMetrics? = NetworkMetricsCollector.Companion.instance().collectMetrics()
+        if (networkMetrics != null) {
+            buildMetrics.setNetworkMetrics(networkMetrics)
         }
-        destroyedCount += numWorkers;
-      } else {
-        aliveCount += numWorkers;
-      }
+
+        return buildMetrics.build()
     }
 
-    public WorkerPoolMetrics.WorkerPoolStats build() {
-      return WorkerPoolMetrics.WorkerPoolStats.newBuilder()
-          .setMnemonic(mnemonic)
-          .setHash(hash)
-          .setCreatedCount(createdCount)
-          .setDestroyedCount(destroyedCount)
-          .setEvictedCount(evictedCount)
-          .setUserExecExceptionDestroyedCount(userExecExceptionDestroyedCount)
-          .setIoExceptionDestroyedCount(ioExceptionDestroyedCount)
-          .setInterruptedExceptionDestroyedCount(interruptedExceptionDestroyedCount)
-          .setUnknownDestroyedCount(unknownDestroyedCount)
-          .setAliveCount(aliveCount)
-          .build();
-    }
-  }
+    private fun computeDistributionProto(buckets: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket>): Distribution {
+        val result: Distribution.Builder = Distribution.newBuilder()
 
-  private static class ActionStats {
-
-    final LongAccumulator firstStarted;
-    final LongAccumulator lastEnded;
-    final AtomicLong numActionsExecuted;
-    final AtomicLong numActionsRegistered;
-    final String mnemonic;
-    final AtomicLong systemTime;
-    final AtomicLong userTime;
-
-    ActionStats(String mnemonic) {
-      this.mnemonic = mnemonic;
-      firstStarted = new LongAccumulator(Math::min, Long.MAX_VALUE);
-      lastEnded = new LongAccumulator(Math::max, 0);
-      numActionsExecuted = new AtomicLong();
-      numActionsRegistered = new AtomicLong();
-      systemTime = new AtomicLong();
-      userTime = new AtomicLong();
-    }
-  }
-
-  /* Collects stats about dynamic execution races  of remote vs local branches **/
-  static class DynamicExecutionStats {
-    // Mapping from tuple <mnemonic, local branch name, remote branch name> to pair of numbers,
-    // which represents corresponding number of wins of local and remote branches.
-    final ConcurrentHashMap<RaceIdentifier, RaceWinners> branchWinners;
-
-    public DynamicExecutionStats() {
-      this.branchWinners = new ConcurrentHashMap<>();
+        for (b in buckets) {
+            result.addHistogramBucket(
+                Distribution.HistogramBucket.newBuilder()
+                    .setMin(b.minInclusive)
+                    .setMax(b.maxExclusive)
+                    .setCount(b.count)
+                    .build()
+            )
+        }
+        return result.build()
     }
 
-    public void update(String menemonic, String localName, String remoteName, DynamicMode winner) {
+    private fun collectRemoteAnalysisCacheStats(): RemoteAnalysisCacheStatistics {
+        val listener: RemoteAnalysisCachingEventListener = env.getRemoteAnalysisCachingEventListener()
+        val result: RemoteAnalysisCacheStatistics.Builder =
+            RemoteAnalysisCacheStatistics.newBuilder()
+                .setCacheHits(listener.getCacheHits().size)
+                .setCacheMisses(listener.getCacheMisses().size)
 
-      branchWinners.compute(
-          RaceIdentifier.create(menemonic, localName, remoteName),
-          (k, oldValue) -> {
-            RaceWinners newValue = new RaceWinners(/* localWins= */ 0, /* remoteWins= */ 0);
+        for (entry in listener.getMissesByReason().entries) {
+            result.addCacheMissesByReason(
+                Entry.newBuilder()
+                    .setKey(entry.key.name())
+                    .setValue(entry.value.get())
+                    .build()
+            )
+        }
 
-            if (oldValue != null) {
-              newValue = oldValue;
+        for (entry in listener.getMissesBySkyFunctionName().entries) {
+            result.addCacheMissesBySkyfunction(
+                Entry.newBuilder()
+                    .setKey(entry.key.getName())
+                    .setValue(entry.value.get())
+                    .build()
+            )
+        }
+
+        for (entry in listener.getHitsBySkyFunctionName().entries) {
+            result.addCacheHitsBySkyfunction(
+                Entry.newBuilder()
+                    .setKey(entry.key.getName())
+                    .setValue(entry.value.get())
+                    .build()
+            )
+        }
+
+        val fvsStats: FingerprintValueStore.Stats =
+            env.getRemoteAnalysisCachingEventListener().getFingerprintValueStoreStats()
+        result
+            .setValueStoreValueBytesReceived(fvsStats.valueBytesReceived)
+            .setValueStoreValueBytesSent(fvsStats.valueBytesSent)
+            .setValueStoreKeyBytesSent(fvsStats.keyBytesSent)
+            .setValueStoreWriteOps(fvsStats.entriesWritten)
+            .setValueStoreReadOpsSuccessful(fvsStats.entriesFound)
+            .setValueStoreReadOpsNotFound(fvsStats.entriesNotFound)
+            .setValueStoreReadBatches(fvsStats.getBatches)
+            .setValueStoreWriteBatches(fvsStats.setBatches)
+            .setValueStoreReadLatencyMicros(computeDistributionProto(fvsStats.getLatencyMicros))
+            .setValueStoreReadBatchLatencyMicros(
+                computeDistributionProto(fvsStats.getBatchLatencyMicros)
+            )
+            .setValueStoreWriteLatencyMicros(computeDistributionProto(fvsStats.setLatencyMicros))
+            .setValueStoreWriteBatchLatencyMicros(
+                computeDistributionProto(fvsStats.setBatchLatencyMicros)
+            )
+
+        val raccStats: RemoteAnalysisCacheClient.Stats =
+            env.getRemoteAnalysisCachingEventListener().getRemoteAnalysisCacheStats()
+        result
+            .setAnalysisCacheBytesReceived(raccStats.bytesReceived)
+            .setAnalysisCacheKeyBytesSent(raccStats.bytesSent)
+            .setAnalysisCacheOps(raccStats.requestsSent)
+            .setAnalysisCacheBatches(raccStats.batches)
+            .setAnalysisCacheReadLatencyMicros(computeDistributionProto(raccStats.latencyMicros))
+            .setAnalysisCacheReadBatchLatencyMicros(
+                computeDistributionProto(raccStats.batchLatencyMicros)
+            )
+            .setMetadataLookupResult(raccStats.matchStatus)
+
+        val invalidationMetrics: RemoteAnalysisCacheStatistics.InvalidationLookupMetrics? =
+            listener.getInvalidationLookupMetrics()
+        if (invalidationMetrics != null) {
+            result.setInvalidationLookupMetrics(invalidationMetrics)
+        }
+
+        return result.build()
+    }
+
+    private fun buildActionData(actionStats: ActionStats): ActionData {
+        val nanosToMillisSinceEpochConverter: com.google.devtools.build.lib.clock.BlazeClock.NanosToMillisSinceEpochConverter =
+            com.google.devtools.build.lib.clock.BlazeClock.createNanosToMillisSinceEpochConverter()
+        val numActionsExecuted: Long = actionStats.numActionsExecuted.get()
+        val builder: ActionData.Builder =
+            ActionData.newBuilder()
+                .setMnemonic(actionStats.mnemonic)
+                .setActionsExecuted(numActionsExecuted)
+                .setActionsCreated(actionStats.numActionsRegistered.get())
+
+        if (numActionsExecuted > 0) {
+            builder
+                .setFirstStartedMs(
+                    nanosToMillisSinceEpochConverter.toEpochMillis(actionStats.firstStarted.toLong())
+                )
+                .setLastEndedMs(
+                    nanosToMillisSinceEpochConverter.toEpochMillis(actionStats.lastEnded.toLong())
+                )
+        }
+
+        val systemTime: Long = actionStats.systemTime.get()
+        if (systemTime > 0) {
+            builder.setSystemTime(Durations.fromMillis(systemTime))
+        }
+        val userTime: Long = actionStats.userTime.get()
+        if (userTime > 0) {
+            builder.setUserTime(Durations.fromMillis(userTime))
+        }
+        return builder.build()
+    }
+
+    init {
+        this.env = env
+        val options: com.google.devtools.build.lib.metrics.MetricsModule.Options? = env.getOptions()
+            .getOptions<com.google.devtools.build.lib.metrics.MetricsModule.Options?>(com.google.devtools.build.lib.metrics.MetricsModule.Options::class.java)
+        this.recordMetricsForAllMnemonics =
+            options != null && options.getRecordMetricsForAllMnemonics()
+        this.recordSkyframeMetrics = options != null && options.getRecordSkyframeMetrics()
+        this.numAnalyses = numAnalyses
+        this.numBuilds = numBuilds
+        env.getEventBus().register(this)
+        WorkerProcessMetricsCollector.instance().setClock(env.getClock())
+        this.buildAccountedFor = AtomicBoolean()
+        this.executionStarted = AtomicBoolean()
+    }
+
+    private fun finishActionSummary(): ActionSummary {
+        var actionStatsStream: java.util.stream.Stream<ActionStats?> = actionStatsMap.values.stream()
+
+        if (!recordMetricsForAllMnemonics) {
+            actionStatsStream =
+                actionStatsStream
+                    .sorted(java.util.Comparator.comparingLong<ActionStats?>(java.util.function.ToLongFunction { a: ActionStats? -> -a!!.numActionsExecuted.get() }))
+                    .limit(MAX_ACTION_DATA.toLong())
+        }
+
+        actionStatsStream.forEach { action: ActionStats? -> actionSummary.addActionData(buildActionData(action!!)) }
+
+        val spawnSummary: com.google.common.collect.ImmutableMap<String?, Int?> = spawnStats.getSummary()
+        actionSummary.setActionsExecuted(spawnSummary.getOrDefault("total", 0))
+        spawnSummary
+            .entries
+            .forEach(
+                java.util.function.Consumer { e: MutableMap.MutableEntry<String?, Int?>? ->
+                    val builder: RunnerCount.Builder = RunnerCount.newBuilder()
+                    builder.setName(e!!.key).setCount(e.value)
+                    val execKind: String? = spawnStats.getExecKindFor(e.key)
+                    if (execKind != null) {
+                        builder.setExecKind(execKind)
+                    }
+                    actionSummary.addRunnerCount(builder.build())
+                })
+        return actionSummary.build()
+    }
+
+    private fun addSkyframeStats(builder: BuildGraphMetrics.Builder) {
+        // short-circuit if not requested
+        if (!recordSkyframeMetrics) {
+            return
+        }
+
+        // NOTE: This can potentially unintentionally consume a pending Exception by
+        // calling getSkyframeStats, with our Reporter which ends up consuming the
+        // analysis failure unintentionally.  So if our CommandEnvironment has a
+        // pending exception, don't touch the Skyframe executor.
+        if (env.getPendingException() != null) {
+            return
+        }
+
+        // getSkyframeStats return Nullable for unsupported implementations, so
+        // ensure we get stats before proceeding.
+        val skyframeStats: SkyframeStats? = env.getSkyframeExecutor().getSkyframeStats()
+        if (skyframeStats == null) {
+            return
+        }
+
+        skyframeStats
+            .ruleStats
+            .forEach(
+                java.util.function.Consumer { a: SkyKeyStats? ->
+                    builder.addRuleClass(
+                        RuleClassCount.newBuilder()
+                            .setKey(a.getKey())
+                            .setRuleClass(a.getName())
+                            .setCount(a.getCount())
+                            .setActionCount(a.getActionCount())
+                            .build()
+                    )
+                })
+        skyframeStats
+            .aspectStats
+            .forEach(
+                java.util.function.Consumer { a: SkyKeyStats? ->
+                    builder.addAspect(
+                        AspectCount.newBuilder()
+                            .setKey(a.getKey())
+                            .setAspectName(a.getName())
+                            .setCount(a.getCount())
+                            .setActionCount(a.getActionCount())
+                            .build()
+                    )
+                })
+
+        val starlarkProviders: com.google.common.collect.ImmutableMultiset<StarlarkProvider?> =
+            skyframeStats.starlarkProviders
+        val providerStats: StarlarkProviderStats.Builder =
+            builder.getStarlarkProviderStatsBuilder().setTotalCount(starlarkProviders.size)
+        val printer: LocationPrinter =
+            LocationPrinter( /* attemptToPrintRelativePaths= */
+                true,
+                env.getDirectories().getWorkspace().asFragment()
+            )
+        printer.packageLocatorCreated(env.getPackageLocator())
+        starlarkProviders.forEachEntry(
+            ObjIntConsumer { provider: StarlarkProvider?, count: Int ->
+                val providerBuilder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    providerStats
+                        .addProvidersBuilder()
+                        .setName(provider.getName())
+                        .setLocation(printer.getLocationString(provider.getLocation()))
+                        .setCount(count)
+                val fields: com.google.common.collect.ImmutableList<String?>? = provider.getFields()
+                if (fields != null) {
+                    providerBuilder.getSchemaBuilder().setFieldCount(fields.size)
+                }
+            })
+    }
+
+    private fun createCumulativeMetrics(): CumulativeMetrics {
+        return CumulativeMetrics.newBuilder()
+            .setNumAnalyses(numAnalyses.get())
+            .setNumBuilds(numBuilds.get())
+            .build()
+    }
+
+    private fun finishTimingMetrics(): TimingMetrics {
+        val elapsedWallTime: java.time.Duration? =
+            com.google.devtools.build.lib.profiler.Profiler.Companion.instance().getProfileElapsedTime()
+        if (elapsedWallTime != null) {
+            timingMetrics.setWallTimeInMs(elapsedWallTime.toMillis())
+        }
+        val cpuTime: java.time.Duration? =
+            com.google.devtools.build.lib.profiler.Profiler.Companion.instance().getServerProcessCpuTime()
+        if (cpuTime != null) {
+            timingMetrics.setCpuTimeInMs(cpuTime.toMillis())
+        }
+        return timingMetrics.build()
+    }
+
+    private class WorkerPoolStats(private val mnemonic: String?, private val hash: Int) {
+        private var createdCount = 0
+        private var destroyedCount = 0
+        private var evictedCount = 0
+        private var userExecExceptionDestroyedCount = 0
+        private var ioExceptionDestroyedCount = 0
+        private var interruptedExceptionDestroyedCount = 0
+        private var unknownDestroyedCount = 0
+        private var aliveCount = 0
+
+        fun update(wpm: WorkerProcessMetrics) {
+            val numWorkers: Int = wpm.getWorkerIds().size
+            if (wpm.isNewlyCreated()) {
+                createdCount += numWorkers
+            }
+            val status: WorkerProcessStatus = wpm.getStatus()
+            if (status.isKilled()) {
+                when (status.get()) {
+                    WorkerProcessStatus.Status.KILLED_UNKNOWN -> unknownDestroyedCount += numWorkers
+                    WorkerProcessStatus.Status.KILLED_DUE_TO_INTERRUPTED_EXCEPTION -> interruptedExceptionDestroyedCount += numWorkers
+                    WorkerProcessStatus.Status.KILLED_DUE_TO_IO_EXCEPTION -> ioExceptionDestroyedCount += numWorkers
+                    WorkerProcessStatus.Status.KILLED_DUE_TO_MEMORY_PRESSURE -> evictedCount += numWorkers
+                    WorkerProcessStatus.Status.KILLED_DUE_TO_USER_EXEC_EXCEPTION -> userExecExceptionDestroyedCount += numWorkers
+                    else -> {}
+                }
+                destroyedCount += numWorkers
+            } else {
+                aliveCount += numWorkers
+            }
+        }
+
+        fun build(): WorkerPoolStats {
+            return WorkerPoolMetrics.WorkerPoolStats.newBuilder()
+                .setMnemonic(mnemonic)
+                .setHash(hash)
+                .setCreatedCount(createdCount)
+                .setDestroyedCount(destroyedCount)
+                .setEvictedCount(evictedCount)
+                .setUserExecExceptionDestroyedCount(userExecExceptionDestroyedCount)
+                .setIoExceptionDestroyedCount(ioExceptionDestroyedCount)
+                .setInterruptedExceptionDestroyedCount(interruptedExceptionDestroyedCount)
+                .setUnknownDestroyedCount(unknownDestroyedCount)
+                .setAliveCount(aliveCount)
+                .build()
+        }
+    }
+
+    private class ActionStats(val mnemonic: String?) {
+        val firstStarted: LongAccumulator
+        val lastEnded: LongAccumulator
+        val numActionsExecuted: AtomicLong
+        val numActionsRegistered: AtomicLong
+        val systemTime: AtomicLong
+        val userTime: AtomicLong
+
+        init {
+            firstStarted = LongAccumulator(
+                LongBinaryOperator { a: Long, b: Long -> java.lang.Math.min(a, b) },
+                Long.Companion.MAX_VALUE
+            )
+            lastEnded = LongAccumulator(LongBinaryOperator { a: Long, b: Long -> java.lang.Math.max(a, b) }, 0)
+            numActionsExecuted = AtomicLong()
+            numActionsRegistered = AtomicLong()
+            systemTime = AtomicLong()
+            userTime = AtomicLong()
+        }
+    }
+
+    /* Collects stats about dynamic execution races  of remote vs local branches **/
+    internal class DynamicExecutionStats {
+        // Mapping from tuple <mnemonic, local branch name, remote branch name> to pair of numbers,
+        // which represents corresponding number of wins of local and remote branches.
+        val branchWinners: ConcurrentHashMap<RaceIdentifier, RaceWinners>
+
+        init {
+            this.branchWinners = ConcurrentHashMap<RaceIdentifier, RaceWinners>()
+        }
+
+        fun update(menemonic: String?, localName: String?, remoteName: String?, winner: DynamicMode) {
+            branchWinners.compute(
+                RaceIdentifier.Companion.create(menemonic, localName, remoteName)
+            ) { k: RaceIdentifier?, oldValue: RaceWinners ->
+                var newValue = RaceWinners( /* localWins= */0,  /* remoteWins= */0)
+                if (oldValue != null) {
+                    newValue = oldValue
+                }
+
+                when (winner) {
+                    LOCAL -> newValue.incrementLocalWins()
+                    REMOTE -> newValue.incrementRemoteWins()
+                }
+                newValue
+            }
+        }
+
+        internal class RaceWinners(private var localWins: Int, private var remoteWins: Int) {
+            fun getLocalWins(): Int {
+                return localWins
             }
 
-            switch (winner) {
-              case LOCAL -> newValue.incrementLocalWins();
-              case REMOTE -> newValue.incrementRemoteWins();
+            fun getRemoteWins(): Int {
+                return remoteWins
             }
 
-            return newValue;
-          });
+            fun incrementLocalWins() {
+                localWins++
+            }
+
+            fun incrementRemoteWins() {
+                remoteWins++
+            }
+        }
+
+        @kotlin.jvm.JvmRecord
+        internal data class RaceIdentifier(val mnemonic: String?, val localName: String?, val remoteName: String?) {
+            init {
+                java.util.Objects.requireNonNull<String?>(mnemonic, "mnemonic")
+                java.util.Objects.requireNonNull<String?>(localName, "localName")
+                java.util.Objects.requireNonNull<String?>(remoteName, "remoteName")
+            }
+
+            companion object {
+                fun create(mnemonic: String?, localName: String?, remoteName: String?): RaceIdentifier {
+                    return RaceIdentifier(mnemonic, localName, remoteName)
+                }
+            }
+        }
+
+        fun toMetrics(): DynamicExecutionMetrics {
+            val builder: DynamicExecutionMetrics.Builder = DynamicExecutionMetrics.newBuilder()
+            for (raceIdentifier in branchWinners.keys) {
+                val raceWinners: RaceWinners = branchWinners.get(raceIdentifier)
+                builder.addRaceStatistics(
+                    DynamicExecutionMetrics.RaceStatistics.newBuilder()
+                        .setMnemonic(raceIdentifier.mnemonic)
+                        .setLocalRunner(raceIdentifier.localName)
+                        .setRemoteRunner(raceIdentifier.remoteName)
+                        .setLocalWins(raceWinners.getLocalWins())
+                        .setRemoteWins(raceWinners.getRemoteWins())
+                        .build()
+                )
+            }
+
+            return builder.build()
+        }
     }
 
-    static class RaceWinners {
-      private int localWins;
-      private int remoteWins;
+    companion object {
+        fun installInEnv(
+            env: CommandEnvironment, numAnalyses: AtomicInteger, numBuilds: AtomicInteger
+        ) {
+            MetricsCollector(env, numAnalyses, numBuilds)
+        }
 
-      RaceWinners(int localWins, int remoteWins) {
-        this.localWins = localWins;
-        this.remoteWins = remoteWins;
-      }
+        private const val MAX_ACTION_DATA = 20
 
-      public int getLocalWins() {
-        return localWins;
-      }
+        private fun createMemoryMetrics(): MemoryMetrics {
+            val memoryMetrics: MemoryMetrics.Builder = MemoryMetrics.newBuilder()
+            if (MemoryProfiler.Companion.instance().getHeapUsedMemoryAtFinish() > 0) {
+                memoryMetrics.setUsedHeapSizePostBuild(MemoryProfiler.Companion.instance().getHeapUsedMemoryAtFinish())
+            }
+            setPeakHeapSize(
+                PostGCMemoryUseRecorder.Companion.get().getPeakPostGcHeap(), memoryMetrics::setPeakPostGcHeapSize
+            )
 
-      public int getRemoteWins() {
-        return remoteWins;
-      }
+            if (memoryMetrics.getPeakPostGcHeapSize() < memoryMetrics.getUsedHeapSizePostBuild()) {
+                // If we just did a GC and computed the heap size, update the one we got from the GC
+                // notification (which may arrive too late for this specific GC).
+                memoryMetrics.setPeakPostGcHeapSize(memoryMetrics.getUsedHeapSizePostBuild())
+            }
 
-      public void incrementLocalWins() {
-        localWins++;
-      }
+            setPeakHeapSize(
+                PostGCMemoryUseRecorder.Companion.get().getPeakPostGcHeapTenuredSpace(),
+                memoryMetrics::setPeakPostGcTenuredSpaceHeapSize
+            )
 
-      public void incrementRemoteWins() {
-        remoteWins++;
-      }
+            setPeakHeapSize(
+                PostGCMemoryUseRecorder.Companion.get().getPeakPostGcHeapDuringExecution(),
+                memoryMetrics::setPeakPostGcHeapSizeDuringExecution
+            )
+
+            setPeakHeapSize(
+                PostGCMemoryUseRecorder.Companion.get().getPeakPostGcHeapTenuredSpaceDuringExecution(),
+                memoryMetrics::setPeakPostGcTenuredSpaceHeapSizeDuringExecution
+            )
+
+            val garbageStats: MutableMap<String?, Long?> = PostGCMemoryUseRecorder.Companion.get().getGarbageStats()
+            for (garbageEntry in garbageStats.entries) {
+                val garbageMetrics: GarbageMetrics.Builder = GarbageMetrics.newBuilder()
+                garbageMetrics.setType(garbageEntry.key).setGarbageCollected(garbageEntry.value)
+                memoryMetrics.addGarbageMetrics(garbageMetrics.build())
+            }
+
+            return memoryMetrics.build()
+        }
+
+        private fun setPeakHeapSize(peakHeap: java.util.Optional<PeakHeap?>, setter: java.util.function.LongConsumer) {
+            peakHeap.ifPresent(java.util.function.Consumer { peak: PeakHeap? -> setter.accept(peak.bytes) })
+        }
+
+        /** Creates the WorkerPoolMetrics by aggregating the collected WorkerProcessMetrics.  */
+        fun createWorkerPoolMetrics(
+            collectedWorkerProcessMetrics: com.google.common.collect.ImmutableList<WorkerProcessMetrics>
+        ): WorkerPoolMetrics {
+            val aggregatedPoolStats: HashMap<Int?, WorkerPoolStats> = HashMap<Int?, WorkerPoolStats>()
+            for (wpm in collectedWorkerProcessMetrics) {
+                val poolStats: WorkerPoolStats =
+                    aggregatedPoolStats.computeIfAbsent(
+                        wpm.getWorkerKeyHash()
+                    ) { hash: Int? -> WorkerPoolStats(wpm.getMnemonic(), hash!!) }
+                poolStats.update(wpm)
+            }
+            return WorkerPoolMetrics.newBuilder()
+                .addAllWorkerPoolStats(
+                    aggregatedPoolStats.values.stream()
+                        .map<WorkerPoolStats?> { obj: WorkerPoolStats? -> obj!!.build() }
+                        .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>()))
+                .build()
+        }
     }
-
-    record RaceIdentifier(String mnemonic, String localName, String remoteName) {
-      RaceIdentifier {
-        requireNonNull(mnemonic, "mnemonic");
-        requireNonNull(localName, "localName");
-        requireNonNull(remoteName, "remoteName");
-      }
-
-      static RaceIdentifier create(String mnemonic, String localName, String remoteName) {
-        return new RaceIdentifier(mnemonic, localName, remoteName);
-      }
-    }
-
-    public DynamicExecutionMetrics toMetrics() {
-      DynamicExecutionMetrics.Builder builder = DynamicExecutionMetrics.newBuilder();
-      for (RaceIdentifier raceIdentifier : branchWinners.keySet()) {
-        RaceWinners raceWinners = branchWinners.get(raceIdentifier);
-        builder.addRaceStatistics(
-            DynamicExecutionMetrics.RaceStatistics.newBuilder()
-                .setMnemonic(raceIdentifier.mnemonic())
-                .setLocalRunner(raceIdentifier.localName())
-                .setRemoteRunner(raceIdentifier.remoteName())
-                .setLocalWins(raceWinners.getLocalWins())
-                .setRemoteWins(raceWinners.getRemoteWins())
-                .build());
-      }
-
-      return builder.build();
-    }
-  }
 }

@@ -11,334 +11,297 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel;
+package com.google.devtools.build.lib.bazel
 
-import static com.google.common.base.StandardSystemProperty.USER_NAME;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactPathResolver;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.BuildInfo;
-import com.google.devtools.build.lib.analysis.BuildInfoEvent;
-import com.google.devtools.build.lib.analysis.WorkspaceStatusAction;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.exec.ModuleActionContextRegistry;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.WorkspaceStatus;
-import com.google.devtools.build.lib.server.FailureDetails.WorkspaceStatus.Code;
-import com.google.devtools.build.lib.shell.AbnormalTerminationException;
-import com.google.devtools.build.lib.shell.BadExitStatusException;
-import com.google.devtools.build.lib.shell.CommandException;
-import com.google.devtools.build.lib.skyframe.WorkspaceInfoFromDiff;
-import com.google.devtools.build.lib.util.CommandBuilder;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.NetUtil;
-import com.google.devtools.build.lib.vfs.BulkDeleter;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.OptionsBase;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.Map;
-import java.util.TreeMap;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
 /**
  * Provides information about the workspace (e.g. source control context, current machine, current
  * user, etc).
  */
-public class BazelWorkspaceStatusModule extends BlazeModule {
-  static class BazelWorkspaceStatusAction extends WorkspaceStatusAction {
-    private final Artifact stableStatus;
-    private final Artifact volatileStatus;
-    private final String username;
-    private final String hostname;
+class BazelWorkspaceStatusModule : BlazeModule() {
+    internal class BazelWorkspaceStatusAction(
+        stableStatus: Artifact,
+        volatileStatus: Artifact,
+        username: String?,
+        hostname: String?
+    ) : WorkspaceStatusAction(
+        ActionOwner.SYSTEM_ACTION_OWNER,
+        NestedSetBuilder.Companion.emptySet<E?>(com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER),
+        com.google.common.collect.ImmutableSet.of<E?>(stableStatus, volatileStatus),
+        "workspace status"
+    ) {
+        private val stableStatus: Artifact
+        private val volatileStatus: Artifact
+        private val username: String?
+        private val hostname: String?
 
-    private static final DateTimeFormatter TIME_FORMAT =
-        DateTimeFormatter.ofPattern("yyyy MMM dd HH mm ss EEE");
-
-    private static String format(long timestamp) {
-      return Instant.ofEpochMilli(timestamp).atZone(ZoneOffset.UTC).format(TIME_FORMAT);
-    }
-
-    BazelWorkspaceStatusAction(
-        Artifact stableStatus, Artifact volatileStatus, String username, String hostname) {
-      super(
-          ActionOwner.SYSTEM_ACTION_OWNER,
-          NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-          ImmutableSet.of(stableStatus, volatileStatus),
-          "workspace status");
-      this.stableStatus = stableStatus;
-      this.volatileStatus = volatileStatus;
-      this.username = username;
-      this.hostname = hostname;
-    }
-
-    private String getAdditionalWorkspaceStatus(
-        Options options, ActionExecutionContext actionExecutionContext)
-        throws ActionExecutionException, InterruptedException {
-      com.google.devtools.build.lib.shell.Command getWorkspaceStatusCommand =
-          actionExecutionContext.getContext(WorkspaceStatusAction.Context.class).getCommand();
-      try {
-        if (getWorkspaceStatusCommand != null) {
-          actionExecutionContext
-              .getEventHandler()
-              .handle(
-                  Event.progress(
-                      "Getting additional workspace status by running "
-                          + options.getWorkspaceStatusCommand()));
-          ByteArrayOutputStream stdoutStream = new ByteArrayOutputStream();
-          try (OutputStream errStream =
-              actionExecutionContext.getFileOutErr().getErrorPath().getOutputStream()) {
-            getWorkspaceStatusCommand.execute(stdoutStream, errStream);
-          } catch (IOException e) {
-            throw createExecutionException(e, Code.STDERR_IO_EXCEPTION);
-          }
-          return stdoutStream.toString(UTF_8);
-        }
-      } catch (BadExitStatusException e) {
-        throw createExecutionException(e, Code.NON_ZERO_EXIT);
-      } catch (AbnormalTerminationException e) {
-        throw createExecutionException(e, Code.ABNORMAL_TERMINATION);
-      } catch (CommandException e) {
-        throw createExecutionException(e, Code.EXEC_FAILED);
-      }
-      return "";
-    }
-
-    private static final ImmutableSet<String> SPECIAL_STABLE_KEYS =
-        ImmutableSet.of(BuildInfo.BUILD_EMBED_LABEL, BuildInfo.BUILD_HOST, BuildInfo.BUILD_USER);
-
-    private static boolean isStableKey(String key) {
-      return key.startsWith("STABLE_") || SPECIAL_STABLE_KEYS.contains(key);
-    }
-
-    private static Map<String, String> parseWorkspaceStatus(String input) {
-      TreeMap<String, String> result = new TreeMap<>();
-      for (String line : input.trim().split("\n")) {
-        String[] splitLine = line.split(" ", 2);
-        if (splitLine.length >= 2) {
-          result.put(splitLine[0], splitLine[1].trim());
-        }
-      }
-
-      return result;
-    }
-
-    private static byte[] printStatusMap(Map<String, String> map) {
-      String s =
-          map.entrySet().stream()
-              .map(entry -> entry.getKey() + " " + entry.getValue())
-              .collect(joining("\n"));
-      s += "\n";
-      return s.getBytes(StandardCharsets.UTF_8);
-    }
-
-    @Override
-    public void prepare(
-        Path execRoot,
-        ArtifactPathResolver pathResolver,
-        @Nullable BulkDeleter bulkDeleter,
-        boolean cleanupArchivedArtifacts)
-        throws IOException {
-      // The default implementation of this method deletes all output files; override it to keep
-      // the old stableStatus around. This way we can reuse the existing file (preserving its mtime)
-      // if the contents haven't changed.
-      deleteOutput(volatileStatus, pathResolver);
-    }
-
-    @Override
-    public ActionResult execute(ActionExecutionContext actionExecutionContext)
-        throws ActionExecutionException, InterruptedException {
-      WorkspaceStatusAction.Context context =
-          actionExecutionContext.getContext(WorkspaceStatusAction.Context.class);
-      Options options = context.getOptions();
-      ImmutableMap<String, String> clientEnv = context.getClientEnv();
-      Map<String, String> volatileMap = new TreeMap<>();
-      Map<String, String> stableMap = new TreeMap<>();
-
-      stableMap.put(BuildInfo.BUILD_EMBED_LABEL, options.getEmbedLabel());
-      stableMap.put(BuildInfo.BUILD_HOST, hostname);
-      stableMap.put(BuildInfo.BUILD_USER, username);
-      long currentTimeMillis = getCurrentTimeMillis(clientEnv);
-      volatileMap.put(BuildInfo.BUILD_TIMESTAMP, Long.toString(currentTimeMillis / 1000));
-      volatileMap.put("FORMATTED_DATE", format(currentTimeMillis / 1000 * 1000));
-      try {
-        Map<String, String> statusMap =
-            parseWorkspaceStatus(getAdditionalWorkspaceStatus(options, actionExecutionContext));
-        for (Map.Entry<String, String> entry : statusMap.entrySet()) {
-          if (isStableKey(entry.getKey())) {
-            stableMap.put(entry.getKey(), entry.getValue());
-          } else {
-            volatileMap.put(entry.getKey(), entry.getValue());
-          }
+        @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+        private fun getAdditionalWorkspaceStatus(
+            options: Options, actionExecutionContext: ActionExecutionContext
+        ): String? {
+            val getWorkspaceStatusCommand: com.google.devtools.build.lib.shell.Command? =
+                actionExecutionContext.getContext(WorkspaceStatusAction.Context::class.java).getCommand()
+            try {
+                if (getWorkspaceStatusCommand != null) {
+                    actionExecutionContext
+                        .getEventHandler()
+                        .handle(
+                            com.google.devtools.build.lib.events.Event.progress(
+                                "Getting additional workspace status by running "
+                                        + options.workspaceStatusCommand
+                            )
+                        )
+                    val stdoutStream: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+                    try {
+                        actionExecutionContext.getFileOutErr().getErrorPath().getOutputStream().use { errStream ->
+                            getWorkspaceStatusCommand.execute(stdoutStream, errStream)
+                        }
+                    } catch (e: IOException) {
+                        throw createExecutionException(e, Code.STDERR_IO_EXCEPTION)
+                    }
+                    return stdoutStream.toString(java.nio.charset.StandardCharsets.UTF_8)
+                }
+            } catch (e: BadExitStatusException) {
+                throw createExecutionException(e, Code.NON_ZERO_EXIT)
+            } catch (e: AbnormalTerminationException) {
+                throw createExecutionException(e, Code.ABNORMAL_TERMINATION)
+            } catch (e: com.google.devtools.build.lib.shell.CommandException) {
+                throw createExecutionException(e, Code.EXEC_FAILED)
+            }
+            return ""
         }
 
-        Map<String, String> overallMap = new TreeMap<>();
-        overallMap.putAll(volatileMap);
-        overallMap.putAll(stableMap);
-        actionExecutionContext.getEventHandler().post(new BuildInfoEvent(overallMap));
-
-        // Only update the stableStatus contents if they are different than what we have on disk.
-        // This is to preserve the old file's mtime so that we do not generate an unnecessary dirty
-        // file on each incremental build.
-        FileSystemUtils.maybeUpdateContent(
-            actionExecutionContext.getInputPath(stableStatus), printStatusMap(stableMap));
-
-        // Contrary to the stableStatus, write the contents of volatileStatus unconditionally
-        // because we know it will be different. This output file is marked as "constant metadata"
-        // so its dirtiness will be ignored anyway.
-        FileSystemUtils.writeContent(
-            actionExecutionContext.getInputPath(volatileStatus), printStatusMap(volatileMap));
-      } catch (IOException e) {
-        String message =
-            String.format(
-                "Failed to run workspace status command %s: %s",
-                options.getWorkspaceStatusCommand(), e.getMessage());
-        DetailedExitCode code = createDetailedCode(message, Code.CONTENT_UPDATE_IO_EXCEPTION);
-        throw new ActionExecutionException(message, e, this, true, code);
-      }
-      return ActionResult.EMPTY;
-    }
-
-    /**
-     * This method returns the current time for stamping, using SOURCE_DATE_EPOCH
-     * (https://reproducible-builds.org/specs/source-date-epoch/) if provided.
-     */
-    private static long getCurrentTimeMillis(ImmutableMap<String, String> clientEnv) {
-      if (clientEnv.containsKey("SOURCE_DATE_EPOCH")) {
-        String value = clientEnv.get("SOURCE_DATE_EPOCH").trim();
-        if (!value.isEmpty()) {
-          try {
-            return Long.parseLong(value) * 1000;
-          } catch (NumberFormatException ex) {
-            // Fall-back to use the current time if SOURCE_DATE_EPOCH is not a long.
-          }
+        init {
+            this.stableStatus = stableStatus
+            this.volatileStatus = volatileStatus
+            this.username = username
+            this.hostname = hostname
         }
-      }
-      return System.currentTimeMillis();
+
+        @Throws(IOException::class)
+        public override fun prepare(
+            execRoot: com.google.devtools.build.lib.vfs.Path?,
+            pathResolver: ArtifactPathResolver?,
+            bulkDeleter: BulkDeleter?,
+            cleanupArchivedArtifacts: Boolean
+        ) {
+            // The default implementation of this method deletes all output files; override it to keep
+            // the old stableStatus around. This way we can reuse the existing file (preserving its mtime)
+            // if the contents haven't changed.
+            deleteOutput(volatileStatus, pathResolver)
+        }
+
+        @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+        public override fun execute(actionExecutionContext: ActionExecutionContext): ActionResult {
+            val context: WorkspaceStatusAction.Context =
+                actionExecutionContext.getContext(WorkspaceStatusAction.Context::class.java)
+            val options: Options = context.options
+            val clientEnv: com.google.common.collect.ImmutableMap<String?, String?> = context.clientEnv
+            val volatileMap: MutableMap<String?, String?> = TreeMap<String?, String?>()
+            val stableMap: MutableMap<String?, String?> = TreeMap<String?, String?>()
+
+            stableMap.put(BuildInfo.BUILD_EMBED_LABEL, options.embedLabel)
+            stableMap.put(BuildInfo.BUILD_HOST, hostname)
+            stableMap.put(BuildInfo.BUILD_USER, username)
+            val currentTimeMillis = getCurrentTimeMillis(clientEnv)
+            volatileMap.put(BuildInfo.BUILD_TIMESTAMP, (currentTimeMillis / 1000).toString())
+            volatileMap.put("FORMATTED_DATE", format(currentTimeMillis / 1000 * 1000))
+            try {
+                val statusMap =
+                    Companion.parseWorkspaceStatus(getAdditionalWorkspaceStatus(options, actionExecutionContext)!!)
+                for (entry in statusMap.entries) {
+                    if (Companion.isStableKey(entry.key!!)) {
+                        stableMap.put(entry.key, entry.value)
+                    } else {
+                        volatileMap.put(entry.key, entry.value)
+                    }
+                }
+
+                val overallMap: MutableMap<String?, String?> = TreeMap<String?, String?>()
+                overallMap.putAll(volatileMap)
+                overallMap.putAll(stableMap)
+                actionExecutionContext.getEventHandler().post(BuildInfoEvent(overallMap))
+
+                // Only update the stableStatus contents if they are different than what we have on disk.
+                // This is to preserve the old file's mtime so that we do not generate an unnecessary dirty
+                // file on each incremental build.
+                com.google.devtools.build.lib.vfs.FileSystemUtils.maybeUpdateContent(
+                    actionExecutionContext.getInputPath(stableStatus), printStatusMap(stableMap)
+                )
+
+                // Contrary to the stableStatus, write the contents of volatileStatus unconditionally
+                // because we know it will be different. This output file is marked as "constant metadata"
+                // so its dirtiness will be ignored anyway.
+                com.google.devtools.build.lib.vfs.FileSystemUtils.writeContent(
+                    actionExecutionContext.getInputPath(volatileStatus), printStatusMap(volatileMap)
+                )
+            } catch (e: IOException) {
+                val message: String? =
+                    java.lang.String.format(
+                        "Failed to run workspace status command %s: %s",
+                        options.workspaceStatusCommand, e.message
+                    )
+                val code: DetailedExitCode = createDetailedCode(message, Code.CONTENT_UPDATE_IO_EXCEPTION)
+                throw ActionExecutionException(message, e, this, true, code)
+            }
+            return ActionResult.EMPTY
+        }
+
+        val mnemonic: String
+            get() = "BazelWorkspaceStatusAction"
+
+        public override fun getVolatileStatus(): Artifact {
+            return volatileStatus
+        }
+
+        public override fun getStableStatus(): Artifact {
+            return stableStatus
+        }
+
+        companion object {
+            private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy MMM dd HH mm ss EEE")
+
+            private fun format(timestamp: Long): String {
+                return Instant.ofEpochMilli(timestamp).atZone(ZoneOffset.UTC).format(TIME_FORMAT)
+            }
+
+            private val SPECIAL_STABLE_KEYS: com.google.common.collect.ImmutableSet<String?> =
+                com.google.common.collect.ImmutableSet.of<String?>(
+                    BuildInfo.BUILD_EMBED_LABEL,
+                    BuildInfo.BUILD_HOST,
+                    BuildInfo.BUILD_USER
+                )
+
+            private fun isStableKey(key: String): Boolean {
+                return key.startsWith("STABLE_") || SPECIAL_STABLE_KEYS.contains(key)
+            }
+
+            private fun parseWorkspaceStatus(input: String): MutableMap<String?, String?> {
+                val result: TreeMap<String?, String?> = TreeMap<String?, String?>()
+                for (line in input.trim { it <= ' ' }.split("\n".toRegex()).dropLastWhile { it.isEmpty() }
+                    .toTypedArray()) {
+                    val splitLine: Array<String?> = line.split(" ".toRegex(), limit = 2).toTypedArray()
+                    if (splitLine.size >= 2) {
+                        result.put(splitLine[0], splitLine[1].trim { it <= ' ' })
+                    }
+                }
+
+                return result
+            }
+
+            private fun printStatusMap(map: MutableMap<String?, String?>): ByteArray? {
+                var s: String? =
+                    map.entries.stream()
+                        .map<String?> { entry: MutableMap.MutableEntry<String?, String?>? -> entry!!.key + " " + entry.value }
+                        .collect(Collectors.joining("\n"))
+                s += "\n"
+                return s.toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+            }
+
+            /**
+             * This method returns the current time for stamping, using SOURCE_DATE_EPOCH
+             * (https://reproducible-builds.org/specs/source-date-epoch/) if provided.
+             */
+            private fun getCurrentTimeMillis(clientEnv: com.google.common.collect.ImmutableMap<String?, String?>): Long {
+                if (clientEnv.containsKey("SOURCE_DATE_EPOCH")) {
+                    val value: String = clientEnv.get("SOURCE_DATE_EPOCH").trim { it <= ' ' }
+                    if (!value.isEmpty()) {
+                        try {
+                            return value.toLong() * 1000
+                        } catch (ex: java.lang.NumberFormatException) {
+                            // Fall-back to use the current time if SOURCE_DATE_EPOCH is not a long.
+                        }
+                    }
+                }
+                return java.lang.System.currentTimeMillis()
+            }
+        }
     }
 
-    @Override
-    public String getMnemonic() {
-      return "BazelWorkspaceStatusAction";
+    private class BazelStatusActionFactory : WorkspaceStatusAction.Factory {
+        public override fun createDummyWorkspaceStatus(
+            workspaceInfoFromDiff: WorkspaceInfoFromDiff?
+        ): com.google.common.collect.ImmutableSortedMap<String?, String?> {
+            return com.google.common.collect.ImmutableSortedMap.of<String?, String?>()
+        }
+
+        public override fun createWorkspaceStatusAction(
+            env: WorkspaceStatusAction.Environment
+        ): WorkspaceStatusAction {
+            val stableArtifact: Artifact = env.createStableArtifact("stable-status.txt")
+            val volatileArtifact: Artifact = env.createVolatileArtifact("volatile-status.txt")
+            return BazelWorkspaceStatusAction(
+                stableArtifact,
+                volatileArtifact,
+                com.google.common.base.StandardSystemProperty.USER_NAME.value(),
+                com.google.devtools.build.lib.util.NetUtil.getCachedShortHostName()
+            )
+        }
     }
 
-    @Override
-    public Artifact getVolatileStatus() {
-      return volatileStatus;
+    private class BazelWorkspaceStatusActionContext
+        (env: CommandEnvironment) : WorkspaceStatusAction.Context {
+        private val env: CommandEnvironment
+
+        init {
+            this.env = env
+        }
+
+        val options: WorkspaceStatusAction.Options?
+            get() = env.getOptions().getOptions<O?>(WorkspaceStatusAction.Options::class.java)
+
+        val clientEnv: com.google.common.collect.ImmutableMap<String?, String?>
+            get() = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(env.getClientEnv())
+
+        val command: com.google.devtools.build.lib.shell.Command?
+            get() {
+                val options: WorkspaceStatusAction.Options? =
+                    env.getOptions().getOptions<O?>(WorkspaceStatusAction.Options::class.java)
+                return if (options.workspaceStatusCommand.equals(PathFragment.EMPTY_FRAGMENT))
+                    null
+                else
+                    CommandBuilder(env.getClientEnv())
+                        .addArgs(options.workspaceStatusCommand.toString()) // Pass client env to allow SCM clients (like git) relying on environment variables to
+                        // work correctly.
+                        .setEnv(env.getClientEnv())
+                        .setWorkingDir(env.getWorkspace())
+                        .useShell(true)
+                        .build()
+            }
     }
 
-    @Override
-    public Artifact getStableStatus() {
-      return stableStatus;
-    }
-  }
-
-  private static DetailedExitCode createDetailedCode(String message, Code detailedCode) {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setWorkspaceStatus(WorkspaceStatus.newBuilder().setCode(detailedCode))
-            .build());
-  }
-
-  private static final class BazelStatusActionFactory implements WorkspaceStatusAction.Factory {
-
-    @Override
-    public ImmutableSortedMap<String, String> createDummyWorkspaceStatus(
-        @Nullable WorkspaceInfoFromDiff workspaceInfoFromDiff) {
-      return ImmutableSortedMap.of();
+    override fun getCommandOptions(commandName: String): Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?> {
+        return if (commandName == "build")
+            com.google.common.collect.ImmutableList.of<E?>(WorkspaceStatusAction.Options::class.java)
+        else
+            com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>()
     }
 
-    @Override
-    public WorkspaceStatusAction createWorkspaceStatusAction(
-        WorkspaceStatusAction.Environment env) {
-      Artifact stableArtifact = env.createStableArtifact("stable-status.txt");
-      Artifact volatileArtifact = env.createVolatileArtifact("volatile-status.txt");
-      return new BazelWorkspaceStatusAction(
-          stableArtifact, volatileArtifact, USER_NAME.value(), NetUtil.getCachedShortHostName());
-    }
-  }
-
-  private static final class BazelWorkspaceStatusActionContext
-      implements WorkspaceStatusAction.Context {
-    private final CommandEnvironment env;
-
-    private BazelWorkspaceStatusActionContext(CommandEnvironment env) {
-      this.env = env;
+    override fun workspaceInit(
+        runtime: BlazeRuntime?, directories: BlazeDirectories?, builder: WorkspaceBuilder
+    ) {
+        builder.setWorkspaceStatusActionFactory(BazelStatusActionFactory())
     }
 
-    @Override
-    public WorkspaceStatusAction.Options getOptions() {
-      return env.getOptions().getOptions(WorkspaceStatusAction.Options.class);
+    override fun registerActionContexts(
+        registryBuilder: com.google.devtools.build.lib.exec.ModuleActionContextRegistry.Builder,
+        env: CommandEnvironment,
+        buildRequest: BuildRequest?
+    ) {
+        registryBuilder.register<T?>(
+            WorkspaceStatusAction.Context::class.java, BazelWorkspaceStatusActionContext(env)
+        )
     }
 
-    @Override
-    public ImmutableMap<String, String> getClientEnv() {
-      return ImmutableMap.copyOf(env.getClientEnv());
+    companion object {
+        private fun createDetailedCode(message: String?, detailedCode: Code?): DetailedExitCode {
+            return DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setWorkspaceStatus(WorkspaceStatus.newBuilder().setCode(detailedCode))
+                    .build()
+            )
+        }
     }
-
-    @Nullable
-    @Override
-    public com.google.devtools.build.lib.shell.Command getCommand() {
-      WorkspaceStatusAction.Options options =
-          env.getOptions().getOptions(WorkspaceStatusAction.Options.class);
-      return options.getWorkspaceStatusCommand().equals(PathFragment.EMPTY_FRAGMENT)
-          ? null
-          : new CommandBuilder(env.getClientEnv())
-              .addArgs(options.getWorkspaceStatusCommand().toString())
-              // Pass client env to allow SCM clients (like git) relying on environment variables to
-              // work correctly.
-              .setEnv(env.getClientEnv())
-              .setWorkingDir(env.getWorkspace())
-              .useShell(true)
-              .build();
-    }
-  }
-
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getCommandOptions(String commandName) {
-    return commandName.equals("build")
-        ? ImmutableList.of(WorkspaceStatusAction.Options.class)
-        : ImmutableList.of();
-  }
-
-  @Override
-  public void workspaceInit(
-      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {
-    builder.setWorkspaceStatusActionFactory(new BazelStatusActionFactory());
-  }
-
-  @Override
-  public void registerActionContexts(
-      ModuleActionContextRegistry.Builder registryBuilder,
-      CommandEnvironment env,
-      BuildRequest buildRequest) {
-    registryBuilder.register(
-        WorkspaceStatusAction.Context.class, new BazelWorkspaceStatusActionContext(env));
-  }
 }

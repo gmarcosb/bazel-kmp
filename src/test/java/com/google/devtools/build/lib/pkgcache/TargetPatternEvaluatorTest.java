@@ -523,7 +523,7 @@ public class TargetPatternEvaluatorTest extends AbstractTargetPatternEvaluatorTe
     assertThat(result.getTargets()).hasSize(1);
 
     Label label = Iterables.getOnlyElement(result.getTargets()).getLabel();
-    assertThat(label.getName()).isEqualTo("BUILD");
+    assertThat(label.name).isEqualTo("BUILD");
     assertThat(label.getPackageName()).isEqualTo("foo/bar");
   }
 

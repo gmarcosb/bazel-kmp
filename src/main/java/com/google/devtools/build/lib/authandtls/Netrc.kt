@@ -11,102 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.authandtls;
+package com.google.devtools.build.lib.authandtls
 
-import static java.util.Objects.requireNonNull;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.authandtls.NetrcParser
+import java.io.IOException
 
-import com.google.auto.value.AutoValue;
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableMap;
-import java.io.IOException;
-import java.io.InputStream;
-import javax.annotation.Nullable;
-
-/** Container for the content of a .netrc file. */
-public record Netrc(
-    @Nullable Credential defaultCredential, ImmutableMap<String, Credential> credentials) {
-  public Netrc {
-    requireNonNull(credentials, "credentials");
-  }
-
-  public static Netrc fromStream(InputStream inputStream) throws IOException {
-    return NetrcParser.parseAndClose(inputStream);
-  }
-  /**
-   * Construct a new {@link Netrc} instance.
-   *
-   * @param defaultCredential default {@link Credential} for other machines
-   * @param credentials map between a machine and it's corresponding {@link Credential}
-   */
-  public static Netrc create(
-      @Nullable Credential defaultCredential, ImmutableMap<String, Credential> credentials) {
-    return new Netrc(defaultCredential, credentials);
-  }
-
-  /**
-   * Return a {@link Credential} for a given machine. If machine is not found and there isn't
-   * default credential, return {@code null}.
-   */
-  @Nullable
-  public Credential getCredential(String machine) {
-    return credentials().getOrDefault(machine, defaultCredential());
-  }
-
-  /** Container for login, password and account of a machine in .netrc */
-  @AutoValue
-  public abstract static class Credential {
-
-    abstract String machine();
-
-    abstract String login();
-
-    abstract String password();
-
-    abstract String account();
-
+/** Container for the content of a .netrc file.  */
+class Netrc(
+    defaultCredential: Credential?,
+    credentials: com.google.common.collect.ImmutableMap<String?, Credential?>?
+) {
     /**
-     * The generated toString method will leak the password. Override and replace the value of
-     * password with constant string {@code <password>}.
+     * Return a [Credential] for a given machine. If machine is not found and there isn't
+     * default credential, return `null`.
      */
-    @Override
-    public final String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("machine", machine())
-          .add("login", login())
-          .add("password", "<password>")
-          .add("account", account())
-          .toString();
+    fun getCredential(machine: String?): Credential? {
+        return this.credentials.getOrDefault(machine, this.defaultCredential)
     }
 
-    /** Create a {@link Builder} object for a given machine. */
-    public static Builder builder(String machine) {
-      return new AutoValue_Netrc_Credential.Builder()
-          .setMachine(machine)
-          .setLogin("")
-          .setPassword("")
-          .setAccount("");
+    /** Container for login, password and account of a machine in .netrc  */
+    @AutoValue
+    abstract class Credential {
+        abstract fun machine(): String?
+
+        abstract fun login(): String?
+
+        abstract fun password(): String?
+
+        abstract fun account(): String?
+
+        /**
+         * The generated toString method will leak the password. Override and replace the value of
+         * password with constant string `<password>`.
+         */
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("machine", machine())
+                .add("login", login())
+                .add("password", "<password>")
+                .add("account", account())
+                .toString()
+        }
+
+        /** [Credential]Builder  */
+        @AutoValue.Builder
+        abstract class Builder {
+            abstract fun machine(): String?
+
+            abstract fun setMachine(machine: String?): Builder?
+
+            abstract fun login(): String?
+
+            abstract fun setLogin(value: String?): Builder?
+
+            abstract fun password(): String?
+
+            abstract fun setPassword(value: String?): Builder?
+
+            abstract fun account(): String?
+
+            abstract fun setAccount(value: String?): Builder?
+
+            abstract fun build(): Credential?
+        }
+
+        companion object {
+            /** Create a [Builder] object for a given machine.  */
+            @kotlin.jvm.JvmStatic
+            fun builder(machine: String?): Builder {
+                return Builder()
+                    .setMachine(machine)
+                    .setLogin("")
+                    .setPassword("")
+                    .setAccount("")!!
+            }
+        }
     }
 
-    /** {@link Credential}Builder */
-    @AutoValue.Builder
-    public abstract static class Builder {
-      public abstract String machine();
+    val defaultCredential: Credential?
+    val credentials: com.google.common.collect.ImmutableMap<String?, Credential?>?
 
-      public abstract Builder setMachine(String machine);
-
-      public abstract String login();
-
-      public abstract Builder setLogin(String value);
-
-      public abstract String password();
-
-      public abstract Builder setPassword(String value);
-
-      public abstract String account();
-
-      public abstract Builder setAccount(String value);
-
-      public abstract Credential build();
+    init {
+        this.credentials = credentials
+        this.defaultCredential = defaultCredential
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, Credential?>?>(
+            credentials,
+            "credentials"
+        )
     }
-  }
+
+    companion object {
+        @Throws(IOException::class)
+        fun fromStream(inputStream: java.io.InputStream?): Netrc {
+            return NetrcParser.parseAndClose(inputStream)
+        }
+
+        /**
+         * Construct a new [Netrc] instance.
+         * 
+         * @param defaultCredential default [Credential] for other machines
+         * @param credentials map between a machine and it's corresponding [Credential]
+         */
+        fun create(
+            defaultCredential: Credential?, credentials: com.google.common.collect.ImmutableMap<String?, Credential?>?
+        ): Netrc {
+            return Netrc(defaultCredential, credentials)
+        }
+    }
 }

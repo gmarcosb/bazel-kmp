@@ -50,13 +50,13 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
     scratch.file(
         "foo/BUILD",
         "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = '" + label.getName() + "')");
+        "foo_library(name = '" + label.name + "')");
     Package pkg = loadPackage(label.getPackageIdentifier());
     TargetAndErrorIfAny targetAndErrorIfAny =
         new TargetAndErrorIfAny(
             /* packageLoadedSuccessfully= */ true,
             /* errorLoadingTarget= */ null,
-            pkg.getTarget(label.getName()),
+            pkg.getTarget(label.name),
             pkg);
     TransitiveTraversalFunction function =
         new TransitiveTraversalFunction() {
@@ -106,13 +106,13 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
     scratch.file(
         "foo/BUILD",
         "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = '" + label.getName() + "', deps = [':bar', ':baz'])");
+        "foo_library(name = '" + label.name + "', deps = [':bar', ':baz'])");
     Package pkg = loadPackage(label.getPackageIdentifier());
     TargetAndErrorIfAny targetAndErrorIfAny =
         new TargetAndErrorIfAny(
             /* packageLoadedSuccessfully= */ true,
             /* errorLoadingTarget= */ null,
-            pkg.getTarget(label.getName()),
+            pkg.getTarget(label.name),
             pkg);
     TransitiveTraversalFunction function =
         new TransitiveTraversalFunction() {
@@ -149,13 +149,13 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
     scratch.file(
         "foo/BUILD",
         "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = '" + label.getName() + "', deps = [':bar'])");
+        "foo_library(name = '" + label.name + "', deps = [':bar'])");
     Package pkg = loadPackage(label.getPackageIdentifier());
     TargetAndErrorIfAny targetAndErrorIfAny =
         new TargetAndErrorIfAny(
             /* packageLoadedSuccessfully= */ true,
             /* errorLoadingTarget= */ new NoSuchTargetException("self error is long and last"),
-            pkg.getTarget(label.getName()),
+            pkg.getTarget(label.name),
             pkg);
     TransitiveTraversalFunction function =
         new TransitiveTraversalFunction() {
@@ -217,7 +217,7 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
         new TargetAndErrorIfAny(
             /* packageLoadedSuccessfully= */ true,
             /* errorLoadingTarget= */ null,
-            pkg.getTarget(label.getName()),
+            pkg.getTarget(label.name),
             pkg);
     TransitiveTraversalFunction function =
         new TransitiveTraversalFunction() {

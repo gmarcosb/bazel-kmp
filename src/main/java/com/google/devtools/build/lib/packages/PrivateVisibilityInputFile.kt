@@ -11,26 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.devtools.build.lib.cmdline.Label;
-import net.starlark.java.syntax.Location;
+/** An input file to the build system which always returns private visibility.  */
+class PrivateVisibilityInputFile internal constructor(
+    pkg: Packageoid?,
+    label: Label?,
+    location: net.starlark.java.syntax.Location?
+) : InputFile(pkg, label, location) {
+    override fun isVisibilitySpecified(): Boolean {
+        return true
+    }
 
-/** An input file to the build system which always returns private visibility. */
-public class PrivateVisibilityInputFile extends InputFile {
-
-  PrivateVisibilityInputFile(Packageoid pkg, Label label, Location location) {
-    super(pkg, label, location);
-  }
-
-  @Override
-  public boolean isVisibilitySpecified() {
-    return true;
-  }
-
-  @Override
-  public RuleVisibility getVisibility() {
-    return RuleVisibility.PRIVATE;
-  }
+    override fun getVisibility(): RuleVisibility {
+        return RuleVisibility.Companion.PRIVATE
+    }
 }

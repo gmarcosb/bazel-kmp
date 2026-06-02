@@ -11,230 +11,202 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Sets;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.ActionChangePrunedEvent;
-import com.google.devtools.build.lib.actions.ActionExecutionInactivityEvent;
-import com.google.devtools.build.lib.actions.ActionExecutionStatusReporter;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog;
-import com.google.devtools.build.lib.skyframe.AspectCompletionValue;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator;
-import com.google.devtools.build.lib.skyframe.BuildDriverKey;
-import com.google.devtools.build.lib.skyframe.BuildDriverValue;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.SkyframeActionExecutor;
-import com.google.devtools.build.lib.skyframe.TargetCompletionValue;
-import com.google.devtools.build.lib.skyframe.TopLevelAspectsValue;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.AspectBuiltEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetBuiltEvent;
-import com.google.devtools.build.skyframe.ErrorInfo;
-import com.google.devtools.build.skyframe.EvaluationProgressReceiver;
-import com.google.devtools.build.skyframe.GroupedDeps;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.text.NumberFormat;
-import java.time.Instant;
-import java.util.Locale;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionChangePrunedEvent
 
 /**
  * Listener for executed actions and built artifacts. We use a listener so that we have an accurate
  * set of successfully run actions and built artifacts, even if the build is interrupted.
  */
-public final class ExecutionProgressReceiver
-    implements SkyframeActionExecutor.ProgressSupplier,
-        SkyframeActionExecutor.ActionCompletedReceiver,
-        EvaluationProgressReceiver {
-  private static final ThreadLocal<NumberFormat> PROGRESS_MESSAGE_NUMBER_FORMATTER =
-      ThreadLocal.withInitial(
-          () -> {
-            NumberFormat numberFormat = NumberFormat.getIntegerInstance(Locale.ENGLISH);
-            numberFormat.setGroupingUsed(true);
-            return numberFormat;
-          });
+class ExecutionProgressReceiver
+    (
+    /** Number of exclusive tests. To be accounted for in progress messages.  */
+    private val exclusiveTestsCount: Int, eventBus: com.google.common.eventbus.EventBus
+) : ProgressSupplier, ActionCompletedReceiver, EvaluationProgressReceiver {
+    private val enqueuedActions: MutableSet<ActionLookupData?> =
+        com.google.common.collect.Sets.newConcurrentHashSet<ActionLookupData?>()
+    private val completedActions: MutableSet<ActionLookupData?> =
+        com.google.common.collect.Sets.newConcurrentHashSet<ActionLookupData?>()
+    private val eventBus: com.google.common.eventbus.EventBus
 
-  private final Set<ActionLookupData> enqueuedActions = Sets.newConcurrentHashSet();
-  private final Set<ActionLookupData> completedActions = Sets.newConcurrentHashSet();
-  private final EventBus eventBus;
-
-  /** Number of exclusive tests. To be accounted for in progress messages. */
-  private final int exclusiveTestsCount;
-
-  /**
-   * {@code builtTargets} is accessed through a synchronized set, and so no other access to it is
-   * permitted while this receiver is active.
-   */
-  public ExecutionProgressReceiver(int exclusiveTestsCount, EventBus eventBus) {
-    this.exclusiveTestsCount = exclusiveTestsCount;
-    this.eventBus = eventBus;
-  }
-
-  @Override
-  public void enqueueing(SkyKey skyKey) {
-    if (skyKey.functionName().equals(SkyFunctions.ACTION_EXECUTION)) {
-      ActionLookupData actionLookupData = (ActionLookupData) skyKey.argument();
-      // Remember all enqueued actions for the benefit of progress reporting.
-      // We discover most actions early in the build, well before we start executing them.
-      // Some of these will be cache hits and won't be executed, so we'll need to account for them
-      // in the evaluated method too.
-      enqueuedActions.add(actionLookupData);
-    }
-  }
-
-  @Override
-  public void evaluated(
-      SkyKey skyKey,
-      EvaluationState state,
-      @Nullable SkyValue newValue,
-      @Nullable ErrorInfo newError,
-      @Nullable GroupedDeps directDeps) {
-    SkyFunctionName type = skyKey.functionName();
-    if (type.equals(SkyFunctions.ACTION_EXECUTION)) {
-      // Remember all completed actions, even those in error, regardless of having been cached or
-      // really executed.
-      actionCompleted((ActionLookupData) skyKey.argument());
-      return;
+    /**
+     * `builtTargets` is accessed through a synchronized set, and so no other access to it is
+     * permitted while this receiver is active.
+     */
+    init {
+        this.eventBus = eventBus
     }
 
-    if (!state.succeeded()) {
-      return;
-    }
-
-    if (type.equals(SkyFunctions.TARGET_COMPLETION)) {
-      ConfiguredTargetKey configuredTargetKey =
-          ((TargetCompletionValue.TargetCompletionKey) skyKey).actionLookupKey();
-      eventBus.post(TopLevelTargetBuiltEvent.create(configuredTargetKey));
-      return;
-    }
-
-    if (type.equals(SkyFunctions.ASPECT_COMPLETION)) {
-      AspectKeyCreator.AspectKey aspectKey =
-          ((AspectCompletionValue.AspectCompletionKey) skyKey).actionLookupKey();
-      eventBus.post(AspectBuiltEvent.create(aspectKey));
-      return;
-    }
-
-    if (type.equals(SkyFunctions.BUILD_DRIVER)) {
-      BuildDriverKey buildDriverKey = (BuildDriverKey) skyKey;
-      // BuildDriverKeys are re-evaluated every build.
-      BuildDriverValue buildDriverValue = (BuildDriverValue) Preconditions.checkNotNull(newValue);
-
-      if (buildDriverValue.isSkipped()) {
-        return;
-      }
-
-      if (buildDriverKey.isTopLevelAspectDriver()) {
-        ((TopLevelAspectsValue) buildDriverValue.getWrappedSkyValue())
-            .getTopLevelAspectsMap()
-            .keySet()
-            .forEach(x -> eventBus.post(AspectBuiltEvent.create(x)));
-        return;
-      }
-
-      eventBus.post(
-          TopLevelTargetBuiltEvent.create(
-              ConfiguredTargetKey.fromConfiguredTarget(
-                  ((ConfiguredTargetValue) buildDriverValue.getWrappedSkyValue())
-                      .getConfiguredTarget())));
-    }
-  }
-
-  @Override
-  public void changePruned(SkyKey skyKey) {
-    if (skyKey.functionName().equals(SkyFunctions.ACTION_EXECUTION)) {
-      eventBus.post(
-          new ActionChangePrunedEvent((ActionLookupData) skyKey.argument(), BlazeClock.nanoTime()));
-    }
-  }
-
-  /**
-   * {@inheritDoc}
-   *
-   * <p>This method adds the action lookup data to {@link #completedActions} and notifies the {@link
-   * #activityIndicator}.
-   *
-   * <p>We could do this only in the {@link EvaluationProgressReceiver#evaluated} method too, but as
-   * it happens the action executor tells the reporter about the completed action before the node is
-   * inserted into the graph, so the reporter would find out about the completed action sooner than
-   * we could have updated {@link #completedActions}, which would result in incorrect numbers on the
-   * progress messages. However we have to store completed actions in {@link
-   * EvaluationProgressReceiver#evaluated} too, because that's the only place we get notified about
-   * completed cached actions.
-   */
-  @Override
-  public void actionCompleted(ActionLookupData actionLookupData) {
-    enqueuedActions.add(actionLookupData);
-    completedActions.add(actionLookupData);
-  }
-
-  @Override
-  public String getProgressString() {
-    return String.format(
-        "[%s / %s]",
-        PROGRESS_MESSAGE_NUMBER_FORMATTER.get().format(completedActions.size()),
-        PROGRESS_MESSAGE_NUMBER_FORMATTER
-            .get()
-            .format(exclusiveTestsCount + enqueuedActions.size()));
-  }
-
-  ActionExecutionInactivityWatchdog.InactivityMonitor createInactivityMonitor(
-      final ActionExecutionStatusReporter statusReporter) {
-    return new ActionExecutionInactivityWatchdog.InactivityMonitor() {
-
-      @Override
-      public boolean hasStarted() {
-        return !enqueuedActions.isEmpty();
-      }
-
-      @Override
-      public int getPending() {
-        return statusReporter.getCount();
-      }
-
-      @Override
-      public int waitForNextCompletion(int timeoutSeconds) throws InterruptedException {
-        int before = completedActions.size();
-        // Otherwise, wake up once per second to see whether something completed.
-        for (int i = 0; i < timeoutSeconds; i++) {
-          Thread.sleep(1000);
-          int count = completedActions.size() - before;
-          if (count > 0) {
-            return count;
-          }
+    override fun enqueueing(skyKey: SkyKey) {
+        if (skyKey.functionName() == SkyFunctions.ACTION_EXECUTION) {
+            val actionLookupData: ActionLookupData? = skyKey.argument() as ActionLookupData?
+            // Remember all enqueued actions for the benefit of progress reporting.
+            // We discover most actions early in the build, well before we start executing them.
+            // Some of these will be cache hits and won't be executed, so we'll need to account for them
+            // in the evaluated method too.
+            enqueuedActions.add(actionLookupData)
         }
-        return 0;
-      }
-    };
-  }
+    }
 
-  ActionExecutionInactivityWatchdog.InactivityReporter createInactivityReporter(
-      final ActionExecutionStatusReporter statusReporter,
-      final AtomicBoolean isBuildingExclusiveArtifacts) {
-    return new ActionExecutionInactivityWatchdog.InactivityReporter() {
-      @Override
-      public void maybeReportInactivity(Instant lastActionCompletedAt) {
-        // Do not report inactivity if we are currently running an exclusive test or a streaming
-        // action (in practice only tests can stream and it implicitly makes them exclusive).
-        if (!isBuildingExclusiveArtifacts.get()) {
-          statusReporter.showCurrentlyExecutingActions(
-              ExecutionProgressReceiver.this.getProgressString() + " ");
-          eventBus.post(new ActionExecutionInactivityEvent(lastActionCompletedAt));
+    override fun evaluated(
+        skyKey: SkyKey,
+        state: EvaluationState,
+        newValue: SkyValue?,
+        newError: com.google.devtools.build.skyframe.ErrorInfo?,
+        directDeps: GroupedDeps?
+    ) {
+        val type: SkyFunctionName = skyKey.functionName()
+        if (type == SkyFunctions.ACTION_EXECUTION) {
+            // Remember all completed actions, even those in error, regardless of having been cached or
+            // really executed.
+            actionCompleted(skyKey.argument() as ActionLookupData?)
+            return
         }
-      }
-    };
-  }
 
-  public boolean hasActionsInFlight() {
-    return completedActions.size() < exclusiveTestsCount + enqueuedActions.size();
-  }
+        if (!state.succeeded()) {
+            return
+        }
+
+        if (type == SkyFunctions.TARGET_COMPLETION) {
+            val configuredTargetKey: ConfiguredTargetKey? =
+                (skyKey as TargetCompletionKey).actionLookupKey()
+            eventBus.post(TopLevelTargetBuiltEvent.create(configuredTargetKey))
+            return
+        }
+
+        if (type == SkyFunctions.ASPECT_COMPLETION) {
+            val aspectKey: AspectKey? =
+                (skyKey as AspectCompletionKey).actionLookupKey()
+            eventBus.post(AspectBuiltEvent.create(aspectKey))
+            return
+        }
+
+        if (type == SkyFunctions.BUILD_DRIVER) {
+            val buildDriverKey: BuildDriverKey = skyKey as BuildDriverKey
+            // BuildDriverKeys are re-evaluated every build.
+            val buildDriverValue: BuildDriverValue =
+                com.google.common.base.Preconditions.checkNotNull<SkyValue?>(newValue) as BuildDriverValue
+
+            if (buildDriverValue.isSkipped()) {
+                return
+            }
+
+            if (buildDriverKey.isTopLevelAspectDriver()) {
+                (buildDriverValue.getWrappedSkyValue() as TopLevelAspectsValue)
+                    .getTopLevelAspectsMap()
+                    .keySet()
+                    .forEach(java.util.function.Consumer { x: AspectKey? -> eventBus.post(AspectBuiltEvent.create(x)) })
+                return
+            }
+
+            eventBus.post(
+                TopLevelTargetBuiltEvent.create(
+                    ConfiguredTargetKey.fromConfiguredTarget(
+                        (buildDriverValue.getWrappedSkyValue() as ConfiguredTargetValue)
+                            .getConfiguredTarget()
+                    )
+                )
+            )
+        }
+    }
+
+    override fun changePruned(skyKey: SkyKey) {
+        if (skyKey.functionName() == SkyFunctions.ACTION_EXECUTION) {
+            eventBus.post(
+                ActionChangePrunedEvent(
+                    skyKey.argument() as ActionLookupData?,
+                    com.google.devtools.build.lib.clock.BlazeClock.nanoTime()
+                )
+            )
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     * 
+     * 
+     * This method adds the action lookup data to [.completedActions] and notifies the [ ][.activityIndicator].
+     * 
+     * 
+     * We could do this only in the [EvaluationProgressReceiver.evaluated] method too, but as
+     * it happens the action executor tells the reporter about the completed action before the node is
+     * inserted into the graph, so the reporter would find out about the completed action sooner than
+     * we could have updated [.completedActions], which would result in incorrect numbers on the
+     * progress messages. However we have to store completed actions in [ ][EvaluationProgressReceiver.evaluated] too, because that's the only place we get notified about
+     * completed cached actions.
+     */
+    override fun actionCompleted(actionLookupData: ActionLookupData?) {
+        enqueuedActions.add(actionLookupData)
+        completedActions.add(actionLookupData)
+    }
+
+    val progressString: String?
+        get() = java.lang.String.format(
+            "[%s / %s]",
+            PROGRESS_MESSAGE_NUMBER_FORMATTER.get()
+                .format(completedActions.size().toLong()),
+            PROGRESS_MESSAGE_NUMBER_FORMATTER
+                .get()
+                .format((exclusiveTestsCount + enqueuedActions.size()).toLong())
+        )
+
+    fun createInactivityMonitor(
+        statusReporter: ActionExecutionStatusReporter
+    ): InactivityMonitor {
+        return object : InactivityMonitor() {
+            override fun hasStarted(): Boolean {
+                return !enqueuedActions.isEmpty()
+            }
+
+            val pending: Int
+                get() = statusReporter.getCount()
+
+            @Throws(java.lang.InterruptedException::class)
+            override fun waitForNextCompletion(timeoutSeconds: Int): Int {
+                val before: Int = completedActions.size()
+                // Otherwise, wake up once per second to see whether something completed.
+                for (i in 0..<timeoutSeconds) {
+                    java.lang.Thread.sleep(1000)
+                    val count: Int = completedActions.size() - before
+                    if (count > 0) {
+                        return count
+                    }
+                }
+                return 0
+            }
+        }
+    }
+
+    fun createInactivityReporter(
+        statusReporter: ActionExecutionStatusReporter,
+        isBuildingExclusiveArtifacts: AtomicBoolean
+    ): InactivityReporter {
+        return object : InactivityReporter() {
+            override fun maybeReportInactivity(lastActionCompletedAt: Instant?) {
+                // Do not report inactivity if we are currently running an exclusive test or a streaming
+                // action (in practice only tests can stream and it implicitly makes them exclusive).
+                if (!isBuildingExclusiveArtifacts.get()) {
+                    statusReporter.showCurrentlyExecutingActions(
+                        this@ExecutionProgressReceiver.progressString + " "
+                    )
+                    eventBus.post(ActionExecutionInactivityEvent(lastActionCompletedAt))
+                }
+            }
+        }
+    }
+
+    fun hasActionsInFlight(): Boolean {
+        return completedActions.size() < exclusiveTestsCount + enqueuedActions.size()
+    }
+
+    companion object {
+        private val PROGRESS_MESSAGE_NUMBER_FORMATTER: java.lang.ThreadLocal<NumberFormat?> =
+            java.lang.ThreadLocal.withInitial<NumberFormat?>(
+                java.util.function.Supplier {
+                    val numberFormat: NumberFormat = NumberFormat.getIntegerInstance(Locale.ENGLISH)
+                    numberFormat.setGroupingUsed(true)
+                    numberFormat
+                })
+    }
 }

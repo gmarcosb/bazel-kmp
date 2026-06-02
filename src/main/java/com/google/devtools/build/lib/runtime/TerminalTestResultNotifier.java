@@ -154,7 +154,7 @@ public class TerminalTestResultNotifier implements TestResultNotifier {
    * Returns true iff the --check_tests_up_to_date option is enabled.
    */
   private boolean optionCheckTestsUpToDate() {
-    return options.getOptions(ExecutionOptions.class).getTestCheckUpToDate();
+    return options.getOptions(ExecutionOptions.class).testCheckUpToDate;
   }
 
   private static final ImmutableSet<TestSummaryFormat> SHOW_ALL_TESTS_FORMATS =
@@ -180,7 +180,7 @@ public class TerminalTestResultNotifier implements TestResultNotifier {
 
     ExecutionOptions executionOptions =
         Preconditions.checkNotNull(options.getOptions(ExecutionOptions.class));
-    TestOutputFormat testOutput = executionOptions.getTestOutput();
+    TestOutputFormat testOutput = executionOptions.testOutput;
 
     for (TestSummary summary : summaries) {
       if (summary.isLocalActionCached()
@@ -191,7 +191,7 @@ public class TerminalTestResultNotifier implements TestResultNotifier {
             testOutput,
             printer,
             testLogPathFormatter,
-            executionOptions.getMaxTestOutputBytes());
+                executionOptions.maxTestOutputBytes);
       }
     }
 
@@ -217,7 +217,7 @@ public class TerminalTestResultNotifier implements TestResultNotifier {
 
     stats.failedCount = summaries.size() - stats.passCount;
 
-    TestSummaryFormat testSummaryFormat = executionOptions.getTestSummary();
+    TestSummaryFormat testSummaryFormat = executionOptions.testSummary;
     switch (testSummaryFormat) {
       case DETAILED:
       case DETAILED_UNCACHED:
@@ -272,7 +272,7 @@ public class TerminalTestResultNotifier implements TestResultNotifier {
 
   private void printStats(TestResultStats stats) {
     TestSummaryFormat testSummaryFormat =
-        options.getOptions(ExecutionOptions.class).getTestSummary();
+            options.getOptions(ExecutionOptions.class).testSummary;
     if (testSummaryFormat == DETAILED
         || testSummaryFormat == DETAILED_UNCACHED
         || testSummaryFormat == TESTCASE) {

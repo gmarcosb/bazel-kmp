@@ -12,26 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.RepoRuleId
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import net.starlark.java.eval.Dict;
+/** A utility class to create [RepoSpec]s for `local_repository`.  */
+object LocalPathRepoSpecs {
+    // TODO: wyv@ - maybe add support for new_local_repository?
+    val LOCAL_REPOSITORY: RepoRuleId = RepoRuleId(
+        com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked("@@bazel_tools//tools/build_defs/repo:local.bzl"),
+        "local_repository"
+    )
 
-/** A utility class to create {@link RepoSpec}s for {@code local_repository}. */
-public final class LocalPathRepoSpecs {
-  private LocalPathRepoSpecs() {}
-
-  // TODO: wyv@ - maybe add support for new_local_repository?
-  public static final RepoRuleId LOCAL_REPOSITORY =
-      new RepoRuleId(
-          Label.parseCanonicalUnchecked("@@bazel_tools//tools/build_defs/repo:local.bzl"),
-          "local_repository");
-
-  public static RepoSpec create(String path) {
-    return new RepoSpec(
-        LOCAL_REPOSITORY,
-        AttributeValues.create(Dict.immutableCopyOf(ImmutableMap.of("path", path))));
-  }
+    @kotlin.jvm.JvmStatic
+    fun create(path: String): RepoSpec {
+        return RepoSpec(
+            LOCAL_REPOSITORY,
+            com.google.devtools.build.lib.bazel.bzlmod.AttributeValues.Companion.create(
+                net.starlark.java.eval.Dict.immutableCopyOf<String?, Any?>(
+                    com.google.common.collect.ImmutableMap.of<String?, String?>("path", path)
+                )
+            )
+        )
+    }
 }

@@ -11,77 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.extra;
+package com.google.devtools.build.lib.analysis.extra
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.UserExecException;
-import com.google.devtools.build.lib.analysis.actions.AbstractFileWriteAction;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn.Code;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.ProtoDeterministicWriter;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Action
 
 /**
  * Requests extra action info from shadowed action and writes it, in protocol buffer format, to an
  * .xa file for use by an extra action. This can only be done at execution time because actions may
  * store information only known at execution time into the protocol buffer.
  */
-@Immutable // if shadowedAction is immutable
-public final class ExtraActionInfoFileWriteAction extends AbstractFileWriteAction {
-  private static final String UUID = "1759f81d-e72e-477d-b182-c4532bdbaeeb";
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable // if shadowedAction is immutable
+class ExtraActionInfoFileWriteAction internal constructor(
+    owner: ActionOwner?,
+    primaryOutput: Artifact?,
+    shadowedAction: Action
+) : AbstractFileWriteAction(
+    owner,
+    if (shadowedAction.discoversInputs())
+        NestedSetBuilder.stableOrder<Artifact?>().addAll(shadowedAction.getOutputs()).build()
+    else
+        NestedSetBuilder.emptySet<Artifact?>(com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER),
+    primaryOutput
+) {
+    private val shadowedAction: Action
 
-  private final Action shadowedAction;
-
-  ExtraActionInfoFileWriteAction(ActionOwner owner, Artifact primaryOutput, Action shadowedAction) {
-    super(
-        owner,
-        shadowedAction.discoversInputs()
-            ? NestedSetBuilder.<Artifact>stableOrder().addAll(shadowedAction.getOutputs()).build()
-            : NestedSetBuilder.<Artifact>emptySet(Order.STABLE_ORDER),
-        primaryOutput);
-
-    this.shadowedAction = Preconditions.checkNotNull(shadowedAction, primaryOutput);
-  }
-
-  @Override
-  public DeterministicWriter newDeterministicWriter(ActionExecutionContext ctx)
-      throws ExecException, InterruptedException {
-    try {
-      return new ProtoDeterministicWriter(
-          shadowedAction.getExtraActionInfo(ctx.getActionKeyContext()).build());
-    } catch (CommandLineExpansionException e) {
-      throw new UserExecException(
-          e,
-          FailureDetail.newBuilder()
-              .setMessage(Strings.nullToEmpty(e.getMessage()))
-              .setSpawn(Spawn.newBuilder().setCode(Code.COMMAND_LINE_EXPANSION_FAILURE))
-              .build());
+    init {
+        this.shadowedAction = com.google.common.base.Preconditions.checkNotNull<Action>(shadowedAction, primaryOutput)
     }
-  }
 
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp)
-      throws CommandLineExpansionException, InterruptedException {
-    fp.addString(UUID);
-    fp.addString(shadowedAction.getKey(actionKeyContext, inputMetadataProvider));
-    fp.addBytes(shadowedAction.getExtraActionInfo(actionKeyContext).build().toByteArray());
-  }
+    @Throws(ExecException::class, java.lang.InterruptedException::class)
+    public override fun newDeterministicWriter(ctx: ActionExecutionContext): DeterministicWriter {
+        try {
+            return ProtoDeterministicWriter(
+                shadowedAction.getExtraActionInfo(ctx.getActionKeyContext()).build()
+            )
+        } catch (e: CommandLineExpansionException) {
+            throw UserExecException(
+                e,
+                FailureDetail.newBuilder()
+                    .setMessage(com.google.common.base.Strings.nullToEmpty(e.getMessage()))
+                    .setSpawn(Spawn.newBuilder().setCode(Code.COMMAND_LINE_EXPANSION_FAILURE))
+                    .build()
+            )
+        }
+    }
+
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint
+    ) {
+        fp.addString(UUID)
+        fp.addString(shadowedAction.getKey(actionKeyContext, inputMetadataProvider))
+        fp.addBytes(shadowedAction.getExtraActionInfo(actionKeyContext).build().toByteArray())
+    }
+
+    companion object {
+        private const val UUID = "1759f81d-e72e-477d-b182-c4532bdbaeeb"
+    }
 }

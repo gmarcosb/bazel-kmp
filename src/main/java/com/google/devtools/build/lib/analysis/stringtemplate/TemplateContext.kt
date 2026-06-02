@@ -11,32 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.stringtemplate;
+package com.google.devtools.build.lib.analysis.stringtemplate
 
 /**
- * Interface to be implemented by callers of {@link TemplateExpander} which defines the expansion of
+ * Interface to be implemented by callers of [TemplateExpander] which defines the expansion of
  * each template variable and function.
  */
-public interface TemplateContext {
+interface TemplateContext {
+    /**
+     * Returns the expansion of the specified template variable.
+     * 
+     * @param name the variable to expand
+     * @return the expansion of the variable
+     * @throws ExpansionException if the given variable was not defined or there was any other error
+     * during expansion
+     */
+    @Throws(ExpansionException::class)
+    fun lookupVariable(name: String?): String?
 
-  /**
-   * Returns the expansion of the specified template variable.
-   *
-   * @param name the variable to expand
-   * @return the expansion of the variable
-   * @throws ExpansionException if the given variable was not defined or there was any other error
-   *     during expansion
-   */
-  String lookupVariable(String name) throws ExpansionException;
-
-  /**
-   * Returns the expansion of the specified template function with the given parameter.
-   *
-   * @param name the function name
-   * @param param the function parameter
-   * @return the expansion of the function applied to the parameter
-   * @throws ExpansionException if the function was not defined, or if the function application
-   *     failed for some reason
-   */
-  String lookupFunction(String name, String param) throws ExpansionException;
+    /**
+     * Returns the expansion of the specified template function with the given parameter.
+     * 
+     * @param name the function name
+     * @param param the function parameter
+     * @return the expansion of the function applied to the parameter
+     * @throws ExpansionException if the function was not defined, or if the function application
+     * failed for some reason
+     */
+    @Throws(ExpansionException::class)
+    fun lookupFunction(name: String?, param: String?): String?
 }

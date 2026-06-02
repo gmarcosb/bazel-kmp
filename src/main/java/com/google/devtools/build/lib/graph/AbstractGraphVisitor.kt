@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // All Rights Reserved.
-
-package com.google.devtools.build.lib.graph;
+package com.google.devtools.build.lib.graph
 
 /**
- *  <p> A stub implementation of GraphVisitor providing default behaviour (do
- *  nothing) for all its methods. </p>
+ * 
+ *  A stub implementation of GraphVisitor providing default behaviour (do
+ * nothing) for all its methods. 
  */
-public class AbstractGraphVisitor<T> implements GraphVisitor<T> {
-  @Override
-  public void beginVisit() {}
-  @Override
-  public void endVisit() {}
-  @Override
-  public void visitEdge(Node<T> lhs, Node<T> rhs) {}
-  @Override
-  public void visitNode(Node<T> node) {}
+open class AbstractGraphVisitor<T> : GraphVisitor<T?> {
+    override fun beginVisit() {}
+    override fun endVisit() {}
+    override fun visitEdge(lhs: Node<T?>?, rhs: Node<T?>?) {}
+    override fun visitNode(node: Node<T?>?) {}
 }

@@ -11,54 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.includescanning;
+package com.google.devtools.build.lib.includescanning
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactFactory;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.includescanning.IncludeParser.Inclusion;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Collection;
-import java.util.List;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.devtools.build.lib.actions.Artifact
+import com.google.devtools.build.lib.vfs.Path
+import java.util.function.Supplier
 
-/** Include scanner for swig files. */
-public class SwigIncludeScanner extends LegacyIncludeScanner {
-
-  /**
-   * Constructs a new SwigIncludeScanner used to parse swig include statements (%include / %extern /
-   * %import).
-   *
-   * @param spawnIncludeScanner
-   * @param cache externally scoped cache of file-path to inclusion-set mappings
-   * @param includePaths the list of search path dirs
-   * @param execRoot
-   */
-  public SwigIncludeScanner(
-      ExecutorService includePool,
-      boolean shouldShuffle,
-      SpawnIncludeScanner spawnIncludeScanner,
-      ConcurrentMap<Artifact, ListenableFuture<Collection<Inclusion>>> cache,
-      List<PathFragment> includePaths,
-      BlazeDirectories directories,
-      ArtifactFactory artifactFactory,
-      Path execRoot) {
-    super(
-        new SwigIncludeParser(),
-        includePool,
-        shouldShuffle,
-        cache,
-        new PathExistenceCache(execRoot, artifactFactory),
-        /* quoteIncludePaths= */ ImmutableList.of(),
-        includePaths,
-        /* frameworkIncludePaths= */ ImmutableList.of(),
-        directories.getOutputPath(execRoot.getBaseName()),
-        execRoot,
-        artifactFactory,
-        () -> spawnIncludeScanner);
-  }
-}
+/** Include scanner for swig files.  */
+class SwigIncludeScanner
+/**
+ * Constructs a new SwigIncludeScanner used to parse swig include statements (%include / %extern /
+ * %import).
+ * 
+ * @param spawnIncludeScanner
+ * @param cache externally scoped cache of file-path to inclusion-set mappings
+ * @param includePaths the list of search path dirs
+ * @param execRoot
+ */
+    (
+    includePool: ExecutorService?,
+    shouldShuffle: Boolean,
+    spawnIncludeScanner: SpawnIncludeScanner?,
+    cache: ConcurrentMap<Artifact?, ListenableFuture<MutableCollection<Inclusion?>?>?>?,
+    includePaths: MutableList<PathFragment?>?,
+    directories: BlazeDirectories,
+    artifactFactory: ArtifactFactory?,
+    execRoot: Path
+) : LegacyIncludeScanner(
+    SwigIncludeParser(),
+    includePool,
+    shouldShuffle,
+    cache,
+    PathExistenceCache(execRoot, artifactFactory),  /* quoteIncludePaths= */
+    ImmutableList.of<PathFragment?>(),
+    includePaths,  /* frameworkIncludePaths= */
+    ImmutableList.of<PathFragment?>(),
+    directories.getOutputPath(execRoot.getBaseName()),
+    execRoot,
+    artifactFactory,
+    Supplier { spawnIncludeScanner })

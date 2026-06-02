@@ -11,35 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
+import build.bazel.remote.execution.v2.ExecuteRequest
 
-import build.bazel.remote.execution.v2.ExecuteRequest;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.ExecuteDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
-import com.google.longrunning.Operation;
+/** LoggingHandler for google.devtools.remoteexecution.v1test.Execution.Execute gRPC call.  */
+class ExecuteHandler : LoggingHandler<ExecuteRequest?, Operation?> {
+    private val builder: ExecuteDetails.Builder
 
-/** LoggingHandler for google.devtools.remoteexecution.v1test.Execution.Execute gRPC call. */
-public class ExecuteHandler implements LoggingHandler<ExecuteRequest, Operation> {
+    init {
+        builder = ExecuteDetails.newBuilder()
+    }
 
-  private final ExecuteDetails.Builder builder;
+    override fun handleReq(message: ExecuteRequest?) {
+        builder.setRequest(message)
+    }
 
-  public ExecuteHandler() {
-    builder = ExecuteDetails.newBuilder();
-  }
+    override fun handleResp(message: Operation?) {
+        builder.addResponses(message)
+    }
 
-  @Override
-  public void handleReq(ExecuteRequest message) {
-    builder.setRequest(message);
-  }
-
-  @Override
-  public void handleResp(Operation message) {
-    builder.addResponses(message);
-  }
-
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder().setExecute(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder().setExecute(builder).build()
+    }
 }

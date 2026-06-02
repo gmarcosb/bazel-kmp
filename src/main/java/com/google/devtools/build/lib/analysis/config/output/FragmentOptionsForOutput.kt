@@ -11,54 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config.output
 
-package com.google.devtools.build.lib.analysis.config.output;
-
-import java.util.Objects;
-import java.util.Set;
-import java.util.SortedMap;
+import java.util.SortedMap
 
 /**
- * Data structure defining a {@link com.google.devtools.build.lib.analysis.config.FragmentOptions}
+ * Data structure defining a [com.google.devtools.build.lib.analysis.config.FragmentOptions]
  * for creating user output.
- *
- * <p>See {@link FragmentForOutput} and {@link ConfigurationForOutput} for further details.
+ * 
+ * 
+ * See [FragmentForOutput] and [ConfigurationForOutput] for further details.
  */
-public class FragmentOptionsForOutput {
-  private final String name;
-  private final SortedMap<String, String> options;
+class FragmentOptionsForOutput(name: String, options: SortedMap<String?, String?>) {
+    @kotlin.jvm.JvmField
+    private val name: String
+    private val options: SortedMap<String?, String?>
 
-  public FragmentOptionsForOutput(String name, SortedMap<String, String> options) {
-    this.name = name;
-    this.options = options;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public SortedMap<String, String> getOptions() {
-    return options;
-  }
-
-  public Set<String> optionNames() {
-    return this.options.keySet();
-  }
-
-  public String getOption(String optionName) {
-    return this.options.get(optionName);
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (o instanceof FragmentOptionsForOutput other) {
-      return other.name.equals(name) && other.options.equals(options);
+    init {
+        this.name = name
+        this.options = options
     }
-    return false;
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(name, options);
-  }
+    fun getName(): String {
+        return name
+    }
+
+    fun getOptions(): SortedMap<String?, String?> {
+        return options
+    }
+
+    fun optionNames(): MutableSet<String?> {
+        return this.options.keys
+    }
+
+    fun getOption(optionName: String?): String? {
+        return this.options.get(optionName)
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (o is FragmentOptionsForOutput) {
+            return o.name == name && o.options == options
+        }
+        return false
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(name, options)
+    }
 }

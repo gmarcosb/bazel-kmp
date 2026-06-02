@@ -11,54 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * An input file to the build system which has a specified {@link #visibility} or {@link #license}.
+ * An input file to the build system which has a specified [.visibility] or [.license].
  */
-public final class VisibilityLicenseSpecifiedInputFile extends InputFile {
+class VisibilityLicenseSpecifiedInputFile internal constructor(
+    pkg: Packageoid?,
+    label: Label?,
+    location: net.starlark.java.syntax.Location?,
+    visibility: RuleVisibility?,
+    license: License?
+) : InputFile(pkg, label, location) {
+    private val visibility: RuleVisibility?
+    private val license: License?
 
-  @Nullable private final RuleVisibility visibility;
-  @Nullable private final License license;
-
-  VisibilityLicenseSpecifiedInputFile(
-      Packageoid pkg,
-      Label label,
-      Location location,
-      @Nullable RuleVisibility visibility,
-      @Nullable License license) {
-    super(pkg, label, location);
-    this.visibility = visibility;
-    this.license = license;
-  }
-
-  @Override
-  public boolean isVisibilitySpecified() {
-    return visibility != null;
-  }
-
-  @Override
-  @Nullable
-  public RuleVisibility getRawVisibility() {
-    return visibility;
-  }
-
-  @Override
-  public boolean isLicenseSpecified() {
-    return license != null && license.isSpecified();
-  }
-
-  @Override
-  public License getLicense() {
-    if (license != null) {
-      return license;
-    } else {
-      return getPackageDeclarations().getPackageArgs().license();
+    init {
+        this.visibility = visibility
+        this.license = license
     }
-  }
+
+    override fun isVisibilitySpecified(): Boolean {
+        return visibility != null
+    }
+
+    override fun getRawVisibility(): RuleVisibility? {
+        return visibility
+    }
+
+    override fun isLicenseSpecified(): Boolean {
+        return license != null && license.isSpecified()
+    }
+
+    override fun getLicense(): License? {
+        if (license != null) {
+            return license
+        } else {
+            return getPackageDeclarations().getPackageArgs().license()
+        }
+    }
 }

@@ -11,12 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.engine
 
-package com.google.devtools.build.lib.query2.engine;
-
-/** Indicates an unrecoverable problem with query syntax. */
-public class QuerySyntaxException extends Exception {
-  public QuerySyntaxException(String message) {
-    super(message);
-  }
-}
+/** Indicates an unrecoverable problem with query syntax.  */
+class QuerySyntaxException(message: String?) : Exception(message)

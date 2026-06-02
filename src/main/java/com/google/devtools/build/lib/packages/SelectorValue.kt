@@ -11,108 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.HasBinary;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkValue;
-import net.starlark.java.syntax.TokenKind;
+package com.google.devtools.build.lib.packages
 
 /**
- * The value returned by a call to {@code select({...})}, for example:
- *
+ * The value returned by a call to `select({...})`, for example:
+ * 
  * <pre>
- *   rule(
- *       name = 'myrule',
- *       deps = select({
- *           'a': [':adep'],
- *           'b': [':bdep'],
- *       })
- * </pre>
+ * rule(
+ * name = 'myrule',
+ * deps = select({
+ * 'a': [':adep'],
+ * 'b': [':bdep'],
+ * })
+</pre> * 
  */
-@StarlarkBuiltin(
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "selector",
     doc = "A selector between configuration-dependent values.",
-    documented = false)
-public final class SelectorValue implements StarlarkValue, HasBinary {
+    documented = false
+)
+class SelectorValue internal constructor(
+    dictionary: com.google.common.collect.ImmutableMap<*, *>,
+    noMatchError: String?
+) : net.starlark.java.eval.StarlarkValue, net.starlark.java.eval.HasBinary {
+    // TODO(adonovan): combine Selector{List,Value} and BuildType.SelectorList.
+    // We don't need three classes for the same concept.
+    private val dictionary: com.google.common.collect.ImmutableMap<*, *>
+    private val type: java.lang.Class<*>
+    private val noMatchError: String?
 
-  // TODO(adonovan): combine Selector{List,Value} and BuildType.SelectorList.
-  // We don't need three classes for the same concept.
-
-  private final ImmutableMap<?, ?> dictionary;
-  private final Class<?> type;
-  private final String noMatchError;
-
-  SelectorValue(ImmutableMap<?, ?> dictionary, String noMatchError) {
-    Preconditions.checkArgument(!dictionary.isEmpty());
-    this.dictionary = dictionary;
-    // TODO(adonovan): doesn't this assume all the elements have the same type?
-    this.type = Iterables.getFirst(dictionary.values(), null).getClass();
-    this.noMatchError = noMatchError;
-  }
-
-  ImmutableMap<?, ?> getDictionary() {
-    return dictionary;
-  }
-
-  Class<?> getType() {
-    return type;
-  }
-
-  /**
-   * Returns a custom error message for this select when no condition matches, or an empty string if
-   * no such message is declared.
-   */
-  String getNoMatchError() {
-    return noMatchError;
-  }
-
-  @Override
-  public String toString() {
-    return Starlark.repr(this, StarlarkSemantics.DEFAULT);
-  }
-
-  @Override
-  @Nullable
-  public SelectorList binaryOp(TokenKind op, Object that, boolean thisLeft) throws EvalException {
-    return SelectorList.of(this).binaryOp(op, that, thisLeft);
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("select(").repr(dictionary, semantics).append(")");
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+    init {
+        com.google.common.base.Preconditions.checkArgument(!dictionary.isEmpty())
+        this.dictionary = dictionary
+        // TODO(adonovan): doesn't this assume all the elements have the same type?
+        this.type = com.google.common.collect.Iterables.getFirst(dictionary.values(), null).getClass()
+        this.noMatchError = noMatchError
     }
-    if (!(o instanceof SelectorValue that)) {
-      return false;
-    }
-    // TODO(bazel-team): We probably have some inconsistencies here. 1) We're not checking the
-    // order of the dictionary, which is relevant to matching semantics. 2) We're checking the
-    // type, which depends on the concrete type of the first entry's value, which could be a
-    // subtype that is not semantically meaningful to the user. These problems are probably best
-    // solved by merging this class into the BuildType-land equivalent, with normalization that
-    // removes subtype distinctions by copying into standard attribute types.
-    return Objects.equal(dictionary, that.dictionary)
-        && Objects.equal(type, that.type)
-        && Objects.equal(noMatchError, that.noMatchError);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hashCode(dictionary, type, noMatchError);
-  }
+    fun getDictionary(): com.google.common.collect.ImmutableMap<*, *> {
+        return dictionary
+    }
+
+    fun getType(): java.lang.Class<*> {
+        return type
+    }
+
+    /**
+     * Returns a custom error message for this select when no condition matches, or an empty string if
+     * no such message is declared.
+     */
+    fun getNoMatchError(): String? {
+        return noMatchError
+    }
+
+    override fun toString(): String {
+        return net.starlark.java.eval.Starlark.repr(this, net.starlark.java.eval.StarlarkSemantics.DEFAULT)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun binaryOp(
+        op: net.starlark.java.syntax.TokenKind?,
+        that: Any?,
+        thisLeft: Boolean
+    ): com.google.devtools.build.lib.packages.SelectorList? {
+        return com.google.devtools.build.lib.packages.SelectorList.Companion.of(this).binaryOp(op, that, thisLeft)
+    }
+
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("select(").repr(dictionary, semantics).append(")")
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is SelectorValue) {
+            return false
+        }
+        // TODO(bazel-team): We probably have some inconsistencies here. 1) We're not checking the
+        // order of the dictionary, which is relevant to matching semantics. 2) We're checking the
+        // type, which depends on the concrete type of the first entry's value, which could be a
+        // subtype that is not semantically meaningful to the user. These problems are probably best
+        // solved by merging this class into the BuildType-land equivalent, with normalization that
+        // removes subtype distinctions by copying into standard attribute types.
+        return com.google.common.base.Objects.equal(dictionary, o.dictionary)
+                && com.google.common.base.Objects.equal(type, o.type)
+                && com.google.common.base.Objects.equal(noMatchError, o.noMatchError)
+    }
+
+    override fun hashCode(): Int {
+        return com.google.common.base.Objects.hashCode(dictionary, type, noMatchError)
+    }
 }

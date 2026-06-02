@@ -11,95 +11,92 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2;
+package com.google.devtools.build.lib.query2
 
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.ListMultimap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.concurrent.MultisetSemaphore;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.ParallelVisitorUtils.ParallelQueryVisitor;
-import com.google.devtools.build.lib.query2.engine.Callback;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Set;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * Helper class to traverse a visitation graph where the outputs are {@link Target}s and there is a
+ * Helper class to traverse a visitation graph where the outputs are [Target]s and there is a
  * simple mapping between visitation keys and output keys.
  */
-public abstract class AbstractTargetOuputtingVisitor<VisitKeyT>
-    extends ParallelQueryVisitor<VisitKeyT, SkyKey, Target> {
-  private static final int PROCESS_RESULTS_BATCH_SIZE = SkyQueryEnvironment.BATCH_CALLBACK_SIZE;
+abstract class AbstractTargetOuputtingVisitor<VisitKeyT>
+protected constructor(
+    env: SkyQueryEnvironment,
+    callback: com.google.devtools.build.lib.query2.engine.Callback<Target?>?
+) : ParallelQueryVisitor<VisitKeyT?, SkyKey?, Target?>(
+    callback,
+    env.getVisitBatchSizeForParallelVisitation(),
+    PROCESS_RESULTS_BATCH_SIZE,
+    env.getVisitTaskStatusCallback()
+) {
+    protected val env: SkyQueryEnvironment
 
-  protected final SkyQueryEnvironment env;
-
-  protected AbstractTargetOuputtingVisitor(SkyQueryEnvironment env, Callback<Target> callback) {
-    super(
-        callback,
-        env.getVisitBatchSizeForParallelVisitation(),
-        PROCESS_RESULTS_BATCH_SIZE,
-        env.getVisitTaskStatusCallback());
-    this.env = env;
-  }
-
-  @Override
-  protected Iterable<Target> outputKeysToOutputValues(Iterable<SkyKey> targetKeys)
-      throws InterruptedException, QueryException {
-    Map<Label, Target> targets =
-        env.getTargets(Iterables.transform(targetKeys, SkyQueryEnvironment.SKYKEY_TO_LABEL));
-
-    handleMissingTargets(targets, ImmutableSet.copyOf(targetKeys));
-    return targets.values();
-  }
-
-  void handleMissingTargets(Map<? extends SkyKey, Target> keysWithTargets, Set<SkyKey> targetKeys)
-      throws InterruptedException, QueryException {
-    // Do nothing by default, as an optimization if we don't expect any missing targets.
-  }
-
-  @Override
-  protected Iterable<Task<QueryException>> getVisitTasks(Collection<VisitKeyT> pendingVisits)
-      throws InterruptedException, QueryException {
-    // Group pending visitation by the package of the new node, since we'll be targetfying the
-    // node during the visitation.
-    ListMultimap<PackageIdentifier, VisitKeyT> visitsByPackage = ArrayListMultimap.create();
-    for (VisitKeyT visitationKey : pendingVisits) {
-      // Overrides of visitationKeyToOutputKey are non-blocking.
-      SkyKey skyKey = visitationKeyToOutputKey(visitationKey);
-      if (skyKey != null) {
-        Label label = SkyQueryEnvironment.SKYKEY_TO_LABEL.apply(skyKey);
-        visitsByPackage.put(label.getPackageIdentifier(), visitationKey);
-      }
+    init {
+        this.env = env
     }
 
-    ImmutableList.Builder<Task<QueryException>> builder = ImmutableList.builder();
+    @Throws(java.lang.InterruptedException::class, com.google.devtools.build.lib.query2.engine.QueryException::class)
+    protected override fun outputKeysToOutputValues(targetKeys: Iterable<SkyKey?>): Iterable<Target?>? {
+        val targets: MutableMap<Label?, Target?> =
+            env.getTargets(
+                com.google.common.collect.Iterables.transform<SkyKey?, Label?>(
+                    targetKeys,
+                    SkyQueryEnvironment.Companion.SKYKEY_TO_LABEL
+                )
+            )
 
-    // A couple notes here:
-    // (i)  ArrayListMultimap#values returns the values grouped by key, which is exactly what we
-    //      want.
-    // (ii) ArrayListMultimap#values returns a Collection view, so we make a copy to avoid
-    //      accidentally retaining the entire ArrayListMultimap object.
-    for (Iterable<VisitKeyT> visitBatch :
-        Iterables.partition(
-            ImmutableList.copyOf(visitsByPackage.values()),
-            ParallelSkyQueryUtils.VISIT_BATCH_SIZE)) {
-      builder.add(new VisitTask(visitBatch, QueryException.class));
+        handleMissingTargets(targets, com.google.common.collect.ImmutableSet.copyOf<SkyKey?>(targetKeys))
+        return targets.values
     }
 
-    return builder.build();
-  }
+    @Throws(java.lang.InterruptedException::class, com.google.devtools.build.lib.query2.engine.QueryException::class)
+    open fun handleMissingTargets(
+        keysWithTargets: MutableMap<out SkyKey?, Target?>?,
+        targetKeys: MutableSet<SkyKey?>?
+    ) {
+        // Do nothing by default, as an optimization if we don't expect any missing targets.
+    }
 
-  MultisetSemaphore<PackageIdentifier> getPackageSemaphore() {
-    return env.getPackageMultisetSemaphore();
-  }
+    @Throws(java.lang.InterruptedException::class, com.google.devtools.build.lib.query2.engine.QueryException::class)
+    protected override fun getVisitTasks(pendingVisits: MutableCollection<VisitKeyT?>): Iterable<Task<com.google.devtools.build.lib.query2.engine.QueryException?>?> {
+        // Group pending visitation by the package of the new node, since we'll be targetfying the
+        // node during the visitation.
+        val visitsByPackage: com.google.common.collect.ListMultimap<PackageIdentifier?, VisitKeyT?> =
+            com.google.common.collect.ArrayListMultimap.create<PackageIdentifier?, VisitKeyT?>()
+        for (visitationKey in pendingVisits) {
+            // Overrides of visitationKeyToOutputKey are non-blocking.
+            val skyKey: SkyKey? = visitationKeyToOutputKey(visitationKey)
+            if (skyKey != null) {
+                val label: Label? = SkyQueryEnvironment.Companion.SKYKEY_TO_LABEL.apply(skyKey)
+                visitsByPackage.put(label.getPackageIdentifier(), visitationKey)
+            }
+        }
 
-  protected abstract SkyKey visitationKeyToOutputKey(VisitKeyT visitationKey)
-      throws QueryException, InterruptedException;
+        val builder: com.google.common.collect.ImmutableList.Builder<Task<com.google.devtools.build.lib.query2.engine.QueryException?>?> =
+            com.google.common.collect.ImmutableList.builder<Task<com.google.devtools.build.lib.query2.engine.QueryException?>?>()
+
+        // A couple notes here:
+        // (i)  ArrayListMultimap#values returns the values grouped by key, which is exactly what we
+        //      want.
+        // (ii) ArrayListMultimap#values returns a Collection view, so we make a copy to avoid
+        //      accidentally retaining the entire ArrayListMultimap object.
+        for (visitBatch in com.google.common.collect.Iterables.partition<VisitKeyT?>(
+            com.google.common.collect.ImmutableList.copyOf<VisitKeyT?>(visitsByPackage.values()),
+            ParallelSkyQueryUtils.VISIT_BATCH_SIZE
+        )) {
+            builder.add(VisitTask(visitBatch, com.google.devtools.build.lib.query2.engine.QueryException::class.java))
+        }
+
+        return builder.build()
+    }
+
+    val packageSemaphore: MultisetSemaphore<PackageIdentifier?>?
+        get() = env.getPackageMultisetSemaphore()
+
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class, java.lang.InterruptedException::class)
+    protected abstract fun visitationKeyToOutputKey(visitationKey: VisitKeyT?): SkyKey?
+
+    companion object {
+        private val PROCESS_RESULTS_BATCH_SIZE: Int = SkyQueryEnvironment.Companion.BATCH_CALLBACK_SIZE
+    }
 }

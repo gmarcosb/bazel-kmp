@@ -11,34 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
-
-import build.bazel.remote.execution.v2.SpliceBlobRequest;
-import build.bazel.remote.execution.v2.SpliceBlobResponse;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.SpliceBlobDetails;
+import build.bazel.remote.execution.v2.SpliceBlobRequest
 
 /**
- * LoggingHandler for {@link build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceBlob}
+ * LoggingHandler for [build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceBlob]
  * gRPC call.
  */
-public class SpliceBlobHandler implements LoggingHandler<SpliceBlobRequest, SpliceBlobResponse> {
+class SpliceBlobHandler : LoggingHandler<SpliceBlobRequest?, SpliceBlobResponse?> {
+    private val builder: SpliceBlobDetails.Builder = SpliceBlobDetails.newBuilder()
 
-  private final SpliceBlobDetails.Builder builder = SpliceBlobDetails.newBuilder();
+    override fun handleReq(message: SpliceBlobRequest?) {
+        builder.setRequest(message)
+    }
 
-  @Override
-  public void handleReq(SpliceBlobRequest message) {
-    builder.setRequest(message);
-  }
+    override fun handleResp(message: SpliceBlobResponse?) {
+        builder.setResponse(message)
+    }
 
-  @Override
-  public void handleResp(SpliceBlobResponse message) {
-    builder.setResponse(message);
-  }
-
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder().setSpliceBlob(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder().setSpliceBlob(builder).build()
+    }
 }

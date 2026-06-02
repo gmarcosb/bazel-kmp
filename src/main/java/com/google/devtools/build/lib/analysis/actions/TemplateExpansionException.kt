@@ -11,23 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
-
-import net.starlark.java.eval.EvalException;
-
-/** Thrown during template expansion. */
-public final class TemplateExpansionException extends Exception {
-
-  /**
-   * Constructs new exception with provided user-facing error message and the original bzl
-   * evaluation failure.
-   *
-   * @param userVisibleErrorMessage error string that will be displayed to the user
-   * @param cause exception cause used for debugging only -- {@code userVisibleErrorMessage} should
-   *     carry all of the information needed for the user
-   */
-  public TemplateExpansionException(String userVisibleErrorMessage, EvalException cause) {
-    super(userVisibleErrorMessage, cause);
-  }
-}
+/** Thrown during template expansion.  */
+class TemplateExpansionException
+/**
+ * Constructs new exception with provided user-facing error message and the original bzl
+ * evaluation failure.
+ * 
+ * @param userVisibleErrorMessage error string that will be displayed to the user
+ * @param cause exception cause used for debugging only -- `userVisibleErrorMessage` should
+ * carry all of the information needed for the user
+ */
+    (userVisibleErrorMessage: String?, cause: net.starlark.java.eval.EvalException?) :
+    java.lang.Exception(userVisibleErrorMessage, cause)

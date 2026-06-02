@@ -11,97 +11,100 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
- * Scope of a {@link BuildOptions} is defined by the {@link Scope.ScopeType} and {@link
- * Scope.ScopeDefinition}.
+ * Scope of a [BuildOptions] is defined by the [Scope.ScopeType] and [ ].
  */
-public class Scope {
-  public static final String CUSTOM_EXEC_SCOPE_PREFIX = "exec:--";
+class Scope(scopeType: ScopeType?, scopeDefinition: ScopeDefinition?) {
+    /** Type of supported scopes.  */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    data class ScopeType(scopeType: String?) {
+        val scopeType: String?
 
-  /** Type of supported scopes. */
-  @AutoCodec
-  public record ScopeType(String scopeType) {
-    /** The flag's value never changes except explicitly by a configuration transition. */
-    public static final String UNIVERSAL = "universal";
+        init {
+            this.scopeType = scopeType
+            require(
+                scopeType == DEFAULT
+                        || scopeType == UNIVERSAL
+                        || scopeType == TARGET
+                        || scopeType == PROJECT
+                        || scopeType.startsWith("exec:")
+            ) { "Invalid scope type: " + scopeType }
+        }
 
-    /** The flag's value resets on exec transitions. */
-    public static final String TARGET = "target";
+        companion object {
+            /** The flag's value never changes except explicitly by a configuration transition.  */
+            const val UNIVERSAL: String = "universal"
 
-    /** The flag resets on targets outside the flag's project. See PROJECT.scl. */
-    public static final String PROJECT = "project";
+            /** The flag's value resets on exec transitions.  */
+            const val TARGET: String = "target"
 
-    /** Placeholder for flags that don't explicitly specify scope. Shouldn't be set directly. */
-    public static final String DEFAULT = "default";
+            /** The flag resets on targets outside the flag's project. See PROJECT.scl.  */
+            const val PROJECT: String = "project"
 
-    public ScopeType {
-      if (!(scopeType.equals(DEFAULT)
-          || scopeType.equals(UNIVERSAL)
-          || scopeType.equals(TARGET)
-          || scopeType.equals(PROJECT)
-          || scopeType.startsWith("exec:"))) {
-        // TODO: don't let blaze crash for an invalid scope type.
-        throw new IllegalArgumentException("Invalid scope type: " + scopeType);
-      }
+            /** Placeholder for flags that don't explicitly specify scope. Shouldn't be set directly.  */
+            const val DEFAULT: String = "default"
+
+            /** Which values can a rule's `scope` attribute have?  */
+            @kotlin.jvm.JvmStatic
+            fun allowedAttributeValues(): com.google.common.collect.ImmutableList<String?> {
+                return com.google.common.collect.ImmutableList.of<String?>(UNIVERSAL, TARGET, PROJECT)
+            }
+        }
     }
 
-    /** Which values can a rule's {@code scope} attribute have? */
-    public static ImmutableList<String> allowedAttributeValues() {
-      return ImmutableList.of(UNIVERSAL, TARGET, PROJECT);
+    /**
+     * Definition of a scope. Users can define this in their PROJECT.scl file that is in the same
+     * directory as the BUILD file where the scoped flags are defined or in a parent directory. This
+     * is only relevant if the scope type is PROJECT.
+     */
+    class ScopeDefinition(ownedCodePaths: com.google.common.collect.ImmutableSet<String?>?) {
+        private val ownedCodePaths: com.google.common.collect.ImmutableSet<String?>?
+
+        init {
+            this.ownedCodePaths = ownedCodePaths
+        }
+
+        fun getOwnedCodePaths(): com.google.common.collect.ImmutableSet<String?>? {
+            return ownedCodePaths
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this).add("ownedCodePaths", ownedCodePaths)
+                .toString()
+        }
     }
-  }
 
-  /**
-   * Definition of a scope. Users can define this in their PROJECT.scl file that is in the same
-   * directory as the BUILD file where the scoped flags are defined or in a parent directory. This
-   * is only relevant if the scope type is PROJECT.
-   */
-  public static class ScopeDefinition {
-    private final ImmutableSet<String> ownedCodePaths;
+    @kotlin.jvm.JvmField
+    var scopeType: ScopeType?
+    @kotlin.jvm.JvmField
+    var scopeDefinition: ScopeDefinition?
 
-    public ScopeDefinition(ImmutableSet<String> ownedCodePaths) {
-      this.ownedCodePaths = ownedCodePaths;
+    init {
+        this.scopeType = scopeType
+        this.scopeDefinition = scopeDefinition
     }
 
-    public ImmutableSet<String> getOwnedCodePaths() {
-      return ownedCodePaths;
+    fun getScopeType(): ScopeType? {
+        return scopeType
     }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this).add("ownedCodePaths", ownedCodePaths).toString();
+    fun getScopeDefinition(): ScopeDefinition? {
+        return scopeDefinition
     }
-  }
 
-  ScopeType scopeType;
-  @Nullable ScopeDefinition scopeDefinition;
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("scopeType", scopeType)
+            .add("scopeDefinition", scopeDefinition)
+            .toString()
+    }
 
-  public Scope(ScopeType scopeType, @Nullable ScopeDefinition scopeDefinition) {
-    this.scopeType = scopeType;
-    this.scopeDefinition = scopeDefinition;
-  }
-
-  public ScopeType getScopeType() {
-    return scopeType;
-  }
-
-  @Nullable
-  public ScopeDefinition getScopeDefinition() {
-    return scopeDefinition;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("scopeType", scopeType)
-        .add("scopeDefinition", scopeDefinition)
-        .toString();
-  }
+    companion object {
+        const val CUSTOM_EXEC_SCOPE_PREFIX: String = "exec:--"
+    }
 }

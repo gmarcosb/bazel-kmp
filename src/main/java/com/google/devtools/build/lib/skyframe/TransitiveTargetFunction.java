@@ -126,7 +126,7 @@ final class TransitiveTargetFunction
         // TransitiveTargetValue.
         return null;
       }
-      toTarget = pkgValue.getPackage().getTarget(toLabel.getName());
+      toTarget = pkgValue.getPackage().getTarget(toLabel.name);
     } catch (NoSuchThingException e) {
       // Do nothing interesting. This error was handled when we computed the corresponding
       // TransitiveTargetValue.

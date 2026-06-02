@@ -11,54 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.analysis.config.output;
-
-import java.util.List;
-import java.util.Objects;
+package com.google.devtools.build.lib.analysis.config.output
 
 /**
- * Data structure defining a {@link com.google.devtools.build.lib.analysis.config.Fragment} for the
+ * Data structure defining a [com.google.devtools.build.lib.analysis.config.Fragment] for the
  * purpose of creating user output.
- *
- * <p>{@link com.google.devtools.build.lib.analysis.config.Fragment} is a Java object representation
+ * 
+ * 
+ * [com.google.devtools.build.lib.analysis.config.Fragment] is a Java object representation
  * of a domain-specific "piece" of configuration (like "C++-related configuration"). It depends on
- * one or more {@link com.google.devtools.build.lib.analysis.config.FragmentOptions}, which are the
- * <code>--flag=value</code> pairs that key configurations.
- *
- * <p>See {@link FragmentOptionsForOutput} and {@link ConfigurationForOutput} for further details.
+ * one or more [com.google.devtools.build.lib.analysis.config.FragmentOptions], which are the
+ * `--flag=value` pairs that key configurations.
+ * 
+ * 
+ * See [FragmentOptionsForOutput] and [ConfigurationForOutput] for further details.
  */
-public class FragmentForOutput {
-  private final String name;
-  // We store the name of the associated FragmentOptions instead of FragmentOptionsForOutput
-  // objects because multiple fragments may use the same FragmentOptions and we don't want to list
-  // it multiple times.
-  private final List<String> fragmentOptions;
-
-  public FragmentForOutput(String name, List<String> fragmentOptions) {
-    this.name = name;
-    this.fragmentOptions = fragmentOptions;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  /** The names of the FragmentOptions, sorted. */
-  public List<String> getFragmentOptions() {
-    return fragmentOptions;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (o instanceof FragmentForOutput other) {
-      return other.name.equals(name) && other.fragmentOptions.equals(fragmentOptions);
+class FragmentForOutput(
+    @kotlin.jvm.JvmField private val name: String, // We store the name of the associated FragmentOptions instead of FragmentOptionsForOutput
+    // objects because multiple fragments may use the same FragmentOptions and we don't want to list
+    // it multiple times.
+    @kotlin.jvm.JvmField private val fragmentOptions: MutableList<String?>
+) {
+    init {
+        this.fragmentOptions = fragmentOptions
     }
-    return false;
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(name, fragmentOptions);
-  }
+    fun getName(): String {
+        return name
+    }
+
+    /** The names of the FragmentOptions, sorted.  */
+    fun getFragmentOptions(): MutableList<String?> {
+        return fragmentOptions
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (o is FragmentForOutput) {
+            return o.name == name && o.fragmentOptions == fragmentOptions
+        }
+        return false
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(name, fragmentOptions)
+    }
 }

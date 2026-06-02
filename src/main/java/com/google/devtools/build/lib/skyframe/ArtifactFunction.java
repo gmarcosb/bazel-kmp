@@ -433,7 +433,7 @@ public final class ArtifactFunction implements SkyFunction {
 
   private static String constructErrorMessage(Artifact artifact, String error) {
     Label ownerLabel = artifact.getOwner();
-    if (ownerLabel == null || ownerLabel.getName().equals(".")) {
+    if (ownerLabel == null || ownerLabel.name.equals(".")) {
       // Discovered inputs may not have an owner. Directory source artifacts may be owned by a label
       // ':.' which will crash toPathFragment below.
       return String.format("%s '%s'", error, artifact.getExecPathString());

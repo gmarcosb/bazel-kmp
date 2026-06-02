@@ -11,182 +11,212 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler
 
-package com.google.devtools.build.lib.profiler;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.JsonToken;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.gson.stream.JsonReader
+import java.io.IOException
 
 /**
  * Represents a single trace event in a JSON profile.
- *
- * <p>Format is documented in
+ * 
+ * 
+ * Format is documented in
  * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
  */
-public record TraceEvent(
-    @Nullable String category,
-    String name,
-    @Nullable String type,
-    @Nullable Duration timestamp,
-    @Nullable Duration duration,
-    long processId,
-    long threadId,
-    @Nullable ImmutableMap<String, Object> args,
-    @Nullable String primaryOutputPath,
-    @Nullable String targetLabel,
-    @Nullable String mnemonic,
-    @Nullable String configuration) {
-  public TraceEvent {
-    requireNonNull(name, "name");
-  }
+@kotlin.jvm.JvmRecord
+data class TraceEvent(
+    category: String?,
+    name: String?,
+    type: String?,
+    timestamp: java.time.Duration?,
+    duration: java.time.Duration?,
+    processId: Long,
+    threadId: Long,
+    args: com.google.common.collect.ImmutableMap<String?, Any?>?,
+    primaryOutputPath: String?,
+    targetLabel: String?,
+    mnemonic: String?,
+    configuration: String?
+) {
+    val category: String?
+    val name: String?
+    val type: String?
+    val timestamp: java.time.Duration?
+    val duration: java.time.Duration?
+    val processId: Long
+    val threadId: Long
+    val args: com.google.common.collect.ImmutableMap<String?, Any?>?
+    val primaryOutputPath: String?
+    val targetLabel: String?
+    val mnemonic: String?
+    val configuration: String?
 
-  public static TraceEvent create(
-      @Nullable String category,
-      String name,
-      @Nullable String type,
-      @Nullable Duration timestamp,
-      @Nullable Duration duration,
-      long processId,
-      long threadId,
-      @Nullable ImmutableMap<String, Object> args,
-      @Nullable String primaryOutputPath,
-      @Nullable String targetLabel,
-      @Nullable String mnemonic,
-      @Nullable String configuration) {
-    return new TraceEvent(
-        category,
-        name,
-        type,
-        timestamp,
-        duration,
-        processId,
-        threadId,
-        args,
-        primaryOutputPath,
-        targetLabel,
-        mnemonic,
-        configuration);
-  }
+    init {
+        this.configuration = configuration
+        this.mnemonic = mnemonic
+        this.targetLabel = targetLabel
+        this.primaryOutputPath = primaryOutputPath
+        this.args = args
+        this.threadId = threadId
+        this.processId = processId
+        this.duration = duration
+        this.timestamp = timestamp
+        this.type = type
+        this.name = name
+        this.category = category
+        java.util.Objects.requireNonNull<String?>(name, "name")
+    }
 
-  // Only applicable to action-related TraceEvents.
-
-  private static TraceEvent createFromJsonReader(JsonReader reader) throws IOException {
-    String category = null;
-    String name = null;
-    Duration timestamp = null;
-    Duration duration = null;
-    long processId = -1;
-    long threadId = -1;
-    String primaryOutputPath = null;
-    String targetLabel = null;
-    String mnemonic = null;
-    String type = null;
-    String configuration = null;
-    ImmutableMap<String, Object> args = null;
-
-    reader.beginObject();
-    while (reader.hasNext()) {
-      switch (reader.nextName()) {
-        case "cat" -> category = reader.nextString();
-        case "name" -> name = reader.nextString();
-        case "ph" -> type = reader.nextString();
-        case "ts" ->
-            // Duration has no microseconds :-/.
-            timestamp = Duration.ofNanos(reader.nextLong() * 1000);
-        case "dur" -> duration = Duration.ofNanos(reader.nextLong() * 1000);
-        case "pid" -> processId = reader.nextLong();
-        case "tid" -> threadId = reader.nextLong();
-        case "out" -> primaryOutputPath = reader.nextString();
-        case "args" -> {
-          args = parseMap(reader);
-          Object target = args.get("target");
-          targetLabel = target instanceof String ? (String) target : null;
-          Object mnemonicValue = args.get("mnemonic");
-          mnemonic = mnemonicValue instanceof String ? (String) mnemonicValue : null;
-          Object configurationValue = args.get("configuration");
-          configuration = configurationValue instanceof String ? (String) configurationValue : null;
+    companion object {
+        fun create(
+            category: String?,
+            name: String?,
+            type: String?,
+            timestamp: java.time.Duration?,
+            duration: java.time.Duration?,
+            processId: Long,
+            threadId: Long,
+            args: com.google.common.collect.ImmutableMap<String?, Any?>?,
+            primaryOutputPath: String?,
+            targetLabel: String?,
+            mnemonic: String?,
+            configuration: String?
+        ): TraceEvent {
+            return TraceEvent(
+                category,
+                name,
+                type,
+                timestamp,
+                duration,
+                processId,
+                threadId,
+                args,
+                primaryOutputPath,
+                targetLabel,
+                mnemonic,
+                configuration
+            )
         }
-        default -> reader.skipValue();
-      }
+
+        // Only applicable to action-related TraceEvents.
+        @Throws(IOException::class)
+        private fun createFromJsonReader(reader: JsonReader): TraceEvent {
+            var category: String? = null
+            var name: String? = null
+            var timestamp: java.time.Duration? = null
+            var duration: java.time.Duration? = null
+            var processId: Long = -1
+            var threadId: Long = -1
+            var primaryOutputPath: String? = null
+            var targetLabel: String? = null
+            var mnemonic: String? = null
+            var type: String? = null
+            var configuration: String? = null
+            var args: com.google.common.collect.ImmutableMap<String?, Any?>? = null
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "cat" -> category = reader.nextString()
+                    "name" -> name = reader.nextString()
+                    "ph" -> type = reader.nextString()
+                    "ts" ->  // Duration has no microseconds :-/.
+                        timestamp = java.time.Duration.ofNanos(reader.nextLong() * 1000)
+
+                    "dur" -> duration = java.time.Duration.ofNanos(reader.nextLong() * 1000)
+                    "pid" -> processId = reader.nextLong()
+                    "tid" -> threadId = reader.nextLong()
+                    "out" -> primaryOutputPath = reader.nextString()
+                    "args" -> {
+                        args = parseMap(reader)
+                        val target: Any? = args.get("target")
+                        targetLabel = if (target is String) target else null
+                        val mnemonicValue: Any? = args.get("mnemonic")
+                        mnemonic = if (mnemonicValue is String) mnemonicValue else null
+                        val configurationValue: Any? = args.get("configuration")
+                        configuration = if (configurationValue is String) configurationValue else null
+                    }
+
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+            return create(
+                category,
+                name,
+                type,
+                timestamp,
+                duration,
+                processId,
+                threadId,
+                args,
+                primaryOutputPath,
+                targetLabel,
+                mnemonic,
+                configuration
+            )
+        }
+
+        @Throws(IOException::class)
+        private fun parseMap(reader: JsonReader): com.google.common.collect.ImmutableMap<String?, Any?> {
+            val builder: com.google.common.collect.ImmutableMap.Builder<String?, Any?> =
+                com.google.common.collect.ImmutableMap.builder<String?, Any?>()
+
+            reader.beginObject()
+            while (reader.peek() != com.google.gson.stream.JsonToken.END_OBJECT) {
+                val name: String? = reader.nextName()
+                val `val` = parseSingleValueRecursively(reader)
+                builder.put(name, `val`)
+            }
+            reader.endObject()
+
+            return builder.buildOrThrow()
+        }
+
+        @Throws(IOException::class)
+        private fun parseArray(reader: JsonReader): com.google.common.collect.ImmutableList<Any?> {
+            val builder: com.google.common.collect.ImmutableList.Builder<Any?> =
+                com.google.common.collect.ImmutableList.builder<Any?>()
+
+            reader.beginArray()
+            while (reader.peek() != com.google.gson.stream.JsonToken.END_ARRAY) {
+                val `val` = parseSingleValueRecursively(reader)
+                builder.add(`val`)
+            }
+            reader.endArray()
+
+            return builder.build()
+        }
+
+        @Throws(IOException::class)
+        private fun parseSingleValueRecursively(reader: JsonReader): Any? {
+            val nextToken: com.google.gson.stream.JsonToken? = reader.peek()
+            return when (nextToken) {
+                com.google.gson.stream.JsonToken.BOOLEAN -> reader.nextBoolean()
+                com.google.gson.stream.JsonToken.NULL -> {
+                    reader.nextNull()
+                    null
+                }
+
+                com.google.gson.stream.JsonToken.NUMBER ->  // Json's only numeric type is number, using Double to accommodate all types
+                    reader.nextDouble()
+
+                com.google.gson.stream.JsonToken.STRING -> reader.nextString()
+                com.google.gson.stream.JsonToken.BEGIN_OBJECT -> parseMap(reader)
+                com.google.gson.stream.JsonToken.BEGIN_ARRAY -> parseArray(reader)
+                else -> throw IOException("Unexpected token " + nextToken.name())
+            }
+        }
+
+        @Throws(IOException::class)
+        fun parseTraceEvents(reader: JsonReader): MutableList<TraceEvent?> {
+            val traceEvents: MutableList<TraceEvent?> = java.util.ArrayList<TraceEvent?>()
+            reader.beginArray()
+            while (reader.hasNext()) {
+                traceEvents.add(createFromJsonReader(reader))
+            }
+            reader.endArray()
+            return traceEvents
+        }
     }
-    reader.endObject();
-    return TraceEvent.create(
-        category,
-        name,
-        type,
-        timestamp,
-        duration,
-        processId,
-        threadId,
-        args,
-        primaryOutputPath,
-        targetLabel,
-        mnemonic,
-        configuration);
-  }
-
-  private static ImmutableMap<String, Object> parseMap(JsonReader reader) throws IOException {
-    ImmutableMap.Builder<String, Object> builder = ImmutableMap.builder();
-
-    reader.beginObject();
-    while (reader.peek() != JsonToken.END_OBJECT) {
-      String name = reader.nextName();
-      Object val = parseSingleValueRecursively(reader);
-      builder.put(name, val);
-    }
-    reader.endObject();
-
-    return builder.buildOrThrow();
-  }
-
-  private static ImmutableList<Object> parseArray(JsonReader reader) throws IOException {
-    ImmutableList.Builder<Object> builder = ImmutableList.builder();
-
-    reader.beginArray();
-    while (reader.peek() != JsonToken.END_ARRAY) {
-      Object val = parseSingleValueRecursively(reader);
-      builder.add(val);
-    }
-    reader.endArray();
-
-    return builder.build();
-  }
-
-  @Nullable
-  private static Object parseSingleValueRecursively(JsonReader reader) throws IOException {
-    JsonToken nextToken = reader.peek();
-    return switch (nextToken) {
-      case BOOLEAN -> reader.nextBoolean();
-      case NULL -> {
-        reader.nextNull();
-        yield null;
-      }
-      case NUMBER ->
-          // Json's only numeric type is number, using Double to accommodate all types
-          reader.nextDouble();
-      case STRING -> reader.nextString();
-      case BEGIN_OBJECT -> parseMap(reader);
-      case BEGIN_ARRAY -> parseArray(reader);
-      default -> throw new IOException("Unexpected token " + nextToken.name());
-    };
-  }
-
-  public static List<TraceEvent> parseTraceEvents(JsonReader reader) throws IOException {
-    List<TraceEvent> traceEvents = new ArrayList<>();
-    reader.beginArray();
-    while (reader.hasNext()) {
-      traceEvents.add(createFromJsonReader(reader));
-    }
-    reader.endArray();
-    return traceEvents;
-  }
 }

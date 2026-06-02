@@ -11,85 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import com.google.devtools.build.lib.vfs.Path
+import com.google.devtools.build.lib.vfs.PathFragment
+import java.io.BufferedInputStream
+import java.io.IOException
+import java.io.InputStream
+import java.lang.String
 
 /**
  * Common code for decompressing a single compressed file (compressor formats).
- *
- * <p>Apache Commons Compress calls all formats that compress a single stream of data compressor
+ * 
+ * 
+ * Apache Commons Compress calls all formats that compress a single stream of data compressor
  * formats while all formats that collect multiple entries inside a single (potentially compressed)
  * archive are archiver formats. This class handles the former, compressor formats.
- *
- * <p>It ignores the {@link DecompressorDescriptor#prefix()} and {@link
- * DecompressorDescriptor#stripComponents()} setting because compressed files cannot contain
+ * 
+ * 
+ * It ignores the [DecompressorDescriptor.prefix] and [ ][DecompressorDescriptor.stripComponents] setting because compressed files cannot contain
  * directories.
  */
-public abstract class CompressedFunction implements Decompressor {
+abstract class CompressedFunction : DecompressorValue.Decompressor {
+    @Throws(IOException::class)
+    protected abstract fun getDecompressorStream(compressedInputStream: BufferedInputStream?): InputStream
 
-  protected abstract InputStream getDecompressorStream(BufferedInputStream compressedInputStream)
-      throws IOException;
+    /**
+     * Returns the uncompressed file name (eg. file.gz -> file). Some compressors have metadata that
+     * stores the original name. If that's the case, the original name is used (eg. file.gz ->
+     * originalName). Only a basename + ext should be passed in for the compressedFileName.
+     */
+    protected abstract fun getUncompressedFileName(
+        `in`: InputStream?, compressedFileName: String?
+    ): String?
 
-  /**
-   * Returns the uncompressed file name (eg. file.gz -> file). Some compressors have metadata that
-   * stores the original name. If that's the case, the original name is used (eg. file.gz ->
-   * originalName). Only a basename + ext should be passed in for the compressedFileName.
-   */
-  protected abstract String getUncompressedFileName(
-      InputStream in, final String compressedFileName);
-
-  /**
-   * Set custom file attributes, like last modified time, on the extracted file. Only certain
-   * compressors support this.
-   */
-  protected void setFileAttributes(InputStream in, Path uncompressedFile) throws IOException {}
-
-  // This is the same value as picked for .tar files, which appears to have worked well.
-  private static final int BUFFER_SIZE = 32 * 1024;
-
-  @Override
-  public Path decompress(DecompressorDescriptor descriptor)
-      throws InterruptedException, IOException {
-    if (Thread.interrupted()) {
-      throw new InterruptedException();
+    /**
+     * Set custom file attributes, like last modified time, on the extracted file. Only certain
+     * compressors support this.
+     */
+    @Throws(IOException::class)
+    protected open fun setFileAttributes(`in`: InputStream?, uncompressedFile: Path?) {
     }
 
-    ImmutableMap<String, String> renameFiles = descriptor.renameFiles();
-    try (InputStream decompressorStream =
+    @Throws(InterruptedException::class, IOException::class)
+    override fun decompress(descriptor: DecompressorDescriptor): Path {
+        if (Thread.interrupted()) {
+            throw InterruptedException()
+        }
+
+        val renameFiles = descriptor.renameFiles
         getDecompressorStream(
-            new BufferedInputStream(descriptor.archivePath().getInputStream(), BUFFER_SIZE))) {
-      String entryName =
-          getUncompressedFileName(decompressorStream, descriptor.archivePath().getBaseName());
-      entryName = renameFiles.getOrDefault(entryName, entryName);
-      PathFragment entryPathRelative = PathFragment.create(entryName);
-      if (entryPathRelative.isAbsolute()) {
-        throw new IOException(
-            String.format("Failed to extract %s, paths cannot be absolute", entryName));
-      }
-      Path filePath = descriptor.destinationPath().getRelative(entryPathRelative);
-      if (!filePath.startsWith(descriptor.destinationPath())) {
-        throw new IOException(
-            String.format(
-                "Failed to extract %s, path is escaping the destination directory", entryName));
-      }
-      filePath.getParentDirectory().createDirectoryAndParents();
-      try (OutputStream out = filePath.getOutputStream()) {
-        decompressorStream.transferTo(out);
-      }
-      setFileAttributes(decompressorStream, filePath);
-      if (Thread.interrupted()) {
-        throw new InterruptedException();
-      }
+            BufferedInputStream(descriptor.archivePath.getInputStream(), BUFFER_SIZE)
+        ).use { decompressorStream ->
+            var entryName =
+                getUncompressedFileName(decompressorStream, descriptor.archivePath.getBaseName())
+            entryName = renameFiles.getOrDefault(entryName, entryName)
+            val entryPathRelative = PathFragment.create(entryName)
+            if (entryPathRelative.isAbsolute()) {
+                throw IOException(
+                    String.format("Failed to extract %s, paths cannot be absolute", entryName)
+                )
+            }
+            val filePath = descriptor.destinationPath.getRelative(entryPathRelative)
+            if (!filePath.startsWith(descriptor.destinationPath)) {
+                throw IOException(
+                    String.format(
+                        "Failed to extract %s, path is escaping the destination directory", entryName
+                    )
+                )
+            }
+            filePath.getParentDirectory()!!.createDirectoryAndParents()
+            filePath.getOutputStream().use { out ->
+                decompressorStream.transferTo(out)
+            }
+            setFileAttributes(decompressorStream, filePath)
+            if (Thread.interrupted()) {
+                throw InterruptedException()
+            }
+        }
+        return descriptor.destinationPath
     }
-    return descriptor.destinationPath();
-  }
+
+    companion object {
+        // This is the same value as picked for .tar files, which appears to have worked well.
+        private val BUFFER_SIZE = 32 * 1024
+    }
 }

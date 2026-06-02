@@ -11,87 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query
 
-package com.google.devtools.build.lib.query2.query;
-
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor;
-import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExceptionHandlingMode;
-import com.google.devtools.build.lib.concurrent.ErrorClassifier;
-import com.google.devtools.build.lib.concurrent.NamedForkJoinPool;
-import com.google.devtools.build.lib.concurrent.QuiescingExecutor;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.AspectDefinition;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.DependencyFilter;
-import com.google.devtools.build.lib.packages.LabelVisitationUtils;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.packages.OutputFile;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.TargetEdgeObserver;
-import com.google.devtools.build.lib.pkgcache.TargetProvider;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import java.util.OptionalInt;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * Visit the transitive closure of a label. Primarily used to "fault in" packages to the
  * packageProvider and ensure the necessary targets exists, in advance of the configuration step,
  * which is intolerant of missing packages/targets.
- *
- * <p>LabelVisitor loads packages concurrently where possible, to increase I/O parallelism. However,
+ * 
+ * 
+ * LabelVisitor loads packages concurrently where possible, to increase I/O parallelism. However,
  * the public interface is not thread-safe: calls to public methods should not be made concurrently.
- *
- * <p>LabelVisitor is stateful: It remembers the previous visitation and can check its validity on
+ * 
+ * 
+ * LabelVisitor is stateful: It remembers the previous visitation and can check its validity on
  * subsequent calls to sync() instead of doing the normal visitation.
- *
- * <p>TODO(bazel-team): (2009) a small further optimization could be achieved if we create tasks at
+ * 
+ * 
+ * TODO(bazel-team): (2009) a small further optimization could be achieved if we create tasks at
  * the package (not individual label) level, since package loading is the expensive step. This would
  * require additional bookkeeping to maintain the list of labels that we need to visit once a
  * package becomes available. Profiling suggests that there is still a potential benefit to be
  * gained: when the set of packages is known a-priori, loading a set of packages that took 20
  * seconds can be done under 5 in the sequential case or 7 in the current (parallel) case.
- *
+ * 
  * <h4>Concurrency</h4>
- *
- * <p>The sync() methods of this class is thread-compatible. The accessor ({@link #hasVisited} and
+ * 
+ * 
+ * The sync() methods of this class is thread-compatible. The accessor ([.hasVisited] and
  * similar must not be called until the concurrent phase is over, i.e. all external calls to visit()
  * methods have completed.
  */
-final class LabelVisitor {
-  private static final VisitationAttributes NONE =
-      new VisitationAttributes(ImmutableSet.of(), OptionalInt.of(0));
+internal class LabelVisitor(targetProvider: TargetProvider, edgeFilter: DependencyFilter?) {
+    /** Attributes of a visitation which determine whether it is up-to-date or not.  */
+    private class VisitationAttributes(private val targetsToVisit: MutableSet<Target>, maxDepth: OptionalInt) {
+        private val maxDepth: OptionalInt
+        private var success = false
 
-  /** Attributes of a visitation which determine whether it is up-to-date or not. */
-  private static class VisitationAttributes {
-    private final Set<Target> targetsToVisit;
-    private final OptionalInt maxDepth;
-    private boolean success;
+        init {
+            this.maxDepth = maxDepth
+        }
 
-    VisitationAttributes(Set<Target> targetsToVisit, OptionalInt maxDepth) {
-      this.targetsToVisit = targetsToVisit;
-      this.maxDepth = maxDepth;
+        /** Returns true if and only if this visitation attribute is still up-to-date.  */
+        fun current(lastVisitation: VisitationAttributes): Boolean {
+            return targetsToVisit == lastVisitation.targetsToVisit
+                    && (lastVisitation.maxDepth.isEmpty()
+                    || !QueryEnvironment.Companion.shouldVisit(maxDepth, lastVisitation.maxDepth.getAsInt()))
+        }
     }
 
-    /** Returns true if and only if this visitation attribute is still up-to-date. */
-    boolean current(VisitationAttributes lastVisitation) {
-      return targetsToVisit.equals(lastVisitation.targetsToVisit)
-          && (lastVisitation.maxDepth.isEmpty()
-              || !QueryEnvironment.shouldVisit(maxDepth, lastVisitation.maxDepth.getAsInt()));
-    }
-  }
-
-  /*
+    /*
    * Interrupts during the loading phase ===================================
    *
    * Bazel can be interrupted in the middle of the loading phase. The mechanics
@@ -142,288 +112,328 @@ final class LabelVisitor {
    * terminates or that the label parsing terminates if the package that is
    * being loaded was specified on the command line.
    */
-  private final TargetProvider targetProvider;
-  private final DependencyFilter edgeFilter;
-  private final ConcurrentMap<Label, Integer> visitedTargets = new ConcurrentHashMap<>();
+    private val targetProvider: TargetProvider
+    private val edgeFilter: DependencyFilter?
+    private val visitedTargets: ConcurrentMap<Label?, Int?> = ConcurrentHashMap<Label?, Int?>()
 
-  private VisitationAttributes lastVisitation;
+    private var lastVisitation: VisitationAttributes
 
-  /** Constant for limiting the permitted depth of recursion. */
-  private static final int RECURSION_LIMIT = 100;
-
-  /**
-   * Construct a LabelVisitor.
-   *
-   * @param targetProvider how to resolve labels to targets
-   * @param edgeFilter which edges may be traversed
-   */
-  public LabelVisitor(TargetProvider targetProvider, DependencyFilter edgeFilter) {
-    this.targetProvider = targetProvider;
-    this.lastVisitation = NONE;
-    this.edgeFilter = edgeFilter;
-  }
-
-  void syncWithVisitor(
-      ExtendedEventHandler eventHandler,
-      Set<Target> targetsToVisit,
-      boolean keepGoing,
-      int parallelThreads,
-      OptionalInt maxDepth,
-      TargetEdgeObserver observer)
-      throws InterruptedException {
-    VisitationAttributes nextVisitation = new VisitationAttributes(targetsToVisit, maxDepth);
-    if (!lastVisitation.success || !nextVisitation.current(lastVisitation)) {
-      lastVisitation = nextVisitation;
-      lastVisitation.success =
-          redoVisitation(
-              eventHandler, targetsToVisit, keepGoing, parallelThreads, maxDepth, observer);
+    /**
+     * Construct a LabelVisitor.
+     * 
+     * @param targetProvider how to resolve labels to targets
+     * @param edgeFilter which edges may be traversed
+     */
+    init {
+        this.targetProvider = targetProvider
+        this.lastVisitation = NONE
+        this.edgeFilter = edgeFilter
     }
-  }
 
-  /**
-   * Performs a bounded transitive closure visitation, similar to syncWithVisitor, but does not
-   * cache the result.
-   */
-  public void syncUncached(
-      ExtendedEventHandler eventHandler,
-      Iterable<Target> targetsToVisit,
-      boolean keepGoing,
-      int parallelThreads,
-      OptionalInt maxDepth,
-      TargetEdgeObserver observer)
-      throws InterruptedException {
-    lastVisitation = NONE;
-    redoVisitation(eventHandler, targetsToVisit, keepGoing, parallelThreads, maxDepth, observer);
-  }
-
-  // Does a bounded transitive visitation starting at the given top-level targets.
-  private boolean redoVisitation(
-      ExtendedEventHandler eventHandler,
-      Iterable<Target> targetsToVisit,
-      boolean keepGoing,
-      int parallelThreads,
-      OptionalInt maxDepth,
-      TargetEdgeObserver observer)
-      throws InterruptedException {
-    visitedTargets.clear();
-
-    Visitor visitor = new Visitor(eventHandler, keepGoing, parallelThreads, maxDepth, observer);
-
-    Throwable uncaught = null;
-    boolean result;
-    try {
-      visitor.visitTargets(targetsToVisit);
-    } catch (Throwable t) {
-      visitor.stopNewActions();
-      uncaught = t;
-    } finally {
-      // Run finish() in finally block to ensure we don't leak threads on exceptions.
-      result = visitor.finish();
-    }
-    Throwables.propagateIfPossible(uncaught);
-    return result;
-  }
-
-  public boolean hasVisited(Label target) {
-    return visitedTargets.containsKey(target);
-  }
-
-  private class Visitor {
-    private static final String THREAD_NAME = "LabelVisitor";
-
-    private final ExecutorService executorService;
-    private final QuiescingExecutor executor;
-    private final ExtendedEventHandler eventHandler;
-    private final OptionalInt maxDepth;
-
-    // Observers are stored individually instead of in a list to reduce iteration cost.
-    private final TargetEdgeObserver observer;
-    private final TargetEdgeErrorObserver errorObserver = new TargetEdgeErrorObserver();
-
-    Visitor(
-        ExtendedEventHandler eventHandler,
-        boolean keepGoing,
-        int parallelThreads,
-        OptionalInt maxDepth,
-        TargetEdgeObserver observer) {
-      if (parallelThreads > 1) {
-        this.executorService = NamedForkJoinPool.newNamedPool(THREAD_NAME, parallelThreads);
-      } else {
-        // ForkJoinPool has a bug where it deadlocks with parallelism=1, so use a
-        // SingleThreadExecutor instead.
-        this.executorService =
-            Executors.newSingleThreadExecutor(
-                new ThreadFactoryBuilder().setNameFormat(THREAD_NAME + " %d").build());
-      }
-      this.executor =
-          AbstractQueueVisitor.createWithExecutorService(
-              executorService,
-              keepGoing ? ExceptionHandlingMode.KEEP_GOING : ExceptionHandlingMode.FAIL_FAST,
-              ErrorClassifier.DEFAULT);
-      this.eventHandler = eventHandler;
-      this.maxDepth = maxDepth;
-      this.observer = observer;
+    @Throws(java.lang.InterruptedException::class)
+    fun syncWithVisitor(
+        eventHandler: ExtendedEventHandler?,
+        targetsToVisit: MutableSet<Target>,
+        keepGoing: Boolean,
+        parallelThreads: Int,
+        maxDepth: OptionalInt,
+        observer: TargetEdgeObserver
+    ) {
+        val nextVisitation = VisitationAttributes(targetsToVisit, maxDepth)
+        if (!lastVisitation.success || !nextVisitation.current(lastVisitation)) {
+            lastVisitation = nextVisitation
+            lastVisitation.success =
+                redoVisitation(
+                    eventHandler, targetsToVisit, keepGoing, parallelThreads, maxDepth, observer
+                )
+        }
     }
 
     /**
-     * Visit the specified labels and follow the transitive closure of their outbound dependencies.
-     *
-     * @param targets the targets to visit
+     * Performs a bounded transitive closure visitation, similar to syncWithVisitor, but does not
+     * cache the result.
      */
-    @ThreadSafe
-    public void visitTargets(Iterable<Target> targets) throws InterruptedException {
-      for (Target target : targets) {
-        visit(null, null, target, 0, 0);
-      }
+    @Throws(java.lang.InterruptedException::class)
+    fun syncUncached(
+        eventHandler: ExtendedEventHandler?,
+        targetsToVisit: Iterable<Target>,
+        keepGoing: Boolean,
+        parallelThreads: Int,
+        maxDepth: OptionalInt,
+        observer: TargetEdgeObserver
+    ) {
+        lastVisitation = NONE
+        redoVisitation(eventHandler, targetsToVisit, keepGoing, parallelThreads, maxDepth, observer)
     }
 
-    @ThreadSafe
-    public boolean finish() throws InterruptedException {
-      executor.awaitQuiescence(/*interruptWorkers=*/ true);
-      return !errorObserver.hasErrors();
-    }
+    // Does a bounded transitive visitation starting at the given top-level targets.
+    @Throws(java.lang.InterruptedException::class)
+    private fun redoVisitation(
+        eventHandler: ExtendedEventHandler?,
+        targetsToVisit: Iterable<Target>,
+        keepGoing: Boolean,
+        parallelThreads: Int,
+        maxDepth: OptionalInt,
+        observer: TargetEdgeObserver
+    ): Boolean {
+        visitedTargets.clear()
 
-    void stopNewActions() {
-      executorService.shutdownNow();
-    }
+        val visitor: Visitor = com.google.devtools.build.lib.query2.query.LabelVisitor.Visitor(
+            eventHandler,
+            keepGoing,
+            parallelThreads,
+            maxDepth,
+            observer
+        )
 
-    private void enqueueTarget(Target from, Attribute attr, Label label, int depth, int count) {
-      // Don't perform the targetProvider lookup if at the maximum depth already.
-      if (maxDepth.isPresent() && depth >= maxDepth.getAsInt()) {
-        return;
-      }
-
-      // Avoid thread-related overhead when not crossing packages.
-      // Can start a new thread when count reaches 100, to prevent infinite recursion.
-      if (from != null
-          && from.getLabel().getPackageFragment().equals(label.getPackageFragment())
-          && count < RECURSION_LIMIT) {
-        newVisitRunnable(from, attr, label, depth, count + 1).run();
-      } else {
-        executor.execute(newVisitRunnable(from, attr, label, depth, 0));
-      }
-    }
-
-    private Runnable newVisitRunnable(
-        final Target from,
-        final Attribute attr,
-        final Label label,
-        final int depth,
-        final int count) {
-      return () -> {
+        var uncaught: Throwable? = null
+        val result: Boolean
         try {
-          visit(from, attr, targetProvider.getTarget(eventHandler, label), depth + 1, count);
-        } catch (NoSuchThingException e) {
-          observeError(from, label, e);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
+            visitor.visitTargets(targetsToVisit)
+        } catch (t: Throwable) {
+            visitor.stopNewActions()
+            uncaught = t
+        } finally {
+            // Run finish() in finally block to ensure we don't leak threads on exceptions.
+            result = visitor.finish()
         }
-      };
+        com.google.common.base.Throwables.propagateIfPossible(uncaught)
+        return result
     }
 
-    /**
-     * Visits the target and its package.
-     *
-     * <p>Potentially blocking invocations into the package cache are enqueued in the worker pool if
-     * CONCURRENT.
-     */
-    private void visit(Target from, Attribute attribute, final Target target, int depth, int count)
-        throws InterruptedException {
-      if (target == null) {
-        throw new NullPointerException(
-            String.format(
-                "'%s' attribute '%s'",
-                from == null ? "(null)" : from.getLabel().toString(),
-                attribute == null ? "(null)" : attribute.getName()));
-      }
-      if (!QueryEnvironment.shouldVisit(maxDepth, depth)) {
-        return;
-      }
-
-      if (from != null) {
-        observeEdge(from, attribute, target);
-        visitAspectsIfRequired(from, attribute, target, depth, count);
-      }
-      visitTargetNode(target, depth, count);
+    fun hasVisited(target: Label?): Boolean {
+        return visitedTargets.containsKey(target)
     }
 
-    private void visitAspectsIfRequired(
-        Target from, Attribute attribute, final Target to, int depth, int count) {
-      // TODO(bazel-team): The getAspects call below is duplicate work for each direct dep entailed
-      // by an attribute's value. Additionally, we might end up enqueueing the same exact visitation
-      // multiple times: consider the case where the same direct dependency is entailed by aspects
-      // of *different* attributes. These visitations get culled later, but we still have to pay the
-      // overhead for all that.
+    private inner class Visitor(
+        eventHandler: ExtendedEventHandler?,
+        keepGoing: Boolean,
+        parallelThreads: Int,
+        maxDepth: OptionalInt,
+        observer: TargetEdgeObserver
+    ) {
+        private val executorService: ExecutorService
+        private val executor: QuiescingExecutor
+        private val eventHandler: ExtendedEventHandler?
+        private val maxDepth: OptionalInt
 
-      if (!(from instanceof Rule fromRule) || !(to instanceof Rule toRule)) {
-        return;
-      }
-      for (Aspect aspect : attribute.getAspects(fromRule)) {
-        if (AspectDefinition.satisfies(
-            aspect, toRule.getRuleClassObject().getAdvertisedProviders())) {
-          AspectDefinition.forEachLabelDepFromAllAttributesOfAspect(
-              aspect,
-              edgeFilter,
-              (aspectAttribute, aspectLabel) ->
-                  enqueueTarget(from, aspectAttribute, aspectLabel, depth, count));
+        // Observers are stored individually instead of in a list to reduce iteration cost.
+        private val observer: TargetEdgeObserver
+        private val errorObserver: TargetEdgeErrorObserver = TargetEdgeErrorObserver()
+
+        init {
+            if (parallelThreads > 1) {
+                this.executorService = NamedForkJoinPool.newNamedPool(
+                    com.google.devtools.build.lib.query2.query.LabelVisitor.Visitor.Companion.THREAD_NAME,
+                    parallelThreads
+                )
+            } else {
+                // ForkJoinPool has a bug where it deadlocks with parallelism=1, so use a
+                // SingleThreadExecutor instead.
+                this.executorService =
+                    Executors.newSingleThreadExecutor(
+                        com.google.common.util.concurrent.ThreadFactoryBuilder()
+                            .setNameFormat(com.google.devtools.build.lib.query2.query.LabelVisitor.Visitor.Companion.THREAD_NAME + " %d")
+                            .build()
+                    )
+            }
+            this.executor =
+                AbstractQueueVisitor.createWithExecutorService(
+                    executorService,
+                    if (keepGoing) ExceptionHandlingMode.KEEP_GOING else ExceptionHandlingMode.FAIL_FAST,
+                    ErrorClassifier.DEFAULT
+                )
+            this.eventHandler = eventHandler
+            this.maxDepth = maxDepth
+            this.observer = observer
         }
-      }
-    }
 
-    /**
-     * Visit the specified target. Called in a worker thread if CONCURRENT.
-     *
-     * @param target the target to visit
-     */
-    private void visitTargetNode(Target target, int depth, int count) throws InterruptedException {
-      Integer minTargetDepth = visitedTargets.putIfAbsent(target.getLabel(), depth);
-      if (minTargetDepth != null) {
-        // The target was already visited at a greater depth.
-        // The closure we are about to build is therefore a subset of what
-        // has already been built, and we can skip it.
-        // Also special case no depth bound, where we never want to revisit targets.
-        // (This avoids loading phase overhead outside of queries).
-        if (maxDepth.isEmpty() || minTargetDepth <= depth) {
-          return;
+        /**
+         * Visit the specified labels and follow the transitive closure of their outbound dependencies.
+         * 
+         * @param targets the targets to visit
+         */
+        @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+        @Throws(java.lang.InterruptedException::class)
+        fun visitTargets(targets: Iterable<Target>) {
+            for (target in targets) {
+                visit(null, null, target, 0, 0)
+            }
         }
-        // Check again in case it was overwritten by another thread.
-        synchronized (visitedTargets) {
-          if (visitedTargets.get(target.getLabel()) <= depth) {
-            return;
-          }
-          visitedTargets.put(target.getLabel(), depth);
+
+        @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+        @Throws(java.lang.InterruptedException::class)
+        fun finish(): Boolean {
+            executor.awaitQuiescence( /*interruptWorkers=*/true)
+            return !errorObserver.hasErrors()
         }
-      }
 
-      observeNode(target);
+        fun stopNewActions() {
+            executorService.shutdownNow()
+        }
 
-      // LabelVisitor has some legacy special handling of OutputFiles.
-      if (target instanceof OutputFile outputFile) {
-        Rule rule = outputFile.getGeneratingRule();
-        observeEdge(target, null, rule);
-        visit(null, null, rule, depth + 1, count + 1);
-      }
+        fun enqueueTarget(from: Target?, attr: Attribute?, label: Label, depth: Int, count: Int) {
+            // Don't perform the targetProvider lookup if at the maximum depth already.
+            if (maxDepth.isPresent() && depth >= maxDepth.getAsInt()) {
+                return
+            }
 
-      LabelVisitationUtils.visitTarget(
-          target,
-          edgeFilter,
-          (fromTarget, attribute, toLabel) ->
-              enqueueTarget(target, attribute, toLabel, depth, count));
+            // Avoid thread-related overhead when not crossing packages.
+            // Can start a new thread when count reaches 100, to prevent infinite recursion.
+            if (from != null && from.getLabel().getPackageFragment().equals(label.getPackageFragment())
+                && count < RECURSION_LIMIT
+            ) {
+                newVisitRunnable(from, attr, label, depth, count + 1).run()
+            } else {
+                executor.execute(newVisitRunnable(from, attr, label, depth, 0))
+            }
+        }
+
+        fun newVisitRunnable(
+            from: Target?,
+            attr: Attribute?,
+            label: Label?,
+            depth: Int,
+            count: Int
+        ): java.lang.Runnable {
+            return java.lang.Runnable {
+                try {
+                    visit(from, attr, targetProvider.getTarget(eventHandler, label), depth + 1, count)
+                } catch (e: NoSuchThingException) {
+                    observeError(from, label, e)
+                } catch (e: java.lang.InterruptedException) {
+                    java.lang.Thread.currentThread().interrupt()
+                }
+            }
+        }
+
+        /**
+         * Visits the target and its package.
+         * 
+         * 
+         * Potentially blocking invocations into the package cache are enqueued in the worker pool if
+         * CONCURRENT.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun visit(from: Target?, attribute: Attribute?, target: Target, depth: Int, count: Int) {
+            if (target == null) {
+                throw java.lang.NullPointerException(
+                    java.lang.String.format(
+                        "'%s' attribute '%s'",
+                        if (from == null) "(null)" else from.getLabel().toString(),
+                        if (attribute == null) "(null)" else attribute.name
+                    )
+                )
+            }
+            if (!QueryEnvironment.Companion.shouldVisit(maxDepth, depth)) {
+                return
+            }
+
+            if (from != null) {
+                observeEdge(from, attribute, target)
+                visitAspectsIfRequired(from, attribute, target, depth, count)
+            }
+            visitTargetNode(target, depth, count)
+        }
+
+        fun visitAspectsIfRequired(
+            from: Target?, attribute: Attribute, to: Target?, depth: Int, count: Int
+        ) {
+            // TODO(bazel-team): The getAspects call below is duplicate work for each direct dep entailed
+            // by an attribute's value. Additionally, we might end up enqueueing the same exact visitation
+            // multiple times: consider the case where the same direct dependency is entailed by aspects
+            // of *different* attributes. These visitations get culled later, but we still have to pay the
+            // overhead for all that.
+
+            if (from !is Rule || to !is Rule) {
+                return
+            }
+            for (aspect in attribute.getAspects(from)) {
+                if (AspectDefinition.satisfies(
+                        aspect, to.getRuleClassObject().getAdvertisedProviders()
+                    )
+                ) {
+                    AspectDefinition.forEachLabelDepFromAllAttributesOfAspect(
+                        aspect,
+                        edgeFilter,
+                        { aspectAttribute, aspectLabel ->
+                            enqueueTarget(
+                                from,
+                                aspectAttribute,
+                                aspectLabel,
+                                depth,
+                                count
+                            )
+                        })
+                }
+            }
+        }
+
+        /**
+         * Visit the specified target. Called in a worker thread if CONCURRENT.
+         * 
+         * @param target the target to visit
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun visitTargetNode(target: Target, depth: Int, count: Int) {
+            val minTargetDepth: Int? = visitedTargets.putIfAbsent(target.getLabel(), depth)
+            if (minTargetDepth != null) {
+                // The target was already visited at a greater depth.
+                // The closure we are about to build is therefore a subset of what
+                // has already been built, and we can skip it.
+                // Also special case no depth bound, where we never want to revisit targets.
+                // (This avoids loading phase overhead outside of queries).
+                if (maxDepth.isEmpty() || minTargetDepth <= depth) {
+                    return
+                }
+                // Check again in case it was overwritten by another thread.
+                synchronized(visitedTargets) {
+                    if (visitedTargets.get(target.getLabel()) <= depth) {
+                        return
+                    }
+                    visitedTargets.put(target.getLabel(), depth)
+                }
+            }
+
+            observeNode(target)
+
+            // LabelVisitor has some legacy special handling of OutputFiles.
+            if (target is OutputFile) {
+                val rule: Rule = target.getGeneratingRule()
+                observeEdge(target, null, rule)
+                visit(null, null, rule, depth + 1, count + 1)
+            }
+
+            LabelVisitationUtils.visitTarget(
+                target,
+                edgeFilter,
+                { fromTarget, attribute, toLabel -> enqueueTarget(target, attribute, toLabel, depth, count) })
+        }
+
+        fun observeEdge(from: Target?, attribute: Attribute?, to: Target?) {
+            observer.edge(from, attribute, to)
+            errorObserver.edge(from, attribute, to)
+        }
+
+        fun observeNode(target: Target) {
+            observer.node(target)
+            errorObserver.node(target)
+        }
+
+        fun observeError(from: Target?, label: Label?, e: NoSuchThingException) {
+            observer.missingEdge(from, label, e)
+            errorObserver.missingEdge(from, label, e)
+        }
+
+        companion object {
+            private const val THREAD_NAME = "LabelVisitor"
+        }
     }
 
-    private void observeEdge(Target from, Attribute attribute, Target to) {
-      observer.edge(from, attribute, to);
-      errorObserver.edge(from, attribute, to);
-    }
+    companion object {
+        private val NONE = VisitationAttributes(com.google.common.collect.ImmutableSet.of<Target?>(), OptionalInt.of(0))
 
-    private void observeNode(Target target) {
-      observer.node(target);
-      errorObserver.node(target);
+        /** Constant for limiting the permitted depth of recursion.  */
+        private const val RECURSION_LIMIT = 100
     }
-
-    private void observeError(Target from, Label label, NoSuchThingException e) {
-      observer.missingEdge(from, label, e);
-      errorObserver.missingEdge(from, label, e);
-    }
-  }
 }

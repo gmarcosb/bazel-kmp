@@ -11,171 +11,180 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.starlarkbuildapi.ExecGroupApi;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Map;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Identifier;
+import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement
 
 /**
  * Resolves the appropriate toolchains for the given parameters.
- *
+ * 
  * @param toolchainTypesMap Returns the underlying map from label to ToolchainTypeRequirement.
  * @param execCompatibleWith Returns the execution constraints for this exec group.
  * @param copyFromDefault Whether this exec group should copy the data from the default exec group
- *     in the same rule.
+ * in the same rule.
  */
 @AutoCodec
-public record DeclaredExecGroup(
-    ImmutableMap<Label, ToolchainTypeRequirement> toolchainTypesMap,
-    ImmutableSet<Label> execCompatibleWith,
-    boolean copyFromDefault)
-    implements ExecGroupApi {
-  public DeclaredExecGroup {
-    requireNonNull(toolchainTypesMap, "toolchainTypesMap");
-    requireNonNull(execCompatibleWith, "execCompatibleWith");
-    checkArgument(
-        !copyFromDefault || (toolchainTypesMap.isEmpty() && execCompatibleWith.isEmpty()));
-  }
-
-  // This is intentionally a string that would fail {@code Identifier.isValid} so that
-  // users can't create a group with the same name.
-  public static final String DEFAULT_EXEC_GROUP_NAME = "default-exec-group";
-
-  /** An exec group that copies all data from the default exec group. */
-  public static final DeclaredExecGroup COPY_FROM_DEFAULT = builder().copyFromDefault(true).build();
-
-  /** Returns a builder for a new DeclaredExecGroup. */
-  public static Builder builder() {
-    return new AutoBuilder_DeclaredExecGroup_Builder()
-        .copyFromDefault(false)
-        .toolchainTypes(ImmutableSet.of())
-        .execCompatibleWith(ImmutableSet.of());
-  }
-
-  /** Returns true if the given exec group is an automatic exec group. */
-  public static boolean isAutomatic(String execGroupName) {
-    return !Identifier.isValid(execGroupName) && !execGroupName.equals(DEFAULT_EXEC_GROUP_NAME);
-  }
-
-  /** Returns the required toolchain types for this exec group. */
-  public ImmutableSet<ToolchainTypeRequirement> toolchainTypes() {
-    return ImmutableSet.copyOf(toolchainTypesMap().values());
-  }
-
-  @Nullable
-  public ToolchainTypeRequirement toolchainType(Label label) {
-    return toolchainTypesMap().get(label);
-  }
-
-  public Builder toBuilder() {
-    return new AutoBuilder_DeclaredExecGroup_Builder(this);
-  }
-
-  /**
-   * Prepares the input exec groups.
-   *
-   * <p>Adds auto exec groups when {@code useAutoExecGroups} is true.
-   */
-  public static ImmutableMap<String, DeclaredExecGroup> process(
-      ImmutableMap<String, DeclaredExecGroup> execGroups,
-      ImmutableSet<Label> defaultExecWith,
-      ImmutableMultimap<String, Label> execGroupExecWith,
-      ImmutableSet<ToolchainTypeRequirement> defaultToolchainTypes,
-      boolean useAutoExecGroups) {
-    var processedGroups =
-        ImmutableMap.<String, DeclaredExecGroup>builderWithExpectedSize(
-            useAutoExecGroups
-                ? (execGroups.size() + defaultToolchainTypes.size())
-                : execGroups.size());
-    for (Map.Entry<String, DeclaredExecGroup> entry : execGroups.entrySet()) {
-      String name = entry.getKey();
-      DeclaredExecGroup declaredExecGroup = entry.getValue();
-
-      if (declaredExecGroup.copyFromDefault()) {
-        declaredExecGroup =
-            DeclaredExecGroup.builder()
-                .execCompatibleWith(defaultExecWith)
-                .toolchainTypes(defaultToolchainTypes)
-                .build();
-      }
-      ImmutableCollection<Label> extraExecWith = execGroupExecWith.get(name);
-      if (!extraExecWith.isEmpty()) {
-        declaredExecGroup =
-            declaredExecGroup.toBuilder()
-                .execCompatibleWith(
-                    ImmutableSet.<Label>builder()
-                        .addAll(declaredExecGroup.execCompatibleWith())
-                        .addAll(extraExecWith)
-                        .build())
-                .build();
-      }
-
-      processedGroups.put(name, declaredExecGroup);
+class DeclaredExecGroup(
+  toolchainTypesMap: com.google.common.collect.ImmutableMap<Label?, ToolchainTypeRequirement?>?,
+  execCompatibleWith: com.google.common.collect.ImmutableSet<Label?>?,
+  @kotlin.jvm.JvmField val copyFromDefault: Boolean
+) : ExecGroupApi {
+    /** Returns the required toolchain types for this exec group.  */
+    fun toolchainTypes(): com.google.common.collect.ImmutableSet<ToolchainTypeRequirement?> {
+        return com.google.common.collect.ImmutableSet.copyOf<ToolchainTypeRequirement?>(this.toolchainTypesMap.values())
     }
 
-    if (useAutoExecGroups) {
-      // Creates one exec group for each toolchain (automatic exec groups).
-      for (ToolchainTypeRequirement toolchainType : defaultToolchainTypes) {
-        ImmutableSet<Label> execCompatibleWith = defaultExecWith;
-        ImmutableCollection<Label> extraExecWith =
-            execGroupExecWith.get(toolchainType.toolchainType().getUnambiguousCanonicalForm());
-        if (!extraExecWith.isEmpty()) {
-          execCompatibleWith =
-              ImmutableSet.<Label>builder().addAll(defaultExecWith).addAll(extraExecWith).build();
+    fun toolchainType(label: Label?): ToolchainTypeRequirement? {
+        return this.toolchainTypesMap.get(label)
+    }
+
+    fun toBuilder(): Builder {
+        return AutoBuilder_DeclaredExecGroup_Builder(this)
+    }
+
+    /** A builder interface to create DeclaredExecGroup instances.  */
+    @AutoBuilder
+    interface Builder {
+        /** Sets the toolchain type requirements.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun toolchainTypes(toolchainTypes: com.google.common.collect.ImmutableSet<ToolchainTypeRequirement>): Builder {
+            toolchainTypes.forEach(java.util.function.Consumer { toolchainTypeRequirement: ToolchainTypeRequirement ->
+                this.addToolchainType(
+                    toolchainTypeRequirement
+                )
+            })
+            return this
         }
-        processedGroups.put(
-            toolchainType.toolchainType().toString(),
-            DeclaredExecGroup.builder()
-                .addToolchainType(toolchainType)
-                .execCompatibleWith(execCompatibleWith)
-                .build());
-      }
-    }
-    return processedGroups.buildOrThrow();
-  }
 
-  /** A builder interface to create DeclaredExecGroup instances. */
-  @AutoBuilder
-  public interface Builder {
+        fun toolchainTypesMapBuilder(): com.google.common.collect.ImmutableMap.Builder<Label?, ToolchainTypeRequirement?>?
 
-    /** Sets the toolchain type requirements. */
-    @CanIgnoreReturnValue
-    default Builder toolchainTypes(ImmutableSet<ToolchainTypeRequirement> toolchainTypes) {
-      toolchainTypes.forEach(this::addToolchainType);
-      return this;
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addToolchainType(toolchainTypeRequirement: ToolchainTypeRequirement): Builder {
+            this.toolchainTypesMapBuilder()
+                .put(toolchainTypeRequirement.toolchainType(), toolchainTypeRequirement)
+            return this
+        }
+
+        /** Sets the execution constraints.  */
+        fun execCompatibleWith(execCompatibleWith: com.google.common.collect.ImmutableSet<Label?>?): Builder?
+
+        /** Do not call, internal usage only.  */
+        fun copyFromDefault(copyFromDefault: Boolean): Builder?
+
+        /** Returns the new DeclaredExecGroup instance.  */
+        fun build(): DeclaredExecGroup
     }
 
-    ImmutableMap.Builder<Label, ToolchainTypeRequirement> toolchainTypesMapBuilder();
+    val toolchainTypesMap: com.google.common.collect.ImmutableMap<Label?, ToolchainTypeRequirement?>?
+    val execCompatibleWith: com.google.common.collect.ImmutableSet<Label?>?
 
-    @CanIgnoreReturnValue
-    default Builder addToolchainType(ToolchainTypeRequirement toolchainTypeRequirement) {
-      this.toolchainTypesMapBuilder()
-          .put(toolchainTypeRequirement.toolchainType(), toolchainTypeRequirement);
-      return this;
+    init {
+        this.execCompatibleWith = execCompatibleWith
+        this.toolchainTypesMap = toolchainTypesMap
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<Label?, ToolchainTypeRequirement?>?>(
+            toolchainTypesMap,
+            "toolchainTypesMap"
+        )
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<Label?>?>(
+            execCompatibleWith,
+            "execCompatibleWith"
+        )
+        com.google.common.base.Preconditions.checkArgument(
+            !copyFromDefault || (toolchainTypesMap.isEmpty() && execCompatibleWith.isEmpty())
+        )
     }
 
-    /** Sets the execution constraints. */
-    Builder execCompatibleWith(ImmutableSet<Label> execCompatibleWith);
+    companion object {
+        // This is intentionally a string that would fail {@code Identifier.isValid} so that
+        // users can't create a group with the same name.
+        const val DEFAULT_EXEC_GROUP_NAME: String = "default-exec-group"
 
-    /** Do not call, internal usage only. */
-    Builder copyFromDefault(boolean copyFromDefault);
+        /** An exec group that copies all data from the default exec group.  */
+        @kotlin.jvm.JvmField
+        val COPY_FROM_DEFAULT: DeclaredExecGroup = builder().copyFromDefault(true)!!.build()
 
-    /** Returns the new DeclaredExecGroup instance. */
-    DeclaredExecGroup build();
-  }
+        /** Returns a builder for a new DeclaredExecGroup.  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return AutoBuilder_DeclaredExecGroup_Builder()
+                .copyFromDefault(false)
+                .toolchainTypes(com.google.common.collect.ImmutableSet.of<E?>())
+                .execCompatibleWith(com.google.common.collect.ImmutableSet.of<E?>())
+        }
+
+        /** Returns true if the given exec group is an automatic exec group.  */
+        fun isAutomatic(execGroupName: String): Boolean {
+            return !net.starlark.java.syntax.Identifier.isValid(execGroupName) && execGroupName != DEFAULT_EXEC_GROUP_NAME
+        }
+
+        /**
+         * Prepares the input exec groups.
+         * 
+         * 
+         * Adds auto exec groups when `useAutoExecGroups` is true.
+         */
+        fun process(
+            execGroups: com.google.common.collect.ImmutableMap<String?, DeclaredExecGroup?>,
+            defaultExecWith: com.google.common.collect.ImmutableSet<Label?>,
+            execGroupExecWith: com.google.common.collect.ImmutableMultimap<String?, Label?>,
+            defaultToolchainTypes: com.google.common.collect.ImmutableSet<ToolchainTypeRequirement>,
+            useAutoExecGroups: Boolean
+        ): com.google.common.collect.ImmutableMap<String?, DeclaredExecGroup?> {
+            val processedGroups: com.google.common.collect.ImmutableMap.Builder<String?, DeclaredExecGroup?> =
+                com.google.common.collect.ImmutableMap.builderWithExpectedSize<String?, DeclaredExecGroup?>(
+                    if (useAutoExecGroups)
+                        (execGroups.size() + defaultToolchainTypes.size())
+                    else
+                        execGroups.size()
+                )
+            for (entry in execGroups.entrySet()) {
+                val name: String? = entry.getKey()
+                var declaredExecGroup: DeclaredExecGroup = entry.getValue()
+
+                if (declaredExecGroup.copyFromDefault) {
+                    declaredExecGroup =
+                        builder()
+                            .execCompatibleWith(defaultExecWith)!!
+                            .toolchainTypes(defaultToolchainTypes)
+                            .build()
+                }
+                val extraExecWith: com.google.common.collect.ImmutableCollection<Label?> = execGroupExecWith.get(name)
+                if (!extraExecWith.isEmpty()) {
+                    declaredExecGroup =
+                        declaredExecGroup.toBuilder()
+                            .execCompatibleWith(
+                                com.google.common.collect.ImmutableSet.builder<Label?>()
+                                    .addAll(declaredExecGroup.execCompatibleWith)
+                                    .addAll(extraExecWith)
+                                    .build()
+                            )!!
+                            .build()
+                }
+
+                processedGroups.put(name, declaredExecGroup)
+            }
+
+            if (useAutoExecGroups) {
+                // Creates one exec group for each toolchain (automatic exec groups).
+                for (toolchainType in defaultToolchainTypes) {
+                    var execCompatibleWith: com.google.common.collect.ImmutableSet<Label?>? = defaultExecWith
+                    val extraExecWith: com.google.common.collect.ImmutableCollection<Label?> =
+                        execGroupExecWith.get(toolchainType.toolchainType().getUnambiguousCanonicalForm())
+                    if (!extraExecWith.isEmpty()) {
+                        execCompatibleWith =
+                            com.google.common.collect.ImmutableSet.builder<Label?>().addAll(defaultExecWith)
+                                .addAll(extraExecWith).build()
+                    }
+                    processedGroups.put(
+                        toolchainType.toolchainType().toString(),
+                        builder()
+                            .addToolchainType(toolchainType)
+                            .execCompatibleWith(execCompatibleWith)!!
+                            .build()
+                    )
+                }
+            }
+            return processedGroups.buildOrThrow()
+        }
+    }
 }

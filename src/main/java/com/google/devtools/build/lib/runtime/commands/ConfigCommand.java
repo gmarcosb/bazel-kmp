@@ -289,7 +289,7 @@ public class ConfigCommand implements BlazeCommand {
               Class<? extends Fragment>, ImmutableSortedSet<Class<? extends FragmentOptions>>>
           fragmentDefs) {
     ImmutableSortedSet.Builder<ConfigurationForOutput> ans =
-        ImmutableSortedSet.orderedBy(comparing(e -> e.getConfigHash()));
+        ImmutableSortedSet.orderedBy(comparing(e -> e.configHash));
     for (Map.Entry<BuildConfigurationKey, BuildConfigurationValue> entry : asSkyKeyMap.entrySet()) {
       BuildConfigurationKey key = entry.getKey();
       BuildConfigurationValue config = entry.getValue();
@@ -331,7 +331,7 @@ public class ConfigCommand implements BlazeCommand {
   }
 
   private static boolean doesConfigMatch(ConfigurationForOutput config, String configPrefix) {
-    return config.getConfigHash().startsWith(configPrefix);
+    return config.configHash.startsWith(configPrefix);
   }
 
   /**

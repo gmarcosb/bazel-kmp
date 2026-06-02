@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config.transitions;
+package com.google.devtools.build.lib.analysis.config.transitions
 
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-/** Utility methods for configuration transitions. */
-public class TransitionUtil {
-  private TransitionUtil() {}
-
-  /**
-   * Returns a {@link BuildOptionsView} bound to the fragment options a {@link
-   * ConfigurationTransition} reads.
-   */
-  public static BuildOptionsView restrict(
-      ConfigurationTransition transition, BuildOptions options) {
-    return new BuildOptionsView(options, transition.requiresOptionFragments());
-  }
+/** Utility methods for configuration transitions.  */
+object TransitionUtil {
+    /**
+     * Returns a [BuildOptionsView] bound to the fragment options a [ ] reads.
+     */
+    fun restrict(
+        transition: ConfigurationTransition, options: BuildOptions?
+    ): BuildOptionsView {
+        return BuildOptionsView(options, transition.requiresOptionFragments())
+    }
 }

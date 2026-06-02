@@ -312,8 +312,8 @@ public class DynamicSpawnStrategyTest {
     DynamicExecutionOptions options = Options.getDefaults(DynamicExecutionOptions.class);
     options.setDynamicLocalStrategy(dynamicLocalStrategies.build());
     options.setDynamicRemoteStrategy(dynamicRemoteStrategies.build());
-    options.setInternalSpawnScheduler(true);
-    options.setLocalExecutionDelay(0);
+    options.internalSpawnScheduler = true;
+    options.localExecutionDelay = 0;
 
     checkState(executorServiceForCleanup == null);
     executorServiceForCleanup = executorService;

@@ -11,84 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import static java.lang.Math.max;
+/** Implementation of [TimeSeries].  */
+class TimeSeriesImpl internal constructor(startTime: java.time.Duration, bucketDuration: java.time.Duration) :
+    com.google.devtools.build.lib.profiler.TimeSeries {
+    private val startTime: java.time.Duration
+    private val bucketSizeMillis: Long
 
-import java.time.Duration;
-import java.util.Arrays;
-import javax.annotation.concurrent.GuardedBy;
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var data = DoubleArray(INITIAL_SIZE)
 
-/** Implementation of {@link TimeSeries}. */
-public class TimeSeriesImpl implements TimeSeries {
-  private final Duration startTime;
-  private final long bucketSizeMillis;
-  private static final int INITIAL_SIZE = 100;
-
-  @GuardedBy("this")
-  private double[] data = new double[INITIAL_SIZE];
-
-  TimeSeriesImpl(Duration startTime, Duration bucketDuration) {
-    this.startTime = startTime;
-    this.bucketSizeMillis = bucketDuration.toMillis();
-  }
-
-  @Override
-  public void addRange(Duration startTime, Duration endTime) {
-    addRange(startTime, endTime, /* value= */ 1);
-  }
-
-  @Override
-  public void addRange(Duration rangeStart, Duration rangeEnd, double value) {
-    // Compute times relative to start and their positions in the data array.
-    rangeStart = rangeStart.minus(startTime);
-    rangeEnd = rangeEnd.minus(startTime);
-    int startPosition = (int) (rangeStart.toMillis() / bucketSizeMillis);
-    int endPosition = (int) (rangeEnd.toMillis() / bucketSizeMillis);
-
-    // Assume we add the following range R:
-    // ----------------------------------
-    // |     |ssRRR|RRRRR|Reeee|      |
-    // ----------------------------------
-    // we cannot just add value to each affected bucket but have to correct the values for the first
-    // and last bucket by calculating the size of 's' and 'e'.
-    double missingStartFraction =
-        ((double) rangeStart.minusMillis(bucketSizeMillis * startPosition).toMillis())
-            / bucketSizeMillis;
-    double missingEndFraction =
-        ((double) (bucketSizeMillis * (endPosition + 1) - rangeEnd.toMillis())) / bucketSizeMillis;
-
-    if (startPosition < 0) {
-      startPosition = 0;
-      missingStartFraction = 0;
-    }
-    if (endPosition < startPosition) {
-      endPosition = startPosition;
-      missingEndFraction = 0;
+    init {
+        this.startTime = startTime
+        this.bucketSizeMillis = bucketDuration.toMillis()
     }
 
-    synchronized (this) {
-      // Resize data array if necessary so it can at least fit endPosition.
-      if (endPosition >= data.length) {
-        data = Arrays.copyOf(data, max(endPosition + 1, 2 * data.length));
-      }
+    override fun addRange(startTime: java.time.Duration, endTime: java.time.Duration) {
+        addRange(startTime, endTime,  /* value= */1.0)
+    }
 
-      // Do the actual update.
-      for (int i = startPosition; i <= endPosition; i++) {
-        double fraction = 1;
-        if (i == startPosition) {
-          fraction -= missingStartFraction;
+    override fun addRange(rangeStart: java.time.Duration, rangeEnd: java.time.Duration, value: Double) {
+        // Compute times relative to start and their positions in the data array.
+        var rangeStart: java.time.Duration = rangeStart
+        var rangeEnd: java.time.Duration = rangeEnd
+        rangeStart = rangeStart.minus(startTime)
+        rangeEnd = rangeEnd.minus(startTime)
+        var startPosition: Int = (rangeStart.toMillis() / bucketSizeMillis).toInt()
+        var endPosition: Int = (rangeEnd.toMillis() / bucketSizeMillis).toInt()
+
+        // Assume we add the following range R:
+        // ----------------------------------
+        // |     |ssRRR|RRRRR|Reeee|      |
+        // ----------------------------------
+        // we cannot just add value to each affected bucket but have to correct the values for the first
+        // and last bucket by calculating the size of 's' and 'e'.
+        var missingStartFraction: Double =
+            ((rangeStart.minusMillis(bucketSizeMillis * startPosition).toMillis().toDouble())
+                    / bucketSizeMillis)
+        var missingEndFraction: Double =
+            ((bucketSizeMillis * (endPosition + 1) - rangeEnd.toMillis()).toDouble()) / bucketSizeMillis
+
+        if (startPosition < 0) {
+            startPosition = 0
+            missingStartFraction = 0.0
         }
-        if (i == endPosition) {
-          fraction -= missingEndFraction;
+        if (endPosition < startPosition) {
+            endPosition = startPosition
+            missingEndFraction = 0.0
         }
-        data[i] += fraction * value;
-      }
-    }
-  }
 
-  @Override
-  public synchronized double[] toDoubleArray(int len) {
-    return Arrays.copyOf(data, len);
-  }
+        synchronized(this) {
+            // Resize data array if necessary so it can at least fit endPosition.
+            if (endPosition >= data.length) {
+                data = java.util.Arrays.copyOf(data, java.lang.Math.max(endPosition + 1, 2 * data.length))
+            }
+
+            // Do the actual update.
+            for (i in startPosition..endPosition) {
+                var fraction = 1.0
+                if (i == startPosition) {
+                    fraction -= missingStartFraction
+                }
+                if (i == endPosition) {
+                    fraction -= missingEndFraction
+                }
+                data[i] += fraction * value
+            }
+        }
+    }
+
+    @kotlin.jvm.Synchronized
+    override fun toDoubleArray(len: Int): DoubleArray {
+        return java.util.Arrays.copyOf(data, len)
+    }
+
+    companion object {
+        private const val INITIAL_SIZE = 100
+    }
 }

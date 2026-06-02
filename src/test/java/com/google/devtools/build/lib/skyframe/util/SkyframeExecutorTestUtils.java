@@ -153,7 +153,7 @@ public class SkyframeExecutorTestUtils {
       return null;
     }
     try {
-      return value.getPackage().getTarget(label.getName());
+      return value.getPackage().getTarget(label.name);
     } catch (NoSuchTargetException e) {
       return null;
     }

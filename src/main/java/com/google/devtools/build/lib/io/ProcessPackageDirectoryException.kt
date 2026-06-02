@@ -11,43 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.io;
+package com.google.devtools.build.lib.io
 
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.vfs.RootedPath;
+import com.google.devtools.build.lib.server.FailureDetails
 
 /**
- * Exception indicating that {@link com.google.devtools.build.lib.skyframe.ProcessPackageDirectory}
- * failed due to an {@link InconsistentFilesystemException}. Wraps {@link
- * InconsistentFilesystemException} so that we have a {@link DetailedException} for top-level
+ * Exception indicating that [com.google.devtools.build.lib.skyframe.ProcessPackageDirectory]
+ * failed due to an [InconsistentFilesystemException]. Wraps [ ] so that we have a [DetailedException] for top-level
  * reporting.
  */
-public final class ProcessPackageDirectoryException extends Exception implements DetailedException {
-  private final DetailedExitCode detailedExitCode;
-
-  public ProcessPackageDirectoryException(RootedPath directory, InconsistentFilesystemException e) {
-    super(
-        "Directory '"
+class ProcessPackageDirectoryException(directory: RootedPath, e: InconsistentFilesystemException) : java.lang.Exception(
+    ("Directory '"
             + directory.asPath().getPathString()
             + "' could not be processed: "
-            + e.getMessage(),
-        e);
-    this.detailedExitCode =
-        DetailedExitCode.of(
-            FailureDetails.FailureDetail.newBuilder()
-                .setMessage(getMessage())
-                .setPackageLoading(
-                    FailureDetails.PackageLoading.newBuilder()
-                        .setCode(
-                            FailureDetails.PackageLoading.Code
-                                .TRANSIENT_INCONSISTENT_FILESYSTEM_ERROR))
-                .build());
-  }
+            + e.message),
+    e
+), DetailedException {
+    private val detailedExitCode: DetailedExitCode
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    init {
+        this.detailedExitCode =
+            DetailedExitCode.of(
+                FailureDetails.FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setPackageLoading(
+                        FailureDetails.PackageLoading.newBuilder()
+                            .setCode(
+                                FailureDetails.PackageLoading.Code
+                                    .TRANSIENT_INCONSISTENT_FILESYSTEM_ERROR
+                            )
+                    )
+                    .build()
+            )
+    }
+
+    override fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
 }

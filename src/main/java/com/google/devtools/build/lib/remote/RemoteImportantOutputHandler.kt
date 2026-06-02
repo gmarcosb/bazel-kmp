@@ -11,217 +11,215 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.Actions;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.ImportantOutputHandler;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.remote.common.BulkTransferException;
-import com.google.devtools.build.lib.remote.util.Utils;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.RemoteExecution;
-import com.google.devtools.build.lib.vfs.OutputService.RewoundActionSynchronizer;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutionException;
+import com.google.devtools.build.lib.actions.ActionExecutionMetadata
 
 /**
- * Implementation of {@link ImportantOutputHandler} for Build without the Bytes.
- *
- * <p>Any output that cannot be confirmed to still exist in remote cache results in rewinding.
- *
- * <p>The lifetime of an instance is a single build.
+ * Implementation of [ImportantOutputHandler] for Build without the Bytes.
+ * 
+ * 
+ * Any output that cannot be confirmed to still exist in remote cache results in rewinding.
+ * 
+ * 
+ * The lifetime of an instance is a single build.
  */
-public final class RemoteImportantOutputHandler implements ImportantOutputHandler {
-  private final WalkableGraph graph;
-  private final RemoteOutputChecker remoteOutputChecker;
-  private final ActionInputPrefetcher actionInputPrefetcher;
-  private final RewoundActionSynchronizer rewoundActionSynchronizer;
+class RemoteImportantOutputHandler(
+    graph: WalkableGraph?,
+    remoteOutputChecker: RemoteOutputChecker,
+    actionInputPrefetcher: ActionInputPrefetcher,
+    rewoundActionSynchronizer: RewoundActionSynchronizer?
+) : ImportantOutputHandler {
+    private val graph: WalkableGraph?
+    private val remoteOutputChecker: RemoteOutputChecker
+    private val actionInputPrefetcher: ActionInputPrefetcher
+    private val rewoundActionSynchronizer: RewoundActionSynchronizer?
 
-  public RemoteImportantOutputHandler(
-      WalkableGraph graph,
-      RemoteOutputChecker remoteOutputChecker,
-      ActionInputPrefetcher actionInputPrefetcher,
-      RewoundActionSynchronizer rewoundActionSynchronizer) {
-    this.graph = graph;
-    this.remoteOutputChecker = remoteOutputChecker;
-    this.actionInputPrefetcher = actionInputPrefetcher;
-    this.rewoundActionSynchronizer = rewoundActionSynchronizer;
-  }
+    init {
+        this.graph = graph
+        this.remoteOutputChecker = remoteOutputChecker
+        this.actionInputPrefetcher = actionInputPrefetcher
+        this.rewoundActionSynchronizer = rewoundActionSynchronizer
+    }
 
-  @Override
-  public boolean requiresHiddenOutputMetadata() {
-    // We want to process top-level runfiles in processOutputsAndGetLostArtifacts.
-    return true;
-  }
+    public override fun requiresHiddenOutputMetadata(): Boolean {
+        // We want to process top-level runfiles in processOutputsAndGetLostArtifacts.
+        return true
+    }
 
-  @Override
-  public LostArtifacts processOutputsAndGetLostArtifacts(
-      Iterable<Artifact> importantOutputs, InputMetadataProvider metadataProvider)
-      throws ImportantOutputException, InterruptedException {
-    try (SilentCloseable lock =
-        maybeEnterProcessOutputsAndGetLostArtifacts(importantOutputs, metadataProvider)) {
-      ensureToplevelArtifacts(importantOutputs, metadataProvider);
-    } catch (IOException e) {
-      if (e instanceof BulkTransferException bulkTransferException) {
-        var lostArtifacts = bulkTransferException.getLostArtifacts(metadataProvider::getInput);
-        if (!lostArtifacts.isEmpty()) {
-          return lostArtifacts;
+    @Throws(ImportantOutputException::class, java.lang.InterruptedException::class)
+    public override fun processOutputsAndGetLostArtifacts(
+        importantOutputs: Iterable<Artifact>, metadataProvider: InputMetadataProvider
+    ): LostArtifacts {
+        try {
+            maybeEnterProcessOutputsAndGetLostArtifacts(importantOutputs, metadataProvider).use { lock ->
+                ensureToplevelArtifacts(importantOutputs, metadataProvider)
+            }
+        } catch (e: IOException) {
+            if (e is BulkTransferException) {
+                val lostArtifacts: LostArtifacts = e.getLostArtifacts(metadataProvider::getInput)
+                if (!lostArtifacts.isEmpty()) {
+                    return lostArtifacts
+                }
+            }
+            throw ImportantOutputException(
+                e,
+                FailureDetail.newBuilder()
+                    .setMessage(e.getMessage())
+                    .setRemoteExecution(
+                        RemoteExecution.newBuilder()
+                            .setCode(RemoteExecution.Code.TOPLEVEL_OUTPUTS_DOWNLOAD_FAILURE)
+                            .build()
+                    )
+                    .build()
+            )
         }
-      }
-      throw new ImportantOutputException(
-          e,
-          FailureDetail.newBuilder()
-              .setMessage(e.getMessage())
-              .setRemoteExecution(
-                  RemoteExecution.newBuilder()
-                      .setCode(RemoteExecution.Code.TOPLEVEL_OUTPUTS_DOWNLOAD_FAILURE)
-                      .build())
-              .build());
-    }
-    return LostArtifacts.EMPTY;
-  }
-
-  @Override
-  public LostArtifacts processRunfilesAndGetLostArtifacts(
-      PathFragment runfilesDir,
-      Map<PathFragment, Artifact> runfiles,
-      InputMetadataProvider metadataProvider,
-      String inputManifestExtension) {
-    throw new UnsupportedOperationException(
-        "Unused in Bazel, runfiles are processed in processOutputsAndGetLostArtifacts");
-  }
-
-  @Override
-  public void processTestOutputs(Collection<Path> testOutputs) {
-    // TODO: Either ensure that test outputs are never lost or implement a way to rewind them.
-  }
-
-  @Override
-  public void processWorkspaceStatusOutputs(Path stableOutput, Path volatileOutput) {}
-
-  @Override
-  public void processTooLargeStdoutErr(Path stdoutErr) {}
-
-  private SilentCloseable maybeEnterProcessOutputsAndGetLostArtifacts(
-      Iterable<Artifact> importantOutputs, InputMetadataProvider metadataProvider)
-      throws InterruptedException {
-    if (rewoundActionSynchronizer
-        instanceof RemoteRewoundActionSynchronizer remoteRewoundActionSynchronizer) {
-      return remoteRewoundActionSynchronizer.enterProcessOutputsAndGetLostArtifacts(
-          importantOutputs, metadataProvider);
-    }
-    return () -> {};
-  }
-
-  private void ensureToplevelArtifacts(
-      Iterable<Artifact> importantArtifacts, InputMetadataProvider metadataProvider)
-      throws IOException, InterruptedException {
-    var futures = new ArrayList<ListenableFuture<Void>>();
-
-    for (var artifact : importantArtifacts) {
-      downloadArtifact(metadataProvider, artifact, futures);
+        return LostArtifacts.EMPTY
     }
 
-    for (var runfileTree : metadataProvider.getRunfilesTrees()) {
-      for (var artifact : runfileTree.getArtifacts().toList()) {
-        downloadArtifact(metadataProvider, artifact, futures);
-      }
+    public override fun processRunfilesAndGetLostArtifacts(
+        runfilesDir: PathFragment?,
+        runfiles: MutableMap<PathFragment?, Artifact?>?,
+        metadataProvider: InputMetadataProvider?,
+        inputManifestExtension: String?
+    ): LostArtifacts? {
+        throw java.lang.UnsupportedOperationException(
+            "Unused in Bazel, runfiles are processed in processOutputsAndGetLostArtifacts"
+        )
     }
 
-    // TODO: Only wait for failed futures to complete as long as they can all be explained by
-    // lost outputs.
-    try {
-      var unused = Utils.mergeBulkTransfer(futures).get();
-    } catch (ExecutionException e) {
-      Throwables.throwIfInstanceOf(e.getCause(), IOException.class);
-      Throwables.throwIfInstanceOf(e.getCause(), InterruptedException.class);
-      Throwables.throwIfUnchecked(e.getCause());
-      throw new IllegalStateException(e.getCause());
-    }
-  }
-
-  private void downloadArtifact(
-      InputMetadataProvider metadataProvider,
-      Artifact artifact,
-      List<ListenableFuture<Void>> futures)
-      throws IOException, InterruptedException {
-    if (!RemoteOutputChecker.mayBeRemote(artifact)) {
-      return;
+    public override fun processTestOutputs(testOutputs: MutableCollection<com.google.devtools.build.lib.vfs.Path?>?) {
+        // TODO: Either ensure that test outputs are never lost or implement a way to rewind them.
     }
 
-    // Metadata can be null during error bubbling, only download outputs that are already
-    // generated. b/342188273
-    if (artifact.isTreeArtifact()) {
-      var treeArtifactValue = metadataProvider.getTreeMetadata(artifact);
-      if (treeArtifactValue == null) {
-        return;
-      }
+    public override fun processWorkspaceStatusOutputs(
+        stableOutput: com.google.devtools.build.lib.vfs.Path?,
+        volatileOutput: com.google.devtools.build.lib.vfs.Path?
+    ) {
+    }
 
-      var filesToDownload = new ArrayList<TreeFileArtifact>(treeArtifactValue.getChildren().size());
-      for (var entry : treeArtifactValue.getChildValues().entrySet()) {
-        if (remoteOutputChecker.shouldDownloadOutput(entry.getKey(), entry.getValue())) {
-          filesToDownload.add(entry.getKey());
+    public override fun processTooLargeStdoutErr(stdoutErr: com.google.devtools.build.lib.vfs.Path?) {}
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun maybeEnterProcessOutputsAndGetLostArtifacts(
+        importantOutputs: Iterable<Artifact>?, metadataProvider: InputMetadataProvider?
+    ): SilentCloseable {
+        if (rewoundActionSynchronizer
+                    is RemoteRewoundActionSynchronizer
+        ) {
+            return rewoundActionSynchronizer.enterProcessOutputsAndGetLostArtifacts(
+                importantOutputs, metadataProvider
+            )
         }
-      }
-      if (!filesToDownload.isEmpty()) {
-        futures.add(
-            actionInputPrefetcher.prefetchFiles(
-                // derivedArtifact's generating action may be an action template, which doesn't
-                // implement the required ActionExecutionMetadata.
-                getGeneratingAction(filesToDownload.getFirst()),
-                /* spawn= */ null,
-                () -> filesToDownload,
-                metadataProvider,
-                ActionInputPrefetcher.Priority.LOW,
-                ActionInputPrefetcher.Reason.OUTPUTS));
-      }
-    } else {
-      FileArtifactValue metadata = metadataProvider.getInputMetadata(artifact);
-      if (metadata == null) {
-        return;
-      }
-
-      if (remoteOutputChecker.shouldDownloadOutput(artifact, metadata)) {
-        futures.add(
-            actionInputPrefetcher.prefetchFiles(
-                artifact instanceof DerivedArtifact derivedArtifact
-                    ? getGeneratingAction(derivedArtifact)
-                    : null,
-                /* spawn= */ null,
-                () -> ImmutableList.of(artifact),
-                metadataProvider,
-                ActionInputPrefetcher.Priority.LOW,
-                ActionInputPrefetcher.Reason.OUTPUTS));
-      }
+        return SilentCloseable {}
     }
-  }
 
-  private ActionExecutionMetadata getGeneratingAction(DerivedArtifact artifact)
-      throws InterruptedException {
-    var action = Actions.getGeneratingAction(graph, artifact);
-    Preconditions.checkState(
-        action instanceof ActionExecutionMetadata,
-        "generating action for artifact %s is not an ActionExecutionMetadata, but %s",
-        artifact,
-        action != null ? action.getClass() : null);
-    return (ActionExecutionMetadata) action;
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun ensureToplevelArtifacts(
+        importantArtifacts: Iterable<Artifact>, metadataProvider: InputMetadataProvider
+    ) {
+        val futures: java.util.ArrayList<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?> =
+            java.util.ArrayList<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?>()
+
+        for (artifact in importantArtifacts) {
+            downloadArtifact(metadataProvider, artifact, futures)
+        }
+
+        for (runfileTree in metadataProvider.getRunfilesTrees()) {
+            for (artifact in runfileTree.getArtifacts().toList()) {
+                downloadArtifact(metadataProvider, artifact, futures)
+            }
+        }
+
+        // TODO: Only wait for failed futures to complete as long as they can all be explained by
+        // lost outputs.
+        try {
+            val unused: java.lang.Void? =
+                com.google.devtools.build.lib.remote.util.Utils.mergeBulkTransfer(futures).get()
+        } catch (e: ExecutionException) {
+            com.google.common.base.Throwables.throwIfInstanceOf<IOException?>(e.getCause(), IOException::class.java)
+            com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                e.getCause(),
+                java.lang.InterruptedException::class.java
+            )
+            com.google.common.base.Throwables.throwIfUnchecked(e.getCause())
+            throw java.lang.IllegalStateException(e.getCause())
+        }
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun downloadArtifact(
+        metadataProvider: InputMetadataProvider,
+        artifact: Artifact,
+        futures: MutableList<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?>
+    ) {
+        if (!RemoteOutputChecker.Companion.mayBeRemote(artifact)) {
+            return
+        }
+
+        // Metadata can be null during error bubbling, only download outputs that are already
+        // generated. b/342188273
+        if (artifact.isTreeArtifact()) {
+            val treeArtifactValue: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                metadataProvider.getTreeMetadata(artifact)
+            if (treeArtifactValue == null) {
+                return
+            }
+
+            val filesToDownload: java.util.ArrayList<TreeFileArtifact?> =
+                java.util.ArrayList<TreeFileArtifact?>(treeArtifactValue.getChildren().size())
+            for (entry in treeArtifactValue.getChildValues().entrySet()) {
+                if (remoteOutputChecker.shouldDownloadOutput(entry.getKey(), entry.getValue())) {
+                    filesToDownload.add(entry.getKey())
+                }
+            }
+            if (!filesToDownload.isEmpty()) {
+                futures.add(
+                    actionInputPrefetcher.prefetchFiles( // derivedArtifact's generating action may be an action template, which doesn't
+                        // implement the required ActionExecutionMetadata.
+                        getGeneratingAction(filesToDownload.getFirst()),  /* spawn= */
+                        null,
+                        { filesToDownload },
+                        metadataProvider,
+                        ActionInputPrefetcher.Priority.LOW,
+                        ActionInputPrefetcher.Reason.OUTPUTS
+                    )
+                )
+            }
+        } else {
+            val metadata: FileArtifactValue? = metadataProvider.getInputMetadata(artifact)
+            if (metadata == null) {
+                return
+            }
+
+            if (remoteOutputChecker.shouldDownloadOutput(artifact, metadata)) {
+                futures.add(
+                    actionInputPrefetcher.prefetchFiles(
+                        if (artifact is DerivedArtifact)
+                            getGeneratingAction(artifact)
+                        else
+                            null,  /* spawn= */
+                        null,
+                        { com.google.common.collect.ImmutableList.of<E?>(artifact) },
+                        metadataProvider,
+                        ActionInputPrefetcher.Priority.LOW,
+                        ActionInputPrefetcher.Reason.OUTPUTS
+                    )
+                )
+            }
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun getGeneratingAction(artifact: DerivedArtifact?): ActionExecutionMetadata? {
+        val action: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            Actions.getGeneratingAction(graph, artifact)
+        com.google.common.base.Preconditions.checkState(
+            action is ActionExecutionMetadata,
+            "generating action for artifact %s is not an ActionExecutionMetadata, but %s",
+            artifact,
+            if (action != null) action.getClass() else null
+        )
+        return action as ActionExecutionMetadata?
+    }
 }

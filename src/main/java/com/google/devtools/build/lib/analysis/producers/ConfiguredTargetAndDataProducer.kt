@@ -11,221 +11,207 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.InconsistentNullConfigException;
-import com.google.devtools.build.lib.analysis.TransitiveDependencyState;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.BaseTargetPrerequisitesSupplier;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.lib.skyframe.PackageValue;
-import com.google.devtools.build.lib.skyframe.RemoteConfiguredTargetValue;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
 /**
- * Determines {@link ConfiguredTargetAndData} from {@link ConfiguredTargetKey}.
- *
- * <p>The resulting package and configuration are based on the resulting {@link ConfiguredTarget}
+ * Determines [ConfiguredTargetAndData] from [ConfiguredTargetKey].
+ * 
+ * 
+ * The resulting package and configuration are based on the resulting [ConfiguredTarget]
  * and may be different from what is in the key, for example, if there is an alias.
  */
-public final class ConfiguredTargetAndDataProducer
-    implements StateMachine,
-        Consumer<SkyValue>,
-        StateMachine.ValueOrException3Sink<
-            ConfiguredValueCreationException,
-            NoSuchThingException,
-            InconsistentNullConfigException> {
-  /** Interface for accepting values produced by this class. */
-  public interface ResultSink {
-    void acceptConfiguredTargetAndData(ConfiguredTargetAndData value, int index);
+class ConfiguredTargetAndDataProducer
+    (
+    key: ConfiguredTargetKey?,
+    transitionKeys: com.google.common.collect.ImmutableList<String?>?,
+    transitiveState: TransitiveDependencyState,
+    sink: ResultSink,
+    outputIndex: Int,
+    baseTargetPrerequisitesSupplier: BaseTargetPrerequisitesSupplier?
+) : StateMachine, java.util.function.Consumer<SkyValue?>,
+    ValueOrException3Sink<ConfiguredValueCreationException?, NoSuchThingException?, InconsistentNullConfigException?> {
+    /** Interface for accepting values produced by this class.  */
+    interface ResultSink {
+        fun acceptConfiguredTargetAndData(value: ConfiguredTargetAndData?, index: Int)
 
-    void acceptConfiguredTargetAndDataError(ConfiguredValueCreationException error);
+        fun acceptConfiguredTargetAndDataError(error: ConfiguredValueCreationException?)
 
-    void acceptConfiguredTargetAndDataError(NoSuchThingException error);
+        fun acceptConfiguredTargetAndDataError(error: NoSuchThingException?)
 
-    void acceptConfiguredTargetAndDataError(InconsistentNullConfigException error);
-  }
-
-  // -------------------- Input --------------------
-  private final ConfiguredTargetKey key;
-  private final ImmutableList<String> transitionKeys;
-  private final TransitiveDependencyState transitiveState;
-
-  /**
-   * Cache for {@link ConfiguredTargetValue} and {@link BuildConfigurationValue}
-   *
-   * <p>Check {@link AspectFunction#baseTargetPrerequisitesSupplier} for more details
-   */
-  @Nullable private final BaseTargetPrerequisitesSupplier baseTargetPrerequisitesSupplier;
-
-  // -------------------- Output --------------------
-  private final ResultSink sink;
-  private final int outputIndex;
-
-  // -------------------- Internal State --------------------
-  private ConfiguredTargetValue configuredTargetValue;
-  @Nullable // Null if the configured target key's configuration key is null.
-  private BuildConfigurationValue configurationValue;
-  private Package pkg;
-
-  public ConfiguredTargetAndDataProducer(
-      ConfiguredTargetKey key,
-      ImmutableList<String> transitionKeys,
-      TransitiveDependencyState transitiveState,
-      ResultSink sink,
-      int outputIndex,
-      @Nullable BaseTargetPrerequisitesSupplier baseTargetPrerequisitesSupplier) {
-    this.key = key;
-    this.transitionKeys = transitionKeys;
-    this.transitiveState = transitiveState;
-    this.sink = sink;
-    this.outputIndex = outputIndex;
-    this.baseTargetPrerequisitesSupplier = baseTargetPrerequisitesSupplier;
-  }
-
-  @Override
-  public StateMachine step(Tasks tasks) throws InterruptedException {
-    var cachedConfiguredTargetValue =
-        baseTargetPrerequisitesSupplier == null
-            ? null
-            : baseTargetPrerequisitesSupplier.getPrerequisite(key);
-    if (cachedConfiguredTargetValue != null) {
-      acceptValue(cachedConfiguredTargetValue);
-    } else {
-      tasks.lookUp(
-          key,
-          ConfiguredValueCreationException.class,
-          NoSuchThingException.class,
-          InconsistentNullConfigException.class,
-          (ValueOrException3Sink<
-                  ConfiguredValueCreationException,
-                  NoSuchThingException,
-                  InconsistentNullConfigException>)
-              this);
-    }
-    return this::fetchConfigurationAndPackage;
-  }
-
-  private void acceptValue(ConfiguredTargetValue configuredTargetValue) {
-    this.configuredTargetValue = configuredTargetValue;
-    if (transitiveState.storeTransitivePackages()) {
-      transitiveState.updateTransitivePackages(
-          ConfiguredTargetKey.fromConfiguredTarget(configuredTargetValue.getConfiguredTarget()),
-          configuredTargetValue.getTransitivePackages());
-    }
-  }
-
-  @Override
-  public void acceptValueOrException3(
-      @Nullable SkyValue value,
-      @Nullable ConfiguredValueCreationException error,
-      @Nullable NoSuchThingException missingTargetError,
-      @Nullable InconsistentNullConfigException visibilityError) {
-    if (value != null) {
-      acceptValue((ConfiguredTargetValue) value);
-      return;
-    }
-    if (error != null) {
-      transitiveState.addTransitiveCauses(error.getRootCauses());
-      sink.acceptConfiguredTargetAndDataError(error);
-      return;
-    }
-    if (missingTargetError != null) {
-      sink.acceptConfiguredTargetAndDataError(missingTargetError);
-      return;
-    }
-    if (visibilityError != null) {
-      sink.acceptConfiguredTargetAndDataError(visibilityError);
-      return;
-    }
-    throw new IllegalArgumentException("both value and error were null");
-  }
-
-  private StateMachine fetchConfigurationAndPackage(Tasks tasks) throws InterruptedException {
-    if (configuredTargetValue == null) {
-      return DONE; // There was a previous error.
+        fun acceptConfiguredTargetAndDataError(error: InconsistentNullConfigException?)
     }
 
-    var configuredTarget = configuredTargetValue.getConfiguredTarget();
-    var configurationKey = configuredTarget.getConfigurationKey();
-    if (configurationKey != null) {
-      this.configurationValue =
-          baseTargetPrerequisitesSupplier == null
-              ? null
-              : baseTargetPrerequisitesSupplier.getPrerequisiteConfiguration(configurationKey);
-      if (configurationValue == null) {
-        tasks.lookUp(configurationKey, (Consumer<SkyValue>) this);
-      }
+    // -------------------- Input --------------------
+    private val key: ConfiguredTargetKey?
+    private val transitionKeys: com.google.common.collect.ImmutableList<String?>?
+    private val transitiveState: TransitiveDependencyState
+
+    /**
+     * Cache for [ConfiguredTargetValue] and [BuildConfigurationValue]
+     * 
+     * 
+     * Check [AspectFunction.baseTargetPrerequisitesSupplier] for more details
+     */
+    private val baseTargetPrerequisitesSupplier: BaseTargetPrerequisitesSupplier?
+
+    // -------------------- Output --------------------
+    private val sink: ResultSink
+    private val outputIndex: Int
+
+    // -------------------- Internal State --------------------
+    private var configuredTargetValue: ConfiguredTargetValue? = null
+
+    // Null if the configured target key's configuration key is null.
+    private var configurationValue: BuildConfigurationValue? = null
+    private var pkg: com.google.devtools.build.lib.packages.Package? = null
+
+    init {
+        this.key = key
+        this.transitionKeys = transitionKeys
+        this.transitiveState = transitiveState
+        this.sink = sink
+        this.outputIndex = outputIndex
+        this.baseTargetPrerequisitesSupplier = baseTargetPrerequisitesSupplier
     }
 
-    if (configuredTargetValue instanceof RemoteConfiguredTargetValue) {
-      // Skips package lookup. The RemoteConfiguredTargetValue includes its own TargetData.
-      return this::constructResult;
+    @Throws(java.lang.InterruptedException::class)
+    override fun step(tasks: StateMachine.Tasks): StateMachine {
+        val cachedConfiguredTargetValue: ConfiguredTargetValue? =
+            if (baseTargetPrerequisitesSupplier == null)
+                null
+            else
+                baseTargetPrerequisitesSupplier.getPrerequisite(key)
+        if (cachedConfiguredTargetValue != null) {
+            acceptValue(cachedConfiguredTargetValue)
+        } else {
+            tasks.lookUp<E1?, E2?, E3?>(
+                key,
+                ConfiguredValueCreationException::class.java,
+                NoSuchThingException::class.java,
+                InconsistentNullConfigException::class.java,
+                this as ValueOrException3Sink<ConfiguredValueCreationException?, NoSuchThingException?, InconsistentNullConfigException?>
+            )
+        }
+        return StateMachine { tasks: StateMachine.Tasks? -> this.fetchConfigurationAndPackage(tasks) }
     }
 
-    // An alternative to this is to optimistically fetch the package using the label of the
-    // configured target key. However, the actual package may differ when this is an
-    // AliasConfiguredTarget and would need to be refetched.
-
-    var packageId = configuredTarget.getLabel().getPackageIdentifier();
-    this.pkg = transitiveState.getDependencyPackage(packageId);
-    if (pkg == null) {
-      // In incremental builds, it is possible that the package won't be present in the cache. For
-      // example, suppose that a configured target A has two children B and C. If B is dirty, it
-      // causes A's re-evaluation, which causes this fetch to be performed for C. However, C has not
-      // been evaluated this build.
-      tasks.lookUp(packageId, (Consumer<SkyValue>) this);
+    private fun acceptValue(configuredTargetValue: ConfiguredTargetValue) {
+        this.configuredTargetValue = configuredTargetValue
+        if (transitiveState.storeTransitivePackages()) {
+            transitiveState.updateTransitivePackages(
+                ConfiguredTargetKey.fromConfiguredTarget(configuredTargetValue.getConfiguredTarget()),
+                configuredTargetValue.getTransitivePackages()
+            )
+        }
     }
 
-    return this::constructResult;
-  }
+    override fun acceptValueOrException3(
+        value: SkyValue?,
+        error: ConfiguredValueCreationException?,
+        missingTargetError: NoSuchThingException?,
+        visibilityError: InconsistentNullConfigException?
+    ) {
+        if (value != null) {
+            acceptValue(value as ConfiguredTargetValue)
+            return
+        }
+        if (error != null) {
+            transitiveState.addTransitiveCauses(error.getRootCauses())
+            sink.acceptConfiguredTargetAndDataError(error)
+            return
+        }
+        if (missingTargetError != null) {
+            sink.acceptConfiguredTargetAndDataError(missingTargetError)
+            return
+        }
+        if (visibilityError != null) {
+            sink.acceptConfiguredTargetAndDataError(visibilityError)
+            return
+        }
+        throw java.lang.IllegalArgumentException("both value and error were null")
+    }
 
-  @Override
-  public void accept(SkyValue value) {
-    if (value instanceof BuildConfigurationValue buildConfigurationValue) {
-      this.configurationValue = buildConfigurationValue;
-      return;
-    }
-    if (value instanceof PackageValue packageValue) {
-      this.pkg = packageValue.getPackage();
-      return;
-    }
-    throw new IllegalArgumentException("unexpected value: " + value);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun fetchConfigurationAndPackage(tasks: StateMachine.Tasks): StateMachine {
+        if (configuredTargetValue == null) {
+            return StateMachine.DONE // There was a previous error.
+        }
 
-  private StateMachine constructResult(Tasks tasks) {
-    ConfiguredTarget configuredTarget = configuredTargetValue.getConfiguredTarget();
-    if (configuredTargetValue instanceof RemoteConfiguredTargetValue remoteValue) {
-      sink.acceptConfiguredTargetAndData(
-          new ConfiguredTargetAndData(
-              configuredTarget, remoteValue.getTargetData(), configurationValue, transitionKeys),
-          outputIndex);
-      return DONE;
+        val configuredTarget: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            configuredTargetValue.getConfiguredTarget()
+        val configurationKey: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            configuredTarget.getConfigurationKey()
+        if (configurationKey != null) {
+            this.configurationValue =
+                if (baseTargetPrerequisitesSupplier == null)
+                    null
+                else
+                    baseTargetPrerequisitesSupplier.getPrerequisiteConfiguration(configurationKey)
+            if (configurationValue == null) {
+                tasks.lookUp(configurationKey, this as java.util.function.Consumer<SkyValue?>?)
+            }
+        }
+
+        if (configuredTargetValue is RemoteConfiguredTargetValue) {
+            // Skips package lookup. The RemoteConfiguredTargetValue includes its own TargetData.
+            return StateMachine { tasks: StateMachine.Tasks? -> this.constructResult(tasks) }
+        }
+
+        // An alternative to this is to optimistically fetch the package using the label of the
+        // configured target key. However, the actual package may differ when this is an
+        // AliasConfiguredTarget and would need to be refetched.
+        val packageId: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            configuredTarget.getLabel().getPackageIdentifier()
+        this.pkg = transitiveState.getDependencyPackage(packageId)
+        if (pkg == null) {
+            // In incremental builds, it is possible that the package won't be present in the cache. For
+            // example, suppose that a configured target A has two children B and C. If B is dirty, it
+            // causes A's re-evaluation, which causes this fetch to be performed for C. However, C has not
+            // been evaluated this build.
+            tasks.lookUp(packageId, this as java.util.function.Consumer<SkyValue?>)
+        }
+
+        return StateMachine { tasks: StateMachine.Tasks? -> this.constructResult(tasks) }
     }
 
-    Target target;
-    try {
-      target = pkg.getTarget(configuredTarget.getLabel().getName());
-    } catch (NoSuchTargetException e) {
-      // The package was fetched based on the label of the configured target. Since the configured
-      // target exists, it must have existed in the package when it was created.
-      throw new IllegalStateException("Target already verified for " + configuredTarget, e);
+    override fun accept(value: SkyValue?) {
+        if (value is BuildConfigurationValue) {
+            this.configurationValue = value
+            return
+        }
+        if (value is PackageValue) {
+            this.pkg = value.getPackage()
+            return
+        }
+        throw java.lang.IllegalArgumentException("unexpected value: " + value)
     }
-    sink.acceptConfiguredTargetAndData(
-        new ConfiguredTargetAndData(configuredTarget, target, configurationValue, transitionKeys),
-        outputIndex);
-    return DONE;
-  }
+
+    private fun constructResult(tasks: StateMachine.Tasks?): StateMachine {
+        val configuredTarget: ConfiguredTarget = configuredTargetValue.getConfiguredTarget()
+        if (configuredTargetValue is RemoteConfiguredTargetValue) {
+            sink.acceptConfiguredTargetAndData(
+                ConfiguredTargetAndData(
+                    configuredTarget, configuredTargetValue.getTargetData(), configurationValue, transitionKeys
+                ),
+                outputIndex
+            )
+            return StateMachine.DONE
+        }
+
+        val target: com.google.devtools.build.lib.packages.Target?
+        try {
+            target = pkg.getTarget(configuredTarget.getLabel().getName())
+        } catch (e: NoSuchTargetException) {
+            // The package was fetched based on the label of the configured target. Since the configured
+            // target exists, it must have existed in the package when it was created.
+            throw java.lang.IllegalStateException("Target already verified for " + configuredTarget, e)
+        }
+        sink.acceptConfiguredTargetAndData(
+            ConfiguredTargetAndData(configuredTarget, target, configurationValue, transitionKeys),
+            outputIndex
+        )
+        return StateMachine.DONE
+    }
 }

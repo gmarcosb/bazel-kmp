@@ -83,7 +83,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget(targetToRequest);
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
     assertThat(failure.getMessage()).contains("variable '$<' : no input file");
     assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:bad_variable"));
@@ -102,7 +102,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:bad_factory");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
     assertThat(failure.getMessage()).contains("FailingRuleConfiguredTargetFactory.create() fails");
     assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:bad_factory"));
@@ -238,7 +238,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:r");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
     assertThat(failure.getMessage()).contains("This Is My Failure Message");
     assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"));
@@ -268,7 +268,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:r");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
     assertThat(failure.getMessage()).contains("This Is My Failure Message");
     assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"));
@@ -298,7 +298,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:r");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
     assertThat(failure.getMessage()).contains("This Is My Failure Message");
     assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"));
@@ -348,7 +348,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:failures_are_indirect_deps");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
 
     AnalysisFailure expectedOne =
         AnalysisFailure.create(
@@ -395,7 +395,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:two");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure expectedOne =
         AnalysisFailure.create(
             Label.parseCanonicalUnchecked("//test:one"), "This Is My Aspect Failure Message");
@@ -451,7 +451,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:three");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure expectedOne =
         AnalysisFailure.create(
             Label.parseCanonicalUnchecked("//test:one"), "This Is My Aspect Failure Message");
@@ -495,7 +495,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:two");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure expectedRuleFailure =
         AnalysisFailure.create(
             Label.parseCanonicalUnchecked("//test:one"), "This Is My Rule Failure Message");
@@ -541,7 +541,7 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:two");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure expectedRuleFailure =
         AnalysisFailure.create(Label.parseCanonicalUnchecked("//test:one"), "Aspect Failure");
 

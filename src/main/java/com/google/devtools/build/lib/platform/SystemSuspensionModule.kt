@@ -11,53 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Detects suspension events.  */
+class SystemSuspensionModule : BlazeModule() {
+    private var service: PlatformNativeDepsService? = null
 
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var reporter: com.google.devtools.build.lib.events.Reporter? = null
 
-/** Detects suspension events. */
-public final class SystemSuspensionModule extends BlazeModule {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  private PlatformNativeDepsService service;
-
-  @GuardedBy("this")
-  @Nullable
-  private Reporter reporter;
-
-  @Override
-  public void workspaceInit(
-      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {
-    service = checkNotNull(runtime.getBlazeService(PlatformNativeDepsService.class));
-    service.registerSuspensionJni(this::suspendCallback);
-  }
-
-  @Override
-  public synchronized void beforeCommand(CommandEnvironment env) {
-    this.reporter = env.getReporter();
-  }
-
-  @Override
-  public synchronized void afterCommand() {
-    this.reporter = null;
-  }
-
-  /** Callback method called from JNI whenever a suspension event occurs. */
-  synchronized void suspendCallback(int reason) {
-    SystemSuspensionEvent event = new SystemSuspensionEvent(reason);
-    logger.atInfo().log("%s", event.logString());
-    if (reporter != null) {
-      reporter.post(event);
+    override fun workspaceInit(
+        runtime: BlazeRuntime, directories: BlazeDirectories?, builder: WorkspaceBuilder?
+    ) {
+        service = com.google.common.base.Preconditions.checkNotNull<PlatformNativeDepsService?>(
+            runtime.getBlazeService<PlatformNativeDepsService?>(PlatformNativeDepsService::class.java)
+        )
+        service.registerSuspensionJni(IntConsumer { reason: Int -> this.suspendCallback(reason) })
     }
-  }
+
+    @kotlin.jvm.Synchronized
+    override fun beforeCommand(env: CommandEnvironment) {
+        this.reporter = env.getReporter()
+    }
+
+    @kotlin.jvm.Synchronized
+    override fun afterCommand() {
+        this.reporter = null
+    }
+
+    /** Callback method called from JNI whenever a suspension event occurs.  */
+    @kotlin.jvm.Synchronized
+    fun suspendCallback(reason: Int) {
+        val event: SystemSuspensionEvent = SystemSuspensionEvent(reason)
+        logger.atInfo().log("%s", event.logString())
+        if (reporter != null) {
+            reporter.post(event)
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

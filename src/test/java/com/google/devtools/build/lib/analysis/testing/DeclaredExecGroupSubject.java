@@ -72,6 +72,6 @@ public class DeclaredExecGroupSubject extends Subject {
   }
 
   public void copiesFromDefault() {
-    check("copyFromDefault()").that(actual.copyFromDefault()).isTrue();
+    check("copyFromDefault()").that(actual.copyFromDefault).isTrue();
   }
 }

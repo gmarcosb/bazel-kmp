@@ -11,73 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.Map;
-import java.util.Optional;
+import com.google.auto.value.AutoBuilder
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.vfs.Path
+import java.util.*
 
 /**
  * Description of an archive to be decompressed.
- *
+ * 
  * @param context The context in which this decompression is happening. Should only be used for
- *     reporting.
+ * reporting.
  */
-public record DecompressorDescriptor(
-    String context,
-    Path archivePath,
-    Path destinationPath,
-    Optional<String> prefix,
-    int stripComponents,
-    ImmutableMap<String, String> renameFiles) {
-  public DecompressorDescriptor {
-    requireNonNull(context, "context");
-    requireNonNull(archivePath, "archivePath");
-    requireNonNull(destinationPath, "destinationPath");
-    requireNonNull(prefix, "prefix");
-    requireNonNull(renameFiles, "renameFiles");
-  }
+@kotlin.jvm.JvmRecord
+data class DecompressorDescriptor(
+    val context: String?,
+    val archivePath: Path?,
+    val destinationPath: Path?,
+    val prefix: Optional<String?>?,
+    val stripComponents: Int,
+    val renameFiles: ImmutableMap<String?, String?>?
+) {
+    /** Builder for describing the file to be decompressed.  */
+    @AutoBuilder
+    abstract class Builder {
+        abstract fun setContext(context: String?): Builder?
 
-  public static Builder builder() {
-    return new AutoBuilder_DecompressorDescriptor_Builder()
-        .setContext("")
-        .setStripComponents(0)
-        .setRenameFiles(ImmutableMap.of());
-  }
+        abstract fun setArchivePath(archivePath: Path?): Builder?
 
-  /** Builder for describing the file to be decompressed. */
-  @AutoBuilder
-  public abstract static class Builder {
+        abstract fun setDestinationPath(destinationPath: Path?): Builder?
 
-    public abstract Builder setContext(String context);
+        abstract fun setPrefix(prefix: String?): Builder?
 
-    public abstract Builder setArchivePath(Path archivePath);
+        abstract fun setStripComponents(stripComponents: Int): Builder?
 
-    public abstract Builder setDestinationPath(Path destinationPath);
+        abstract fun setRenameFiles(renameFiles: MutableMap<String?, String?>?): Builder?
 
-    public abstract Builder setPrefix(String prefix);
+        abstract fun autoBuild(): DecompressorDescriptor
 
-    public abstract Builder setStripComponents(int stripComponents);
-
-    public abstract Builder setRenameFiles(Map<String, String> renameFiles);
-
-    public abstract DecompressorDescriptor autoBuild();
-
-    public DecompressorDescriptor build() {
-      DecompressorDescriptor d = autoBuild();
-      if (d.stripComponents() < 0) {
-        throw new IllegalArgumentException("'strip_components' must be non-negative");
-      }
-      if (d.stripComponents() != 0 && d.prefix().isPresent() && !d.prefix().get().isEmpty()) {
-        throw new IllegalArgumentException(
-            "Only one of 'strip_prefix' or 'strip_components' can be set");
-      }
-      return d;
+        fun build(): DecompressorDescriptor {
+            val d = autoBuild()
+            require(d.stripComponents >= 0) { "'strip_components' must be non-negative" }
+            require(
+                !(d.stripComponents != 0 && d.prefix!!.isPresent() && !d.prefix.get().isEmpty())
+            ) { "Only one of 'strip_prefix' or 'strip_components' can be set" }
+            return d
+        }
     }
-  }
+
+    init {
+        String > Objects.requireNonNull<String?>(context, "context")
+        Path > Objects.requireNonNull<Path?>(archivePath, "archivePath")
+        Path > Objects.requireNonNull<Path?>(destinationPath, "destinationPath")
+        Objects.requireNonNull<Optional<String?>?>(prefix, "prefix")
+        Objects.requireNonNull<ImmutableMap<String?, String?>?>(
+            renameFiles, "renameFiles"
+        )
+    }
+
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return AutoBuilder_DecompressorDescriptor_Builder()
+                .setContext("")
+                .setStripComponents(0)
+                .setRenameFiles(ImmutableMap.of<K?, V?>())
+        }
+    }
 }

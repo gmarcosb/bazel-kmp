@@ -11,392 +11,407 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.debug;
+package com.google.devtools.build.lib.bazel.debug
 
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.ExecuteWasmEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.ExtractEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.FileEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.LoadWasmEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.OsEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.RenameEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.SymlinkEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.TemplateEvent;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos.WhichEvent;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import com.google.protobuf.ByteString;
-import java.net.URI;
-import java.util.List;
-import java.util.Map;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos
 
-/** An event to record events happening during workspace rule resolution */
-public final class WorkspaceRuleEvent implements Postable {
-  WorkspaceLogProtos.WorkspaceEvent event;
+/** An event to record events happening during workspace rule resolution  */
+class WorkspaceRuleEvent private constructor(event: WorkspaceLogProtos.WorkspaceEvent) :
+    com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    var event: WorkspaceLogProtos.WorkspaceEvent
 
-  public WorkspaceLogProtos.WorkspaceEvent getLogEvent() {
-    return event;
-  }
-
-  private WorkspaceRuleEvent(WorkspaceLogProtos.WorkspaceEvent event) {
-    this.event = event;
-  }
-
-  /** Creates a new WorkspaceRuleEvent for an execution event. */
-  public static WorkspaceRuleEvent newExecuteEvent(
-      Iterable<String> args,
-      Integer timeout,
-      Map<String, String> commonEnvironment,
-      Map<String, String> customEnvironment,
-      String outputDirectory,
-      boolean quiet,
-      String context,
-      Location location) {
-
-    WorkspaceLogProtos.ExecuteEvent.Builder e =
-        WorkspaceLogProtos.ExecuteEvent.newBuilder()
-            .setTimeoutSeconds(timeout.intValue())
-            .setOutputDirectory(outputDirectory)
-            .setQuiet(quiet);
-    if (commonEnvironment != null) {
-      e = e.putAllEnvironment(commonEnvironment);
-    }
-    if (customEnvironment != null) {
-      e = e.putAllEnvironment(customEnvironment);
+    fun getLogEvent(): WorkspaceLogProtos.WorkspaceEvent {
+        return event
     }
 
-    for (String a : args) {
-      e.addArguments(a);
+    init {
+        this.event = event
     }
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setExecuteEvent(e.build());
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
-
-  /** Creates a new WorkspaceRuleEvent for a download event. */
-  public static WorkspaceRuleEvent newDownloadEvent(
-      List<URI> urls,
-      String output,
-      String sha256,
-      String integrity,
-      Boolean executable,
-      String context,
-      Location location) {
-    WorkspaceLogProtos.DownloadEvent.Builder e =
-        WorkspaceLogProtos.DownloadEvent.newBuilder()
-            .setOutput(output)
-            .setSha256(sha256)
-            .setIntegrity(integrity)
-            .setExecutable(executable);
-    for (URI u : urls) {
-      e.addUrl(u.toString());
+    /**
+     * @return a message to log for this event
+     */
+    fun logMessage(): String {
+        return event.toString()
     }
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setDownloadEvent(e.build());
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+    companion object {
+        /** Creates a new WorkspaceRuleEvent for an execution event.  */
+        fun newExecuteEvent(
+            args: Iterable<String?>,
+            timeout: Int,
+            commonEnvironment: MutableMap<String?, String?>?,
+            customEnvironment: MutableMap<String?, String?>?,
+            outputDirectory: String?,
+            quiet: Boolean,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            var e: WorkspaceLogProtos.ExecuteEvent.Builder =
+                WorkspaceLogProtos.ExecuteEvent.newBuilder()
+                    .setTimeoutSeconds(timeout)
+                    .setOutputDirectory(outputDirectory)
+                    .setQuiet(quiet)
+            if (commonEnvironment != null) {
+                e = e.putAllEnvironment(commonEnvironment)
+            }
+            if (customEnvironment != null) {
+                e = e.putAllEnvironment(customEnvironment)
+            }
 
-  /** Creates a new WorkspaceRuleEvent for an extract event. */
-  public static WorkspaceRuleEvent newExtractEvent(
-      String archive,
-      String output,
-      String stripPrefix,
-      Map<String, String> renameFiles,
-      String context,
-      Location location) {
-    ExtractEvent e =
-        WorkspaceLogProtos.ExtractEvent.newBuilder()
-            .setArchive(archive)
-            .setOutput(output)
-            .setStripPrefix(stripPrefix)
-            .putAllRenameFiles(renameFiles)
-            .build();
+            for (a in args) {
+                e.addArguments(a)
+            }
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setExtractEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setExecuteEvent(e.build())
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a download and extract event. */
-  public static WorkspaceRuleEvent newDownloadAndExtractEvent(
-      List<URI> urls,
-      String output,
-      String sha256,
-      String integrity,
-      String type,
-      String stripPrefix,
-      Map<String, String> renameFiles,
-      String context,
-      Location location) {
-    WorkspaceLogProtos.DownloadAndExtractEvent.Builder e =
-        WorkspaceLogProtos.DownloadAndExtractEvent.newBuilder()
-            .setOutput(output)
-            .setSha256(sha256)
-            .setIntegrity(integrity)
-            .setType(type)
-            .setStripPrefix(stripPrefix)
-            .putAllRenameFiles(renameFiles);
-    for (URI u : urls) {
-      e.addUrl(u.toString());
-    }
+        /** Creates a new WorkspaceRuleEvent for a download event.  */
+        fun newDownloadEvent(
+            urls: MutableList<java.net.URI>,
+            output: String?,
+            sha256: String?,
+            integrity: String?,
+            executable: Boolean?,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: WorkspaceLogProtos.DownloadEvent.Builder =
+                WorkspaceLogProtos.DownloadEvent.newBuilder()
+                    .setOutput(output)
+                    .setSha256(sha256)
+                    .setIntegrity(integrity)
+                    .setExecutable(executable)
+            for (u in urls) {
+                e.addUrl(u.toString())
+            }
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setDownloadAndExtractEvent(e.build());
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setDownloadEvent(e.build())
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a file event. */
-  public static WorkspaceRuleEvent newFileEvent(
-      String path, String content, boolean executable, String context, Location location) {
-    FileEvent e =
-        WorkspaceLogProtos.FileEvent.newBuilder()
-            .setPath(path)
-            .setContent(content)
-            .setExecutable(executable)
-            .build();
+        /** Creates a new WorkspaceRuleEvent for an extract event.  */
+        fun newExtractEvent(
+            archive: String?,
+            output: String?,
+            stripPrefix: String?,
+            renameFiles: MutableMap<String?, String?>?,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: ExtractEvent? =
+                WorkspaceLogProtos.ExtractEvent.newBuilder()
+                    .setArchive(archive)
+                    .setOutput(output)
+                    .setStripPrefix(stripPrefix)
+                    .putAllRenameFiles(renameFiles)
+                    .build()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setFileEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setExtractEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a file read event. */
-  public static WorkspaceRuleEvent newReadEvent(String path, String context, Location location) {
-    WorkspaceLogProtos.ReadEvent e =
-        WorkspaceLogProtos.ReadEvent.newBuilder().setPath(path).build();
+        /** Creates a new WorkspaceRuleEvent for a download and extract event.  */
+        fun newDownloadAndExtractEvent(
+            urls: MutableList<java.net.URI>,
+            output: String?,
+            sha256: String?,
+            integrity: String?,
+            type: String?,
+            stripPrefix: String?,
+            renameFiles: MutableMap<String?, String?>?,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: WorkspaceLogProtos.DownloadAndExtractEvent.Builder =
+                WorkspaceLogProtos.DownloadAndExtractEvent.newBuilder()
+                    .setOutput(output)
+                    .setSha256(sha256)
+                    .setIntegrity(integrity)
+                    .setType(type)
+                    .setStripPrefix(stripPrefix)
+                    .putAllRenameFiles(renameFiles)
+            for (u in urls) {
+                e.addUrl(u.toString())
+            }
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setReadEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setDownloadAndExtractEvent(e.build())
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a file read event. */
-  public static WorkspaceRuleEvent newDeleteEvent(String path, String context, Location location) {
-    WorkspaceLogProtos.DeleteEvent e =
-        WorkspaceLogProtos.DeleteEvent.newBuilder().setPath(path).build();
+        /** Creates a new WorkspaceRuleEvent for a file event.  */
+        fun newFileEvent(
+            path: String?,
+            content: String?,
+            executable: Boolean,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: FileEvent? =
+                WorkspaceLogProtos.FileEvent.newBuilder()
+                    .setPath(path)
+                    .setContent(content)
+                    .setExecutable(executable)
+                    .build()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setDeleteEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setFileEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a patch event. */
-  public static WorkspaceRuleEvent newPatchEvent(
-      String patchFile, int strip, String context, Location location) {
-    WorkspaceLogProtos.PatchEvent e =
-        WorkspaceLogProtos.PatchEvent.newBuilder().setPatchFile(patchFile).setStrip(strip).build();
+        /** Creates a new WorkspaceRuleEvent for a file read event.  */
+        fun newReadEvent(
+            path: String?,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: WorkspaceLogProtos.ReadEvent? =
+                WorkspaceLogProtos.ReadEvent.newBuilder().setPath(path).build()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setPatchEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setReadEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for an os event. */
-  public static WorkspaceRuleEvent newOsEvent(String context, Location location) {
-    OsEvent e = WorkspaceLogProtos.OsEvent.getDefaultInstance();
+        /** Creates a new WorkspaceRuleEvent for a file read event.  */
+        fun newDeleteEvent(
+            path: String?,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: WorkspaceLogProtos.DeleteEvent? =
+                WorkspaceLogProtos.DeleteEvent.newBuilder().setPath(path).build()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setOsEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setDeleteEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a rename event. */
-  public static WorkspaceRuleEvent newRenameEvent(
-      String src, String dst, String context, Location location) {
-    RenameEvent e = WorkspaceLogProtos.RenameEvent.newBuilder().setSrc(src).setDst(dst).build();
+        /** Creates a new WorkspaceRuleEvent for a patch event.  */
+        fun newPatchEvent(
+            patchFile: String?, strip: Int, context: String?, location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: WorkspaceLogProtos.PatchEvent? =
+                WorkspaceLogProtos.PatchEvent.newBuilder().setPatchFile(patchFile).setStrip(strip).build()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setRenameEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setPatchEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a symlink event. */
-  public static WorkspaceRuleEvent newSymlinkEvent(
-      String from, String to, String context, Location location) {
-    SymlinkEvent e =
-        WorkspaceLogProtos.SymlinkEvent.newBuilder().setTarget(from).setPath(to).build();
+        /** Creates a new WorkspaceRuleEvent for an os event.  */
+        fun newOsEvent(context: String?, location: net.starlark.java.syntax.Location?): WorkspaceRuleEvent {
+            val e: OsEvent? = WorkspaceLogProtos.OsEvent.getDefaultInstance()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setSymlinkEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setOsEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a template event. */
-  public static WorkspaceRuleEvent newTemplateEvent(
-      String path,
-      String template,
-      Map<String, String> substitutions,
-      boolean executable,
-      String context,
-      Location location) {
-    TemplateEvent e =
-        WorkspaceLogProtos.TemplateEvent.newBuilder()
-            .setPath(path)
-            .setTemplate(template)
-            .putAllSubstitutions(substitutions)
-            .setExecutable(executable)
-            .build();
+        /** Creates a new WorkspaceRuleEvent for a rename event.  */
+        fun newRenameEvent(
+            src: String?, dst: String?, context: String?, location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: RenameEvent? = WorkspaceLogProtos.RenameEvent.newBuilder().setSrc(src).setDst(dst).build()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setTemplateEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setRenameEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /** Creates a new WorkspaceRuleEvent for a which event. */
-  public static WorkspaceRuleEvent newWhichEvent(
-      String program, String context, Location location) {
-    WhichEvent e = WorkspaceLogProtos.WhichEvent.newBuilder().setProgram(program).build();
+        /** Creates a new WorkspaceRuleEvent for a symlink event.  */
+        fun newSymlinkEvent(
+            from: String?, to: String?, context: String?, location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: SymlinkEvent? =
+                WorkspaceLogProtos.SymlinkEvent.newBuilder().setTarget(from).setPath(to).build()
 
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setWhichEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setSymlinkEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  public static WorkspaceRuleEvent newLoadWasmEvent(
-      String modulePath, boolean compile, String allocateFn, String context, Location location) {
-    LoadWasmEvent e =
-        WorkspaceLogProtos.LoadWasmEvent.newBuilder()
-            .setModulePath(modulePath)
-            .setCompile(compile)
-            .setAllocateFn(allocateFn)
-            .build();
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setLoadWasmEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+        /** Creates a new WorkspaceRuleEvent for a template event.  */
+        fun newTemplateEvent(
+            path: String?,
+            template: String?,
+            substitutions: MutableMap<String?, String?>?,
+            executable: Boolean,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: TemplateEvent? =
+                WorkspaceLogProtos.TemplateEvent.newBuilder()
+                    .setPath(path)
+                    .setTemplate(template)
+                    .putAllSubstitutions(substitutions)
+                    .setExecutable(executable)
+                    .build()
 
-  public static WorkspaceRuleEvent newExecuteWasmEvent(
-      String modulePath,
-      String function,
-      byte[] input,
-      int timeout,
-      long memoryLimit,
-      String context,
-      Location location) {
-    ExecuteWasmEvent e =
-        WorkspaceLogProtos.ExecuteWasmEvent.newBuilder()
-            .setModulePath(modulePath)
-            .setFunction(function)
-            .setInput(ByteString.copyFrom(input))
-            .setTimeoutSeconds(timeout)
-            .setMemoryLimitBytes(memoryLimit)
-            .build();
-    WorkspaceLogProtos.WorkspaceEvent.Builder result =
-        WorkspaceLogProtos.WorkspaceEvent.newBuilder();
-    result = result.setExecuteWasmEvent(e);
-    if (location != null) {
-      result = result.setLocation(location.toString());
-    }
-    if (context != null) {
-      result = result.setContext(context);
-    }
-    return new WorkspaceRuleEvent(result.build());
-  }
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setTemplateEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
 
-  /**
-   * @return a message to log for this event
-   */
-  public String logMessage() {
-    return event.toString();
-  }
+        /** Creates a new WorkspaceRuleEvent for a which event.  */
+        fun newWhichEvent(
+            program: String?, context: String?, location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: WhichEvent? = WorkspaceLogProtos.WhichEvent.newBuilder().setProgram(program).build()
+
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setWhichEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
+
+        fun newLoadWasmEvent(
+            modulePath: String?,
+            compile: Boolean,
+            allocateFn: String?,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: LoadWasmEvent? =
+                WorkspaceLogProtos.LoadWasmEvent.newBuilder()
+                    .setModulePath(modulePath)
+                    .setCompile(compile)
+                    .setAllocateFn(allocateFn)
+                    .build()
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setLoadWasmEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
+
+        fun newExecuteWasmEvent(
+            modulePath: String?,
+            function: String?,
+            input: ByteArray,
+            timeout: Int,
+            memoryLimit: Long,
+            context: String?,
+            location: net.starlark.java.syntax.Location?
+        ): WorkspaceRuleEvent {
+            val e: ExecuteWasmEvent? =
+                WorkspaceLogProtos.ExecuteWasmEvent.newBuilder()
+                    .setModulePath(modulePath)
+                    .setFunction(function)
+                    .setInput(ByteString.copyFrom(input))
+                    .setTimeoutSeconds(timeout)
+                    .setMemoryLimitBytes(memoryLimit)
+                    .build()
+            var result: WorkspaceLogProtos.WorkspaceEvent.Builder =
+                WorkspaceLogProtos.WorkspaceEvent.newBuilder()
+            result = result.setExecuteWasmEvent(e)
+            if (location != null) {
+                result = result.setLocation(location.toString())
+            }
+            if (context != null) {
+                result = result.setContext(context)
+            }
+            return WorkspaceRuleEvent(result.build())
+        }
+    }
 }

@@ -12,152 +12,148 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.bazel.repository;
+package com.google.devtools.build.lib.bazel.repository
 
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.bazel.bzlmod.ExternalDepsException;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.LabelConverter;
-import com.google.devtools.build.lib.packages.Type.ConversionException;
-import com.google.devtools.build.lib.server.FailureDetails.ExternalDeps.Code;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Optional;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkThread.CallStackEntry;
-import net.starlark.java.spelling.SpellChecker;
+import com.google.devtools.build.lib.bazel.bzlmod.ExternalDepsException
 
-/** Utilities related to processing attributes in external deps contexts. */
-public class AttributeUtils {
-  private AttributeUtils() {}
+/** Utilities related to processing attributes in external deps contexts.  */
+object AttributeUtils {
+    /**
+     * Type-checks the given attribute values against a defined attribute schema, potentially
+     * converting the values wherever necessary.
+     * 
+     * @param attrs With `attrIndices`, defines the attribute schema.
+     * @param kwargs The supplied attribute values (keyed by the attribute names).
+     * @param where A context string used in error messages to denote where this typechecking is
+     * happening.
+     * @param repoMappingWhere A context string used in error messages about invalid apparent repo
+     * names, to denote where this repo mapping is anchored.
+     * @return The type-checked and converted values, in the same order as `attrs`.
+     */
+    @Throws(ExternalDepsException::class)
+    fun typeCheckAttrValues(
+        attrs: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.packages.Attribute>,
+        attrIndices: com.google.common.collect.ImmutableMap<String?, Int?>,
+        kwargs: MutableMap<String?, Any?>,
+        labelConverter: LabelConverter?,
+        errorCode: Code?,
+        callStack: com.google.common.collect.ImmutableList<net.starlark.java.eval.StarlarkThread.CallStackEntry?>?,
+        where: String?,
+        repoMappingWhere: String?
+    ): com.google.common.collect.ImmutableList<Any?> {
+        val attrValues = arrayOfNulls<Any>(attrs.size)
+        for (attrValue in kwargs.entries) {
+            if (attrValue.value == net.starlark.java.eval.Starlark.NONE) {
+                continue
+            }
+            val attrIndex: Int? = attrIndices.get(attrValue.key)
+            if (attrIndex == null) {
+                throw ExternalDepsException.withCallStackAndMessage(
+                    errorCode,
+                    callStack,
+                    "in %s, unknown attribute '%s' provided%s",
+                    where,
+                    attrValue.key,
+                    net.starlark.java.spelling.SpellChecker.didYouMean(attrValue.key, attrIndices.keys)
+                )
+            }
+            val attr: com.google.devtools.build.lib.packages.Attribute = attrs.get(attrIndex)
+            val nativeValue: Any?
+            try {
+                nativeValue =
+                    attr.getType()
+                        .convert(
+                            attrValue.value,
+                            "attribute '%s'".formatted(attr.getPublicName()),
+                            labelConverter
+                        )
+            } catch (e: ConversionException) {
+                throw ExternalDepsException.withCallStackAndMessage(
+                    errorCode, callStack, "in %s, %s", where, e.message
+                )
+            }
 
-  /**
-   * Type-checks the given attribute values against a defined attribute schema, potentially
-   * converting the values wherever necessary.
-   *
-   * @param attrs With {@code attrIndices}, defines the attribute schema.
-   * @param kwargs The supplied attribute values (keyed by the attribute names).
-   * @param where A context string used in error messages to denote where this typechecking is
-   *     happening.
-   * @param repoMappingWhere A context string used in error messages about invalid apparent repo
-   *     names, to denote where this repo mapping is anchored.
-   * @return The type-checked and converted values, in the same order as {@code attrs}.
-   */
-  public static ImmutableList<Object> typeCheckAttrValues(
-      ImmutableList<Attribute> attrs,
-      ImmutableMap<String, Integer> attrIndices,
-      Map<String, Object> kwargs,
-      LabelConverter labelConverter,
-      Code errorCode,
-      ImmutableList<CallStackEntry> callStack,
-      String where,
-      String repoMappingWhere)
-      throws ExternalDepsException {
-    var attrValues = new Object[attrs.size()];
-    for (Entry<String, Object> attrValue : kwargs.entrySet()) {
-      if (attrValue.getValue().equals(Starlark.NONE)) {
-        continue;
-      }
-      Integer attrIndex = attrIndices.get(attrValue.getKey());
-      if (attrIndex == null) {
-        throw ExternalDepsException.withCallStackAndMessage(
-            errorCode,
-            callStack,
-            "in %s, unknown attribute '%s' provided%s",
-            where,
-            attrValue.getKey(),
-            SpellChecker.didYouMean(attrValue.getKey(), attrIndices.keySet()));
-      }
-      Attribute attr = attrs.get(attrIndex);
-      Object nativeValue;
-      try {
-        nativeValue =
-            attr.getType()
-                .convert(
-                    attrValue.getValue(),
-                    "attribute '%s'".formatted(attr.getPublicName()),
-                    labelConverter);
-      } catch (ConversionException e) {
-        throw ExternalDepsException.withCallStackAndMessage(
-            errorCode, callStack, "in %s, %s", where, e.getMessage());
-      }
+            // Check that the value is actually allowed.
+            if (attr.checkAllowedValues() && !attr.getAllowedValues().apply(nativeValue)) {
+                throw ExternalDepsException.withCallStackAndMessage(
+                    errorCode,
+                    callStack,
+                    "in %s, the value for attribute '%s' %s",
+                    where,
+                    attr.getPublicName(),
+                    attr.getAllowedValues().getErrorReason(nativeValue)
+                )
+            }
 
-      // Check that the value is actually allowed.
-      if (attr.checkAllowedValues() && !attr.getAllowedValues().apply(nativeValue)) {
-        throw ExternalDepsException.withCallStackAndMessage(
-            errorCode,
-            callStack,
-            "in %s, the value for attribute '%s' %s",
-            where,
-            attr.getPublicName(),
-            attr.getAllowedValues().getErrorReason(nativeValue));
-      }
+            attrValues[attrIndex] = com.google.devtools.build.lib.packages.Attribute.valueToStarlark(nativeValue)
+        }
 
-      attrValues[attrIndex] = Attribute.valueToStarlark(nativeValue);
+        // Check that all mandatory attributes have been specified, and fill in default values.
+        // Along the way, verify that labels in the attribute values refer to visible repos only.
+        for (i in attrValues.indices) {
+            val attr: com.google.devtools.build.lib.packages.Attribute = attrs.get(i)
+            if (attr.isMandatory() && attrValues[i] == null) {
+                throw ExternalDepsException.withCallStackAndMessage(
+                    errorCode,
+                    callStack,
+                    "in %s, mandatory attribute '%s' isn't being specified",
+                    where,
+                    attr.getPublicName()
+                )
+            }
+            if (attrValues[i] == null) {
+                attrValues[i] =
+                    com.google.devtools.build.lib.packages.Attribute.valueToStarlark(attr.getDefaultValueUnchecked())
+            }
+            val maybeFirstNonVisibleLabel: java.util.Optional<com.google.devtools.build.lib.cmdline.Label> =
+                nonVisibleLabelsIn(attrValues[i])
+            if (maybeFirstNonVisibleLabel.isPresent()) {
+                val firstNonVisibleLabel: com.google.devtools.build.lib.cmdline.Label = maybeFirstNonVisibleLabel.get()
+                throw ExternalDepsException.withCallStackAndMessage(
+                    errorCode,
+                    callStack,
+                    "in %s, no repository visible as '@%s' %s, but referenced by label '@%s//%s:%s'"
+                            + " in attribute '%s'",
+                    where,
+                    firstNonVisibleLabel.getRepository().getName(),
+                    repoMappingWhere,
+                    firstNonVisibleLabel.getRepository().getName(),
+                    firstNonVisibleLabel.getPackageFragment(),
+                    firstNonVisibleLabel.getName(),
+                    attr.getPublicName()
+                )
+            }
+        }
+        return com.google.common.collect.ImmutableList.copyOf<Any?>(attrValues)
     }
 
-    // Check that all mandatory attributes have been specified, and fill in default values.
-    // Along the way, verify that labels in the attribute values refer to visible repos only.
-    for (int i = 0; i < attrValues.length; i++) {
-      Attribute attr = attrs.get(i);
-      if (attr.isMandatory() && attrValues[i] == null) {
-        throw ExternalDepsException.withCallStackAndMessage(
-            errorCode,
-            callStack,
-            "in %s, mandatory attribute '%s' isn't being specified",
-            where,
-            attr.getPublicName());
-      }
-      if (attrValues[i] == null) {
-        attrValues[i] = Attribute.valueToStarlark(attr.getDefaultValueUnchecked());
-      }
-      var maybeFirstNonVisibleLabel = nonVisibleLabelsIn(attrValues[i]);
-      if (maybeFirstNonVisibleLabel.isPresent()) {
-        var firstNonVisibleLabel = maybeFirstNonVisibleLabel.get();
-        throw ExternalDepsException.withCallStackAndMessage(
-            errorCode,
-            callStack,
-            "in %s, no repository visible as '@%s' %s, but referenced by label '@%s//%s:%s'"
-                + " in attribute '%s'",
-            where,
-            firstNonVisibleLabel.getRepository().getName(),
-            repoMappingWhere,
-            firstNonVisibleLabel.getRepository().getName(),
-            firstNonVisibleLabel.getPackageFragment(),
-            firstNonVisibleLabel.getName(),
-            attr.getPublicName());
-      }
-    }
-    return ImmutableList.copyOf(attrValues);
-  }
+    private fun nonVisibleLabelsIn(nativeAttrValue: Any?): java.util.Optional<com.google.devtools.build.lib.cmdline.Label> {
+        return when (nativeAttrValue) {
+            -> java.util.Optional.of<com.google.devtools.build.lib.cmdline.Label?>(label)
+            -> {
+                for (item in list) {
+                    val nonVisibleLabel: java.util.Optional<com.google.devtools.build.lib.cmdline.Label> =
+                        nonVisibleLabelsIn(item)
+                    if (nonVisibleLabel.isPresent()) {
+                        nonVisibleLabel
+                    }
+                }
+                java.util.Optional.empty<com.google.devtools.build.lib.cmdline.Label?>()
+            }
 
-  private static Optional<Label> nonVisibleLabelsIn(Object nativeAttrValue) {
-    return switch (nativeAttrValue) {
-      case Label label when !label.getRepository().isVisible() -> Optional.of(label);
-      case List<?> list -> {
-        for (Object item : list) {
-          var nonVisibleLabel = nonVisibleLabelsIn(item);
-          if (nonVisibleLabel.isPresent()) {
-            yield nonVisibleLabel;
-          }
+            -> {
+                for (keyOrValue in com.google.common.collect.Iterables.concat<Any?>(map.keySet(), map.values())) {
+                    val nonVisibleLabel: java.util.Optional<com.google.devtools.build.lib.cmdline.Label> =
+                        nonVisibleLabelsIn(keyOrValue)
+                    if (nonVisibleLabel.isPresent()) {
+                        nonVisibleLabel
+                    }
+                }
+                java.util.Optional.empty<com.google.devtools.build.lib.cmdline.Label?>()
+            }
+
+            null -> java.util.Optional.empty<com.google.devtools.build.lib.cmdline.Label?>()
         }
-        yield Optional.empty();
-      }
-      case Map<?, ?> map -> {
-        for (Object keyOrValue : Iterables.concat(map.keySet(), map.values())) {
-          var nonVisibleLabel = nonVisibleLabelsIn(keyOrValue);
-          if (nonVisibleLabel.isPresent()) {
-            yield nonVisibleLabel;
-          }
-        }
-        yield Optional.empty();
-      }
-      case null, default -> Optional.empty();
-    };
-  }
+    }
 }

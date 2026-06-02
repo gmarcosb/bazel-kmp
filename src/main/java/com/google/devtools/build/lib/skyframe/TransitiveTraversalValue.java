@@ -66,7 +66,7 @@ public abstract class TransitiveTraversalValue implements SkyValue {
 
   static TransitiveTraversalValue forTarget(Target target, @Nullable String errorMessage) {
     if (errorMessage == null) {
-      if (target instanceof Rule rule && ((Rule) target).getRuleClassObject().isStarlark()) {
+      if (target instanceof Rule rule && ((Rule) target).getRuleClassObject().isStarlark) {
         // Do not intern values for Starlark rules.
         return TransitiveTraversalValue.create(
             rule.getRuleClassObject().getAdvertisedProviders(), rule.getTargetKind(), errorMessage);

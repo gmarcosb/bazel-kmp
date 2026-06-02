@@ -887,7 +887,7 @@ public final class DependencyResolver {
             label,
             configurationId(configuration),
             NestedSetBuilder.create(Order.STABLE_ORDER, cause),
-            cause.getDetailedExitCode()),
+                cause.detailedExitCode),
         // These errors occur in dependency resolution, which is attached to the current target.
         // i.e. no dependent ConfiguredTargetFunction call happens to report its own error.
         /* depReportedOwnError= */ false);
@@ -898,7 +898,7 @@ public final class DependencyResolver {
     for (Cause c : causes.toList()) {
       prioritizedDetailedExitCode =
           DetailedExitCodeComparator.chooseMoreImportantWithFirstIfTie(
-              prioritizedDetailedExitCode, c.getDetailedExitCode());
+              prioritizedDetailedExitCode, c.detailedExitCode);
     }
     return prioritizedDetailedExitCode;
   }

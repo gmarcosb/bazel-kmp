@@ -11,18 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.stringtemplate;
+package com.google.devtools.build.lib.analysis.stringtemplate
 
 /**
- * Exception thrown by {@link TemplateContext#lookupVariable} when an unknown variable name is
+ * Exception thrown by [TemplateContext.lookupVariable] when an unknown variable name is
  * passed.
  */
-public class ExpansionException extends Exception {
-  public ExpansionException(String message) {
-    super(message);
-  }
+class ExpansionException : Exception {
+    constructor(message: String?) : super(message)
 
-  public ExpansionException(String message, Throwable cause) {
-    super(message, cause);
-  }
+    constructor(message: String?, cause: Throwable?) : super(message, cause)
 }

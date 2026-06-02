@@ -11,77 +11,86 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * A map of atomic long counters. A key whose counter's value is currently zero is _not_
- * automatically removed from the map; use {@link #clear} to clear the entire map.
- *
- * <p>This is very similar to Guava's AtomicLongMap, but optimized for the case where keys are hot,
- * e.g. a high number of concurrent calls to {@code map.incrementAndGet(k)} and/or
- * {@code map.decrementAndGet(k)}, for the same key {@code k)}. Guava's AtomicLongMap uses
+ * automatically removed from the map; use [.clear] to clear the entire map.
+ * 
+ * 
+ * This is very similar to Guava's AtomicLongMap, but optimized for the case where keys are hot,
+ * e.g. a high number of concurrent calls to `map.incrementAndGet(k)` and/or
+ * `map.decrementAndGet(k)`, for the same key `k)`. Guava's AtomicLongMap uses
  * ConcurrentHashMap#compute, whose implementation unfortunately has internal synchronization even
  * when there's already an internal entry for the key in question.
  */
-@ThreadSafe
-public class FastHotKeyAtomicLongMap<T> {
-  private final ConcurrentMap<T, AtomicLong> map;
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class FastHotKeyAtomicLongMap<T> private constructor() {
+    private val map: ConcurrentMap<T?, AtomicLong?>
 
-  public static <T> FastHotKeyAtomicLongMap<T> create() {
-    return new FastHotKeyAtomicLongMap<>();
-  }
+    init {
+        this.map = ConcurrentHashMap<T?, AtomicLong?>()
+    }
 
-  // TODO(kak): Delete this in favor of create()
-  public static <T> FastHotKeyAtomicLongMap<T> create(int concurrencyLevel /* ignored */) {
-    return new FastHotKeyAtomicLongMap<>();
-  }
+    fun incrementAndGet(key: T?): Long {
+        return getCounter(key).incrementAndGet()
+    }
 
-  private FastHotKeyAtomicLongMap() {
-    this.map = new ConcurrentHashMap<>();
-  }
+    fun decrementAndGet(key: T?): Long {
+        return getCounter(key).decrementAndGet()
+    }
 
-  public long incrementAndGet(T key) {
-    return getCounter(key).incrementAndGet();
-  }
+    fun asImmutableMap(): com.google.common.collect.ImmutableMap<T?, Long?> {
+        return com.google.common.collect.ImmutableMap.copyOf<T?, Long?>(
+            com.google.common.collect.Maps.transformValues<T?, AtomicLong?, Long?>(
+                map,
+                com.google.common.base.Function { obj: AtomicLong? -> obj.get() })
+        )
+    }
 
-  public long decrementAndGet(T key) {
-    return getCounter(key).decrementAndGet();
-  }
+    /**
+     * Returns the [AtomicLong] for the given `element`. Mutations to this
+     * [AtomicLong] will be reflected in the [FastHotKeyAtomicLongMap]: for example,
+     * `map.getCounter(e).incrementAndGet()` has exactly the same side effects as
+     * `map.incrementAndGet(e)`.
+     * 
+     * 
+     * Consider using this method when you have a super-hot key that you know about a priori.
+     * Prefer [.incrementAndGet] and [.decrementAndGet] otherwise.
+     */
+    fun getCounter(element: T?): AtomicLong {
+        // Optimize for the case where 'element' is already in our map. See the class javadoc.
+        val counter: AtomicLong? = map.get(element)
+        return if (counter != null) counter else map.computeIfAbsent(
+            element,
+            java.util.function.Function { s: T? -> AtomicLong(0) })
+    }
 
-  public ImmutableMap<T, Long> asImmutableMap() {
-    return ImmutableMap.copyOf(Maps.transformValues(map, AtomicLong::get));
-  }
+    /**
+     * Clears the [FastHotKeyAtomicLongMap].
+     * 
+     * 
+     * Any [AtomicLong] instances previously returned by a call to [.getCounter] are
+     * now meaningless: mutations to them will not be reflected in the
+     * [FastHotKeyAtomicLongMap].
+     */
+    fun clear() {
+        map.clear()
+    }
 
-  /**
-   * Returns the {@link AtomicLong} for the given {@code element}. Mutations to this
-   * {@link AtomicLong} will be reflected in the {@link FastHotKeyAtomicLongMap}: for example,
-   * {@code map.getCounter(e).incrementAndGet()} has exactly the same side effects as
-   * {@code map.incrementAndGet(e)}.
-   *
-   * <p>Consider using this method when you have a super-hot key that you know about a priori.
-   * Prefer {@link #incrementAndGet} and {@link #decrementAndGet} otherwise.
-   */
-  public AtomicLong getCounter(T element) {
-    // Optimize for the case where 'element' is already in our map. See the class javadoc.
-    AtomicLong counter = map.get(element);
-    return counter != null ? counter : map.computeIfAbsent(element, s -> new AtomicLong(0));
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun <T> create(): FastHotKeyAtomicLongMap<T?> {
+            return com.google.devtools.build.lib.concurrent.FastHotKeyAtomicLongMap<T?>()
+        }
 
-  /**
-   * Clears the {@link FastHotKeyAtomicLongMap}.
-   *
-   * <p>Any {@link AtomicLong} instances previously returned by a call to {@link #getCounter} are
-   * now meaningless: mutations to them will not be reflected in the
-   * {@link FastHotKeyAtomicLongMap}.
-   */
-  public void clear() {
-    map.clear();
-  }
+        // TODO(kak): Delete this in favor of create()
+        fun <T> create(concurrencyLevel: Int /* ignored */): FastHotKeyAtomicLongMap<T?> {
+            return com.google.devtools.build.lib.concurrent.FastHotKeyAtomicLongMap<T?>()
+        }
+    }
 }

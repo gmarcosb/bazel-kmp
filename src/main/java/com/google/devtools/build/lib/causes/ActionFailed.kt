@@ -11,72 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.causes;
+package com.google.devtools.build.lib.causes
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ActionCompletedId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ConfigurationId;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import javax.annotation.Nullable;
+import com.google.common.base.MoreObjects
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * Class describing a {@link Cause} that is associated with an action. It is uniquely determined by
+ * Class describing a [Cause] that is associated with an action. It is uniquely determined by
  * the path to the primary output. For reference, a Label is attached as well if available.
  */
-public class ActionFailed implements Cause {
-  private final PathFragment execPath;
-  private final Label label;
-  private final String configurationChecksum;
-  private final DetailedExitCode detailedExitCode;
+class ActionFailed(
+    execPath: PathFragment,
+    label: Label?,
+    configurationChecksum: String?,
+    detailedExitCode: DetailedExitCode?
+) : Cause {
+    private val execPath: PathFragment
+    private val label: Label?
+    private val configurationChecksum: String?
+    private val detailedExitCode: DetailedExitCode
 
-  public ActionFailed(
-      PathFragment execPath,
-      Label label,
-      @Nullable String configurationChecksum,
-      DetailedExitCode detailedExitCode) {
-    this.execPath = execPath;
-    this.label = label;
-    this.configurationChecksum = configurationChecksum;
-    this.detailedExitCode = checkNotNull(detailedExitCode);
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("execPath", execPath)
-        .add("label", label)
-        .add("configurationChecksum", configurationChecksum)
-        .add("detailedExitCode", detailedExitCode)
-        .toString();
-  }
-
-  @Override
-  public Label getLabel() {
-    return label;
-  }
-
-  @Nullable
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEventId getIdProto() {
-    ActionCompletedId.Builder actionId =
-        ActionCompletedId.newBuilder().setPrimaryOutput(execPath.toString());
-    if (label != null) {
-      actionId.setLabel(label.toString());
+    init {
+        this.execPath = execPath
+        this.label = label
+        this.configurationChecksum = configurationChecksum
+        this.detailedExitCode = Preconditions.checkNotNull<DetailedExitCode>(detailedExitCode)
     }
-    if (configurationChecksum != null) {
-      actionId.setConfiguration(ConfigurationId.newBuilder().setId(configurationChecksum));
+
+    override fun toString(): String {
+        return MoreObjects.toStringHelper(this)
+            .add("execPath", execPath)
+            .add("label", label)
+            .add("configurationChecksum", configurationChecksum)
+            .add("detailedExitCode", detailedExitCode)
+            .toString()
     }
-    return BuildEventId.newBuilder().setActionCompleted(actionId).build();
-  }
+
+    override fun getLabel(): Label? {
+        return label
+    }
+
+    override fun getDetailedExitCode(): DetailedExitCode? {
+        return detailedExitCode
+    }
+
+    override fun getIdProto(): BuildEventStreamProtos.BuildEventId {
+        val actionId: ActionCompletedId.Builder =
+            ActionCompletedId.newBuilder().setPrimaryOutput(execPath.toString())
+        if (label != null) {
+            actionId.setLabel(label.toString())
+        }
+        if (configurationChecksum != null) {
+            actionId.setConfiguration(ConfigurationId.newBuilder().setId(configurationChecksum))
+        }
+        return BuildEventId.newBuilder().setActionCompleted(actionId).build()
+    }
 }

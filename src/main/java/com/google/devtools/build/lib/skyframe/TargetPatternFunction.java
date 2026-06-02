@@ -55,7 +55,7 @@ public class TargetPatternFunction implements SkyFunction {
 
     IgnoredSubdirectoriesValue ignoredSubdirectories =
         (IgnoredSubdirectoriesValue)
-            env.getValue(IgnoredSubdirectoriesValue.key(parsedPattern.getRepository()));
+            env.getValue(IgnoredSubdirectoriesValue.key(parsedPattern.repository));
     if (ignoredSubdirectories == null) {
       return null;
     }
@@ -148,7 +148,7 @@ public class TargetPatternFunction implements SkyFunction {
     if (e != null) {
       throw new TargetPatternFunctionException(
           new TargetParsingException(
-              "Error evaluating '" + pattern.getOriginalPattern() + "': " + e.getMessage(),
+              "Error evaluating '" + pattern.originalPattern + "': " + e.getMessage(),
               e,
               FailureDetails.TargetPatterns.Code.PACKAGE_NOT_FOUND));
     }

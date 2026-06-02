@@ -11,28 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.commands;
+package com.google.devtools.build.lib.bazel.commands
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
+import com.google.devtools.common.options.*
 
-/** Defines the options specific to Bazel's vendor command. */
+/** Defines the options specific to Bazel's vendor command.  */
 @OptionsClass
-public abstract class VendorOptions extends OptionsBase {
-  @Option(
-      name = "repo",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      help =
-          """
+abstract class VendorOptions : OptionsBase() {
+    @Option(
+        name = "repo",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = OptionDocumentationCategory.BZLMOD,
+        effectTags = [OptionEffectTag.CHANGES_INPUTS],
+        help = """
           Only vendors the specified repository, which can be either `@apparent_repo_name` or
           `@@canonical_repo_name`. This option can be set multiple times.
-          """)
-  public abstract List<String> getRepos();
+          
+          """.trimIndent()
+    )
+    abstract fun getRepos(): MutableList<String?>?
 }

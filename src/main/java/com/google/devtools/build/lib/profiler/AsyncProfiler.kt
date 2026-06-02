@@ -11,37 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
-
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.function.Consumer;
+package com.google.devtools.build.lib.profiler
 
 /**
  * A profiler that can be used to profile async operations.
- *
- * <p>This profiler is thread-compatible but not thread-safe. You should create one profiler per
+ * 
+ * 
+ * This profiler is thread-compatible but not thread-safe. You should create one profiler per
  * task.
  */
-@SkybridgeInterface
-public interface AsyncProfiler extends SilentCloseable {
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface AsyncProfiler : com.google.devtools.build.lib.profiler.SilentCloseable {
+    fun profile(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ): com.google.devtools.build.lib.profiler.SilentCloseable?
 
-  SilentCloseable profile(ProfilerTask type, String description);
+    fun profile(description: String?): com.google.devtools.build.lib.profiler.SilentCloseable?
 
-  SilentCloseable profile(String description);
+    fun <T> profileFuture(
+        future: com.google.common.util.concurrent.ListenableFuture<T?>?,
+        description: String?
+    ): com.google.common.util.concurrent.ListenableFuture<T?>?
 
-  <T> ListenableFuture<T> profileFuture(ListenableFuture<T> future, String description);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun <T> profileFuture(
+        future: com.google.common.util.concurrent.ListenableFuture<T?>?,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ): com.google.common.util.concurrent.ListenableFuture<T?>?
 
-  @CanIgnoreReturnValue
-  <T> ListenableFuture<T> profileFuture(
-      ListenableFuture<T> future, ProfilerTask type, String description);
+    fun profileCallback(runnable: java.lang.Runnable?, description: String?): java.lang.Runnable?
 
-  Runnable profileCallback(Runnable runnable, String description);
+    fun profileCallback(
+        runnable: java.lang.Runnable?,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ): java.lang.Runnable?
 
-  Runnable profileCallback(Runnable runnable, ProfilerTask type, String description);
+    fun <T> profileCallback(
+        consumer: java.util.function.Consumer<T?>?,
+        description: String?
+    ): java.util.function.Consumer<T?>?
 
-  <T> Consumer<T> profileCallback(Consumer<T> consumer, String description);
-
-  <T> Consumer<T> profileCallback(Consumer<T> consumer, ProfilerTask type, String description);
+    fun <T> profileCallback(
+        consumer: java.util.function.Consumer<T?>?,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ): java.util.function.Consumer<T?>?
 }

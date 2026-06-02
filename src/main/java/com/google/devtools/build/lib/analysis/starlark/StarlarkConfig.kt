@@ -11,79 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark
 
-package com.google.devtools.build.lib.analysis.starlark;
+import com.google.devtools.build.lib.analysis.config.ExecutionTransitionFactory
 
-import static com.google.devtools.build.lib.packages.Type.BOOLEAN;
-import static com.google.devtools.build.lib.packages.Type.INTEGER;
-import static com.google.devtools.build.lib.packages.Type.STRING;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
-import static com.google.devtools.build.lib.packages.Types.STRING_SET;
-
-import com.google.devtools.build.lib.analysis.config.ExecutionTransitionFactory;
-import com.google.devtools.build.lib.analysis.config.transitions.NoConfigTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.NoTransition;
-import com.google.devtools.build.lib.packages.BuildSetting;
-import com.google.devtools.build.lib.starlarkbuildapi.config.ConfigurationTransitionApi;
-import com.google.devtools.build.lib.starlarkbuildapi.config.StarlarkConfigApi;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-
-/** Starlark namespace for creating build settings. */
-public class StarlarkConfig implements StarlarkConfigApi {
-
-  @Override
-  public BuildSetting intSetting(Boolean flag) {
-    return BuildSetting.create(flag, INTEGER);
-  }
-
-  @Override
-  public BuildSetting boolSetting(Boolean flag) {
-    return BuildSetting.create(flag, BOOLEAN);
-  }
-
-  @Override
-  public BuildSetting stringSetting(Boolean flag, Boolean allowMultiple) {
-    return BuildSetting.create(flag, STRING, allowMultiple, false);
-  }
-
-  @Override
-  public BuildSetting stringListSetting(Boolean flag, Boolean repeatable) throws EvalException {
-    if (repeatable && !flag) {
-      throw Starlark.errorf("'repeatable' can only be set for a setting with 'flag = True'");
+/** Starlark namespace for creating build settings.  */
+class StarlarkConfig : StarlarkConfigApi {
+    override fun intSetting(flag: Boolean): BuildSetting {
+        return BuildSetting.create(flag, com.google.devtools.build.lib.packages.Type.INTEGER)
     }
-    return BuildSetting.create(flag, STRING_LIST, false, repeatable);
-  }
 
-  @Override
-  public BuildSetting stringSetSetting(Boolean flag, Boolean repeatable) throws EvalException {
-    if (repeatable && !flag) {
-      throw Starlark.errorf("'repeatable' can only be set for a setting with 'flag = True'");
+    override fun boolSetting(flag: Boolean): BuildSetting {
+        return BuildSetting.create(flag, com.google.devtools.build.lib.packages.Type.BOOLEAN)
     }
-    return BuildSetting.create(flag, STRING_SET, false, repeatable);
-  }
 
-  @Override
-  public ExecutionTransitionFactory exec(Object execGroupUnchecked) {
-    return execGroupUnchecked == Starlark.NONE
-        ? ExecutionTransitionFactory.createFactory()
-        : ExecutionTransitionFactory.createFactory((String) execGroupUnchecked);
-  }
+    override fun stringSetting(flag: Boolean, allowMultiple: Boolean): BuildSetting {
+        return BuildSetting.create(flag, com.google.devtools.build.lib.packages.Type.STRING, allowMultiple, false)
+    }
 
-  @Override
-  public ConfigurationTransitionApi target() {
-    return (ConfigurationTransitionApi) NoTransition.getFactory();
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun stringListSetting(flag: Boolean, repeatable: Boolean): BuildSetting {
+        if (repeatable && !flag) {
+            throw net.starlark.java.eval.Starlark.errorf("'repeatable' can only be set for a setting with 'flag = True'")
+        }
+        return BuildSetting.create(flag, com.google.devtools.build.lib.packages.Types.STRING_LIST, false, repeatable)
+    }
 
-  @Override
-  public ConfigurationTransitionApi none() {
-    return (ConfigurationTransitionApi) NoConfigTransition.getFactory();
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun stringSetSetting(flag: Boolean, repeatable: Boolean): BuildSetting {
+        if (repeatable && !flag) {
+            throw net.starlark.java.eval.Starlark.errorf("'repeatable' can only be set for a setting with 'flag = True'")
+        }
+        return BuildSetting.create(flag, com.google.devtools.build.lib.packages.Types.STRING_SET, false, repeatable)
+    }
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<config>");
-  }
+    override fun exec(execGroupUnchecked: Any?): ExecutionTransitionFactory {
+        return if (execGroupUnchecked === net.starlark.java.eval.Starlark.NONE)
+            ExecutionTransitionFactory.createFactory()
+        else
+            ExecutionTransitionFactory.createFactory(execGroupUnchecked as String?)
+    }
+
+    override fun target(): ConfigurationTransitionApi? {
+        return NoTransition.getFactory() as ConfigurationTransitionApi?
+    }
+
+    override fun none(): ConfigurationTransitionApi? {
+        return NoConfigTransition.getFactory() as ConfigurationTransitionApi?
+    }
+
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("<config>")
+    }
 }

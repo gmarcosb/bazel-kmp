@@ -11,428 +11,419 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.commands;
+package com.google.devtools.build.lib.bazel.commands
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.devtools.build.lib.runtime.Command.BuildPhase.ANALYZES;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.NoBuildEvent;
-import com.google.devtools.build.lib.analysis.NoBuildRequestFinishedEvent;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelFetchAllValue;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleResolutionValue;
-import com.google.devtools.build.lib.bazel.bzlmod.VendorManager;
-import com.google.devtools.build.lib.bazel.commands.RepositoryFetcher.RepositoryFetcherException;
-import com.google.devtools.build.lib.bazel.commands.TargetFetcher.TargetFetcherException;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager;
-import com.google.devtools.build.lib.buildtool.BuildResult;
-import com.google.devtools.build.lib.cmdline.LabelConstants;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue.Failure;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue.Success;
-import com.google.devtools.build.lib.runtime.BlazeCommand;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.KeepGoingOption;
-import com.google.devtools.build.lib.runtime.LoadingPhaseThreadsOption;
-import com.google.devtools.build.lib.runtime.commands.TargetPatternsHelper;
-import com.google.devtools.build.lib.runtime.commands.TestCommand;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.FetchCommand.Code;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.RepositoryMappingValue.RepositoryMappingResolutionException;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.InterruptedFailureDetails;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.InMemoryGraph;
-import com.google.devtools.build.skyframe.NodeEntry;
-import com.google.devtools.build.skyframe.QueryableGraph.Reason;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.io.IOException;
-import java.net.URI;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Queue;
-import java.util.Set;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
+import com.google.devtools.build.lib.bazel.commands.VendorCommand.Companion.createFailedBlazeCommandResult
+import com.google.devtools.build.lib.bazel.repository.downloader.Checksum
+import com.google.devtools.build.lib.events.Event
+import com.google.devtools.build.lib.events.Reporter
+import com.google.devtools.build.lib.runtime.Command
+import com.google.devtools.build.lib.runtime.commands.TestCommand
+import com.google.devtools.build.lib.vfs.Path
+import com.google.devtools.build.skyframe.EvaluationContext
+import com.google.devtools.common.options.OptionsParser
+import com.google.devtools.common.options.OptionsParsingResult
+import java.lang.String
+import java.net.URI
+import java.util.Objects
+import java.util.Optional
+import java.util.Queue
+import java.util.function.Predicate
+import java.util.function.Supplier
+import kotlin.Any
+import kotlin.Boolean
+import kotlin.Exception
+import kotlin.arrayOf
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
+import kotlin.collections.MutableSet
+import kotlin.toString
 
 /**
  * Fetches external repositories into a specified directory.
- *
- * <p>This command is used to fetch external repositories into a specified directory. It can be used
+ * 
+ * 
+ * This command is used to fetch external repositories into a specified directory. It can be used
  * to fetch all external repositories, a specific list of repositories or the repositories needed to
  * build a specific list of targets.
- *
- * <p>The command is used to create a vendor directory that can be used to build the project
+ * 
+ * 
+ * The command is used to create a vendor directory that can be used to build the project
  * offline.
  */
 @Command(
-    name = VendorCommand.NAME,
-    buildPhase = ANALYZES,
-    inheritsOptionsFrom = {TestCommand.class},
-    options = {
-      VendorOptions.class,
-      PackageOptions.class,
-      KeepGoingOption.class,
-      LoadingPhaseThreadsOption.class
-    },
+    name = VendorCommand.Companion.NAME,
+    buildPhase = BuildPhase.ANALYZES,
+    inheritsOptionsFrom = [TestCommand::class],
+    options = [VendorOptions::class, PackageOptions::class, KeepGoingOption::class, LoadingPhaseThreadsOption::class
+    ],
     allowResidue = true,
     usesConfigurationOptions = true,
     help = "resource:vendor.txt",
-    shortDescription =
-        "Fetches external repositories into a folder specified by the flag --vendor_dir.")
-public final class VendorCommand implements BlazeCommand {
-  public static final String NAME = "vendor";
+    shortDescription = "Fetches external repositories into a folder specified by the flag --vendor_dir."
+)
+class VendorCommand(private val nonstrictRepoEnvSupplier: Supplier<ImmutableMap<String?, String?>?>) : BlazeCommand {
+    private var vendorManager: VendorManager? = null
+    private var downloadManager: DownloadManager? = null
 
-  private final Supplier<ImmutableMap<String, String>> nonstrictRepoEnvSupplier;
-  @Nullable private VendorManager vendorManager = null;
-  @Nullable private DownloadManager downloadManager;
-
-  public VendorCommand(Supplier<ImmutableMap<String, String>> nonstrictRepoEnvSupplier) {
-    this.nonstrictRepoEnvSupplier = nonstrictRepoEnvSupplier;
-  }
-
-  public void setDownloadManager(DownloadManager downloadManager) {
-    this.downloadManager = downloadManager;
-  }
-
-  @Override
-  public void editOptions(OptionsParser optionsParser) {
-    TargetFetcher.injectNoBuildOption(optionsParser);
-  }
-
-  @Override
-  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    BlazeCommandResult invalidResult = validateOptions(env, options);
-    if (invalidResult != null) {
-      return invalidResult;
+    fun setDownloadManager(downloadManager: DownloadManager?) {
+        this.downloadManager = downloadManager
     }
 
-    env.getEventBus()
-        .post(
-            new NoBuildEvent(
-                env.getCommandName(),
-                env.getCommandStartTime(),
-                /* separateFinishedEvent= */ true,
-                /* showProgress= */ true,
-                env.getCommandId().toString()));
-
-    // IS_VENDOR_COMMAND & VENDOR_DIR is already injected in "BazelRepositoryModule", we just need
-    // to update this value for the delegator function to recognize this call is from VendorCommand
-    env.getSkyframeExecutor()
-        .injectExtraPrecomputedValues(
-            ImmutableList.of(
-                PrecomputedValue.injected(RepositoryDirectoryValue.IS_VENDOR_COMMAND, true)));
-
-    BlazeCommandResult result;
-    VendorOptions vendorOptions = options.getOptions(VendorOptions.class);
-    LoadingPhaseThreadsOption threadsOption = options.getOptions(LoadingPhaseThreadsOption.class);
-    Path vendorDirectory =
-        env.getWorkspace()
-            .getRelative(options.getOptions(RepositoryOptions.class).getVendorDirectory());
-    this.vendorManager = new VendorManager(vendorDirectory);
-    List<String> targets;
-    try {
-      targets = TargetPatternsHelper.readFrom(env, options);
-    } catch (TargetPatternsHelper.TargetPatternsHelperException e) {
-      env.getReporter().handle(Event.error(e.getMessage()));
-      return BlazeCommandResult.failureDetail(e.getFailureDetail());
+    override fun editOptions(optionsParser: OptionsParser) {
+        TargetFetcher.Companion.injectNoBuildOption(optionsParser)
     }
-    try {
-      if (!targets.isEmpty()) {
-        if (!vendorOptions.getRepos().isEmpty()) {
-          return createFailedBlazeCommandResult(
-              env.getReporter(), "Target patterns and --repo cannot both be specified");
+
+    override fun exec(env: CommandEnvironment, options: OptionsParsingResult): BlazeCommandResult {
+        val invalidResult: BlazeCommandResult? = validateOptions(env, options)
+        if (invalidResult != null) {
+            return invalidResult
         }
-        result = vendorTargets(env, options, targets);
-      } else if (!vendorOptions.getRepos().isEmpty()) {
-        result = vendorRepos(env, threadsOption, vendorOptions.getRepos());
-      } else {
-        result = vendorAll(env, threadsOption);
-      }
-    } catch (InterruptedException e) {
-      return createFailedBlazeCommandResult(
-          env.getReporter(), "Vendor interrupted: " + e.getMessage());
-    } catch (IOException e) {
-      return createFailedBlazeCommandResult(
-          env.getReporter(), "Error while vendoring repos: " + e.getMessage());
-    }
 
-    env.getEventBus()
-        .post(
-            new NoBuildRequestFinishedEvent(
-                result.getExitCode(), env.getRuntime().getClock().currentTimeMillis()));
-    return result;
-  }
+        env.getEventBus()
+            .post(
+                NoBuildEvent(
+                    env.getCommandName(),
+                    env.getCommandStartTime(),  /* separateFinishedEvent= */
+                    true,  /* showProgress= */
+                    true,
+                    env.getCommandId().toString()
+                )
+            )
 
-  @Nullable
-  private BlazeCommandResult validateOptions(CommandEnvironment env, OptionsParsingResult options) {
-    if (options.getOptions(RepositoryOptions.class).getVendorDirectory() == null) {
-      return createFailedBlazeCommandResult(
-          env.getReporter(),
-          Code.OPTIONS_INVALID,
-          "You cannot run the vendor command without specifying --vendor_dir");
-    }
-    if (!options.getOptions(PackageOptions.class).getFetch()) {
-      return createFailedBlazeCommandResult(
-          env.getReporter(),
-          Code.OPTIONS_INVALID,
-          "You cannot run the vendor command with --nofetch");
-    }
-    return null;
-  }
+        // IS_VENDOR_COMMAND & VENDOR_DIR is already injected in "BazelRepositoryModule", we just need
+        // to update this value for the delegator function to recognize this call is from VendorCommand
+        env.getSkyframeExecutor()
+            .injectExtraPrecomputedValues(
+                ImmutableList.of<Injected?>(
+                    PrecomputedValue.injected<Boolean?>(RepositoryDirectoryValue.IS_VENDOR_COMMAND, true)
+                )
+            )
 
-  private BlazeCommandResult vendorAll(
-      CommandEnvironment env, LoadingPhaseThreadsOption threadsOption)
-      throws InterruptedException, IOException {
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setParallelism(threadsOption.getThreads())
-            .setEventHandler(env.getReporter())
-            .build();
-
-    SkyKey fetchKey = BazelFetchAllValue.key(/* configureEnabled= */ false);
-    EvaluationResult<SkyValue> evaluationResult =
-        env.getSkyframeExecutor().prepareAndGet(ImmutableSet.of(fetchKey), evaluationContext);
-    if (evaluationResult.hasError()) {
-      Exception e = evaluationResult.getError().getException();
-      return createFailedBlazeCommandResult(
-          env.getReporter(),
-          e != null ? e.getMessage() : "Unexpected error during fetching all external deps.");
-    }
-
-    BazelFetchAllValue fetchAllValue = (BazelFetchAllValue) evaluationResult.get(fetchKey);
-    env.getReporter().handle(Event.info("Vendoring all external repositories..."));
-    vendor(env, fetchAllValue.reposToVendor());
-    env.getReporter().handle(Event.info("All external dependencies vendored successfully."));
-    return BlazeCommandResult.success();
-  }
-
-  private BlazeCommandResult vendorRepos(
-      CommandEnvironment env, LoadingPhaseThreadsOption threadsOption, List<String> repos)
-      throws InterruptedException, IOException {
-    ImmutableMap<RepositoryName, RepositoryDirectoryValue> repositoryNamesAndValues;
-    try {
-      repositoryNamesAndValues = RepositoryFetcher.fetchRepos(repos, env, threadsOption);
-    } catch (RepositoryMappingResolutionException e) {
-      return createFailedBlazeCommandResult(
-          env.getReporter(), "Invalid repo name: " + e.getMessage(), e.getDetailedExitCode());
-    } catch (RepositoryFetcherException e) {
-      return createFailedBlazeCommandResult(env.getReporter(), e.getMessage());
-    }
-
-    // Split repos to found and not found, vendor found ones and report others
-    ImmutableList.Builder<RepositoryName> reposToVendor = ImmutableList.builder();
-    List<String> notFoundRepoErrors = new ArrayList<>();
-    for (Entry<RepositoryName, RepositoryDirectoryValue> entry :
-        repositoryNamesAndValues.entrySet()) {
-      switch (entry.getValue()) {
-        case Success s -> {
-          if (!s.excludeFromVendoring()) {
-            reposToVendor.add(entry.getKey());
-          }
+        val result: BlazeCommandResult
+        val vendorOptions = options.getOptions<VendorOptions?>(VendorOptions::class.java)
+        val threadsOption: LoadingPhaseThreadsOption? =
+            options.getOptions<LoadingPhaseThreadsOption?>(LoadingPhaseThreadsOption::class.java)
+        val vendorDirectory: Path? =
+            env.getWorkspace()
+                .getRelative(options.getOptions<RepositoryOptions?>(RepositoryOptions::class.java).getVendorDirectory())
+        this.vendorManager = VendorManager(vendorDirectory)
+        val targets: MutableList<String?>
+        try {
+            targets = TargetPatternsHelper.readFrom(env, options)
+        } catch (e: TargetPatternsHelperException) {
+            env.getReporter().handle(Event.error(e.getMessage()))
+            return BlazeCommandResult.failureDetail(e.getFailureDetail())
         }
-        case Failure(String errorMsg) -> notFoundRepoErrors.add(errorMsg);
-      }
-    }
-
-    env.getReporter().handle(Event.info("Vendoring repositories..."));
-    vendor(env, reposToVendor.build());
-    if (!notFoundRepoErrors.isEmpty()) {
-      return createFailedBlazeCommandResult(
-          env.getReporter(), "Vendoring some repos failed with errors: " + notFoundRepoErrors);
-    }
-    env.getReporter().handle(Event.info("All requested repos vendored successfully."));
-    return BlazeCommandResult.success();
-  }
-
-  private BlazeCommandResult vendorTargets(
-      CommandEnvironment env, OptionsParsingResult options, List<String> targets)
-      throws InterruptedException, IOException {
-    // Call fetch which runs build to have the targets graph and configuration set
-    BuildResult buildResult;
-    try {
-      buildResult = TargetFetcher.fetchTargets(env, options, targets);
-    } catch (TargetFetcherException e) {
-      return createFailedBlazeCommandResult(
-          env.getReporter(), Code.QUERY_EVALUATION_ERROR, e.getMessage());
-    }
-
-    // Traverse the graph created from build to collect repos and vendor them
-    ImmutableList<SkyKey> targetKeys =
-        buildResult.getActualTargets().stream()
-            .map(ConfiguredTarget::getLookupKey)
-            .collect(toImmutableList());
-    InMemoryGraph inMemoryGraph = env.getSkyframeExecutor().getEvaluator().getInMemoryGraph();
-    ImmutableSet<RepositoryName> reposToVendor = collectReposFromTargets(inMemoryGraph, targetKeys);
-
-    env.getReporter().handle(Event.info("Vendoring dependencies for targets..."));
-    vendor(env, reposToVendor.asList());
-    env.getReporter()
-        .handle(
-            Event.info(
-                "All external dependencies for the requested targets vendored successfully."));
-    return BlazeCommandResult.success();
-  }
-
-  private ImmutableSet<RepositoryName> collectReposFromTargets(
-      InMemoryGraph inMemoryGraph, ImmutableList<SkyKey> targetKeys) throws InterruptedException {
-    ImmutableSet.Builder<RepositoryName> repos = ImmutableSet.builder();
-    Queue<SkyKey> nodes = new ArrayDeque<>(targetKeys);
-    Set<SkyKey> visited = new HashSet<>();
-    while (!nodes.isEmpty()) {
-      SkyKey key = nodes.remove();
-      visited.add(key);
-      NodeEntry nodeEntry = inMemoryGraph.get(null, Reason.VENDOR_EXTERNAL_REPOS, key);
-      if (nodeEntry.getValue() instanceof RepositoryDirectoryValue.Success repoDirValue
-          && !repoDirValue.excludeFromVendoring()) {
-        repos.add((RepositoryName) key.argument());
-      }
-      for (SkyKey depKey : nodeEntry.getDirectDeps()) {
-        if (!visited.contains(depKey)) {
-          nodes.add(depKey);
+        try {
+            if (!targets.isEmpty()) {
+                if (!vendorOptions!!.getRepos().isEmpty()) {
+                    return createFailedBlazeCommandResult(
+                        env.getReporter(), "Target patterns and --repo cannot both be specified"
+                    )
+                }
+                result = vendorTargets(env, options, targets)
+            } else if (!vendorOptions!!.getRepos().isEmpty()) {
+                result = vendorRepos(env, threadsOption, vendorOptions.getRepos())
+            } else {
+                result = vendorAll(env, threadsOption)
+            }
+        } catch (e: InterruptedException) {
+            return createFailedBlazeCommandResult(
+                env.getReporter(), "Vendor interrupted: " + e.getMessage()
+            )
+        } catch (e: IOException) {
+            return createFailedBlazeCommandResult(
+                env.getReporter(), "Error while vendoring repos: " + e.getMessage()
+            )
         }
-      }
+
+        env.getEventBus()
+            .post(
+                NoBuildRequestFinishedEvent(
+                    result.getExitCode(), env.getRuntime().getClock().currentTimeMillis()
+                )
+            )
+        return result
     }
-    return repos.build();
-  }
 
-  /**
-   * Copies the fetched repos from the external cache into the vendor directory, unless the repo is
-   * ignored or was already vendored and up-to-date
-   */
-  private void vendor(CommandEnvironment env, ImmutableList<RepositoryName> reposToVendor)
-      throws IOException, InterruptedException {
-    Objects.requireNonNull(vendorManager);
+    private fun validateOptions(env: CommandEnvironment, options: OptionsParsingResult): BlazeCommandResult? {
+        if (options.getOptions<RepositoryOptions?>(RepositoryOptions::class.java).getVendorDirectory() == null) {
+            return createFailedBlazeCommandResult(
+                env.getReporter(),
+                Code.OPTIONS_INVALID,
+                "You cannot run the vendor command without specifying --vendor_dir"
+            )
+        }
+        if (!options.getOptions<PackageOptions?>(PackageOptions::class.java).getFetch()) {
+            return createFailedBlazeCommandResult(
+                env.getReporter(),
+                Code.OPTIONS_INVALID,
+                "You cannot run the vendor command with --nofetch"
+            )
+        }
+        return null
+    }
 
-    // 1. Vendor registry files
-    BazelModuleResolutionValue moduleResolutionValue =
-        (BazelModuleResolutionValue)
+    @Throws(InterruptedException::class, IOException::class)
+    private fun vendorAll(
+        env: CommandEnvironment, threadsOption: LoadingPhaseThreadsOption
+    ): BlazeCommandResult {
+        val evaluationContext =
+            EvaluationContext.newBuilder()
+                .setParallelism(threadsOption.getThreads())
+                .setEventHandler(env.getReporter())
+                .build()
+
+        val fetchKey: SkyKey = BazelFetchAllValue.Companion.key( /* configureEnabled= */false)
+        val evaluationResult: EvaluationResult<SkyValue?> =
+            env.getSkyframeExecutor().prepareAndGet(ImmutableSet.of<SkyKey?>(fetchKey), evaluationContext)
+        if (evaluationResult.hasError()) {
+            val e: Exception? = evaluationResult.getError().getException()
+            return createFailedBlazeCommandResult(
+                env.getReporter(),
+                if (e != null) e.getMessage() else "Unexpected error during fetching all external deps."
+            )
+        }
+
+        val fetchAllValue: BazelFetchAllValue = evaluationResult.get(fetchKey) as BazelFetchAllValue
+        env.getReporter().handle(Event.info("Vendoring all external repositories..."))
+        vendor(env, fetchAllValue.reposToVendor)
+        env.getReporter().handle(Event.info("All external dependencies vendored successfully."))
+        return BlazeCommandResult.success()
+    }
+
+    @Throws(InterruptedException::class, IOException::class)
+    private fun vendorRepos(
+        env: CommandEnvironment, threadsOption: LoadingPhaseThreadsOption?, repos: MutableList<String?>?
+    ): BlazeCommandResult {
+        val repositoryNamesAndValues: ImmutableMap<RepositoryName?, RepositoryDirectoryValue?>
+        try {
+            repositoryNamesAndValues = RepositoryFetcher.Companion.fetchRepos(repos, env, threadsOption)
+        } catch (e: RepositoryMappingResolutionException) {
+            return Companion.createFailedBlazeCommandResult(
+                env.getReporter(), "Invalid repo name: " + e.getMessage(), e.getDetailedExitCode()
+            )
+        } catch (e: RepositoryFetcherException) {
+            return createFailedBlazeCommandResult(env.getReporter(), e.getMessage())
+        }
+
+        // Split repos to found and not found, vendor found ones and report others
+        val reposToVendor: ImmutableList.Builder<RepositoryName?> = ImmutableList.builder<RepositoryName?>()
+        val notFoundRepoErrors: MutableList<String?> = ArrayList<String?>()
+        for (entry in repositoryNamesAndValues.entrySet()) {
+            when (entry.getValue()) {
+                -> {
+                    if (!s.excludeFromVendoring) {
+                        reposToVendor.add(entry.getKey())
+                    }
+                }
+
+                -> notFoundRepoErrors.add(errorMsg)
+            }
+        }
+
+        env.getReporter().handle(Event.info("Vendoring repositories..."))
+        vendor(env, reposToVendor.build())
+        if (!notFoundRepoErrors.isEmpty()) {
+            return createFailedBlazeCommandResult(
+                env.getReporter(), "Vendoring some repos failed with errors: " + notFoundRepoErrors
+            )
+        }
+        env.getReporter().handle(Event.info("All requested repos vendored successfully."))
+        return BlazeCommandResult.success()
+    }
+
+    @Throws(InterruptedException::class, IOException::class)
+    private fun vendorTargets(
+        env: CommandEnvironment, options: OptionsParsingResult?, targets: MutableList<String?>?
+    ): BlazeCommandResult {
+        // Call fetch which runs build to have the targets graph and configuration set
+        val buildResult: BuildResult?
+        try {
+            buildResult = TargetFetcher.Companion.fetchTargets(env, options, targets)
+        } catch (e: TargetFetcherException) {
+            return createFailedBlazeCommandResult(
+                env.getReporter(), Code.QUERY_EVALUATION_ERROR, e.getMessage()
+            )
+        }
+
+        // Traverse the graph created from build to collect repos and vendor them
+        val targetKeys: ImmutableList<SkyKey?> =
+            buildResult.getActualTargets().stream()
+                .map<Any?>(ConfiguredTarget::getLookupKey)
+                .collect(ImmutableList.toImmutableList<Any?>())
+        val inMemoryGraph: InMemoryGraph = env.getSkyframeExecutor().getEvaluator().getInMemoryGraph()
+        val reposToVendor: ImmutableSet<RepositoryName?> = collectReposFromTargets(inMemoryGraph, targetKeys)
+
+        env.getReporter().handle(Event.info("Vendoring dependencies for targets..."))
+        vendor(env, reposToVendor.asList())
+        env.getReporter()
+            .handle(
+                Event.info(
+                    "All external dependencies for the requested targets vendored successfully."
+                )
+            )
+        return BlazeCommandResult.success()
+    }
+
+    @Throws(InterruptedException::class)
+    private fun collectReposFromTargets(
+        inMemoryGraph: InMemoryGraph, targetKeys: ImmutableList<SkyKey?>
+    ): ImmutableSet<RepositoryName?> {
+        val repos: ImmutableSet.Builder<RepositoryName?> = ImmutableSet.builder<RepositoryName?>()
+        val nodes: Queue<SkyKey> = ArrayDeque<SkyKey>(targetKeys)
+        val visited: MutableSet<SkyKey?> = HashSet<SkyKey?>()
+        while (!nodes.isEmpty()) {
+            val key: SkyKey = nodes.remove()
+            visited.add(key)
+            val nodeEntry: NodeEntry? = inMemoryGraph.get(null, QueryableGraph.Reason.VENDOR_EXTERNAL_REPOS, key)
+            if (nodeEntry.getValue() is RepositoryDirectoryValue.Success
+                && !repoDirValue.excludeFromVendoring
+            ) {
+                repos.add(key.argument() as RepositoryName?)
+            }
+            for (depKey in nodeEntry.getDirectDeps()) {
+                if (!visited.contains(depKey)) {
+                    nodes.add(depKey)
+                }
+            }
+        }
+        return repos.build()
+    }
+
+    /**
+     * Copies the fetched repos from the external cache into the vendor directory, unless the repo is
+     * ignored or was already vendored and up-to-date
+     */
+    @Throws(IOException::class, InterruptedException::class)
+    private fun vendor(env: CommandEnvironment, reposToVendor: ImmutableList<RepositoryName?>) {
+        Objects.requireNonNull<VendorManager?>(vendorManager)
+
+        // 1. Vendor registry files
+        val moduleResolutionValue: BazelModuleResolutionValue? =
             env.getSkyframeExecutor()
                 .getEvaluator()
-                .getExistingValue(BazelModuleResolutionValue.KEY);
-    ImmutableMap<String, Optional<Checksum>> registryFiles =
-        Objects.requireNonNull(moduleResolutionValue).getRegistryFileHashes();
+                .getExistingValue(BazelModuleResolutionValue.Companion.KEY) as BazelModuleResolutionValue?
+        val registryFiles: ImmutableMap<String?, Optional<Checksum?>?> =
+            Objects.requireNonNull<BazelModuleResolutionValue?>(moduleResolutionValue).getRegistryFileHashes()
 
-    // vendorPathToURL is a map of
-    //  key: a vendor path string converted to lower case
-    //  value: a URL string
-    // This map is for detecting potential rare vendor path conflicts, such as:
-    //  http://foo.bar.com/BCR vs http://foo.bar.com/bcr => conflict vendor paths on
-    // case-insensitive system
-    //  http://foo.bar.com/bcr vs http://foo.bar.com:8081/bcr => conflict vendor path because port
-    // number is ignored in vendor path
-    // The user has to update the Bazel registries this if such conflicts occur.
-    Map<String, String> vendorPathToUrl = new HashMap<>();
-    for (Entry<String, Optional<Checksum>> entry : registryFiles.entrySet()) {
-      URI url = URI.create(entry.getKey());
-      if (Objects.equals(url.getScheme(), "file")) {
-        continue;
-      }
+        // vendorPathToURL is a map of
+        //  key: a vendor path string converted to lower case
+        //  value: a URL string
+        // This map is for detecting potential rare vendor path conflicts, such as:
+        //  http://foo.bar.com/BCR vs http://foo.bar.com/bcr => conflict vendor paths on
+        // case-insensitive system
+        //  http://foo.bar.com/bcr vs http://foo.bar.com:8081/bcr => conflict vendor path because port
+        // number is ignored in vendor path
+        // The user has to update the Bazel registries this if such conflicts occur.
+        val vendorPathToUrl: MutableMap<String?, String?> = HashMap<String?, String?>()
+        for (entry in registryFiles.entrySet()) {
+            val url = URI.create(entry.getKey())
+            if (url.getScheme() == "file") {
+                continue
+            }
 
-      String outputPath = vendorManager.getVendorPathForUrl(url).getPathString();
-      String outputPathLowerCase = outputPath.toLowerCase(Locale.ROOT);
-      if (vendorPathToUrl.containsKey(outputPathLowerCase)) {
-        String previousUrl = vendorPathToUrl.get(outputPathLowerCase);
-        throw new IOException(
-            String.format(
-                "Vendor paths conflict detected for registry URLs:\n"
-                    + "    %s => %s\n"
-                    + "    %s => %s\n"
-                    + "Their output paths are either the same or only differ by case, which will"
-                    + " cause conflict on case insensitive file systems, please fix by changing the"
-                    + " registry URLs!",
-                previousUrl,
-                vendorManager.getVendorPathForUrl(URI.create(previousUrl)).getPathString(),
-                entry.getKey(),
-                outputPath));
-      }
+            val outputPath = vendorManager.getVendorPathForUrl(url).getPathString()
+            val outputPathLowerCase: String = outputPath.toLowerCase(Locale.ROOT)
+            if (vendorPathToUrl.containsKey(outputPathLowerCase)) {
+                val previousUrl = vendorPathToUrl.get(outputPathLowerCase)
+                throw IOException(
+                    String.format(
+                        ("Vendor paths conflict detected for registry URLs:\n"
+                                + "    %s => %s\n"
+                                + "    %s => %s\n"
+                                + "Their output paths are either the same or only differ by case, which will"
+                                + " cause conflict on case insensitive file systems, please fix by changing the"
+                                + " registry URLs!"),
+                        previousUrl,
+                        vendorManager.getVendorPathForUrl(URI.create(previousUrl)).getPathString(),
+                        entry.getKey(),
+                        outputPath
+                    )
+                )
+            }
 
-      Optional<Checksum> checksum = entry.getValue();
-      if (!vendorManager.isUrlVendored(url)
-          // Only vendor a registry URL when its checksum exists, otherwise the URL should be
-          // recorded as "not found" in moduleResolutionValue.getRegistryFileHashes()
-          && checksum.isPresent()) {
-        try {
-          vendorManager.vendorRegistryUrl(
-              url,
-              downloadManager.downloadAndReadOneUrlForBzlmod(
-                  url, nonstrictRepoEnvSupplier.get(), checksum));
-        } catch (IOException e) {
-          throw new IOException(
-              String.format(
-                  "Failed to vendor registry URL %s at %s: %s", url, outputPath, e.getMessage()),
-              e.getCause());
+            val checksum: Optional<Checksum?> = entry.getValue()
+            if (!vendorManager.isUrlVendored(url) // Only vendor a registry URL when its checksum exists, otherwise the URL should be
+                // recorded as "not found" in moduleResolutionValue.getRegistryFileHashes()
+                && checksum.isPresent()
+            ) {
+                try {
+                    vendorManager.vendorRegistryUrl(
+                        url,
+                        downloadManager.downloadAndReadOneUrlForBzlmod(
+                            url, nonstrictRepoEnvSupplier.get(), checksum
+                        )
+                    )
+                } catch (e: IOException) {
+                    throw IOException(
+                        String.format(
+                            "Failed to vendor registry URL %s at %s: %s", url, outputPath, e.getMessage()
+                        ),
+                        e.getCause()
+                    )
+                }
+            }
+
+            vendorPathToUrl.put(outputPathLowerCase, entry.getKey())
         }
-      }
 
-      vendorPathToUrl.put(outputPathLowerCase, entry.getKey());
+        // 2. Vendor repos
+        val externalPath: Path? =
+            env.getDirectories()
+                .getOutputBase()
+                .getRelative(LabelConstants.EXTERNAL_REPOSITORY_LOCATION)
+        vendorManager.vendorRepos(externalPath, env.getDirectories().getWorkspace(), reposToVendor)
+
+        // 3. Invalidate RepositoryDirectoryValue for vendored repos.
+        env.getSkyframeExecutor()
+            .getEvaluator()
+            .delete(
+                Predicate { k: SkyKey? ->
+                    k.functionName() == SkyFunctions.REPOSITORY_DIRECTORY
+                            && reposToVendor.contains(k.argument())
+                })
     }
 
-    // 2. Vendor repos
-    Path externalPath =
-        env.getDirectories()
-            .getOutputBase()
-            .getRelative(LabelConstants.EXTERNAL_REPOSITORY_LOCATION);
-    vendorManager.vendorRepos(externalPath, env.getDirectories().getWorkspace(), reposToVendor);
+    companion object {
+        const val NAME: kotlin.String = "vendor"
 
-    // 3. Invalidate RepositoryDirectoryValue for vendored repos.
-    env.getSkyframeExecutor()
-        .getEvaluator()
-        .delete(
-            k ->
-                k.functionName().equals(SkyFunctions.REPOSITORY_DIRECTORY)
-                    && reposToVendor.contains(k.argument()));
-  }
+        private fun createFailedBlazeCommandResult(
+            reporter: Reporter, fetchCommandCode: Code?, message: kotlin.String?
+        ): BlazeCommandResult {
+            return Companion.createFailedBlazeCommandResult(
+                reporter,
+                message,
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage(message)
+                        .setFetchCommand(
+                            FailureDetails.FetchCommand.newBuilder().setCode(fetchCommandCode).build()
+                        )
+                        .build()
+                )
+            )
+        }
 
-  private static BlazeCommandResult createFailedBlazeCommandResult(
-      Reporter reporter, Code fetchCommandCode, String message) {
-    return createFailedBlazeCommandResult(
-        reporter,
-        message,
-        DetailedExitCode.of(
-            FailureDetail.newBuilder()
-                .setMessage(message)
-                .setFetchCommand(
-                    FailureDetails.FetchCommand.newBuilder().setCode(fetchCommandCode).build())
-                .build()));
-  }
+        private fun createFailedBlazeCommandResult(
+            reporter: Reporter, errorMessage: kotlin.String?
+        ): BlazeCommandResult {
+            return Companion.createFailedBlazeCommandResult(
+                reporter, errorMessage, InterruptedFailureDetails.detailedExitCode(errorMessage)
+            )
+        }
 
-  private static BlazeCommandResult createFailedBlazeCommandResult(
-      Reporter reporter, String errorMessage) {
-    return createFailedBlazeCommandResult(
-        reporter, errorMessage, InterruptedFailureDetails.detailedExitCode(errorMessage));
-  }
-
-  private static BlazeCommandResult createFailedBlazeCommandResult(
-      Reporter reporter, String message, DetailedExitCode exitCode) {
-    reporter.handle(Event.error(message));
-    return BlazeCommandResult.detailedExitCode(exitCode);
-  }
+        private fun createFailedBlazeCommandResult(
+            reporter: Reporter, message: kotlin.String?, exitCode: DetailedExitCode?
+        ): BlazeCommandResult {
+            reporter.handle(Event.error(message))
+            return BlazeCommandResult.detailedExitCode(exitCode)
+        }
+    }
 }

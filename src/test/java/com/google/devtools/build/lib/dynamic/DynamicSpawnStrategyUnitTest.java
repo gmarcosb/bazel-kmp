@@ -412,8 +412,8 @@ public class DynamicSpawnStrategyUnitTest {
     assertThat(results).containsExactly(SUCCESSFUL_LOCAL_SPAWN_RESULT);
     assertThat(events).hasSize(1);
     assertThat(events.get(0).getWinnerBranchType()).isEqualTo(DynamicMode.LOCAL);
-    assertThat(events.get(0).getRemoteBranchName()).isEqualTo("remote");
-    assertThat(events.get(0).getLocalBranchName()).isEqualTo("local");
+    assertThat(events.get(0).remoteBranchName).isEqualTo("remote");
+    assertThat(events.get(0).localBranchName).isEqualTo("local");
   }
 
   @Test
@@ -452,8 +452,8 @@ public class DynamicSpawnStrategyUnitTest {
     assertThat(results).containsExactly(SUCCESSFUL_REMOTE_SPAWN_RESULT);
     assertThat(events).hasSize(1);
     assertThat(events.get(0).getWinnerBranchType()).isEqualTo(DynamicMode.REMOTE);
-    assertThat(events.get(0).getRemoteBranchName()).isEqualTo("remote");
-    assertThat(events.get(0).getLocalBranchName()).isEqualTo("local");
+    assertThat(events.get(0).remoteBranchName).isEqualTo("remote");
+    assertThat(events.get(0).localBranchName).isEqualTo("local");
   }
 
   @Test
@@ -560,8 +560,8 @@ public class DynamicSpawnStrategyUnitTest {
             .setBuiltForToolConfiguration(true)
             .build();
     DynamicExecutionOptions options = Options.getDefaults(DynamicExecutionOptions.class);
-    options.setExcludeTools(true);
-    options.setLocalExecutionDelay(0);
+    options.excludeTools = true;
+    options.localExecutionDelay = 0;
     DynamicSpawnStrategy dynamicSpawnStrategy =
         createDynamicSpawnStrategy(ExecutionPolicy.ANYWHERE, (s) -> Optional.empty(), options);
 

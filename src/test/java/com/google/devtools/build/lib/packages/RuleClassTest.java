@@ -1006,12 +1006,12 @@ public final class RuleClassTest extends PackageLoadingTestCase {
    */
   private void checkValidComputedDefault(Object expectedValue, Attribute computedDefault,
       ImmutableMap<String, Object> attrValueMap) throws Exception {
-    assertThat(computedDefault.getDefaultValueUnchecked())
+    assertThat(computedDefault.defaultValueUnchecked)
         .isInstanceOf(Attribute.ComputedDefault.class);
     Rule rule =
         createRule(getRuleClassWithComputedDefault(computedDefault), "myRule", attrValueMap);
     AttributeMap attributes = RawAttributeMapper.of(rule);
-    assertThat(attributes.get(computedDefault.getName(), computedDefault.getType()))
+    assertThat(attributes.get(computedDefault.name, computedDefault.getType()))
         .isEqualTo(expectedValue);
   }
 

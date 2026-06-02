@@ -11,18 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
-
-import junit.framework.TestCase;
+import junit.framework.TestCase
 
 /**
  * This is a testbed for testing UTF8 test-log functionality.
  * Failures in this test should not cause continuous builds to go red.
  */
-public class InternationalCharsTest extends TestCase {
-  public void testThatAlwaysFails() {
-    // Use JUnit asserts instead of Truth, since Truth's message format is subject to change.
-    assertEquals("Test Japan.", "Test \u65E5本.");
-  }
+class InternationalCharsTest : TestCase() {
+    fun testThatAlwaysFails() {
+        // Use JUnit asserts instead of Truth, since Truth's message format is subject to change.
+        TestCase.assertEquals("Test Japan.", "Test \u65E5本.")
+    }
 }

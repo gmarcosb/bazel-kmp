@@ -1552,7 +1552,7 @@ public class RemoteSpawnRunnerTest {
 
     Spawn spawn = newSimpleSpawn();
     SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.getTimeout()).thenReturn(Duration.ZERO);
+    when(policy.timeout).thenReturn(Duration.ZERO);
 
     when(executor.executeRemotely(
             any(RemoteActionExecutionContext.class),
@@ -1595,7 +1595,7 @@ public class RemoteSpawnRunnerTest {
 
     Spawn spawn = newSimpleSpawn();
     SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.getTimeout()).thenReturn(Duration.ZERO);
+    when(policy.timeout).thenReturn(Duration.ZERO);
 
     when(executor.executeRemotely(
             any(RemoteActionExecutionContext.class),
@@ -1638,7 +1638,7 @@ public class RemoteSpawnRunnerTest {
 
     Spawn spawn = newSimpleSpawn();
     SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.getTimeout()).thenReturn(Duration.ZERO);
+    when(policy.timeout).thenReturn(Duration.ZERO);
 
     when(executor.executeRemotely(
             any(RemoteActionExecutionContext.class),
@@ -1698,7 +1698,7 @@ public class RemoteSpawnRunnerTest {
 
     Spawn spawn = newSimpleSpawn();
     SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.getTimeout()).thenReturn(Duration.ZERO);
+    when(policy.timeout).thenReturn(Duration.ZERO);
 
     when(executor.executeRemotely(
             any(RemoteActionExecutionContext.class),
@@ -1746,7 +1746,7 @@ public class RemoteSpawnRunnerTest {
 
     Spawn spawn = newSimpleSpawn();
     SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.getTimeout()).thenReturn(Duration.ZERO);
+    when(policy.timeout).thenReturn(Duration.ZERO);
 
     when(executor.executeRemotely(
             any(RemoteActionExecutionContext.class),
@@ -1795,7 +1795,7 @@ public class RemoteSpawnRunnerTest {
 
     Spawn spawn = newSimpleSpawn();
     SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.getTimeout()).thenReturn(Duration.ZERO);
+    when(policy.timeout).thenReturn(Duration.ZERO);
 
     when(executor.executeRemotely(
             any(RemoteActionExecutionContext.class),

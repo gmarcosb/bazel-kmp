@@ -188,7 +188,7 @@ public final class ModuleInfoExtractor {
         checkNotNull(
             BazelModuleContext.of(module), "Module %s does not have a BazelModuleContext", module);
     return extractFrom(
-        module, moduleContext.getDocCommentsMap(), moduleContext.getUnusedDocCommentLines());
+        module, moduleContext.docCommentsMap, moduleContext.unusedDocCommentLines);
   }
 
   /**
@@ -468,7 +468,7 @@ public final class ModuleInfoExtractor {
           .ifPresent(macroInfoBuilder::setDocString);
 
       MacroClass macroClass = macroFunction.getMacroClass();
-      if (macroClass.isFinalizer()) {
+      if (macroClass.isFinalizer) {
         macroInfoBuilder.setFinalizer(true);
       }
       // For symbolic macros, always extract non-Starlark attributes (to support inherit_attrs).
@@ -550,7 +550,7 @@ public final class ModuleInfoExtractor {
       // ... but record the origin aspect key for cross references.
       aspectInfoBuilder.setOriginKey(
           OriginKey.newBuilder()
-              .setName(internalToUnicode(aspect.getAspectClass().getExportedName()))
+              .setName(internalToUnicode(aspect.getAspectClass().exportedName))
               .setFile(
                   internalToUnicode(
                       context

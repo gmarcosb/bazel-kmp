@@ -11,66 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.profiler.SystemNetworkStatsService
+import com.google.devtools.build.lib.profiler.SystemNetworkStatsService.NetIoCounter
+import java.io.IOException
+import java.nio.file.Paths
+import java.util.HashMap
 
-import com.google.common.base.Splitter;
-import com.google.devtools.build.lib.jni.JniLoader;
-import com.google.devtools.build.lib.profiler.SystemNetworkStatsService.NetIoCounter;
-import com.google.devtools.build.lib.util.OS;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-/** Utility class for query system network stats. */
-public class SystemNetworkStatsServiceImpl implements SystemNetworkStatsService {
-  private static final Splitter SPLITTER = Splitter.on(" ").omitEmptyStrings().trimResults();
-
-  static {
-    JniLoader.loadJni();
-  }
-
-  public SystemNetworkStatsServiceImpl() {}
-
-  @Override
-  public Map<String, NetIoCounter> getNetIoCounters() throws IOException {
-    HashMap<String, NetIoCounter> countersMap = new HashMap<>();
-    switch (OS.getCurrent()) {
-      case LINUX -> SystemNetworkStatsServiceImpl.getNetIoCountersLinux(countersMap);
-      default -> SystemNetworkStatsServiceImpl.getNetIoCountersNative(countersMap);
+/** Utility class for query system network stats.  */
+class SystemNetworkStatsServiceImpl : SystemNetworkStatsService {
+    @Throws(IOException::class)
+    override fun getNetIoCounters(): MutableMap<String?, NetIoCounter?> {
+        val countersMap: HashMap<String?, NetIoCounter?> = HashMap<String?, NetIoCounter?>()
+        when (com.google.devtools.build.lib.util.OS.getCurrent()) {
+            com.google.devtools.build.lib.util.OS.LINUX -> getNetIoCountersLinux(countersMap)
+            else -> getNetIoCountersNative(countersMap)
+        }
+        return countersMap
     }
-    return countersMap;
-  }
-  private static void getNetIoCountersLinux(Map<String, NetIoCounter> countersMap)
-      throws IOException {
-    List<String> lines = Files.readAllLines(Paths.get("/proc/net/dev"), UTF_8);
 
-    // skip table header (first 2 lines)
-    for (String line : lines.subList(2, lines.size())) {
-      int colonAt = line.indexOf(':');
-      if (colonAt < 0) {
-        continue;
-      }
-      String name = line.substring(0, colonAt).strip();
-      long[] fields =
-          SPLITTER
-              .splitToStream(line.substring(colonAt + 1))
-              .mapToLong(Long::parseUnsignedLong)
-              .toArray();
-      if (fields.length > 9) {
-        long bytesRecv = fields[0];
-        long packetsRecv = fields[1];
-        long bytesSent = fields[8];
-        long packetsSent = fields[9];
-        countersMap.put(name, NetIoCounter.create(bytesSent, bytesRecv, packetsSent, packetsRecv));
-      }
+    companion object {
+        private val SPLITTER: com.google.common.base.Splitter =
+            com.google.common.base.Splitter.on(" ").omitEmptyStrings().trimResults()
+
+        init {
+            com.google.devtools.build.lib.jni.JniLoader.loadJni()
+        }
+
+        @Throws(IOException::class)
+        private fun getNetIoCountersLinux(countersMap: MutableMap<String?, NetIoCounter?>) {
+            val lines: MutableList<String> =
+                java.nio.file.Files.readAllLines(Paths.get("/proc/net/dev"), java.nio.charset.StandardCharsets.UTF_8)
+
+            // skip table header (first 2 lines)
+            for (line in lines.subList(2, lines.size())) {
+                val colonAt: Int = line.indexOf(':'.code)
+                if (colonAt < 0) {
+                    continue
+                }
+                val name: String = line.substring(0, colonAt).strip()
+                val fields: LongArray =
+                    SPLITTER
+                        .splitToStream(line.substring(colonAt + 1))
+                        .mapToLong(java.util.function.ToLongFunction { s: String? -> java.lang.Long.parseUnsignedLong(s) })
+                        .toArray()
+                if (fields.length > 9) {
+                    val bytesRecv = fields[0]
+                    val packetsRecv = fields[1]
+                    val bytesSent = fields[8]
+                    val packetsSent = fields[9]
+                    countersMap.put(name, NetIoCounter.Companion.create(bytesSent, bytesRecv, packetsSent, packetsRecv))
+                }
+            }
+        }
+
+        @Throws(IOException::class)
+        private external fun getNetIoCountersNative(countersMap: MutableMap<String?, NetIoCounter?>?)
     }
-  }
-
-  private static native void getNetIoCountersNative(Map<String, NetIoCounter> countersMap)
-      throws IOException;
 }

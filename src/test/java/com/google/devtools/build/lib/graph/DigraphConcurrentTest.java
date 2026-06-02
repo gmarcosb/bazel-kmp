@@ -133,13 +133,13 @@ public class DigraphConcurrentTest {
         // add 10 outgoing edges
         Runnable add10Outgoing =
             new CreateEdgeNightContention(
-                digraph, countDownLatch, node.getLabel(), 10, true, interruptedCallBack);
+                digraph, countDownLatch, node.label, 10, true, interruptedCallBack);
         futures.add(executorService.submit(add10Outgoing));
 
         // add 10 incoming edges
         Runnable add10Incoming =
             new CreateEdgeNightContention(
-                digraph, countDownLatch, node.getLabel(), 10, false, interruptedCallBack);
+                digraph, countDownLatch, node.label, 10, false, interruptedCallBack);
         futures.add(executorService.submit(add10Incoming));
       }
 

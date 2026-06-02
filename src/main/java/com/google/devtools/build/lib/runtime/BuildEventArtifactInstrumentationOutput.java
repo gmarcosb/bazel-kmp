@@ -47,7 +47,7 @@ public final class BuildEventArtifactInstrumentationOutput implements Instrument
   @Override
   public OutputStream createOutputStream() {
     uploadContext = buildEventArtifactUploader.startUpload(LocalFileType.LOG, null);
-    return uploadContext.getOutputStream();
+    return uploadContext.outputStream;
   }
 
   /** Builder for {@link BuildEventArtifactInstrumentationOutput} */

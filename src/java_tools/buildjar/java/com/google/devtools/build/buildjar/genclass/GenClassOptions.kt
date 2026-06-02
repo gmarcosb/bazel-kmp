@@ -11,68 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.genclass
 
-package com.google.devtools.build.buildjar.genclass;
+import com.google.common.base.Preconditions
+import java.nio.file.Path
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** The options for a [GenClass] action.  */
+class GenClassOptions private constructor(manifest: Path?, classJar: Path?, outputJar: Path?) {
+    /** A builder for [GenClassOptions].  */
+    class Builder {
+        private var manifest: Path? = null
+        private var classJar: Path? = null
+        private var outputJar: Path? = null
 
-import java.nio.file.Path;
+        fun setManifest(manifest: Path?) {
+            this.manifest = manifest
+        }
 
-/** The options for a {@link GenClass} action. */
-public final class GenClassOptions {
+        fun setClassJar(classJar: Path?) {
+            this.classJar = classJar
+        }
 
-  /** A builder for {@link GenClassOptions}. */
-  public static final class Builder {
-    private Path manifest;
-    private Path classJar;
-    private Path outputJar;
+        fun setOutputJar(outputJar: Path?) {
+            this.outputJar = outputJar
+        }
 
-    public Builder() {}
-
-    public void setManifest(Path manifest) {
-      this.manifest = manifest;
+        fun build(): GenClassOptions {
+            return GenClassOptions(manifest, classJar, outputJar)
+        }
     }
 
-    public void setClassJar(Path classJar) {
-      this.classJar = classJar;
+    private val manifest: Path
+    private val classJar: Path
+    private val outputJar: Path
+
+    init {
+        this.manifest = Preconditions.checkNotNull<Path>(manifest)
+        this.classJar = Preconditions.checkNotNull<Path>(classJar)
+        this.outputJar = Preconditions.checkNotNull<Path>(outputJar)
     }
 
-    public void setOutputJar(Path outputJar) {
-      this.outputJar = outputJar;
+    /** The path to the compilation manifest proto.  */
+    fun manifest(): Path {
+        return manifest
     }
 
-    GenClassOptions build() {
-      return new GenClassOptions(manifest, classJar, outputJar);
+    /** The path to the compilation's class jar.  */
+    fun classJar(): Path {
+        return classJar
     }
-  }
 
-  private final Path manifest;
-  private final Path classJar;
-  private final Path outputJar;
+    /** The path to write the output to.  */
+    fun outputJar(): Path {
+        return outputJar
+    }
 
-  private GenClassOptions(Path manifest, Path classJar, Path outputJar) {
-    this.manifest = checkNotNull(manifest);
-    this.classJar = checkNotNull(classJar);
-    this.outputJar = checkNotNull(outputJar);
-  }
-
-  /** The path to the compilation manifest proto. */
-  public Path manifest() {
-    return manifest;
-  }
-
-  /** The path to the compilation's class jar. */
-  public Path classJar() {
-    return classJar;
-  }
-
-  /** The path to write the output to. */
-  public Path outputJar() {
-    return outputJar;
-  }
-
-  /** Returns a builder for {@link GenClassOptions}. */
-  public static Builder builder() {
-    return new Builder();
-  }
+    companion object {
+        /** Returns a builder for [GenClassOptions].  */
+        fun builder(): Builder {
+            return Builder()
+        }
+    }
 }

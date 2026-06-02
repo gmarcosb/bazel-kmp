@@ -11,144 +11,123 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.coverage
 
-package com.google.devtools.build.lib.bazel.coverage;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.eventbus.EventBus
+import com.google.common.eventbus.Subscribe
+import com.google.devtools.build.lib.actions.ActionKeyContext
+import com.google.devtools.build.lib.events.EventHandler
+import com.google.devtools.common.options.*
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.eventbus.EventBus;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactFactory;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.test.CoverageReportActionFactory;
-import com.google.devtools.build.lib.analysis.test.CoverageReportActionFactory.CoverageReportActionsWrapper;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsProvider;
-import java.util.Collection;
-import javax.annotation.Nullable;
-
-/** Adds support for coverage report generation. */
-public class BazelCoverageReportModule extends BlazeModule {
-
-  /** Options that affect coverage report generation. */
-  @OptionsClass
-  public abstract static class Options extends OptionsBase {
-
-    @Option(
-        name = "combined_report",
-        converter = ReportTypeConverter.class,
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        defaultValue = "lcov",
-        help =
-            "Specifies desired cumulative coverage report type. At this point only LCOV "
-                + "is supported.")
-    public abstract ReportType getCombinedReport();
-  }
-
-  /** Possible values for the --combined_report option. */
-  public enum ReportType {
-    NONE,
-    LCOV,
-  }
-
-  /** Converter for the --combined_report option. */
-  public static class ReportTypeConverter extends EnumConverter<ReportType> {
-    public ReportTypeConverter() {
-      super(ReportType.class, "combined coverage report type");
+/** Adds support for coverage report generation.  */
+class BazelCoverageReportModule : BlazeModule() {
+    /** Options that affect coverage report generation.  */
+    @OptionsClass
+    abstract class Options : OptionsBase() {
+        @Option(
+            name = "combined_report",
+            converter = ReportTypeConverter::class,
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.UNKNOWN],
+            defaultValue = "lcov",
+            help = ("Specifies desired cumulative coverage report type. At this point only LCOV "
+                    + "is supported.")
+        )
+        abstract fun getCombinedReport(): ReportType?
     }
-  }
 
-  @Override
-  public ImmutableList<Class<? extends OptionsBase>> getCommandOptions(String commandName) {
-    return commandName.equals("build") ? ImmutableList.of(Options.class) : ImmutableList.of();
-  }
+    /** Possible values for the --combined_report option.  */
+    enum class ReportType {
+        NONE,
+        LCOV,
+    }
 
-  @Override
-  public CoverageReportActionFactory getCoverageReportFactory(OptionsProvider commandOptions) {
-    Options options = commandOptions.getOptions(Options.class);
-    return new CoverageReportActionFactory() {
-      @Override
-      @Nullable
-      public CoverageReportActionsWrapper createCoverageReportActionsWrapper(
-          EventHandler eventHandler,
-          EventBus eventBus,
-          BlazeDirectories directories,
-          Collection<ConfiguredTarget> configuredTargets,
-          Collection<ConfiguredTarget> targetsToTest,
-          ArtifactFactory artifactFactory,
-          ActionKeyContext actionKeyContext,
-          ActionLookupKey actionLookupKey,
-          String workspaceName)
-          throws InterruptedException {
-        if (options == null || options.getCombinedReport() == ReportType.NONE) {
-          return null;
+    /** Converter for the --combined_report option.  */
+    class ReportTypeConverter : EnumConverter<ReportType?>(ReportType::class.java, "combined coverage report type")
+
+    override fun getCommandOptions(commandName: String): ImmutableList<Class<out OptionsBase?>?> {
+        return if (commandName == "build") ImmutableList.of<Class<out OptionsBase?>?>(Options::class.java) else ImmutableList.of<Class<out OptionsBase?>?>()
+    }
+
+    override fun getCoverageReportFactory(commandOptions: OptionsProvider): CoverageReportActionFactory? {
+        val options = commandOptions.getOptions<Options?>(Options::class.java)
+        return object : CoverageReportActionFactory {
+            @Throws(InterruptedException::class)
+            override fun createCoverageReportActionsWrapper(
+                eventHandler: EventHandler?,
+                eventBus: EventBus,
+                directories: BlazeDirectories?,
+                configuredTargets: MutableCollection<ConfiguredTarget?>?,
+                targetsToTest: MutableCollection<ConfiguredTarget?>?,
+                artifactFactory: ArtifactFactory?,
+                actionKeyContext: ActionKeyContext?,
+                actionLookupKey: ActionLookupKey?,
+                workspaceName: String?
+            ): CoverageReportActionsWrapper? {
+                if (options == null || options.getCombinedReport() == ReportType.NONE) {
+                    return null
+                }
+                Preconditions.checkArgument(options.getCombinedReport() == ReportType.LCOV)
+                val builder = CoverageReportActionBuilder()
+                val wrapper: CoverageReportActionsWrapper? =
+                    builder.createCoverageActionsWrapper(
+                        eventHandler,
+                        directories,
+                        configuredTargets,
+                        targetsToTest,
+                        artifactFactory,
+                        actionKeyContext,
+                        actionLookupKey,
+                        workspaceName,
+                        BazelCoverageHelper(),  /* htmlReport= */
+                        null
+                    )
+                if (wrapper == null) {
+                    return null
+                }
+                eventBus.register(CoverageReportCollector(wrapper))
+                return wrapper
+            }
         }
-        Preconditions.checkArgument(options.getCombinedReport() == ReportType.LCOV);
-        CoverageReportActionBuilder builder = new CoverageReportActionBuilder();
-        CoverageReportActionsWrapper wrapper =
-            builder.createCoverageActionsWrapper(
-                eventHandler,
-                directories,
-                configuredTargets,
-                targetsToTest,
-                artifactFactory,
-                actionKeyContext,
-                actionLookupKey,
-                workspaceName,
-                new BazelCoverageHelper(),
-                /* htmlReport= */ null);
-        if (wrapper == null) {
-          return null;
+    }
+
+    private class BazelCoverageHelper : CoverageHelper {
+        override fun getArgs(args: CoverageArgs, lcovOutput: Artifact): ImmutableList<String?> {
+            val argsBuilder =
+                ImmutableList.builder<String?>()
+                    .add(
+                        args.reportGenerator.getExecutable()
+                            .getExecPathString(),  // A file that contains all the exec paths to the coverage artifacts
+                        "--reports_file=" + args.lcovArtifact.getExecPathString(),
+                        "--output_file=" + lcovOutput.getExecPathString()
+                    )
+            return argsBuilder.build()
         }
-        eventBus.register(new CoverageReportCollector(wrapper));
-        return wrapper;
-      }
-    };
-  }
 
-  private static class BazelCoverageHelper implements CoverageReportActionBuilder.CoverageHelper {
-    @Override
-    public ImmutableList<String> getArgs(CoverageArgs args, Artifact lcovOutput) {
-      ImmutableList.Builder<String> argsBuilder =
-          ImmutableList.<String>builder()
-              .add(
-                  args.reportGenerator().getExecutable().getExecPathString(),
-                  // A file that contains all the exec paths to the coverage artifacts
-                  "--reports_file=" + args.lcovArtifact().getExecPathString(),
-                  "--output_file=" + lcovOutput.getExecPathString());
-        return argsBuilder.build();
-      }
-
-    @Override
-    public String getLocationMessage(CoverageArgs args, Artifact lcovOutput) {
-      return "LCOV coverage report is located at "
-          + lcovOutput.getPath().getPathString()
-          + "\n and execpath is "
-          + lcovOutput.getExecPathString();
+        override fun getLocationMessage(args: CoverageArgs?, lcovOutput: Artifact): String {
+            return ("LCOV coverage report is located at "
+                    + lcovOutput.getPath().getPathString()
+                    + "\n and execpath is "
+                    + lcovOutput.getExecPathString())
+        }
     }
-  }
 
-  private record CoverageReportCollector(CoverageReportActionsWrapper wrapper) {
-    @Subscribe
-    public void buildComplete(BuildCompleteEvent event) {
-      event
-          .getResult()
-          .getBuildToolLogCollection()
-          .addLocalFile("coverage_report.lcov", wrapper.getCoverageReportArtifact().getPath())
-          .addLocalFile("baseline_report.lcov", wrapper.getBaselineReportArtifact().getPath());
+    private class CoverageReportCollector(wrapper: CoverageReportActionsWrapper?) {
+        @Subscribe
+        fun buildComplete(event: BuildCompleteEvent) {
+            event
+                .getResult()
+                .getBuildToolLogCollection()
+                .addLocalFile("coverage_report.lcov", wrapper.getCoverageReportArtifact().getPath())
+                .addLocalFile("baseline_report.lcov", wrapper.getBaselineReportArtifact().getPath())
+        }
+
+        val wrapper: CoverageReportActionsWrapper?
+
+        init {
+            this.wrapper = wrapper
+        }
     }
-  }
 }

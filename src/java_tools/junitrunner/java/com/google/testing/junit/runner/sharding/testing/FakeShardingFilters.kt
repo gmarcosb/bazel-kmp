@@ -11,68 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding.testing
 
-package com.google.testing.junit.runner.sharding.testing;
-
-import com.google.testing.junit.runner.sharding.ShardingFilters;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+import com.google.testing.junit.runner.sharding.ShardingFilters
+import org.junit.runner.Description
+import org.junit.runner.manipulation.Filter
+import java.util.Arrays
+import kotlin.collections.MutableCollection
+import kotlin.collections.MutableSet
 
 /**
  * Filter factory that includes only descriptions in the set of descriptions
  * explicitly specified in the constructor.
  */
-public class FakeShardingFilters extends ShardingFilters {
-  private final Set<Description> descriptionsToRun;
+class FakeShardingFilters(vararg descriptionsToRun: Description?) : ShardingFilters(null, null) {
+    private val descriptionsToRun: MutableSet<Description?>
 
-  public FakeShardingFilters(Description... descriptionsToRun) {
-    super(null, null);
-    this.descriptionsToRun = copyOf(descriptionsToRun);
-  }
-
-  @Override
-  public Filter createShardingFilter(Collection<Description> allDescriptions) {
-    return new ExplicitDescriptionFilter(allDescriptions, descriptionsToRun);
-  }
-
-
-  private static class ExplicitDescriptionFilter extends Filter {
-    private final Set<Description> allDescriptions;
-    private final Set<Description> descriptionsToRun;
-
-    private ExplicitDescriptionFilter(
-        Collection<Description> allDescriptions, Set<Description> descriptionsToRun) {
-      this.allDescriptions = copyOf(allDescriptions);
-      this.descriptionsToRun = descriptionsToRun;
+    init {
+        this.descriptionsToRun = copyOf<Description?>(*descriptionsToRun)
     }
 
-    @Override
-    public boolean shouldRun(Description description) {
-      if (description.isSuite()) {
-        return true;
-      }
-      if (!allDescriptions.contains(description)) {
-        throw new IllegalArgumentException("Not in the suite: " + description);
-      }
-      return descriptionsToRun.contains(description);
+    public override fun createShardingFilter(allDescriptions: MutableCollection<Description?>): Filter {
+        return ExplicitDescriptionFilter(allDescriptions, descriptionsToRun)
     }
 
-    @Override
-    public String describe() {
-      return "explicit description filter";
+
+    private class ExplicitDescriptionFilter(
+        allDescriptions: MutableCollection<Description?>,
+        private val descriptionsToRun: MutableSet<Description?>
+    ) : Filter() {
+        private val allDescriptions: MutableSet<Description?>
+
+        init {
+            this.allDescriptions = copyOf<Description?>(allDescriptions)
+        }
+
+        override fun shouldRun(description: Description): Boolean {
+            if (description.isSuite()) {
+                return true
+            }
+            require(allDescriptions.contains(description)) { "Not in the suite: " + description }
+            return descriptionsToRun.contains(description)
+        }
+
+        override fun describe(): String {
+            return "explicit description filter"
+        }
     }
-  }
 
-  private static <T> Set<T> copyOf(T... items) {
-    return copyOf(Arrays.asList(items));
-  }
+    companion object {
+        private fun <T> copyOf(vararg items: T?): MutableSet<T?> {
+            return copyOf<T?>(Arrays.asList<T?>(*items))
+        }
 
-  private static <T> Set<T> copyOf(Collection<T> items) {
-    return Collections.unmodifiableSet(new HashSet<T>(items));
-  }
+        private fun <T> copyOf(items: MutableCollection<T?>): MutableSet<T?> {
+            return Collections.unmodifiableSet<T?>(HashSet<T?>(items))
+        }
+    }
 }

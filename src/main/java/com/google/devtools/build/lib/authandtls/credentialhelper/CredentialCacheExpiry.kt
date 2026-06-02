@@ -11,71 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-package com.google.devtools.build.lib.authandtls.credentialhelper;
+import com.github.benmanes.caffeine.cache.Expiry
+import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsResponse
+import java.time.Instant
 
-import static com.google.common.base.Preconditions.checkNotNull;
+internal class CredentialCacheExpiry : Expiry<java.net.URI?, GetCredentialsResponse?> {
+    private var defaultCacheDuration: java.time.Duration = java.time.Duration.ZERO
 
-import com.github.benmanes.caffeine.cache.Expiry;
-import com.google.common.base.Preconditions;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.net.URI;
-import java.time.Duration;
-import java.time.Instant;
-
-final class CredentialCacheExpiry implements Expiry<URI, GetCredentialsResponse> {
-  private Duration defaultCacheDuration = Duration.ZERO;
-
-  /**
-   * Sets the default cache duration for {@link GetCredentialsResponse}s that don't set {@code
-   * expiry}.
-   */
-  public void setDefaultCacheDuration(Duration duration) {
-    this.defaultCacheDuration = Preconditions.checkNotNull(duration);
-  }
-
-  private Duration getCacheDuration(GetCredentialsResponse response, Instant now) {
-    checkNotNull(response);
-
-    var expires = response.expires();
-    if (expires.isEmpty()) {
-      return defaultCacheDuration;
+    /**
+     * Sets the default cache duration for [GetCredentialsResponse]s that don't set `expiry`.
+     */
+    fun setDefaultCacheDuration(duration: java.time.Duration?) {
+        this.defaultCacheDuration = com.google.common.base.Preconditions.checkNotNull<java.time.Duration>(duration)
     }
 
-    return Duration.between(now, expires.get());
-  }
+    private fun getCacheDuration(response: GetCredentialsResponse?, now: Instant): java.time.Duration? {
+        com.google.common.base.Preconditions.checkNotNull<GetCredentialsResponse?>(response)
 
-  @Override
-  public long expireAfterCreate(URI uri, GetCredentialsResponse response, long currentTime) {
-    checkNotNull(uri);
-    checkNotNull(response);
+        val expires: java.util.Optional<Instant?> = response.expires
+        if (expires.isEmpty()) {
+            return defaultCacheDuration
+        }
 
-    // currentTime is in nanos since epoch (see WallTicker).
-    Instant now = Instant.ofEpochSecond(0, currentTime);
+        return java.time.Duration.between(now, expires.get())
+    }
 
-    return getCacheDuration(response, now).toNanos();
-  }
+    override fun expireAfterCreate(uri: java.net.URI?, response: GetCredentialsResponse?, currentTime: Long): Long {
+        com.google.common.base.Preconditions.checkNotNull<java.net.URI?>(uri)
+        com.google.common.base.Preconditions.checkNotNull<GetCredentialsResponse?>(response)
 
-  @Override
-  public long expireAfterUpdate(
-      URI uri, GetCredentialsResponse response, long currentTime, long currentDuration) {
-    checkNotNull(uri);
-    checkNotNull(response);
+        // currentTime is in nanos since epoch (see WallTicker).
+        val now: Instant = Instant.ofEpochSecond(0, currentTime)
 
-    // currentTime is in nanos since epoch (see WallTicker).
-    Instant now = Instant.ofEpochSecond(0, currentTime);
+        return getCacheDuration(response, now).toNanos()
+    }
 
-    return getCacheDuration(response, now).toNanos();
-  }
+    override fun expireAfterUpdate(
+        uri: java.net.URI?, response: GetCredentialsResponse?, currentTime: Long, currentDuration: Long
+    ): Long {
+        com.google.common.base.Preconditions.checkNotNull<java.net.URI?>(uri)
+        com.google.common.base.Preconditions.checkNotNull<GetCredentialsResponse?>(response)
 
-  @CanIgnoreReturnValue
-  @Override
-  public long expireAfterRead(
-      URI uri, GetCredentialsResponse response, long currentTime, long currentDuration) {
-    checkNotNull(uri);
-    checkNotNull(response);
+        // currentTime is in nanos since epoch (see WallTicker).
+        val now: Instant = Instant.ofEpochSecond(0, currentTime)
 
-    // Don't extend the duration on read access.
-    return currentDuration;
-  }
+        return getCacheDuration(response, now).toNanos()
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun expireAfterRead(
+        uri: java.net.URI?, response: GetCredentialsResponse?, currentTime: Long, currentDuration: Long
+    ): Long {
+        com.google.common.base.Preconditions.checkNotNull<java.net.URI?>(uri)
+        com.google.common.base.Preconditions.checkNotNull<GetCredentialsResponse?>(response)
+
+        // Don't extend the duration on read access.
+        return currentDuration
+    }
 }

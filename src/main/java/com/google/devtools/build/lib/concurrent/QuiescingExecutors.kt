@@ -11,17 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-/** Encapsulates thread pool options used by parallel evaluation. */
-public interface QuiescingExecutors {
-  int analysisParallelism();
+/** Encapsulates thread pool options used by parallel evaluation.  */
+interface QuiescingExecutors {
+    fun analysisParallelism(): Int
 
-  int executionParallelism();
+    fun executionParallelism(): Int
 
-  int globbingParallelism();
+    fun globbingParallelism(): Int
 
-  QuiescingExecutor getAnalysisExecutor();
+    @kotlin.jvm.JvmField
+    val analysisExecutor: com.google.devtools.build.lib.concurrent.QuiescingExecutor?
 
-  QuiescingExecutor getMergedAnalysisAndExecutionExecutor();
+    @kotlin.jvm.JvmField
+    val mergedAnalysisAndExecutionExecutor: com.google.devtools.build.lib.concurrent.QuiescingExecutor?
 }

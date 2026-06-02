@@ -11,135 +11,129 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import build.bazel.remote.execution.v2.Platform
 
-import static com.google.devtools.build.lib.util.StringEncoding.internalToUnicode;
-
-import build.bazel.remote.execution.v2.Platform;
-import build.bazel.remote.execution.v2.Platform.Property;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Ordering;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.UserExecException;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.SortedMap;
-import javax.annotation.Nullable;
-
-/** Utilities for accessing platform properties. */
-public final class PlatformUtils {
-
-  private static void sortPlatformProperties(Platform.Builder builder) {
-    List<Platform.Property> properties =
-        Ordering.from(Comparator.comparing(Platform.Property::getName))
-            .sortedCopy(builder.getPropertiesList());
-    builder.clearProperties();
-    builder.addAllProperties(properties);
-  }
-
-  @Nullable
-  public static Platform buildPlatformProto(Map<String, String> executionProperties) {
-    if (executionProperties.isEmpty()) {
-      return null;
-    }
-    Platform.Builder builder = Platform.newBuilder();
-    for (Map.Entry<String, String> keyValue : executionProperties.entrySet()) {
-      Property property =
-          Property.newBuilder()
-              .setName(internalToUnicode(keyValue.getKey()))
-              .setValue(internalToUnicode(keyValue.getValue()))
-              .build();
-      builder.addProperties(property);
+/** Utilities for accessing platform properties.  */
+object PlatformUtils {
+    private fun sortPlatformProperties(builder: Platform.Builder) {
+        val properties: MutableList<Platform.Property?> =
+            com.google.common.collect.Ordering.from<Any?>(java.util.Comparator.comparing<Any?, Any?>(Platform.Property::getName))
+                .sortedCopy<E?>(builder.getPropertiesList())
+        builder.clearProperties()
+        builder.addAllProperties(properties)
     }
 
-    sortPlatformProperties(builder);
-    return builder.build();
-  }
+    fun buildPlatformProto(executionProperties: MutableMap<String?, String?>): Platform? {
+        if (executionProperties.isEmpty()) {
+            return null
+        }
+        val builder: Platform.Builder = Platform.newBuilder()
+        for (keyValue in executionProperties.entries) {
+            val property: Property? =
+                Property.newBuilder()
+                    .setName(StringEncoding.internalToUnicode(keyValue.key))
+                    .setValue(StringEncoding.internalToUnicode(keyValue.value))
+                    .build()
+            builder.addProperties(property)
+        }
 
-  @Nullable
-  public static Platform getPlatformProto(Spawn spawn, @Nullable RemoteOptions remoteOptions)
-      throws UserExecException {
-    return getPlatformProto(spawn, remoteOptions, ImmutableMap.of());
-  }
-
-  private static boolean shouldProducePlatformProto(
-      Spawn spawn,
-      SortedMap<String, String> defaultExecProperties,
-      Map<String, String> additionalProperties) {
-    PlatformInfo executionPlatform = spawn.getExecutionPlatform();
-    if (executionPlatform != null) {
-      if (!executionPlatform.execProperties().isEmpty()) {
-        return true;
-      }
-    }
-    if (!spawn.getCombinedExecProperties().isEmpty()) {
-      return true;
-    }
-    if (!defaultExecProperties.isEmpty()) {
-      return true;
-    }
-    if (!additionalProperties.isEmpty()) {
-      return true;
-    }
-    return false;
-  }
-
-  @Nullable
-  public static Platform getPlatformProto(
-      Spawn spawn, @Nullable RemoteOptions remoteOptions, Map<String, String> additionalProperties)
-      throws UserExecException {
-    SortedMap<String, String> defaultExecProperties =
-        remoteOptions != null
-            ? remoteOptions.getRemoteDefaultExecProperties()
-            : ImmutableSortedMap.of();
-
-    if (!shouldProducePlatformProto(spawn, defaultExecProperties, additionalProperties)) {
-      // Execution platform is null or functionally empty
-      return null;
+        com.google.devtools.build.lib.analysis.platform.PlatformUtils.sortPlatformProperties(builder)
+        return builder.build()
     }
 
-    Map<String, String> properties = new HashMap<>();
-    if (!spawn.getCombinedExecProperties().isEmpty()) {
-      // Apply default exec properties if the execution platform does not already set
-      // exec_properties
-      if (spawn.getExecutionPlatform() == null
-          || spawn.getExecutionPlatform().execProperties().isEmpty()) {
-        properties.putAll(defaultExecProperties);
-        properties.putAll(spawn.getCombinedExecProperties());
-      } else {
-        properties = spawn.getCombinedExecProperties();
-      }
-    } else if (spawn.getExecutionPlatform() != null) {
-      properties.putAll(spawn.getExecutionPlatform().execProperties());
+    @Throws(UserExecException::class)
+    fun getPlatformProto(spawn: Spawn, remoteOptions: RemoteOptions?): Platform? {
+        return com.google.devtools.build.lib.analysis.platform.PlatformUtils.getPlatformProto(
+            spawn,
+            remoteOptions,
+            com.google.common.collect.ImmutableMap.of<String?, String?>()
+        )
     }
 
-    if (properties.isEmpty()) {
-      properties = defaultExecProperties;
+    private fun shouldProducePlatformProto(
+        spawn: Spawn,
+        defaultExecProperties: SortedMap<String?, String?>,
+        additionalProperties: MutableMap<String?, String?>
+    ): Boolean {
+        val executionPlatform: com.google.devtools.build.lib.analysis.platform.PlatformInfo? =
+            spawn.getExecutionPlatform()
+        if (executionPlatform != null) {
+            if (!executionPlatform.execProperties().isEmpty()) {
+                return true
+            }
+        }
+        if (!spawn.getCombinedExecProperties().isEmpty()) {
+            return true
+        }
+        if (!defaultExecProperties.isEmpty()) {
+            return true
+        }
+        if (!additionalProperties.isEmpty()) {
+            return true
+        }
+        return false
     }
 
-    if (!additionalProperties.isEmpty()) {
-      if (properties.isEmpty()) {
-        properties = additionalProperties;
-      } else {
-        // Merge the two maps.
-        properties = new HashMap<>(properties);
-        properties.putAll(additionalProperties);
-      }
-    }
+    @Throws(UserExecException::class)
+    fun getPlatformProto(
+        spawn: Spawn, remoteOptions: RemoteOptions?, additionalProperties: MutableMap<String?, String?>
+    ): Platform? {
+        val defaultExecProperties: SortedMap<String?, String?> =
+            if (remoteOptions != null)
+                remoteOptions.getRemoteDefaultExecProperties()
+            else
+                com.google.common.collect.ImmutableSortedMap.of<String?, String?>()
 
-    Platform.Builder platformBuilder = Platform.newBuilder();
-    for (Map.Entry<String, String> entry : properties.entrySet()) {
-      platformBuilder
-          .addPropertiesBuilder()
-          .setName(internalToUnicode(entry.getKey()))
-          .setValue(internalToUnicode(entry.getValue()));
+        if (!com.google.devtools.build.lib.analysis.platform.PlatformUtils.shouldProducePlatformProto(
+                spawn,
+                defaultExecProperties,
+                additionalProperties
+            )
+        ) {
+            // Execution platform is null or functionally empty
+            return null
+        }
+
+        var properties: MutableMap<String?, String?> = HashMap<String?, String?>()
+        if (!spawn.getCombinedExecProperties().isEmpty()) {
+            // Apply default exec properties if the execution platform does not already set
+            // exec_properties
+            if (spawn.getExecutionPlatform() == null
+                || spawn.getExecutionPlatform().execProperties().isEmpty()
+            ) {
+                properties.putAll(defaultExecProperties)
+                properties.putAll(spawn.getCombinedExecProperties())
+            } else {
+                properties = spawn.getCombinedExecProperties()
+            }
+        } else if (spawn.getExecutionPlatform() != null) {
+            properties.putAll(spawn.getExecutionPlatform().execProperties())
+        }
+
+        if (properties.isEmpty()) {
+            properties = defaultExecProperties
+        }
+
+        if (!additionalProperties.isEmpty()) {
+            if (properties.isEmpty()) {
+                properties = additionalProperties
+            } else {
+                // Merge the two maps.
+                properties = HashMap<String?, String?>(properties)
+                properties.putAll(additionalProperties)
+            }
+        }
+
+        val platformBuilder: Platform.Builder = Platform.newBuilder()
+        for (entry in properties.entries) {
+            platformBuilder
+                .addPropertiesBuilder()
+                .setName(StringEncoding.internalToUnicode(entry.key))
+                .setValue(StringEncoding.internalToUnicode(entry.value))
+        }
+        com.google.devtools.build.lib.analysis.platform.PlatformUtils.sortPlatformProperties(platformBuilder)
+        return platformBuilder.build()
     }
-    sortPlatformProperties(platformBuilder);
-    return platformBuilder.build();
-  }
 }

@@ -11,40 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.metrics
 
-package com.google.devtools.build.lib.metrics;
+import com.google.devtools.build.lib.clock.Clock.now
+import com.google.devtools.build.lib.metrics.ResourceSnapshot
+import com.google.devtools.build.lib.sandbox.Cgroup
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.sandbox.Cgroup;
-import java.util.Map;
-
-/** Collects resource usage of processes from their cgroups {@code CgroupsInfo}. */
-public class CgroupsInfoCollector {
-  // TODO(b/292634407, b/323341972): Extract a common interface between CgroupsInfoCollector and
-  //  PsInfoCollector to be passed to the WorkerProcessMetricsCollector. Then make both classes
-  //  final.
-
-  // Mainly a singleton for mocking purposes. But also useful if we want to persist additional
-  // state as in the PsInfoCollector.
-  private static final CgroupsInfoCollector instance = new CgroupsInfoCollector();
-
-  private CgroupsInfoCollector() {}
-
-  public static CgroupsInfoCollector instance() {
-    return instance;
-  }
-
-  public ResourceSnapshot collectResourceUsage(Map<Long, Cgroup> pidToCgroups, Clock clock) {
-    ImmutableMap.Builder<Long, Integer> pidToMemoryInKb = ImmutableMap.builder();
-    for (Map.Entry<Long, Cgroup> entry : pidToCgroups.entrySet()) {
-      Cgroup cgroup = entry.getValue();
-      // TODO(b/292634407): Consider how to handle the unlikely case where only some cgroups are
-      //  invalid.
-      if (cgroup.exists()) {
-        pidToMemoryInKb.put(entry.getKey(), entry.getValue().getMemoryUsageInKb());
-      }
+/** Collects resource usage of processes from their cgroups `CgroupsInfo`.  */
+class CgroupsInfoCollector private constructor() {
+    fun collectResourceUsage(
+        pidToCgroups: MutableMap<Long?, Cgroup?>,
+        clock: com.google.devtools.build.lib.clock.Clock
+    ): ResourceSnapshot {
+        val pidToMemoryInKb: com.google.common.collect.ImmutableMap.Builder<Long?, Int?> =
+            com.google.common.collect.ImmutableMap.builder<Long?, Int?>()
+        for (entry in pidToCgroups.entries) {
+            val cgroup: Cgroup = entry.value
+            // TODO(b/292634407): Consider how to handle the unlikely case where only some cgroups are
+            //  invalid.
+            if (cgroup.exists()) {
+                pidToMemoryInKb.put(entry.key, entry.value.getMemoryUsageInKb())
+            }
+        }
+        return ResourceSnapshot.Companion.create(pidToMemoryInKb.buildOrThrow(), clock.now())
     }
-    return ResourceSnapshot.create(pidToMemoryInKb.buildOrThrow(), clock.now());
-  }
+
+    companion object {
+        // TODO(b/292634407, b/323341972): Extract a common interface between CgroupsInfoCollector and
+        //  PsInfoCollector to be passed to the WorkerProcessMetricsCollector. Then make both classes
+        //  final.
+        // Mainly a singleton for mocking purposes. But also useful if we want to persist additional
+        // state as in the PsInfoCollector.
+        private val instance = CgroupsInfoCollector()
+
+        fun instance(): CgroupsInfoCollector {
+            return instance
+        }
+    }
 }

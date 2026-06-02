@@ -11,96 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.base.Function;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ThreadSafeMutableSet;
-import com.google.devtools.build.lib.server.FailureDetails.Query;
-import java.util.Collection;
-import java.util.regex.Pattern;
+import com.google.common.base.Function
+import com.google.devtools.build.lib.server.FailureDetails.Query
+import java.util.regex.Pattern
 
 /**
  * A let expression.
- *
+ * 
  * <pre>expr ::= LET WORD = expr IN expr</pre>
  */
-public class LetExpression extends QueryExpression {
-
-  private static final String VAR_NAME_PATTERN = "[a-zA-Z_][a-zA-Z0-9_]*$";
-
-  // Variables names may be any legal identifier in the C programming language
-  private static final Pattern NAME_PATTERN = Pattern.compile("^" + VAR_NAME_PATTERN);
-
-  // Variable references are prepended with the "$" character.
-  // A variable named "x" is referenced as "$x".
-  private static final Pattern REF_PATTERN = Pattern.compile("^\\$" + VAR_NAME_PATTERN);
-
-  static boolean isValidVarReference(String varName) {
-    return REF_PATTERN.matcher(varName).matches();
-  }
-
-  public static String getNameFromReference(String reference) {
-    return reference.substring(1);
-  }
-
-  private final String varName;
-  private final QueryExpression varExpr;
-  private final QueryExpression bodyExpr;
-
-  public LetExpression(String varName, QueryExpression varExpr, QueryExpression bodyExpr) {
-    this.varName = varName;
-    this.varExpr = varExpr;
-    this.bodyExpr = bodyExpr;
-  }
-
-  public String getVarName() {
-    return varName;
-  }
-
-  public QueryExpression getVarExpr() {
-    return varExpr;
-  }
-
-  public QueryExpression getBodyExpr() {
-    return bodyExpr;
-  }
-
-  @Override
-  public <T> QueryTaskFuture<Void> eval(
-      final QueryEnvironment<T> env,
-      final QueryExpressionContext<T> context,
-      final Callback<T> callback) {
-    if (!NAME_PATTERN.matcher(varName).matches()) {
-      return env.immediateFailedFuture(
-          new QueryException(
-              this,
-              "invalid variable name '" + varName + "' in let expression",
-              Query.Code.VARIABLE_NAME_INVALID));
+class LetExpression(val varName: String, val varExpr: QueryExpression, val bodyExpr: QueryExpression) :
+    QueryExpression() {
+    override fun <T> eval(
+        env: QueryEnvironment<T?>,
+        context: QueryExpressionContext<T?>,
+        callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>? {
+        if (!NAME_PATTERN.matcher(varName).matches()) {
+            return env.immediateFailedFuture<Void?>(
+                QueryException(
+                    this,
+                    "invalid variable name '" + varName + "' in let expression",
+                    Query.Code.VARIABLE_NAME_INVALID
+                )
+            )
+        }
+        val varValueFuture: QueryTaskFuture<ThreadSafeMutableSet<T?>?>? =
+            QueryUtil.evalAll<T?>(env, context, varExpr)
+        val evalBodyAsyncFunction: Function<ThreadSafeMutableSet<T?>?, QueryTaskFuture<Void?>?> =
+            Function { varValue: ThreadSafeMutableSet<T?>? ->
+                val bodyContext = context.with(varName, varValue)
+                env.eval(bodyExpr, bodyContext, callback)
+            }
+        return env.transformAsync<ThreadSafeMutableSet<T?>?, Void?>(varValueFuture, evalBodyAsyncFunction)
     }
-    QueryTaskFuture<ThreadSafeMutableSet<T>> varValueFuture =
-        QueryUtil.evalAll(env, context, varExpr);
-    Function<ThreadSafeMutableSet<T>, QueryTaskFuture<Void>> evalBodyAsyncFunction =
-        varValue -> {
-          QueryExpressionContext<T> bodyContext = context.with(varName, varValue);
-          return env.eval(bodyExpr, bodyContext, callback);
-        };
-    return env.transformAsync(varValueFuture, evalBodyAsyncFunction);
-  }
 
-  @Override
-  public void collectTargetPatterns(Collection<String> literals) {
-    varExpr.collectTargetPatterns(literals);
-    bodyExpr.collectTargetPatterns(literals);
-  }
+    override fun collectTargetPatterns(literals: MutableCollection<String?>?) {
+        varExpr.collectTargetPatterns(literals)
+        bodyExpr.collectTargetPatterns(literals)
+    }
 
-  @Override
-  public <T, C> T accept(QueryExpressionVisitor<T, C> visitor, C context) {
-    return visitor.visit(this, context);
-  }
+    override fun <T, C> accept(visitor: QueryExpressionVisitor<T?, C?>, context: C?): T? {
+        return visitor.visit(this, context)
+    }
 
-  @Override
-  public String toString() {
-    return "let " + varName + " = " + varExpr + " in " + bodyExpr;
-  }
+    override fun toString(): String {
+        return "let " + varName + " = " + varExpr + " in " + bodyExpr
+    }
+
+    companion object {
+        private const val VAR_NAME_PATTERN = "[a-zA-Z_][a-zA-Z0-9_]*$"
+
+        // Variables names may be any legal identifier in the C programming language
+        private val NAME_PATTERN: Pattern = Pattern.compile("^" + VAR_NAME_PATTERN)
+
+        // Variable references are prepended with the "$" character.
+        // A variable named "x" is referenced as "$x".
+        private val REF_PATTERN: Pattern = Pattern.compile("^\\$" + VAR_NAME_PATTERN)
+
+        fun isValidVarReference(varName: String?): Boolean {
+            return REF_PATTERN.matcher(varName).matches()
+        }
+
+        fun getNameFromReference(reference: String): String {
+            return reference.substring(1)
+        }
+    }
 }

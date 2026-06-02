@@ -11,763 +11,759 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.devtools.build.lib.profiler.ProfilerTask.SPAWN_LOG;
-import static com.google.devtools.build.lib.util.StringEncoding.internalToUnicode;
+import com.github.luben.zstd.ZstdOutputStream
 
-import com.github.luben.zstd.ZstdOutputStream;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandLines.ParamFileActionInput;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.Spawns;
-import com.google.devtools.build.lib.actions.VirtualActionInput;
-import com.google.devtools.build.lib.analysis.SymlinkEntry;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor;
-import com.google.devtools.build.lib.concurrent.ErrorClassifier;
-import com.google.devtools.build.lib.concurrent.NamedForkJoinPool;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.exec.Protos.Digest;
-import com.google.devtools.build.lib.exec.Protos.ExecLogEntry;
-import com.google.devtools.build.lib.exec.Protos.Platform;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.util.StringEncoding;
-import com.google.devtools.build.lib.util.io.AsynchronousMessageOutputStream;
-import com.google.devtools.build.lib.util.io.MessageOutputStream;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.XattrProvider;
-import com.google.errorprone.annotations.CheckReturnValue;
-import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.SortedMap;
-import java.util.UUID;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
-
-/** A {@link SpawnLogContext} implementation that produces a log in compact format. */
-public class CompactSpawnLogContext extends SpawnLogContext {
-
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  private static final Comparator<ExecLogEntry.File> EXEC_LOG_ENTRY_FILE_COMPARATOR =
-      Comparator.comparing(ExecLogEntry.File::getPath);
-
-  private static final ForkJoinPool VISITOR_POOL =
-      NamedForkJoinPool.newNamedPool(
-          "execlog-directory-visitor", Runtime.getRuntime().availableProcessors());
-
-  /** Visitor for use in {@link #visitDirectory}. */
-  protected interface DirectoryChildVisitor {
-    void visit(Path path) throws IOException;
-  }
-
-  private static class DirectoryVisitor extends AbstractQueueVisitor {
-    private final Path rootDir;
-    private final DirectoryChildVisitor childVisitor;
-
-    private DirectoryVisitor(Path rootDir, DirectoryChildVisitor childVisitor) {
-      super(
-          VISITOR_POOL,
-          ExecutorOwnership.SHARED,
-          ExceptionHandlingMode.FAIL_FAST,
-          ErrorClassifier.DEFAULT);
-      this.rootDir = checkNotNull(rootDir);
-      this.childVisitor = checkNotNull(childVisitor);
+/** A [SpawnLogContext] implementation that produces a log in compact format.  */
+class CompactSpawnLogContext(
+    out: BufferedOutputStream?,
+    displayName: String?,
+    execRoot: PathFragment,
+    workspaceName: String,
+    siblingRepositoryLayout: Boolean,
+    remoteOptions: RemoteOptions?,
+    digestHashFunction: DigestHashFunction,
+    xattrProvider: XattrProvider?,
+    invocationId: UUID,
+    reporter: com.google.devtools.build.lib.events.ExtendedEventHandler,
+    logSpawnPredicate: java.util.function.Predicate<Spawn?>?
+) : SpawnLogContext(logSpawnPredicate) {
+    /** Visitor for use in [.visitDirectory].  */
+    protected interface DirectoryChildVisitor {
+        @Throws(IOException::class)
+        fun visit(path: com.google.devtools.build.lib.vfs.Path?)
     }
 
-    private void run() throws IOException, InterruptedException {
-      execute(() -> visitSubdirectory(rootDir));
-      try {
-        awaitQuiescence(true);
-      } catch (UncheckedIOException e) {
-        throw e.getCause();
-      }
-    }
+    private class DirectoryVisitor(
+        rootDir: com.google.devtools.build.lib.vfs.Path?,
+        childVisitor: DirectoryChildVisitor?
+    ) : com.google.devtools.build.lib.concurrent.AbstractQueueVisitor(
+        VISITOR_POOL,
+        com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExecutorOwnership.SHARED,
+        com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExceptionHandlingMode.FAIL_FAST,
+        com.google.devtools.build.lib.concurrent.ErrorClassifier.Companion.DEFAULT
+    ) {
+        private val rootDir: com.google.devtools.build.lib.vfs.Path
+        private val childVisitor: DirectoryChildVisitor
 
-    private void visitSubdirectory(Path dir) {
-      try {
-        for (Dirent dirent : dir.readdir(Symlinks.FOLLOW)) {
-          Path child = dir.getChild(dirent.getName());
-          if (dirent.getType() == Dirent.Type.DIRECTORY) {
-            execute(() -> visitSubdirectory(child));
-            continue;
-          }
-          childVisitor.visit(child);
+        init {
+            this.rootDir =
+                com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.Path>(rootDir)
+            this.childVisitor = com.google.common.base.Preconditions.checkNotNull<DirectoryChildVisitor>(childVisitor)
         }
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
-    }
-  }
 
-  /**
-   * Visits a directory hierarchy in parallel.
-   *
-   * <p>Calls {@code childVisitor} for every descendant path of {@code rootDir} that isn't itself a
-   * directory, following symlinks. The visitor may be concurrently called by multiple threads, and
-   * must synchronize accesses to shared data.
-   */
-  private void visitDirectory(Path rootDir, DirectoryChildVisitor childVisitor)
-      throws IOException, InterruptedException {
-    new DirectoryVisitor(rootDir, childVisitor).run();
-  }
-
-  private interface ExecLogEntrySupplier {
-    ExecLogEntry.Builder get() throws IOException, InterruptedException;
-  }
-
-  private final PathFragment execRoot;
-  private final String workspaceName;
-  private final boolean siblingRepositoryLayout;
-  @Nullable private final RemoteOptions remoteOptions;
-  private final DigestHashFunction digestHashFunction;
-  private final XattrProvider xattrProvider;
-  private final UUID invocationId;
-  private final ExtendedEventHandler reporter;
-  private final AtomicBoolean outputLoggingFailed = new AtomicBoolean(false);
-
-  // Maps a key identifying an entry into its ID.
-  // Each key is either a NestedSet.Node or the String path of a file, directory, symlink or
-  // runfiles tree.
-  // Only entries that are likely to be referenced by future entries are stored.
-  // Use a specialized map for minimal memory footprint.
-  @GuardedBy("this")
-  private final Object2IntOpenHashMap<Object> entryMap = new Object2IntOpenHashMap<>();
-
-  // The next available entry ID.
-  @GuardedBy("this")
-  int nextEntryId = 1;
-
-  // Output stream to write to.
-  private final MessageOutputStream<ExecLogEntry> outputStream;
-
-  public CompactSpawnLogContext(
-      BufferedOutputStream out,
-      String displayName,
-      PathFragment execRoot,
-      String workspaceName,
-      boolean siblingRepositoryLayout,
-      @Nullable RemoteOptions remoteOptions,
-      DigestHashFunction digestHashFunction,
-      XattrProvider xattrProvider,
-      UUID invocationId,
-      ExtendedEventHandler reporter,
-      Predicate<Spawn> logSpawnPredicate)
-      throws IOException, InterruptedException {
-    super(logSpawnPredicate);
-    this.execRoot = execRoot;
-    this.workspaceName = workspaceName;
-    this.siblingRepositoryLayout = siblingRepositoryLayout;
-    this.remoteOptions = remoteOptions;
-    this.digestHashFunction = digestHashFunction;
-    this.xattrProvider = xattrProvider;
-    this.invocationId = invocationId;
-    this.reporter = reporter;
-    this.outputStream = getOutputStream(out, displayName);
-
-    logInvocation();
-  }
-
-  private static MessageOutputStream<ExecLogEntry> getOutputStream(OutputStream out, String name)
-      throws IOException {
-    // Use an AsynchronousMessageOutputStream so that compression and I/O occur in a separate
-    // thread. This ensures concurrent writes don't tear and avoids blocking execution.
-    return new AsynchronousMessageOutputStream<>(name, new ZstdOutputStream(out));
-  }
-
-  private void logInvocation() throws IOException, InterruptedException {
-    logEntryWithoutId(
-        () ->
-            ExecLogEntry.newBuilder()
-                .setInvocation(
-                    ExecLogEntry.Invocation.newBuilder()
-                        .setHashFunctionName(internalToUnicode(digestHashFunction.toString()))
-                        .setWorkspaceRunfilesDirectory(internalToUnicode(workspaceName))
-                        .setSiblingRepositoryLayout(siblingRepositoryLayout)
-                        .setId(internalToUnicode(invocationId.toString()))));
-  }
-
-  @Override
-  public boolean shouldPublish() {
-    // The compact log is small enough to be uploaded to a remote store.
-    return true;
-  }
-
-  @Override
-  public void logSpawn(
-      Spawn spawn,
-      InputMetadataProvider inputMetadataProvider,
-      Supplier<SortedMap<PathFragment, ActionInput>> inputMap,
-      FileSystem fileSystem,
-      Duration timeout,
-      SpawnResult result)
-      throws IOException, InterruptedException, ExecException {
-    if (!shouldLog(spawn)) {
-      return;
-    }
-    try (SilentCloseable c = Profiler.instance().profile(SPAWN_LOG, "logSpawn")) {
-      ExecLogEntry.Spawn.Builder builder = ExecLogEntry.Spawn.newBuilder();
-
-      builder.addAllArgs(Lists.transform(spawn.getArguments(), StringEncoding::internalToUnicode));
-      builder.addAllEnvVars(getEnvironmentVariables(spawn));
-      Platform platform = getPlatform(spawn, remoteOptions);
-      if (platform != null) {
-        builder.setPlatform(platform);
-      }
-
-      builder.setInputSetId(logInputs(spawn, inputMetadataProvider, fileSystem));
-      builder.setToolSetId(logTools(spawn, inputMetadataProvider, fileSystem));
-
-      if (spawn.getTargetLabel() != null) {
-        builder.setTargetLabel(internalToUnicode(spawn.getTargetLabel().getCanonicalForm()));
-      }
-      builder.setMnemonic(internalToUnicode(spawn.getMnemonic()));
-
-      boolean warned = false;
-      for (ActionInput output : spawn.getOutputFiles()) {
-        var path = fileSystem.getPath(execRoot.getRelative(output.getExecPath()));
-        var outputBuilder = ExecLogEntry.Output.newBuilder();
-        try {
-          if (!output.isDirectory() && !output.isSymlink() && path.isFile()) {
-            outputBuilder.setOutputId(logFile(output, path, /* inputMetadataProvider= */ null));
-          } else if (output.isDirectory() && path.isDirectory()) {
-            outputBuilder.setOutputId(
-                logDirectory(output, path, /* inputMetadataProvider= */ null));
-          } else if (output.isSymlink() && path.isSymbolicLink()) {
-            outputBuilder.setOutputId(
-                logUnresolvedSymlink(output, path, /* inputMetadataProvider= */ null));
-          } else {
-            outputBuilder.setInvalidOutputPath(internalToUnicode(output.getExecPathString()));
-          }
-        } catch (IOException e) {
-          if (!warned) {
-            outputLoggingFailed.set(true);
-            warned = true;
-            logger.atInfo().withCause(e).log(
-                "Failed to log outputs of spawn with mnemonic %s and primary output %s",
-                spawn.getMnemonic(),
-                Iterables.getFirst(spawn.getOutputFiles(), /* not reached */ null));
-          }
-          outputBuilder.setInvalidOutputPath(internalToUnicode(output.getExecPathString()));
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun run() {
+            execute(java.lang.Runnable { visitSubdirectory(rootDir) })
+            try {
+                awaitQuiescence(true)
+            } catch (e: UncheckedIOException) {
+                throw e.getCause()
+            }
         }
-        builder.addOutputs(outputBuilder);
-      }
 
-      builder.setExitCode(result.exitCode());
-      if (result.status() != SpawnResult.Status.SUCCESS) {
-        builder.setStatus(internalToUnicode(result.status().toString()));
-      }
-      builder.setRunner(internalToUnicode(result.getRunnerName()));
-      builder.setCacheHit(result.isCacheHit());
-      builder.setRemotable(Spawns.mayBeExecutedRemotely(spawn));
-      builder.setCacheable(Spawns.mayBeCached(spawn));
-      builder.setRemoteCacheable(Spawns.mayBeCachedRemotely(spawn));
-
-      if (result.getDigest() != null) {
-        builder.setDigest(result.getDigest().toBuilder().clearHashFunctionName().build());
-      }
-
-      builder.setTimeoutMillis(timeout.toMillis());
-      builder.setMetrics(getSpawnMetricsProto(result));
-
-      logEntryWithoutId(() -> ExecLogEntry.newBuilder().setSpawn(builder));
-    }
-  }
-
-  @Override
-  public void logSymlinkAction(AbstractAction action) throws IOException, InterruptedException {
-    try (SilentCloseable c = Profiler.instance().profile(SPAWN_LOG, "logSymlinkAction")) {
-      ExecLogEntry.SymlinkAction.Builder builder = ExecLogEntry.SymlinkAction.newBuilder();
-
-      Artifact input = action.getPrimaryInput();
-      if (input == null) {
-        // Symlinks to absolute paths are only used by FDO and not worth logging as they can be
-        // treated just like source files.
-        return;
-      }
-      builder.setInputPath(internalToUnicode(input.getExecPathString()));
-      builder.setOutputPath(internalToUnicode(action.getPrimaryOutput().getExecPathString()));
-
-      Label label = action.getOwner().getLabel();
-      if (label != null) {
-        builder.setTargetLabel(internalToUnicode(label.getCanonicalForm()));
-      }
-      builder.setMnemonic(internalToUnicode(action.getMnemonic()));
-
-      logEntryWithoutId(() -> ExecLogEntry.newBuilder().setSymlinkAction(builder));
-    }
-  }
-
-  /**
-   * Logs the inputs.
-   *
-   * @return the entry ID of the {@link ExecLogEntry.InputSet} describing the inputs, or 0 if there
-   *     are no inputs.
-   */
-  private int logInputs(
-      Spawn spawn, InputMetadataProvider inputMetadataProvider, FileSystem fileSystem)
-      throws IOException, InterruptedException {
-
-    return logInputSet(
-        spawn.getInputFiles(),
-        inputMetadataProvider,
-        fileSystem,
-        /* shared= */ false,
-        "TestRunner".equals(spawn.getMnemonic()));
-  }
-
-  /**
-   * Logs the tool inputs.
-   *
-   * @return the entry ID of the {@link ExecLogEntry.InputSet} describing the tool inputs, or 0 if
-   *     there are no tool inputs.
-   */
-  private int logTools(
-      Spawn spawn, InputMetadataProvider inputMetadataProvider, FileSystem fileSystem)
-      throws IOException, InterruptedException {
-    return logInputSet(
-        spawn.getToolFiles(),
-        inputMetadataProvider,
-        fileSystem,
-        /* shared= */ true,
-        "TestRunner".equals(spawn.getMnemonic()));
-  }
-
-  /**
-   * Logs a nested set.
-   *
-   * @param set the nested set
-   * @param shared whether this nested set is likely to be a transitive member of other sets
-   * @param isTestRunnerSpawn whether this nested set is logged for a test runner spawn
-   * @return the entry ID of the {@link ExecLogEntry.InputSet} describing the nested set, or 0 if
-   *     the nested set is empty.
-   */
-  private int logInputSet(
-      NestedSet<? extends ActionInput> set,
-      InputMetadataProvider inputMetadataProvider,
-      FileSystem fileSystem,
-      boolean shared,
-      boolean isTestRunnerSpawn)
-      throws IOException, InterruptedException {
-    if (set.isEmpty()) {
-      return 0;
-    }
-
-    return logEntry(
-        shared ? set.toNode() : null,
-        () -> {
-          ExecLogEntry.InputSet.Builder builder = ExecLogEntry.InputSet.newBuilder();
-
-          for (NestedSet<? extends ActionInput> transitive : set.getNonLeaves()) {
-            checkState(!transitive.isEmpty());
-            builder.addTransitiveSetIds(
-                logInputSet(
-                    transitive,
-                    inputMetadataProvider,
-                    fileSystem,
-                    /* shared= */ true,
-                    isTestRunnerSpawn));
-          }
-
-          for (ActionInput input : set.getLeaves()) {
-            if (input instanceof Artifact artifact && artifact.isRunfilesTree()) {
-              RunfilesTree runfilesTree =
-                  inputMetadataProvider.getRunfilesMetadata(input).getRunfilesTree();
-              builder.addInputIds(
-                  logRunfilesTree(
-                      runfilesTree,
-                      inputMetadataProvider,
-                      fileSystem,
-                      // Runfiles of non-test spawns are tool inputs and thus potentially reused
-                      // between spawns. Runfiles of test spawns are reused if the test is attempted
-                      // multiple times in the same build; in this case, the runfiles tree caches
-                      // its mapping.
-                      !isTestRunnerSpawn || runfilesTree.isMappingCached()));
-              continue;
+        fun visitSubdirectory(dir: com.google.devtools.build.lib.vfs.Path) {
+            try {
+                for (dirent in dir.readdir(Symlinks.FOLLOW)) {
+                    val child: com.google.devtools.build.lib.vfs.Path = dir.getChild(dirent.getName())
+                    if (dirent.getType() == com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY) {
+                        execute(java.lang.Runnable { visitSubdirectory(child) })
+                        continue
+                    }
+                    childVisitor.visit(child)
+                }
+            } catch (e: IOException) {
+                throw UncheckedIOException(e)
             }
+        }
+    }
 
-            if (input instanceof Artifact artifact && artifact.isFileset()) {
-              // The fileset symlink tree is always materialized on disk.
-              builder.addInputIds(
-                  logDirectory(
-                      input,
-                      fileSystem.getPath(execRoot.getRelative(input.getExecPath())),
-                      inputMetadataProvider));
+    /**
+     * Visits a directory hierarchy in parallel.
+     * 
+     * 
+     * Calls `childVisitor` for every descendant path of `rootDir` that isn't itself a
+     * directory, following symlinks. The visitor may be concurrently called by multiple threads, and
+     * must synchronize accesses to shared data.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun visitDirectory(rootDir: com.google.devtools.build.lib.vfs.Path?, childVisitor: DirectoryChildVisitor?) {
+        DirectoryVisitor(rootDir, childVisitor).run()
+    }
+
+    private interface ExecLogEntrySupplier {
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun get(): ExecLogEntry.Builder
+    }
+
+    private val execRoot: PathFragment
+    private val workspaceName: String
+    private val siblingRepositoryLayout: Boolean
+    private val remoteOptions: RemoteOptions?
+    private val digestHashFunction: DigestHashFunction
+    private val xattrProvider: XattrProvider?
+    private val invocationId: UUID
+    private val reporter: com.google.devtools.build.lib.events.ExtendedEventHandler
+    private val outputLoggingFailed: AtomicBoolean = AtomicBoolean(false)
+
+    // Maps a key identifying an entry into its ID.
+    // Each key is either a NestedSet.Node or the String path of a file, directory, symlink or
+    // runfiles tree.
+    // Only entries that are likely to be referenced by future entries are stored.
+    // Use a specialized map for minimal memory footprint.
+    @javax.annotation.concurrent.GuardedBy("this")
+    private val entryMap: Object2IntOpenHashMap<Any?> = Object2IntOpenHashMap<Any?>()
+
+    // The next available entry ID.
+    @javax.annotation.concurrent.GuardedBy("this")
+    var nextEntryId: Int = 1
+
+    // Output stream to write to.
+    private val outputStream: MessageOutputStream<ExecLogEntry?>
+
+    init {
+        this.execRoot = execRoot
+        this.workspaceName = workspaceName
+        this.siblingRepositoryLayout = siblingRepositoryLayout
+        this.remoteOptions = remoteOptions
+        this.digestHashFunction = digestHashFunction
+        this.xattrProvider = xattrProvider
+        this.invocationId = invocationId
+        this.reporter = reporter
+        this.outputStream = getOutputStream(out, displayName)
+
+        logInvocation()
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logInvocation() {
+        logEntryWithoutId(
+            ExecLogEntrySupplier {
+                ExecLogEntry.newBuilder()
+                    .setInvocation(
+                        ExecLogEntry.Invocation.newBuilder()
+                            .setHashFunctionName(StringEncoding.internalToUnicode(digestHashFunction.toString()))
+                            .setWorkspaceRunfilesDirectory(StringEncoding.internalToUnicode(workspaceName))
+                            .setSiblingRepositoryLayout(siblingRepositoryLayout)
+                            .setId(StringEncoding.internalToUnicode(invocationId.toString()))
+                    )
+            })
+    }
+
+    override fun shouldPublish(): Boolean {
+        // The compact log is small enough to be uploaded to a remote store.
+        return true
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class, ExecException::class)
+    override fun logSpawn(
+        spawn: Spawn,
+        inputMetadataProvider: InputMetadataProvider,
+        inputMap: java.util.function.Supplier<SortedMap<PathFragment?, ActionInput?>?>?,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem,
+        timeout: java.time.Duration,
+        result: SpawnResult
+    ) {
+        if (!shouldLog(spawn)) {
+            return
+        }
+        com.google.devtools.build.lib.profiler.Profiler.instance()
+            .profile(com.google.devtools.build.lib.profiler.ProfilerTask.SPAWN_LOG, "logSpawn").use { c ->
+                val builder: ExecLogEntry.Spawn.Builder = ExecLogEntry.Spawn.newBuilder()
+                builder.addAllArgs(
+                    com.google.common.collect.Lists.transform<F?, T?>(
+                        spawn.getArguments(),
+                        com.google.common.base.Function { s: F? -> StringEncoding.internalToUnicode(s) })
+                )
+                builder.addAllEnvVars(getEnvironmentVariables(spawn))
+                val platform: Platform? = getPlatform(spawn, remoteOptions)
+                if (platform != null) {
+                    builder.setPlatform(platform)
+                }
+
+                builder.setInputSetId(logInputs(spawn, inputMetadataProvider, fileSystem))
+                builder.setToolSetId(logTools(spawn, inputMetadataProvider, fileSystem))
+
+                if (spawn.getTargetLabel() != null) {
+                    builder.setTargetLabel(StringEncoding.internalToUnicode(spawn.getTargetLabel().getCanonicalForm()))
+                }
+                builder.setMnemonic(StringEncoding.internalToUnicode(spawn.getMnemonic()))
+
+                var warned = false
+                for (output in spawn.getOutputFiles()) {
+                    val path: com.google.devtools.build.lib.vfs.Path =
+                        fileSystem.getPath(execRoot.getRelative(output.getExecPath()))
+                    val outputBuilder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                        ExecLogEntry.Output.newBuilder()
+                    try {
+                        if (!output.isDirectory() && !output.isSymlink() && path.isFile()) {
+                            outputBuilder.setOutputId(logFile(output, path,  /* inputMetadataProvider= */null))
+                        } else if (output.isDirectory() && path.isDirectory()) {
+                            outputBuilder.setOutputId(
+                                logDirectory(output, path,  /* inputMetadataProvider= */null)
+                            )
+                        } else if (output.isSymlink() && path.isSymbolicLink()) {
+                            outputBuilder.setOutputId(
+                                logUnresolvedSymlink(output, path,  /* inputMetadataProvider= */null)
+                            )
+                        } else {
+                            outputBuilder.setInvalidOutputPath(StringEncoding.internalToUnicode(output.getExecPathString()))
+                        }
+                    } catch (e: IOException) {
+                        if (!warned) {
+                            outputLoggingFailed.set(true)
+                            warned = true
+                            logger.atInfo().withCause(e).log(
+                                "Failed to log outputs of spawn with mnemonic %s and primary output %s",
+                                spawn.getMnemonic(),
+                                com.google.common.collect.Iterables.getFirst<T?>(
+                                    spawn.getOutputFiles(),  /* not reached */
+                                    null
+                                )
+                            )
+                        }
+                        outputBuilder.setInvalidOutputPath(StringEncoding.internalToUnicode(output.getExecPathString()))
+                    }
+                    builder.addOutputs(outputBuilder)
+                }
+
+                builder.setExitCode(result.exitCode())
+                if (result.status() !== SpawnResult.Status.SUCCESS) {
+                    builder.setStatus(StringEncoding.internalToUnicode(result.status().toString()))
+                }
+                builder.setRunner(StringEncoding.internalToUnicode(result.getRunnerName()))
+                builder.setCacheHit(result.isCacheHit())
+                builder.setRemotable(Spawns.mayBeExecutedRemotely(spawn))
+                builder.setCacheable(Spawns.mayBeCached(spawn))
+                builder.setRemoteCacheable(Spawns.mayBeCachedRemotely(spawn))
+
+                if (result.getDigest() != null) {
+                    builder.setDigest(result.getDigest().toBuilder().clearHashFunctionName().build())
+                }
+
+                builder.setTimeoutMillis(timeout.toMillis())
+                builder.setMetrics(SpawnLogContext.Companion.getSpawnMetricsProto(result))
+                logEntryWithoutId(ExecLogEntrySupplier { ExecLogEntry.newBuilder().setSpawn(builder) })
             }
-
-            builder.addInputIds(logInput(input, inputMetadataProvider, fileSystem));
-          }
-
-          return ExecLogEntry.newBuilder().setInputSet(builder);
-        });
-  }
-
-  /**
-   * Logs a nested set of {@link SymlinkEntry}.
-   *
-   * @return the entry ID of the {@link ExecLogEntry.SymlinkEntrySet} describing the nested set, or
-   *     0 if the nested set is empty.
-   */
-  private int logSymlinkEntries(
-      NestedSet<SymlinkEntry> symlinks,
-      InputMetadataProvider inputMetadataProvider,
-      FileSystem fileSystem)
-      throws IOException, InterruptedException {
-    if (symlinks.isEmpty()) {
-      return 0;
     }
 
-    return logEntry(
-        symlinks.toNode(),
-        () -> {
-          ExecLogEntry.SymlinkEntrySet.Builder builder = ExecLogEntry.SymlinkEntrySet.newBuilder();
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun logSymlinkAction(action: AbstractAction) {
+        com.google.devtools.build.lib.profiler.Profiler.instance()
+            .profile(com.google.devtools.build.lib.profiler.ProfilerTask.SPAWN_LOG, "logSymlinkAction").use { c ->
+                val builder: ExecLogEntry.SymlinkAction.Builder = ExecLogEntry.SymlinkAction.newBuilder()
+                val input: Artifact? = action.getPrimaryInput()
+                if (input == null) {
+                    // Symlinks to absolute paths are only used by FDO and not worth logging as they can be
+                    // treated just like source files.
+                    return
+                }
+                builder.setInputPath(StringEncoding.internalToUnicode(input.getExecPathString()))
+                builder.setOutputPath(StringEncoding.internalToUnicode(action.getPrimaryOutput().getExecPathString()))
 
-          for (NestedSet<SymlinkEntry> transitive : symlinks.getNonLeaves()) {
-            checkState(!transitive.isEmpty());
-            builder.addTransitiveSetIds(
-                logSymlinkEntries(transitive, inputMetadataProvider, fileSystem));
-          }
-
-          for (SymlinkEntry input : symlinks.getLeaves()) {
-            builder.putDirectEntries(
-                internalToUnicode(input.getPathString()),
-                logInput(input.getArtifact(), inputMetadataProvider, fileSystem));
-          }
-
-          return ExecLogEntry.newBuilder().setSymlinkEntrySet(builder);
-        });
-  }
-
-  /**
-   * Logs a single input that is either a file, a directory or a symlink.
-   *
-   * @return the entry ID of the {@link ExecLogEntry} describing the input.
-   */
-  private int logInput(
-      ActionInput input, InputMetadataProvider inputMetadataProvider, FileSystem fileSystem)
-      throws IOException, InterruptedException {
-    Path path = fileSystem.getPath(execRoot.getRelative(input.getExecPath()));
-    if (isInputDirectory(input, inputMetadataProvider)) {
-      return logDirectory(input, path, inputMetadataProvider);
-    } else if (input.isSymlink()) {
-      return logUnresolvedSymlink(input, path, inputMetadataProvider);
-    } else {
-      return logFile(input, path, inputMetadataProvider);
+                val label: Label? = action.getOwner().getLabel()
+                if (label != null) {
+                    builder.setTargetLabel(StringEncoding.internalToUnicode(label.getCanonicalForm()))
+                }
+                builder.setMnemonic(StringEncoding.internalToUnicode(action.getMnemonic()))
+                logEntryWithoutId(ExecLogEntrySupplier { ExecLogEntry.newBuilder().setSymlinkAction(builder) })
+            }
     }
-  }
 
-  /**
-   * Logs a file.
-   *
-   * @param input the input representing the file.
-   * @param path the path to the file, which must have already been verified to be of the correct
-   *     type.
-   * @param inputMetadataProvider provides metadata for inputs; null if logging an output
-   * @return the entry ID of the {@link ExecLogEntry.File} describing the file.
-   */
-  private int logFile(
-      ActionInput input, Path path, @Nullable InputMetadataProvider inputMetadataProvider)
-      throws IOException, InterruptedException {
-    checkState(!(input instanceof VirtualActionInput.EmptyActionInput));
+    /**
+     * Logs the inputs.
+     * 
+     * @return the entry ID of the [ExecLogEntry.InputSet] describing the inputs, or 0 if there
+     * are no inputs.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logInputs(
+        spawn: Spawn,
+        inputMetadataProvider: InputMetadataProvider,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem
+    ): Int {
+        return logInputSet(
+            spawn.getInputFiles(),
+            inputMetadataProvider,
+            fileSystem,  /* shared= */
+            false,
+            "TestRunner" == spawn.getMnemonic()
+        )
+    }
 
-    return logEntry(
-        // A ParamFileActionInput is never shared between spawns.
-        input instanceof ParamFileActionInput ? null : input.getExecPathString(),
-        () -> {
-          ExecLogEntry.File.Builder builder = ExecLogEntry.File.newBuilder();
+    /**
+     * Logs the tool inputs.
+     * 
+     * @return the entry ID of the [ExecLogEntry.InputSet] describing the tool inputs, or 0 if
+     * there are no tool inputs.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logTools(
+        spawn: Spawn,
+        inputMetadataProvider: InputMetadataProvider,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem
+    ): Int {
+        return logInputSet(
+            spawn.getToolFiles(),
+            inputMetadataProvider,
+            fileSystem,  /* shared= */
+            true,
+            "TestRunner" == spawn.getMnemonic()
+        )
+    }
 
-          builder.setPath(internalToUnicode(input.getExecPathString()));
+    /**
+     * Logs a nested set.
+     * 
+     * @param set the nested set
+     * @param shared whether this nested set is likely to be a transitive member of other sets
+     * @param isTestRunnerSpawn whether this nested set is logged for a test runner spawn
+     * @return the entry ID of the [ExecLogEntry.InputSet] describing the nested set, or 0 if
+     * the nested set is empty.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logInputSet(
+        set: NestedSet<out ActionInput?>,
+        inputMetadataProvider: InputMetadataProvider,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem,
+        shared: Boolean,
+        isTestRunnerSpawn: Boolean
+    ): Int {
+        if (set.isEmpty()) {
+            return 0
+        }
 
-          Digest digest =
-              computeDigest(
-                  input,
-                  path,
-                  inputMetadataProvider,
-                  xattrProvider,
-                  digestHashFunction,
-                  /* includeHashFunctionName= */ false);
-
-          builder.setDigest(digest);
-
-          return ExecLogEntry.newBuilder().setFile(builder);
-        });
-  }
-
-  /**
-   * Logs a directory.
-   *
-   * <p>This may be either a source directory, a fileset or an output directory. For runfiles,
-   * {@link #logRunfilesTree} must be used instead.
-   *
-   * @param input the input representing the directory.
-   * @param root the path to the directory, which must have already been verified to be of the
-   *     correct type.
-   * @param inputMetadataProvider provides metadata for inputs; null if logging an output
-   * @return the entry ID of the {@link ExecLogEntry.Directory} describing the directory.
-   */
-  private int logDirectory(
-      ActionInput input, Path root, @Nullable InputMetadataProvider inputMetadataProvider)
-      throws IOException, InterruptedException {
-    return logEntry(
-        input.getExecPathString(),
-        () ->
-            ExecLogEntry.newBuilder()
-                .setDirectory(
-                    ExecLogEntry.Directory.newBuilder()
-                        .setPath(internalToUnicode(input.getExecPathString()))
-                        .addAllFiles(expandDirectory(root, inputMetadataProvider))));
-  }
-
-  /**
-   * Logs a runfiles directory by storing the information in its {@link RunfilesTree}.
-   *
-   * <p>Since runfiles trees can be very large and, for tests, are only used by a single spawn, we
-   * store them in the log as a special entry that references the nested set of artifacts instead of
-   * as a flat directory.
-   *
-   * @param shared whether this runfiles tree is likely to be contained in more than one Spawn's
-   *     inputs
-   * @param inputMetadataProvider provides metadata for inputs
-   * @return the entry ID of the {@link ExecLogEntry.RunfilesTree} describing the directory.
-   */
-  private int logRunfilesTree(
-      RunfilesTree runfilesTree,
-      InputMetadataProvider inputMetadataProvider,
-      FileSystem fileSystem,
-      boolean shared)
-      throws IOException, InterruptedException {
-    return logEntry(
-        shared ? runfilesTree.getExecPath().getPathString() : null,
-        () -> {
-          Preconditions.checkState(workspaceName.equals(runfilesTree.getWorkspaceName()));
-
-          ExecLogEntry.RunfilesTree.Builder builder =
-              ExecLogEntry.RunfilesTree.newBuilder()
-                  .setPath(internalToUnicode(runfilesTree.getExecPath().getPathString()));
-
-          builder.setInputSetId(
-              logInputSet(
-                  runfilesTree.getArtifactsAtCanonicalLocationsForLogging(),
-                  inputMetadataProvider,
-                  fileSystem,
-                  // The runfiles tree itself is shared, but the nested set is unique to the tree as
-                  // it contains the executable.
-                  /* shared= */ false,
-                  // This value only matters for nested sets that may contain runfiles trees, but
-                  // these are never nested.
-                  /* isTestRunnerSpawn= */ false));
-          builder.setSymlinksId(
-              logSymlinkEntries(
-                  runfilesTree.getSymlinksForLogging(), inputMetadataProvider, fileSystem));
-          builder.setRootSymlinksId(
-              logSymlinkEntries(
-                  runfilesTree.getRootSymlinksForLogging(), inputMetadataProvider, fileSystem));
-          builder.addAllEmptyFiles(
-              Iterables.transform(
-                  runfilesTree.getEmptyFilenamesForLogging(), PathFragment::getPathString));
-          Artifact repoMappingManifest = runfilesTree.getRepoMappingManifestForLogging();
-          if (repoMappingManifest != null) {
-            builder.setRepoMappingManifest(
-                ExecLogEntry.File.newBuilder()
-                    .setDigest(
-                        computeDigest(
-                            repoMappingManifest,
-                            repoMappingManifest.getPath(),
+        return logEntry(
+            if (shared) set.toNode() else null,
+            ExecLogEntrySupplier {
+                val builder: ExecLogEntry.InputSet.Builder = ExecLogEntry.InputSet.newBuilder()
+                for (transitive in set.getNonLeaves()) {
+                    com.google.common.base.Preconditions.checkState(!transitive.isEmpty())
+                    builder.addTransitiveSetIds(
+                        logInputSet(
+                            transitive,
                             inputMetadataProvider,
-                            xattrProvider,
-                            digestHashFunction,
-                            /* includeHashFunctionName= */ false)));
-          }
+                            fileSystem,  /* shared= */
+                            true,
+                            isTestRunnerSpawn
+                        )
+                    )
+                }
 
-          return ExecLogEntry.newBuilder().setRunfilesTree(builder);
-        });
-  }
+                for (input in set.getLeaves()) {
+                    if (input is Artifact && input.isRunfilesTree()) {
+                        val runfilesTree: RunfilesTree =
+                            inputMetadataProvider.getRunfilesMetadata(input).getRunfilesTree()
+                        builder.addInputIds(
+                            logRunfilesTree(
+                                runfilesTree,
+                                inputMetadataProvider,
+                                fileSystem,  // Runfiles of non-test spawns are tool inputs and thus potentially reused
+                                // between spawns. Runfiles of test spawns are reused if the test is attempted
+                                // multiple times in the same build; in this case, the runfiles tree caches
+                                // its mapping.
+                                !isTestRunnerSpawn || runfilesTree.isMappingCached()
+                            )
+                        )
+                        continue
+                    }
 
-  /**
-   * Expands a directory.
-   *
-   * @param root the path to the directory
-   * @param inputMetadataProvider provides metadata for inputs; null if logging an output
-   * @return the list of files transitively contained in the directory
-   */
-  private List<ExecLogEntry.File> expandDirectory(
-      Path root, @Nullable InputMetadataProvider inputMetadataProvider)
-      throws IOException, InterruptedException {
-    ArrayList<ExecLogEntry.File> files = new ArrayList<>();
-    visitDirectory(
-        root,
-        (child) -> {
-          Digest digest =
-              computeDigest(
-                  /* input= */ null,
-                  child,
-                  inputMetadataProvider,
-                  xattrProvider,
-                  digestHashFunction,
-                  /* includeHashFunctionName= */ false);
+                    if (input is Artifact && input.isFileset()) {
+                        // The fileset symlink tree is always materialized on disk.
+                        builder.addInputIds(
+                            logDirectory(
+                                input,
+                                fileSystem.getPath(execRoot.getRelative(input.getExecPath())),
+                                inputMetadataProvider
+                            )
+                        )
+                    }
 
-          ExecLogEntry.File file =
-              ExecLogEntry.File.newBuilder()
-                  .setPath(internalToUnicode(child.relativeTo(root).getPathString()))
-                  .setDigest(digest)
-                  .build();
-
-          synchronized (files) {
-            files.add(file);
-          }
-        });
-
-    files.sort(EXEC_LOG_ENTRY_FILE_COMPARATOR);
-
-    return files;
-  }
-
-  /**
-   * Logs an unresolved symlink.
-   *
-   * @param input the input representing the unresolved symlink.
-   * @param path the path to the unresolved symlink, which must have already been verified to be of
-   *     the correct type.
-   * @param inputMetadataProvider provides metadata for inputs; null if logging an output
-   * @return the entry ID of the {@link ExecLogEntry.UnresolvedSymlink} describing the unresolved
-   *     symlink.
-   */
-  private int logUnresolvedSymlink(
-      ActionInput input, Path path, @Nullable InputMetadataProvider inputMetadataProvider)
-      throws IOException, InterruptedException {
-    return logEntry(
-        input.getExecPathString(),
-        () -> {
-          FileArtifactValue metadata = null;
-          if (inputMetadataProvider != null) {
-            metadata = inputMetadataProvider.getInputMetadata(input);
-          }
-          String targetPath;
-          if (metadata != null) {
-            checkState(metadata.getType().isSymlink(), metadata);
-            targetPath = metadata.getUnresolvedSymlinkTarget();
-          } else {
-            targetPath = path.readSymbolicLink().getPathString();
-          }
-
-          return ExecLogEntry.newBuilder()
-              .setUnresolvedSymlink(
-                  ExecLogEntry.UnresolvedSymlink.newBuilder()
-                      .setPath(internalToUnicode(input.getExecPathString()))
-                      .setTargetPath(internalToUnicode(targetPath)));
-        });
-  }
-
-  /**
-   * Ensures an entry is written to the log without an ID.
-   *
-   * @param supplier called to compute the entry; may cause other entries to be logged
-   */
-  private void logEntryWithoutId(ExecLogEntrySupplier supplier)
-      throws IOException, InterruptedException {
-    try (SilentCloseable c = Profiler.instance().profile(SPAWN_LOG, "logEntryWithoutId")) {
-      logEntryWithoutIdSynchronized(supplier);
+                    builder.addInputIds(logInput(input, inputMetadataProvider, fileSystem))
+                }
+                ExecLogEntry.newBuilder().setInputSet(builder)
+            })
     }
-  }
 
-  private synchronized void logEntryWithoutIdSynchronized(ExecLogEntrySupplier supplier)
-      throws IOException, InterruptedException {
-    try (SilentCloseable c =
-        Profiler.instance().profile(SPAWN_LOG, "logEntryWithoutId/synchronized")) {
-      outputStream.write(supplier.get().build());
+    /**
+     * Logs a nested set of [SymlinkEntry].
+     * 
+     * @return the entry ID of the [ExecLogEntry.SymlinkEntrySet] describing the nested set, or
+     * 0 if the nested set is empty.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logSymlinkEntries(
+        symlinks: NestedSet<SymlinkEntry?>,
+        inputMetadataProvider: InputMetadataProvider?,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem
+    ): Int {
+        if (symlinks.isEmpty()) {
+            return 0
+        }
+
+        return logEntry(
+            symlinks.toNode(),
+            ExecLogEntrySupplier {
+                val builder: ExecLogEntry.SymlinkEntrySet.Builder = ExecLogEntry.SymlinkEntrySet.newBuilder()
+                for (transitive in symlinks.getNonLeaves()) {
+                    com.google.common.base.Preconditions.checkState(!transitive.isEmpty())
+                    builder.addTransitiveSetIds(
+                        logSymlinkEntries(transitive, inputMetadataProvider, fileSystem)
+                    )
+                }
+
+                for (input in symlinks.getLeaves()) {
+                    builder.putDirectEntries(
+                        StringEncoding.internalToUnicode(input.getPathString()),
+                        logInput(input.getArtifact(), inputMetadataProvider, fileSystem)
+                    )
+                }
+                ExecLogEntry.newBuilder().setSymlinkEntrySet(builder)
+            })
     }
-  }
 
-  /**
-   * Ensures an entry is written to the log and returns its assigned ID.
-   *
-   * <p>If an entry with the same non-null key was previously added to the log, its recorded ID is
-   * returned. Otherwise, the entry is computed, assigned an ID, and written to the log.
-   *
-   * @param key the key, or null if the ID shouldn't be recorded
-   * @param supplier called to compute the entry; may cause other entries to be logged
-   * @return the entry ID
-   */
-  @CheckReturnValue
-  private int logEntry(@Nullable Object key, ExecLogEntrySupplier supplier)
-      throws IOException, InterruptedException {
-    try (SilentCloseable c = Profiler.instance().profile(SPAWN_LOG, "logEntry")) {
-      return logEntrySynchronized(key, supplier);
+    /**
+     * Logs a single input that is either a file, a directory or a symlink.
+     * 
+     * @return the entry ID of the [ExecLogEntry] describing the input.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logInput(
+        input: ActionInput,
+        inputMetadataProvider: InputMetadataProvider?,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem
+    ): Int {
+        val path: com.google.devtools.build.lib.vfs.Path = fileSystem.getPath(execRoot.getRelative(input.getExecPath()))
+        if (isInputDirectory(input, inputMetadataProvider)) {
+            return logDirectory(input, path, inputMetadataProvider)
+        } else if (input.isSymlink()) {
+            return logUnresolvedSymlink(input, path, inputMetadataProvider)
+        } else {
+            return logFile(input, path, inputMetadataProvider)
+        }
     }
-  }
 
-  private synchronized int logEntrySynchronized(@Nullable Object key, ExecLogEntrySupplier supplier)
-      throws IOException, InterruptedException {
-    try (SilentCloseable c = Profiler.instance().profile(SPAWN_LOG, "logEntry/synchronized")) {
-      if (key == null) {
-        // No need to check for a previously added entry.
-        ExecLogEntry.Builder entry = supplier.get();
-        int id = nextEntryId++;
-        outputStream.write(entry.setId(id).build());
-        return id;
-      }
+    /**
+     * Logs a file.
+     * 
+     * @param input the input representing the file.
+     * @param path the path to the file, which must have already been verified to be of the correct
+     * type.
+     * @param inputMetadataProvider provides metadata for inputs; null if logging an output
+     * @return the entry ID of the [ExecLogEntry.File] describing the file.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logFile(
+        input: ActionInput, path: com.google.devtools.build.lib.vfs.Path?, inputMetadataProvider: InputMetadataProvider?
+    ): Int {
+        com.google.common.base.Preconditions.checkState(input !is VirtualActionInput.EmptyActionInput)
 
-      checkState(key instanceof NestedSet.Node || key instanceof String);
+        return logEntry( // A ParamFileActionInput is never shared between spawns.
+            if (input is ParamFileActionInput) null else input.getExecPathString(),
+            ExecLogEntrySupplier {
+                val builder: ExecLogEntry.File.Builder = ExecLogEntry.File.newBuilder()
+                builder.setPath(StringEncoding.internalToUnicode(input.getExecPathString()))
 
-      // Check for a previously added entry.
-      int id = entryMap.getOrDefault(key, 0);
-      if (id != 0) {
-        return id;
-      }
+                val digest: Digest? =
+                    computeDigest(
+                        input,
+                        path,
+                        inputMetadataProvider,
+                        xattrProvider,
+                        digestHashFunction,  /* includeHashFunctionName= */
+                        false
+                    )
 
-      // Compute a fresh entry and log it.
-      // The following order of operations is crucial to ensure that this entry is preceded by any
-      // entries it references, which in turn ensures the log can be parsed in a single pass.
-      ExecLogEntry.Builder entry = supplier.get();
-      id = nextEntryId++;
-      entryMap.put(key, id);
-      outputStream.write(entry.setId(id).build());
-      return id;
+                builder.setDigest(digest)
+                ExecLogEntry.newBuilder().setFile(builder)
+            })
     }
-  }
 
-  @Override
-  public void close() throws IOException {
-    if (outputLoggingFailed.get()) {
-      reporter.handle(
-          Event.warn(
-              "The compact execution log is incomplete because some outputs could not be read."
-                  + " Refer to the server log file for details."));
+    /**
+     * Logs a directory.
+     * 
+     * 
+     * This may be either a source directory, a fileset or an output directory. For runfiles,
+     * [.logRunfilesTree] must be used instead.
+     * 
+     * @param input the input representing the directory.
+     * @param root the path to the directory, which must have already been verified to be of the
+     * correct type.
+     * @param inputMetadataProvider provides metadata for inputs; null if logging an output
+     * @return the entry ID of the [ExecLogEntry.Directory] describing the directory.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logDirectory(
+        input: ActionInput, root: com.google.devtools.build.lib.vfs.Path?, inputMetadataProvider: InputMetadataProvider?
+    ): Int {
+        return logEntry(
+            input.getExecPathString(),
+            ExecLogEntrySupplier {
+                ExecLogEntry.newBuilder()
+                    .setDirectory(
+                        ExecLogEntry.Directory.newBuilder()
+                            .setPath(StringEncoding.internalToUnicode(input.getExecPathString()))
+                            .addAllFiles(expandDirectory(root, inputMetadataProvider))
+                    )
+            })
     }
-    outputStream.close();
-  }
+
+    /**
+     * Logs a runfiles directory by storing the information in its [RunfilesTree].
+     * 
+     * 
+     * Since runfiles trees can be very large and, for tests, are only used by a single spawn, we
+     * store them in the log as a special entry that references the nested set of artifacts instead of
+     * as a flat directory.
+     * 
+     * @param shared whether this runfiles tree is likely to be contained in more than one Spawn's
+     * inputs
+     * @param inputMetadataProvider provides metadata for inputs
+     * @return the entry ID of the [ExecLogEntry.RunfilesTree] describing the directory.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logRunfilesTree(
+        runfilesTree: RunfilesTree,
+        inputMetadataProvider: InputMetadataProvider,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem,
+        shared: Boolean
+    ): Int {
+        return logEntry(
+            if (shared) runfilesTree.getExecPath().getPathString() else null,
+            ExecLogEntrySupplier {
+                com.google.common.base.Preconditions.checkState(workspaceName == runfilesTree.getWorkspaceName())
+                val builder: ExecLogEntry.RunfilesTree.Builder =
+                    ExecLogEntry.RunfilesTree.newBuilder()
+                        .setPath(StringEncoding.internalToUnicode(runfilesTree.getExecPath().getPathString()))
+
+                builder.setInputSetId(
+                    logInputSet(
+                        runfilesTree.getArtifactsAtCanonicalLocationsForLogging(),
+                        inputMetadataProvider,
+                        fileSystem,  // The runfiles tree itself is shared, but the nested set is unique to the tree as
+                        // it contains the executable.
+                        /* shared= */
+                        false,  // This value only matters for nested sets that may contain runfiles trees, but
+                        // these are never nested.
+                        /* isTestRunnerSpawn= */
+                        false
+                    )
+                )
+                builder.setSymlinksId(
+                    logSymlinkEntries(
+                        runfilesTree.getSymlinksForLogging(), inputMetadataProvider, fileSystem
+                    )
+                )
+                builder.setRootSymlinksId(
+                    logSymlinkEntries(
+                        runfilesTree.getRootSymlinksForLogging(), inputMetadataProvider, fileSystem
+                    )
+                )
+                builder.addAllEmptyFiles(
+                    com.google.common.collect.Iterables.transform<F?, T?>(
+                        runfilesTree.getEmptyFilenamesForLogging(),
+                        com.google.common.base.Function { obj: F? -> obj.getPathString() })
+                )
+                val repoMappingManifest: Artifact? = runfilesTree.getRepoMappingManifestForLogging()
+                if (repoMappingManifest != null) {
+                    builder.setRepoMappingManifest(
+                        ExecLogEntry.File.newBuilder()
+                            .setDigest(
+                                computeDigest(
+                                    repoMappingManifest,
+                                    repoMappingManifest.getPath(),
+                                    inputMetadataProvider,
+                                    xattrProvider,
+                                    digestHashFunction,  /* includeHashFunctionName= */
+                                    false
+                                )
+                            )
+                    )
+                }
+                ExecLogEntry.newBuilder().setRunfilesTree(builder)
+            })
+    }
+
+    /**
+     * Expands a directory.
+     * 
+     * @param root the path to the directory
+     * @param inputMetadataProvider provides metadata for inputs; null if logging an output
+     * @return the list of files transitively contained in the directory
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun expandDirectory(
+        root: com.google.devtools.build.lib.vfs.Path?, inputMetadataProvider: InputMetadataProvider?
+    ): MutableList<ExecLogEntry.File?> {
+        val files: java.util.ArrayList<ExecLogEntry.File?> = java.util.ArrayList<ExecLogEntry.File?>()
+        visitDirectory(
+            root,
+            DirectoryChildVisitor { child: com.google.devtools.build.lib.vfs.Path? ->
+                val digest: Digest? =
+                    computeDigest( /* input= */
+                        null,
+                        child,
+                        inputMetadataProvider,
+                        xattrProvider,
+                        digestHashFunction,  /* includeHashFunctionName= */
+                        false
+                    )
+                val file: ExecLogEntry.File? =
+                    ExecLogEntry.File.newBuilder()
+                        .setPath(StringEncoding.internalToUnicode(child.relativeTo(root).getPathString()))
+                        .setDigest(digest)
+                        .build()
+                synchronized(files) {
+                    files.add(file)
+                }
+            })
+
+        files.sort(EXEC_LOG_ENTRY_FILE_COMPARATOR)
+
+        return files
+    }
+
+    /**
+     * Logs an unresolved symlink.
+     * 
+     * @param input the input representing the unresolved symlink.
+     * @param path the path to the unresolved symlink, which must have already been verified to be of
+     * the correct type.
+     * @param inputMetadataProvider provides metadata for inputs; null if logging an output
+     * @return the entry ID of the [ExecLogEntry.UnresolvedSymlink] describing the unresolved
+     * symlink.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logUnresolvedSymlink(
+        input: ActionInput, path: com.google.devtools.build.lib.vfs.Path, inputMetadataProvider: InputMetadataProvider?
+    ): Int {
+        return logEntry(
+            input.getExecPathString(),
+            ExecLogEntrySupplier {
+                var metadata: FileArtifactValue? = null
+                if (inputMetadataProvider != null) {
+                    metadata = inputMetadataProvider.getInputMetadata(input)
+                }
+                val targetPath: String?
+                if (metadata != null) {
+                    checkState(metadata.getType().isSymlink(), metadata)
+                    targetPath = metadata.getUnresolvedSymlinkTarget()
+                } else {
+                    targetPath = path.readSymbolicLink().getPathString()
+                }
+                ExecLogEntry.newBuilder()
+                    .setUnresolvedSymlink(
+                        ExecLogEntry.UnresolvedSymlink.newBuilder()
+                            .setPath(StringEncoding.internalToUnicode(input.getExecPathString()))
+                            .setTargetPath(StringEncoding.internalToUnicode(targetPath))
+                    )
+            })
+    }
+
+    /**
+     * Ensures an entry is written to the log without an ID.
+     * 
+     * @param supplier called to compute the entry; may cause other entries to be logged
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logEntryWithoutId(supplier: ExecLogEntrySupplier) {
+        com.google.devtools.build.lib.profiler.Profiler.instance()
+            .profile(com.google.devtools.build.lib.profiler.ProfilerTask.SPAWN_LOG, "logEntryWithoutId").use { c ->
+                logEntryWithoutIdSynchronized(supplier)
+            }
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logEntryWithoutIdSynchronized(supplier: ExecLogEntrySupplier) {
+        com.google.devtools.build.lib.profiler.Profiler.instance()
+            .profile(com.google.devtools.build.lib.profiler.ProfilerTask.SPAWN_LOG, "logEntryWithoutId/synchronized")
+            .use { c ->
+                outputStream.write(supplier.get().build())
+            }
+    }
+
+    /**
+     * Ensures an entry is written to the log and returns its assigned ID.
+     * 
+     * 
+     * If an entry with the same non-null key was previously added to the log, its recorded ID is
+     * returned. Otherwise, the entry is computed, assigned an ID, and written to the log.
+     * 
+     * @param key the key, or null if the ID shouldn't be recorded
+     * @param supplier called to compute the entry; may cause other entries to be logged
+     * @return the entry ID
+     */
+    @com.google.errorprone.annotations.CheckReturnValue
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logEntry(key: Any?, supplier: ExecLogEntrySupplier): Int {
+        com.google.devtools.build.lib.profiler.Profiler.instance()
+            .profile(com.google.devtools.build.lib.profiler.ProfilerTask.SPAWN_LOG, "logEntry").use { c ->
+                return logEntrySynchronized(key, supplier)
+            }
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun logEntrySynchronized(key: Any?, supplier: ExecLogEntrySupplier): Int {
+        com.google.devtools.build.lib.profiler.Profiler.instance()
+            .profile(com.google.devtools.build.lib.profiler.ProfilerTask.SPAWN_LOG, "logEntry/synchronized").use { c ->
+                if (key == null) {
+                    // No need to check for a previously added entry.
+                    val entry: ExecLogEntry.Builder = supplier.get()
+                    val id = nextEntryId++
+                    outputStream.write(entry.setId(id).build())
+                    return id
+                }
+                com.google.common.base.Preconditions.checkState(key is NestedSet.Node || key is String)
+
+                // Check for a previously added entry.
+                var id: Int = entryMap.getOrDefault(key, 0)
+                if (id != 0) {
+                    return id
+                }
+
+                // Compute a fresh entry and log it.
+                // The following order of operations is crucial to ensure that this entry is preceded by any
+                // entries it references, which in turn ensures the log can be parsed in a single pass.
+                val entry: ExecLogEntry.Builder = supplier.get()
+                id = nextEntryId++
+                entryMap.put(key, id)
+                outputStream.write(entry.setId(id).build())
+                return id
+            }
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        if (outputLoggingFailed.get()) {
+            reporter.handle(
+                com.google.devtools.build.lib.events.Event.Companion.warn(
+                    "The compact execution log is incomplete because some outputs could not be read."
+                            + " Refer to the server log file for details."
+                )
+            )
+        }
+        outputStream.close()
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        private val EXEC_LOG_ENTRY_FILE_COMPARATOR: java.util.Comparator<ExecLogEntry.File?>? =
+            java.util.Comparator.comparing<ExecLogEntry.File?, Any?>(ExecLogEntry.File::getPath)
+
+        private val VISITOR_POOL: ForkJoinPool =
+            com.google.devtools.build.lib.concurrent.NamedForkJoinPool.Companion.newNamedPool(
+                "execlog-directory-visitor", java.lang.Runtime.getRuntime().availableProcessors()
+            )
+
+        @Throws(IOException::class)
+        private fun getOutputStream(out: java.io.OutputStream?, name: String?): MessageOutputStream<ExecLogEntry?> {
+            // Use an AsynchronousMessageOutputStream so that compression and I/O occur in a separate
+            // thread. This ensures concurrent writes don't tear and avoids blocking execution.
+            return AsynchronousMessageOutputStream<T?>(name, ZstdOutputStream(out))
+        }
+    }
 }

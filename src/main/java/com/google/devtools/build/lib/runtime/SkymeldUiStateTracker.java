@@ -223,7 +223,7 @@ final class SkymeldUiStateTracker extends UiStateTracker {
 
   @Override
   synchronized void progressReceiverAvailable(ExecutionProgressReceiverAvailableEvent event) {
-    executionProgressReceiver = event.getExecutionProgressReceiver();
+    executionProgressReceiver = event.executionProgressReceiver;
     // This is where the path of the BuildStatus splits, the BuildStatus at this point could be
     // either CONFIGURATION or ANALYSIS_COMPLETE.
     buildStatus =

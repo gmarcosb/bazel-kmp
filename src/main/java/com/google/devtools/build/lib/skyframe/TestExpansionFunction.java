@@ -56,7 +56,7 @@ final class TestExpansionFunction implements SkyFunction {
     if (env.valuesMissing()) {
       return null;
     }
-    Rule rule = pkg.getPackage().getRule(expansion.getLabel().getName());
+    Rule rule = pkg.getPackage().getRule(expansion.getLabel().name);
     ResolvedTargets<Label> result = computeExpandedTests(env, rule, expansion.isStrict());
     if (env.valuesMissing()) {
       return null;
@@ -195,7 +195,7 @@ final class TestExpansionFunction implements SkyFunction {
         }
       }
       try {
-        targets.add(pkg.getTarget(label.getName()));
+        targets.add(pkg.getTarget(label.name));
       } catch (NoSuchTargetException e) {
         env.getListener().handle(Event.error(e.getMessage()));
         hasError = true;

@@ -11,17 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
- * Factory for {@link com.google.devtools.build.lib.packages.PackageFactory.BuilderForTesting}
+ * Factory for [com.google.devtools.build.lib.packages.PackageFactory.BuilderForTesting]
  * instances. Intended to only be used by unit tests.
  */
-@VisibleForTesting
-public interface BuilderFactoryForTesting {
-  PackageFactory.BuilderForTesting builder(BlazeDirectories directories);
+@com.google.common.annotations.VisibleForTesting
+interface BuilderFactoryForTesting {
+    fun builder(directories: BlazeDirectories?): BuilderForTesting?
 }

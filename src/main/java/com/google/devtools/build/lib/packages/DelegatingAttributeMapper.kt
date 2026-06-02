@@ -11,89 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * An {@link AttributeMap} that delegates all behavior to another {@link AttributeMap}. Useful
+ * An [AttributeMap] that delegates all behavior to another [AttributeMap]. Useful
  * for custom mappers that just want to override specific scenarios.
  */
-public class DelegatingAttributeMapper implements AttributeMap {
-  private final AttributeMap delegate;
+open class DelegatingAttributeMapper(delegate: com.google.devtools.build.lib.packages.AttributeMap?) :
+    com.google.devtools.build.lib.packages.AttributeMap {
+    private val delegate: com.google.devtools.build.lib.packages.AttributeMap
 
-  public DelegatingAttributeMapper(AttributeMap delegate) {
-    this.delegate = Preconditions.checkNotNull(delegate);
-  }
+    init {
+        this.delegate =
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.packages.AttributeMap>(
+                delegate
+            )
+    }
 
-  @Override
-  public Label getLabel() {
-    return delegate.getLabel();
-  }
+    override fun getLabel(): Label? {
+        return delegate.getLabel()
+    }
 
-  @Override
-  public <T> T get(String attributeName, Type<T> type) {
-    return delegate.get(attributeName, type);
-  }
+    override fun <T> get(attributeName: String?, type: com.google.devtools.build.lib.packages.Type<T?>?): T? {
+        return delegate.get<T?>(attributeName, type)
+    }
 
-  @Override
-  public boolean isConfigurable(String attributeName) {
-    return delegate.isConfigurable(attributeName);
-  }
+    override fun isConfigurable(attributeName: String?): Boolean {
+        return delegate.isConfigurable(attributeName)
+    }
 
-  @Override
-  public Iterable<String> getAttributeNames() {
-    return delegate.getAttributeNames();
-  }
+    override fun getAttributeNames(): Iterable<String?>? {
+        return delegate.getAttributeNames()
+    }
 
-  @Nullable
-  @Override
-  public Type<?> getAttributeType(String attrName) {
-    return delegate.getAttributeType(attrName);
-  }
+    override fun getAttributeType(attrName: String?): com.google.devtools.build.lib.packages.Type<*>? {
+        return delegate.getAttributeType(attrName)
+    }
 
-  @Nullable
-  @Override
-  public Attribute getAttributeDefinition(String attrName) {
-    return delegate.getAttributeDefinition(attrName);
-  }
+    override fun getAttributeDefinition(attrName: String?): com.google.devtools.build.lib.packages.Attribute? {
+        return delegate.getAttributeDefinition(attrName)
+    }
 
-  @Override
-  public boolean isAttributeValueExplicitlySpecified(String attributeName) {
-    return delegate.isAttributeValueExplicitlySpecified(attributeName);
-  }
+    override fun isAttributeValueExplicitlySpecified(attributeName: String?): Boolean {
+        return delegate.isAttributeValueExplicitlySpecified(attributeName)
+    }
 
-  @Override
-  public void visitAllLabels(BiConsumer<Attribute, Label> consumer) {
-    delegate.visitAllLabels(consumer);
-  }
+    override fun visitAllLabels(consumer: java.util.function.BiConsumer<com.google.devtools.build.lib.packages.Attribute?, Label?>?) {
+        delegate.visitAllLabels(consumer)
+    }
 
-  @Override
-  public void visitLabels(String attributeName, Consumer<Label> consumer) {
-    delegate.visitLabels(attributeName, consumer);
-  }
+    override fun visitLabels(attributeName: String?, consumer: java.util.function.Consumer<Label?>?) {
+        delegate.visitLabels(attributeName, consumer)
+    }
 
-  @Override
-  public void visitLabels(DependencyFilter filter, BiConsumer<Attribute, Label> consumer) {
-    delegate.visitLabels(filter, consumer);
-  }
+    override fun visitLabels(
+        filter: DependencyFilter?,
+        consumer: java.util.function.BiConsumer<com.google.devtools.build.lib.packages.Attribute?, Label?>?
+    ) {
+        delegate.visitLabels(filter, consumer)
+    }
 
-  @Override
-  public PackageArgs getPackageArgs() {
-    return delegate.getPackageArgs();
-  }
+    override fun getPackageArgs(): PackageArgs? {
+        return delegate.getPackageArgs()
+    }
 
-  @Override
-  public boolean has(String attrName) {
-    return delegate.has(attrName);
-  }
+    override fun has(attrName: String?): Boolean {
+        return delegate.has(attrName)
+    }
 
-  @Override
-  public <T> boolean has(String attrName, Type<T> type) {
-    return delegate.has(attrName, type);
-  }
+    override fun <T> has(attrName: String?, type: com.google.devtools.build.lib.packages.Type<T?>?): Boolean {
+        return delegate.has<T?>(attrName, type)
+    }
 }

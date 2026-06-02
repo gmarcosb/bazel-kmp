@@ -11,31 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
 /**
  * Enum used to represent tri-state parameters in rule attributes (yes/no/auto).
  */
-public enum TriState {
-  YES,
-  NO,
-  AUTO;
+enum class TriState {
+    YES,
+    NO,
+    AUTO;
 
-  public int toInt() {
-    return switch (this) {
-      case YES -> 1;
-      case NO -> 0;
-      case AUTO -> -1;
-    };
-  }
+    fun toInt(): Int {
+        return when (this) {
+            com.google.devtools.build.lib.packages.TriState.YES -> 1
+            com.google.devtools.build.lib.packages.TriState.NO -> 0
+            com.google.devtools.build.lib.packages.TriState.AUTO -> -1
+        }
+    }
 
-  public static TriState fromInt(int n) {
-    return switch (n) {
-      case 1 -> YES;
-      case 0 -> NO;
-      case -1 -> AUTO;
-      default -> throw new IllegalArgumentException("TriState must be -1, 0, or 1");
-    };
-  }
+    companion object {
+        fun fromInt(n: Int): TriState {
+            return when (n) {
+                1 -> com.google.devtools.build.lib.packages.TriState.YES
+                0 -> com.google.devtools.build.lib.packages.TriState.NO
+                -1 -> com.google.devtools.build.lib.packages.TriState.AUTO
+                else -> throw java.lang.IllegalArgumentException("TriState must be -1, 0, or 1")
+            }
+        }
+    }
 }

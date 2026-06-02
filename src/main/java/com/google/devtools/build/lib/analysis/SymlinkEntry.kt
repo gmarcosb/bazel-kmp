@@ -11,24 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.starlarkbuildapi.SymlinkEntryApi;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * An entry in the runfiles map.
- *
- * <p>The PathFragment must not be an absolute path nor contain "..". Overlapping runfiles links are
+ * 
+ * 
+ * The PathFragment must not be an absolute path nor contain "..". Overlapping runfiles links are
  * also refused. This is the case where you ask to create a link to "foo" and also "foo/bar.txt",
  * i.e. you're asking it to make "foo" both a file (symlink) and a directory.
- *
- * <p>Links to directories are heavily discouraged.
+ * 
+ * 
+ * Links to directories are heavily discouraged.
  */
 //
 // O intrepid fixer or bugs and implementor of features, dare not to add a .equals() method
@@ -49,40 +45,34 @@ import net.starlark.java.eval.StarlarkSemantics;
 // equal to the third one if they are not the same instance (which they almost never are).
 //
 // Goodnight, prince(ss)?, and sweet dreams.
-public final class SymlinkEntry implements SymlinkEntryApi {
-  private final PathFragment path;
-  private final Artifact artifact;
+class SymlinkEntry internal constructor(path: PathFragment?, artifact: Artifact?) : SymlinkEntryApi {
+    private val path: PathFragment
+    private val artifact: Artifact
 
-  SymlinkEntry(PathFragment path, Artifact artifact) {
-    this.path = Preconditions.checkNotNull(path);
-    this.artifact = Preconditions.checkNotNull(artifact);
-  }
+    init {
+        this.path = com.google.common.base.Preconditions.checkNotNull<PathFragment>(path)
+        this.artifact = com.google.common.base.Preconditions.checkNotNull<Artifact>(artifact)
+    }
 
-  @Override
-  public String getPathString() {
-    return path.getPathString();
-  }
+    val pathString: String?
+        get() = path.getPathString()
 
-  public PathFragment getPath() {
-    return path;
-  }
+    fun getPath(): PathFragment {
+        return path
+    }
 
-  @Override
-  public Artifact getArtifact() {
-    return artifact;
-  }
+    override fun getArtifact(): Artifact {
+        return artifact
+    }
 
-  @Override
-  public boolean isImmutable() {
-    return true;
-  }
+    val isImmutable: Boolean
+        get() = true
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("SymlinkEntry(path = ");
-    printer.repr(getPathString(), semantics);
-    printer.append(", target_file = ");
-    artifact.repr(printer, semantics);
-    printer.append(")");
-  }
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("SymlinkEntry(path = ")
+        printer.repr(this.pathString, semantics)
+        printer.append(", target_file = ")
+        artifact.repr(printer, semantics)
+        printer.append(")")
+    }
 }

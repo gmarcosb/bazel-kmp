@@ -11,69 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.causes;
+package com.google.devtools.build.lib.causes
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import java.util.Objects;
+import com.google.common.base.MoreObjects
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
+import com.google.devtools.build.lib.cmdline.Label
+import java.util.*
 
-/** Failure due to something associated with a label. */
-public class LabelCause implements Cause {
-  private final Label label;
-  private final DetailedExitCode detailedExitCode;
+/** Failure due to something associated with a label.  */
+open class LabelCause(private val label: Label, detailedExitCode: DetailedExitCode) : Cause {
+    private val detailedExitCode: DetailedExitCode
 
-  public LabelCause(Label label, DetailedExitCode detailedExitCode) {
-    this.label = label;
-    this.detailedExitCode = detailedExitCode;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("label", label)
-        .add("detailedExitCode", detailedExitCode)
-        .toString();
-  }
-
-  @Override
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
-
-  public String getMessage() {
-    return detailedExitCode.getFailureDetail().getMessage();
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEventId getIdProto() {
-    return BuildEventStreamProtos.BuildEventId.newBuilder()
-        .setUnconfiguredLabel(
-            BuildEventStreamProtos.BuildEventId.UnconfiguredLabelId.newBuilder()
-                .setLabel(label.toString())
-                .build())
-        .build();
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    } else if (!(o instanceof LabelCause)) {
-      return false;
+    init {
+        this.detailedExitCode = detailedExitCode
     }
-    LabelCause a = (LabelCause) o;
-    return label.equals(a.label) && detailedExitCode.equals(a.detailedExitCode);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(label, detailedExitCode);
-  }
+    override fun toString(): String {
+        return MoreObjects.toStringHelper(this)
+            .add("label", label)
+            .add("detailedExitCode", detailedExitCode)
+            .toString()
+    }
+
+    override fun getLabel(): Label {
+        return label
+    }
+
+    override fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
+
+    val message: String
+        get() = detailedExitCode.getFailureDetail().getMessage()
+
+    override fun getIdProto(): BuildEventStreamProtos.BuildEventId {
+        return BuildEventStreamProtos.BuildEventId.newBuilder()
+            .setUnconfiguredLabel(
+                BuildEventStreamProtos.BuildEventId.UnconfiguredLabelId.newBuilder()
+                    .setLabel(label.toString())
+                    .build()
+            )
+            .build()
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        } else if (o !is LabelCause) {
+            return false
+        }
+        val a = o
+        return label == a.label && detailedExitCode == a.detailedExitCode
+    }
+
+    override fun hashCode(): Int {
+        return Objects.hash(label, detailedExitCode)
+    }
 }

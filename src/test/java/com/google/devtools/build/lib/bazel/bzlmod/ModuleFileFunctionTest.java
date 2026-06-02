@@ -2163,7 +2163,7 @@ public class ModuleFileFunctionTest extends FoundationTestCase {
 
     var ext2Usage =
         result.get(ModuleFileValue.KEY_FOR_ROOT_MODULE).module().getExtensionUsages().get(1);
-    assertThat(ext2Usage.getRepoOverrides().keySet()).containsExactly("foo.2");
+    assertThat(ext2Usage.repoOverrides.keySet()).containsExactly("foo.2");
   }
 
   @Test

@@ -74,7 +74,7 @@ public final class ActionListener implements RuleConfiguredTargetFactory {
       ExtraActionSpec spec = prerequisite.getProvider(ExtraActionSpec.class);
       if (spec == null) {
         ruleContext.attributeError("extra_actions", String.format("target %s is not an "
-            + "extra_action rule", prerequisite.getLabel().toString()));
+            + "extra_action rule", prerequisite.label.toString()));
       } else {
         extraActions.add(spec);
       }

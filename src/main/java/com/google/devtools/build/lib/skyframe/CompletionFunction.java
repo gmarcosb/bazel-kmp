@@ -388,7 +388,7 @@ public final class CompletionFunction<
 
     TopLevelArtifactContext topLevelContext = key.topLevelArtifactContext();
     ArtifactsToBuild artifactsToBuild =
-        TopLevelArtifactHelper.getAllArtifactsToBuild(value.getConfiguredObject(), topLevelContext);
+        TopLevelArtifactHelper.getAllArtifactsToBuild(value.configuredObject, topLevelContext);
     return Pair.of(value, artifactsToBuild);
   }
 

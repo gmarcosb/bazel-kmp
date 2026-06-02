@@ -11,65 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect;
+package com.google.devtools.build.lib.collect
 
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
+import java.util.HashMap
+import java.util.HashSet
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import javax.annotation.Nullable;
-
-/** Utilities for collection classes. */
-public final class CollectionUtils {
-
-  private CollectionUtils() {}
-
-  /** Returns the set of all elements in the given list that appear more than once. */
-  public static <T> Set<T> duplicatedElementsOf(List<T> input) {
-    int count = input.size();
-    if (count < 2) {
-      return ImmutableSet.of();
-    }
-    Set<T> duplicates = null;
-    Set<T> elementSet = CompactHashSet.createWithExpectedSize(count);
-    for (T el : input) {
-      if (!elementSet.add(el)) {
-        if (duplicates == null) {
-          duplicates = new HashSet<>();
+/** Utilities for collection classes.  */
+object CollectionUtils {
+    /** Returns the set of all elements in the given list that appear more than once.  */
+    fun <T> duplicatedElementsOf(input: MutableList<T?>): MutableSet<T?> {
+        val count: Int = input.size()
+        if (count < 2) {
+            return com.google.common.collect.ImmutableSet.of<T?>()
         }
-        duplicates.add(el);
-      }
+        var duplicates: MutableSet<T?>? = null
+        val elementSet: MutableSet<T?> =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.createWithExpectedSize<T?>(
+                count
+            )
+        for (el in input) {
+            if (!elementSet.add(el)) {
+                if (duplicates == null) {
+                    duplicates = HashSet<T?>()
+                }
+                duplicates!!.add(el)
+            }
+        }
+        return if (duplicates == null) com.google.common.collect.ImmutableSet.of<T?>() else duplicates
     }
-    return duplicates == null ? ImmutableSet.of() : duplicates;
-  }
 
-  /**
-   * Returns an immutable set of all non-null parameters in the order in which they are specified.
-   */
-  public static <T> ImmutableSet<T> asSetWithoutNulls(T... elements) {
-    return Arrays.stream(elements).filter(Objects::nonNull).collect(toImmutableSet());
-  }
+    /**
+     * Returns an immutable set of all non-null parameters in the order in which they are specified.
+     */
+    fun <T> asSetWithoutNulls(vararg elements: T?): com.google.common.collect.ImmutableSet<T?> {
+        return java.util.Arrays.stream<T?>(elements)
+            .filter(java.util.function.Predicate { obj: T? -> java.util.Objects.nonNull(obj) })
+            .collect(com.google.common.collect.ImmutableSet.toImmutableSet<T?>())
+    }
 
-  /** Returns a copy of the Map of Maps parameter. */
-  public static <KEY_1, KEY_2, VALUE> Map<KEY_1, Map<KEY_2, VALUE>> copyOf(
-      Map<KEY_1, ? extends Map<KEY_2, VALUE>> map) {
-    return new HashMap<>(Maps.transformValues(map, HashMap::new));
-  }
+    /** Returns a copy of the Map of Maps parameter.  */
+    fun <KEY_1, KEY_2, VALUE> copyOf(
+        map: MutableMap<KEY_1?, out MutableMap<KEY_2?, VALUE?>?>
+    ): MutableMap<KEY_1?, MutableMap<KEY_2?, VALUE?>?> {
+        return HashMap<KEY_1?, MutableMap<KEY_2?, VALUE?>?>(
+            com.google.common.collect.Maps.transformValues(
+                map,
+                { m: MutableMap<out K?, out V?>? -> HashMap(m) })
+        )
+    }
 
-  /**
-   * Checks whether the given collection is either {@code null} or {@linkplain Collection#isEmpty
-   * empty}.
-   */
-  public static boolean isNullOrEmpty(@Nullable Collection<?> collection) {
-    return collection == null || collection.isEmpty();
-  }
+    /**
+     * Checks whether the given collection is either `null` or [ empty][Collection.isEmpty].
+     */
+    fun isNullOrEmpty(collection: MutableCollection<*>?): Boolean {
+        return collection == null || collection.isEmpty()
+    }
 }

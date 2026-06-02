@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-
-package com.google.devtools.build.lib.bazel.bzlmod;
+package com.google.devtools.build.lib.bazel.bzlmod
 
 /**
  * Represents an "override" applied to a particular module in the dependency graph. Must be of one
- * of two categories: {@link RegistryOverride} and {@link NonRegistryOverride}. See there for
+ * of two categories: [RegistryOverride] and [NonRegistryOverride]. See there for
  * further details.
  */
 // This interface is not named "Override" because of the Java @Override annotation.
-public sealed interface ModuleOverride permits RegistryOverride, NonRegistryOverride {
-  // This space intentionally left blank
-}
+interface ModuleOverride 

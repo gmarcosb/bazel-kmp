@@ -11,158 +11,144 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls
 
-package com.google.devtools.build.lib.authandtls;
+import java.net.IDN
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter;
-import com.google.devtools.common.options.Converters.DurationConverter;
-import com.google.devtools.common.options.Converters.EmptyToNullStringConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.net.IDN;
-import java.time.Duration;
-import java.util.List;
-import java.util.Optional;
-
-/** Common options for authentication and TLS. */
-@OptionsClass
-public abstract class AuthAndTLSOptions extends OptionsBase {
-  @Option(
-      name = "google_default_credentials",
-      oldName = "auth_enabled",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+/** Common options for authentication and TLS.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class AuthAndTLSOptions : com.google.devtools.common.options.OptionsBase() {
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "google_default_credentials",
+        oldName = "auth_enabled",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Whether to use 'Google Application Default Credentials' for authentication.
           See [Authentication methods at Google - Google Cloud][gc-auth-methods] for details.
           Disabled by default.
 
           [gc-auth-methods]: https://cloud.google.com/docs/authentication
-          """)
-  public abstract boolean getUseGoogleDefaultCredentials();
+          
+          """.trimIndent()
+    )
+    abstract var useGoogleDefaultCredentials: Boolean
 
-  public abstract void setUseGoogleDefaultCredentials(boolean value);
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "google_auth_scopes",
+        oldName = "auth_scope",
+        defaultValue = "https://www.googleapis.com/auth/cloud-platform",
+        converter = com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = "A comma-separated list of Google Cloud authentication scopes."
+    )
+    abstract var googleAuthScopes: MutableList<String?>?
 
-  @Option(
-      name = "google_auth_scopes",
-      oldName = "auth_scope",
-      defaultValue = "https://www.googleapis.com/auth/cloud-platform",
-      converter = CommaSeparatedOptionListConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "A comma-separated list of Google Cloud authentication scopes.")
-  public abstract List<String> getGoogleAuthScopes();
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "google_credentials",
+        oldName = "auth_credentials",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("Specifies the file to get authentication credentials from. See "
+                + "https://cloud.google.com/docs/authentication for details.")
+    )
+    abstract var googleCredentials: String?
 
-  public abstract void setGoogleAuthScopes(List<String> value);
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "tls_certificate",
+        defaultValue = "null",
+        converter = com.google.devtools.common.options.Converters.EmptyToNullStringConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("Specify a path to a TLS certificate that is trusted to sign server certificates."
+                + " An empty value resets the flag to its default.")
+    )
+    abstract val tlsCertificate: String?
 
-  @Option(
-      name = "google_credentials",
-      oldName = "auth_credentials",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Specifies the file to get authentication credentials from. See "
-              + "https://cloud.google.com/docs/authentication for details.")
-  public abstract String getGoogleCredentials();
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "tls_client_certificate",
+        defaultValue = "null",
+        converter = com.google.devtools.common.options.Converters.EmptyToNullStringConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("Specify the TLS client certificate to use; you also need to provide a client key to "
+                + "enable client authentication. An empty value resets the flag to its default.")
+    )
+    abstract val tlsClientCertificate: String?
 
-  public abstract void setGoogleCredentials(String value);
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "tls_client_key",
+        defaultValue = "null",
+        converter = com.google.devtools.common.options.Converters.EmptyToNullStringConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("Specify the TLS client key to use; you also need to provide a client certificate to "
+                + "enable client authentication. An empty value resets the flag to its default.")
+    )
+    abstract val tlsClientKey: String?
 
-  @Option(
-      name = "tls_certificate",
-      defaultValue = "null",
-      converter = EmptyToNullStringConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Specify a path to a TLS certificate that is trusted to sign server certificates."
-              + " An empty value resets the flag to its default.")
-  public abstract String getTlsCertificate();
+    @get:com.google.devtools.common.options.Option(
+        name = "tls_authority_override",
+        defaultValue = "null",
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.HIDDEN],
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("TESTING ONLY! Can be used with a self-signed certificate to consider the specified "
+                + "value a valid TLS authority.")
+    )
+    abstract val tlsAuthorityOverride: String?
 
-  @Option(
-      name = "tls_client_certificate",
-      defaultValue = "null",
-      converter = EmptyToNullStringConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Specify the TLS client certificate to use; you also need to provide a client key to "
-              + "enable client authentication. An empty value resets the flag to its default.")
-  public abstract String getTlsClientCertificate();
-
-  @Option(
-      name = "tls_client_key",
-      defaultValue = "null",
-      converter = EmptyToNullStringConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Specify the TLS client key to use; you also need to provide a client certificate to "
-              + "enable client authentication. An empty value resets the flag to its default.")
-  public abstract String getTlsClientKey();
-
-  @Option(
-      name = "tls_authority_override",
-      defaultValue = "null",
-      metadataTags = {OptionMetadataTag.HIDDEN},
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "TESTING ONLY! Can be used with a self-signed certificate to consider the specified "
-              + "value a valid TLS authority.")
-  public abstract String getTlsAuthorityOverride();
-
-  @Option(
-      name = "grpc_keepalive_time",
-      defaultValue = "60s",
-      converter = DurationConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "grpc_keepalive_time",
+        defaultValue = "60s",
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Configures keep-alive pings for outgoing gRPC connections. If this is set, then Bazel
           sends pings after this much time of no read operations on the connection, but
           only if there is at least one pending gRPC call. The value 0 disables the keep-alives.
-          """)
-  public abstract Duration getGrpcKeepaliveTime();
+          
+          """.trimIndent()
+    )
+    abstract val grpcKeepaliveTime: java.time.Duration?
 
-  @Option(
-      name = "grpc_keepalive_timeout",
-      defaultValue = "20s",
-      converter = DurationConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "grpc_keepalive_timeout",
+        defaultValue = "20s",
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Configures a keep-alive timeout for outgoing gRPC connections. If keep-alive pings are
           enabled with `--grpc_keepalive_time`, then Bazel times out a connection if it does
           not receive a ping reply after this much time. Times are treated as second
           granularity; it is an error to set a value less than one second. If keep-alive
           pings are disabled, then this setting is ignored.
-          """)
-  public abstract Duration getGrpcKeepaliveTimeout();
+          
+          """.trimIndent()
+    )
+    abstract val grpcKeepaliveTimeout: java.time.Duration?
 
-  @Option(
-      name = "credential_helper",
-      oldName = "experimental_credential_helper",
-      defaultValue = "null",
-      allowMultiple = true,
-      converter = CredentialHelperOptionConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "credential_helper",
+        oldName = "experimental_credential_helper",
+        defaultValue = "null",
+        allowMultiple = true,
+        converter = CredentialHelperOptionConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Configures a credential helper conforming to the [Credential Helper Specification][ch-spec]
           to use for retrieving authorization credentials for repository
           fetching, remote caching and execution, and the build event service.
@@ -184,108 +170,119 @@ public abstract class AuthAndTLSOptions extends OptionsBase {
 
           [ch-spec]: https://github.com/EngFlow/credential-helper-spec
           [ch-example]: https://blog.engflow.com/2023/10/09/configuring-bazels-credential-helper/
-          """)
-  public abstract List<CredentialHelperOption> getCredentialHelpers();
+          
+          """.trimIndent()
+    )
+    abstract val credentialHelpers: MutableList<CredentialHelperOption?>?
 
-  @Option(
-      name = "credential_helper_timeout",
-      oldName = "experimental_credential_helper_timeout",
-      defaultValue = "10s",
-      converter = DurationConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "credential_helper_timeout",
+        oldName = "experimental_credential_helper_timeout",
+        defaultValue = "10s",
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Configures the timeout for a credential helper.
 
           Credential helpers failing to respond within this timeout will fail the invocation.
-          """)
-  public abstract Duration getCredentialHelperTimeout();
+          
+          """.trimIndent()
+    )
+    abstract val credentialHelperTimeout: java.time.Duration?
 
-  @Option(
-      name = "credential_helper_cache_duration",
-      oldName = "experimental_credential_helper_cache_duration",
-      defaultValue = "30m",
-      converter = DurationConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "How long to cache credentials for if the credential helper doesn't return an expiration"
-              + " time. Changing the value of this flag clears the cache.")
-  public abstract Duration getCredentialHelperCacheTimeout();
+    @get:com.google.devtools.common.options.Option(
+        name = "credential_helper_cache_duration",
+        oldName = "experimental_credential_helper_cache_duration",
+        defaultValue = "30m",
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("How long to cache credentials for if the credential helper doesn't return an expiration"
+                + " time. Changing the value of this flag clears the cache.")
+    )
+    abstract val credentialHelperCacheTimeout: java.time.Duration?
 
-  public abstract void setCredentialHelperCacheTimeout(Duration value);
+    abstract fun setCredentialHelperCacheTimeout(value: java.time.Duration?)
 
-  /**
-   * One of the values of the `--credential_helper` flag.
-   *
-   * @param scope Returns the scope of the credential helper (if any).
-   *     <p>The scope is a valid ASCII domain name with an optional leading '.*' wildcard.
-   * @param path Returns the (unparsed) path of the credential helper.
-   */
-  public record CredentialHelperOption(Optional<String> scope, String path) {
-    public CredentialHelperOption {
-      requireNonNull(scope, "scope");
-      requireNonNull(path, "path");
+    /**
+     * One of the values of the `--credential_helper` flag.
+     * 
+     * @param scope Returns the scope of the credential helper (if any).
+     * 
+     * The scope is a valid ASCII domain name with an optional leading '.*' wildcard.
+     * @param path Returns the (unparsed) path of the credential helper.
+     */
+    class CredentialHelperOption(scope: java.util.Optional<String?>?, @kotlin.jvm.JvmField val path: String?) {
+        val scope: java.util.Optional<String?>?
+
+        init {
+            this.scope = scope
+            java.util.Objects.requireNonNull<java.util.Optional<String?>?>(scope, "scope")
+            java.util.Objects.requireNonNull<String?>(path, "path")
+        }
     }
 
-  }
+    /** A [Converter] for the `--credential_helper` flag.  */
+    class CredentialHelperOptionConverter
 
-  /** A {@link Converter} for the `--credential_helper` flag. */
-  public static final class CredentialHelperOptionConverter
-      extends Converter.Contextless<CredentialHelperOption> {
-    public static final CredentialHelperOptionConverter INSTANCE =
-        new CredentialHelperOptionConverter();
+        : com.google.devtools.common.options.Converter.Contextless<CredentialHelperOption?>() {
+        val typeDescription: String
+            get() = "Path to a credential helper."
 
-    @Override
-    public String getTypeDescription() {
-      return "Path to a credential helper.";
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String?): CredentialHelperOption {
+            com.google.common.base.Preconditions.checkNotNull<String?>(input)
+
+            val pos: Int = input.indexOf('=')
+            if (pos >= 0) {
+                val scope = parseScope(input.substring(0, pos))
+                val path = parsePath(input.substring(pos + 1))
+                return CredentialHelperOption(java.util.Optional.of<String?>(scope), path)
+            }
+
+            // `input` does not specify a scope.
+            return CredentialHelperOption(java.util.Optional.empty<String?>(), parsePath(input!!))
+        }
+
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        private fun parseScope(scope: String): String {
+            if (scope.isEmpty()) {
+                throw com.google.devtools.common.options.OptionsParsingException("Credential helper scope must not be empty")
+            }
+            var wildcard = ""
+            var domainName = scope
+            if (scope.startsWith("*.") && scope.length > 2) {
+                wildcard = "*."
+                domainName = scope.substring(2)
+            }
+            try {
+                // Check that the domain name is either ASCII and conforming to RFC 1122 and RFC 1123,
+                // or non-ASCII and conforming to RFC 3490. In the latter case, convert it to Punycode.
+                // See https://en.wikipedia.org/wiki/Punycode.
+                return wildcard + IDN.toASCII(domainName, IDN.USE_STD3_ASCII_RULES)
+            } catch (e: java.lang.IllegalArgumentException) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    ("Credential helper scope '"
+                            + scope
+                            + "' must be a valid domain name with an optional leading '*.' wildcard"),
+                    e
+                )
+            }
+        }
+
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        private fun parsePath(path: String): String {
+            if (path.isEmpty()) {
+                throw com.google.devtools.common.options.OptionsParsingException("Credential helper path must not be empty")
+            }
+            return path
+        }
+
+        companion object {
+            @kotlin.jvm.JvmField
+            val INSTANCE: CredentialHelperOptionConverter = CredentialHelperOptionConverter()
+        }
     }
-
-    @Override
-    public CredentialHelperOption convert(String input) throws OptionsParsingException {
-      Preconditions.checkNotNull(input);
-
-      int pos = input.indexOf('=');
-      if (pos >= 0) {
-        String scope = parseScope(input.substring(0, pos));
-        String path = parsePath(input.substring(pos + 1));
-        return new CredentialHelperOption(Optional.of(scope), path);
-      }
-
-      // `input` does not specify a scope.
-      return new CredentialHelperOption(Optional.empty(), parsePath(input));
-    }
-
-    private String parseScope(String scope) throws OptionsParsingException {
-      if (scope.isEmpty()) {
-        throw new OptionsParsingException("Credential helper scope must not be empty");
-      }
-      String wildcard = "";
-      String domainName = scope;
-      if (scope.startsWith("*.") && scope.length() > 2) {
-        wildcard = "*.";
-        domainName = scope.substring(2);
-      }
-      try {
-        // Check that the domain name is either ASCII and conforming to RFC 1122 and RFC 1123,
-        // or non-ASCII and conforming to RFC 3490. In the latter case, convert it to Punycode.
-        // See https://en.wikipedia.org/wiki/Punycode.
-        return wildcard + IDN.toASCII(domainName, IDN.USE_STD3_ASCII_RULES);
-      } catch (IllegalArgumentException e) {
-        throw new OptionsParsingException(
-            "Credential helper scope '"
-                + scope
-                + "' must be a valid domain name with an optional leading '*.' wildcard",
-            e);
-      }
-    }
-
-    private String parsePath(String path) throws OptionsParsingException {
-      if (path.isEmpty()) {
-        throw new OptionsParsingException("Credential helper path must not be empty");
-      }
-      return path;
-    }
-  }
 }

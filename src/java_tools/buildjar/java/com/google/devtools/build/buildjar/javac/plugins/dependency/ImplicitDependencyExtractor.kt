@@ -11,18 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac.plugins.dependency
 
-package com.google.devtools.build.buildjar.javac.plugins.dependency;
-
-import com.google.devtools.build.lib.view.proto.Deps;
-import com.sun.tools.javac.code.Symbol.ClassSymbol;
-import com.sun.tools.javac.code.Symtab;
-import com.sun.tools.javac.util.Context;
-import java.lang.reflect.Field;
-import java.nio.file.Path;
-import java.util.Map;
-import java.util.Set;
-import javax.tools.JavaFileObject;
+import com.google.devtools.build.lib.view.proto.Deps
+import com.sun.tools.javac.code.Symbol
+import com.sun.tools.javac.util.Context
+import java.lang.reflect.Field
+import java.nio.file.Path
 
 /**
  * A lightweight mechanism for extracting compile-time dependencies from javac, by performing a scan
@@ -31,96 +26,98 @@ import javax.tools.JavaFileObject;
  * Note that JDK8 may provide support for extracting per-class, finer-grained dependencies, and if
  * that implementation has reasonable overhead it may be a future option.
  */
-public class ImplicitDependencyExtractor {
+class ImplicitDependencyExtractor(depsMap: MutableMap<Path?, Deps.Dependency?>, platformJars: MutableSet<Path?>) {
+    /** Map collecting dependency information, used for the proto output  */
+    private val depsMap: MutableMap<Path?, Deps.Dependency?>
 
-  /** Map collecting dependency information, used for the proto output */
-  private final Map<Path, Deps.Dependency> depsMap;
+    private val platformJars: MutableSet<Path?>
 
-  private final Set<Path> platformJars;
-
-  /**
-   * ImplicitDependencyExtractor does not guarantee any ordering of the reported dependencies.
-   * Clients should preserve the original classpath ordering if trying to minimize their classpaths
-   * using this information.
-   */
-  public ImplicitDependencyExtractor(Map<Path, Deps.Dependency> depsMap, Set<Path> platformJars) {
-    this.depsMap = depsMap;
-    this.platformJars = platformJars;
-  }
-
-  /**
-   * Collects the implicit dependencies of the given set of ClassSymbol roots. As we're interested
-   * in differentiating between symbols that were just resolved vs. symbols that were fully
-   * completed by the compiler, we start the analysis by finding all the implicit dependencies
-   * reachable from the given set of roots. For completeness, we then walk the symbol table
-   * associated with the given context and collect the jar files of the remaining class symbols
-   * found there.
-   *
-   * @param context compilation context
-   * @param roots root classes in the implicit dependency collection
-   */
-  public void accumulate(Context context, Set<ClassSymbol> roots) {
-    Symtab symtab = Symtab.instance(context);
-    // Collect all other partially resolved types
-    for (ClassSymbol cs : symtab.getAllClasses()) {
-      // When recording we want to differentiate between jar references through completed symbols
-      // and incomplete symbols
-      boolean completed = cs.isCompleted();
-      if (cs.classfile != null) {
-        collectJarOf(cs.classfile, platformJars, completed);
-      } else if (cs.sourcefile != null) {
-        collectJarOf(cs.sourcefile, platformJars, completed);
-      }
-    }
-  }
-
-  /**
-   * Attempts to add the jar associated with the given JavaFileObject, if any, to the collection,
-   * filtering out jars on the compilation bootclasspath.
-   *
-   * @param reference JavaFileObject representing a class or source file
-   * @param platformJars classes on javac's bootclasspath
-   * @param completed whether the jar was referenced through a completed symbol
-   */
-  private void collectJarOf(JavaFileObject reference, Set<Path> platformJars, boolean completed) {
-
-    Path path = getJarPath(reference);
-    if (path == null) {
-      return;
+    /**
+     * ImplicitDependencyExtractor does not guarantee any ordering of the reported dependencies.
+     * Clients should preserve the original classpath ordering if trying to minimize their classpaths
+     * using this information.
+     */
+    init {
+        this.depsMap = depsMap
+        this.platformJars = platformJars
     }
 
-    // Filter out classes in rt.jar
-    if (platformJars.contains(path)) {
-      return;
+    /**
+     * Collects the implicit dependencies of the given set of ClassSymbol roots. As we're interested
+     * in differentiating between symbols that were just resolved vs. symbols that were fully
+     * completed by the compiler, we start the analysis by finding all the implicit dependencies
+     * reachable from the given set of roots. For completeness, we then walk the symbol table
+     * associated with the given context and collect the jar files of the remaining class symbols
+     * found there.
+     * 
+     * @param context compilation context
+     * @param roots root classes in the implicit dependency collection
+     */
+    fun accumulate(context: Context, roots: MutableSet<Symbol.ClassSymbol?>?) {
+        val symtab: Symtab = Symtab.instance(context)
+        // Collect all other partially resolved types
+        for (cs in symtab.getAllClasses()) {
+            // When recording we want to differentiate between jar references through completed symbols
+            // and incomplete symbols
+            val completed: Boolean = cs.isCompleted()
+            if (cs.classfile != null) {
+                collectJarOf(cs.classfile, platformJars, completed)
+            } else if (cs.sourcefile != null) {
+                collectJarOf(cs.sourcefile, platformJars, completed)
+            }
+        }
     }
 
-    Deps.Dependency currentDep = depsMap.get(path);
+    /**
+     * Attempts to add the jar associated with the given JavaFileObject, if any, to the collection,
+     * filtering out jars on the compilation bootclasspath.
+     * 
+     * @param reference JavaFileObject representing a class or source file
+     * @param platformJars classes on javac's bootclasspath
+     * @param completed whether the jar was referenced through a completed symbol
+     */
+    private fun collectJarOf(reference: JavaFileObject?, platformJars: MutableSet<Path?>, completed: Boolean) {
+        val path: Path? = getJarPath(reference)
+        if (path == null) {
+            return
+        }
 
-    // If the dep hasn't been recorded we add it to the map
-    // If it's been recorded as INCOMPLETE but is now complete we upgrade the dependency
-    if (currentDep == null
-        || (completed && currentDep.getKind() == Deps.Dependency.Kind.INCOMPLETE)) {
-      depsMap.put(
-          path,
-          Deps.Dependency.newBuilder()
-              .setKind(completed ? Deps.Dependency.Kind.IMPLICIT : Deps.Dependency.Kind.INCOMPLETE)
-              .setPath(path.toString())
-              .build());
-    }
-  }
+        // Filter out classes in rt.jar
+        if (platformJars.contains(path)) {
+            return
+        }
 
-  public static Path getJarPath(JavaFileObject file) {
-    if (file == null) {
-      return null;
+        val currentDep: Deps.Dependency? = depsMap.get(path)
+
+        // If the dep hasn't been recorded we add it to the map
+        // If it's been recorded as INCOMPLETE but is now complete we upgrade the dependency
+        if (currentDep == null
+            || (completed && currentDep.getKind() === Deps.Dependency.Kind.INCOMPLETE)
+        ) {
+            depsMap.put(
+                path,
+                Deps.Dependency.newBuilder()
+                    .setKind(if (completed) Deps.Dependency.Kind.IMPLICIT else Deps.Dependency.Kind.INCOMPLETE)
+                    .setPath(path.toString())
+                    .build()
+            )
+        }
     }
-    try {
-      Field field = file.getClass().getDeclaredField("userJarPath");
-      field.setAccessible(true);
-      return (Path) field.get(file);
-    } catch (NoSuchFieldException e) {
-      return null;
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
+
+    companion object {
+        fun getJarPath(file: JavaFileObject?): Path? {
+            if (file == null) {
+                return null
+            }
+            try {
+                val field: Field = file.javaClass.getDeclaredField("userJarPath")
+                field.setAccessible(true)
+                return field.get(file) as Path?
+            } catch (e: NoSuchFieldException) {
+                return null
+            } catch (e: ReflectiveOperationException) {
+                throw LinkageError(e.message, e)
+            }
+        }
     }
-  }
 }

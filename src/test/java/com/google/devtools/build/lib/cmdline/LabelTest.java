@@ -43,47 +43,47 @@ public class LabelTest {
     {
       Label l = Label.parseCanonical("//foo/bar:baz");
       assertThat(l.getPackageName()).isEqualTo("foo/bar");
-      assertThat(l.getName()).isEqualTo("baz");
+      assertThat(l.name).isEqualTo("baz");
     }
     {
       Label l = Label.parseCanonical("//foo/bar");
       assertThat(l.getPackageName()).isEqualTo("foo/bar");
-      assertThat(l.getName()).isEqualTo("bar");
+      assertThat(l.name).isEqualTo("bar");
     }
     {
       Label l = Label.parseCanonical("//:bar");
       assertThat(l.getPackageName()).isEmpty();
-      assertThat(l.getName()).isEqualTo("bar");
+      assertThat(l.name).isEqualTo("bar");
     }
     {
       Label l = Label.parseCanonical("@foo");
-      assertThat(l.getRepository().getName()).isEqualTo("foo");
+      assertThat(l.getRepository().name).isEqualTo("foo");
       assertThat(l.getPackageName()).isEmpty();
-      assertThat(l.getName()).isEqualTo("foo");
+      assertThat(l.name).isEqualTo("foo");
     }
     {
       Label l = Label.parseCanonical("@foo//bar");
-      assertThat(l.getRepository().getName()).isEqualTo("foo");
+      assertThat(l.getRepository().name).isEqualTo("foo");
       assertThat(l.getPackageName()).isEqualTo("bar");
-      assertThat(l.getName()).isEqualTo("bar");
+      assertThat(l.name).isEqualTo("bar");
     }
     {
       Label l = Label.parseCanonical("@@foo//bar");
-      assertThat(l.getRepository().getName()).isEqualTo("foo");
+      assertThat(l.getRepository().name).isEqualTo("foo");
       assertThat(l.getPackageName()).isEqualTo("bar");
-      assertThat(l.getName()).isEqualTo("bar");
+      assertThat(l.name).isEqualTo("bar");
     }
     {
       Label l = Label.parseCanonical("//@foo");
       assertThat(l.getRepository()).isEqualTo(RepositoryName.MAIN);
       assertThat(l.getPackageName()).isEqualTo("@foo");
-      assertThat(l.getName()).isEqualTo("@foo");
+      assertThat(l.name).isEqualTo("@foo");
     }
     {
       Label l = Label.parseCanonical("//xyz/@foo:abc");
       assertThat(l.getRepository()).isEqualTo(RepositoryName.MAIN);
       assertThat(l.getPackageName()).isEqualTo("xyz/@foo");
-      assertThat(l.getName()).isEqualTo("abc");
+      assertThat(l.name).isEqualTo("abc");
     }
   }
 
@@ -98,25 +98,25 @@ public class LabelTest {
       Label l = Label.parseWithRepoContext("//lol:kek", repoContext);
       assertThat(l.getRepository()).isEqualTo(foo);
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
     {
       Label l = Label.parseWithRepoContext("@bar//lol:kek", repoContext);
       assertThat(l.getRepository()).isEqualTo(quux);
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
     {
       Label l = Label.parseWithRepoContext("@@bar//lol:kek", repoContext);
       assertThat(l.getRepository()).isEqualTo(bar);
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
     {
       Label l = Label.parseWithRepoContext("@quux//lol:kek", repoContext);
       assertThat(l.getRepository()).isEqualTo(quux.toNonVisible(foo));
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
   }
 
@@ -133,31 +133,31 @@ public class LabelTest {
       Label l = Label.parseWithPackageContext(":kek", packageContext);
       assertThat(l.getRepository()).isEqualTo(foo);
       assertThat(l.getPackageName()).isEqualTo("hah");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
     {
       Label l = Label.parseWithPackageContext("//lol:kek", packageContext);
       assertThat(l.getRepository()).isEqualTo(foo);
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
     {
       Label l = Label.parseWithPackageContext("@bar//lol:kek", packageContext);
       assertThat(l.getRepository()).isEqualTo(quux);
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
     {
       Label l = Label.parseWithPackageContext("@@bar//lol:kek", packageContext);
       assertThat(l.getRepository()).isEqualTo(bar);
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
     {
       Label l = Label.parseWithPackageContext("@quux//lol:kek", packageContext);
       assertThat(l.getRepository()).isEqualTo(quux.toNonVisible(foo));
       assertThat(l.getPackageName()).isEqualTo("lol");
-      assertThat(l.getName()).isEqualTo("kek");
+      assertThat(l.name).isEqualTo("kek");
     }
   }
 
@@ -165,7 +165,7 @@ public class LabelTest {
   public void testFactory() throws Exception {
     Label l = Label.create("foo/bar", "quux");
     assertThat(l.getPackageName()).isEqualTo("foo/bar");
-    assertThat(l.getName()).isEqualTo("quux");
+    assertThat(l.name).isEqualTo("quux");
   }
 
   @Test

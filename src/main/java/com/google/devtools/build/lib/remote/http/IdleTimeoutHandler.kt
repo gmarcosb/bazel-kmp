@@ -11,38 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.http
 
-package com.google.devtools.build.lib.remote.http;
-
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.timeout.IdleState;
-import io.netty.handler.timeout.IdleStateEvent;
-import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.handler.timeout.TimeoutException;
-import java.util.concurrent.TimeUnit;
+import io.netty.channel.ChannelHandlerContext
+import io.netty.handler.timeout.IdleState
+import io.netty.handler.timeout.IdleStateEvent
+import io.netty.handler.timeout.IdleStateHandler
+import io.netty.handler.timeout.TimeoutException
+import java.util.concurrent.TimeUnit
 
 /**
- * Triggers {@link IdleState.ALL_IDLE} events, when no reads or writes were performed for a period
+ * Triggers [IdleState.ALL_IDLE] events, when no reads or writes were performed for a period
  * of time.
  */
-public final class IdleTimeoutHandler extends IdleStateHandler {
-  private final TimeoutException timeoutException;
-  private boolean closed;
+class IdleTimeoutHandler(timeoutSeconds: Long, private val timeoutException: TimeoutException?) :
+    IdleStateHandler( /* readerIdleTime= */0,  /* writerIdleTime= */0, timeoutSeconds, TimeUnit.SECONDS) {
+    private var closed = false
 
-  @SuppressWarnings("GoodTime-ApiWithNumericTimeUnit")
-  public IdleTimeoutHandler(long timeoutSeconds, TimeoutException timeoutException) {
-    super(/* readerIdleTime= */ 0, /* writerIdleTime= */ 0, timeoutSeconds, TimeUnit.SECONDS);
-    this.timeoutException = timeoutException;
-  }
-
-  @Override
-  @SuppressWarnings("FutureReturnValueIgnored")
-  protected final void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) throws Exception {
-    assert evt.state() == IdleState.ALL_IDLE;
-    if (!closed) {
-      ctx.fireExceptionCaught(timeoutException);
-      ctx.close();
-      closed = true;
+    @Throws(Exception::class)
+    override fun channelIdle(ctx: ChannelHandlerContext, evt: IdleStateEvent) {
+        assert(evt.state() == IdleState.ALL_IDLE)
+        if (!closed) {
+            ctx.fireExceptionCaught(timeoutException)
+            ctx.close()
+            closed = true
+        }
     }
-  }
 }

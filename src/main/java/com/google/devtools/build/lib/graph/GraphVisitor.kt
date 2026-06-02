@@ -12,39 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // All Rights Reserved.
-
-package com.google.devtools.build.lib.graph;
+package com.google.devtools.build.lib.graph
 
 /**
- *  <p> An graph visitor interface; particularly useful for allowing subclasses
- *  to specify how to output a graph.  The order in which node and edge
- *  callbacks are made (DFS, BFS, etc) is defined by the choice of Digraph
- *  visitation method used.  </p>
+ * 
+ *  An graph visitor interface; particularly useful for allowing subclasses
+ * to specify how to output a graph.  The order in which node and edge
+ * callbacks are made (DFS, BFS, etc) is defined by the choice of Digraph
+ * visitation method used.  
  */
-public interface GraphVisitor<T> {
+interface GraphVisitor<T> {
+    /**
+     * Called before visitation commences.
+     */
+    fun beginVisit()
 
-  /**
-   *  Called before visitation commences.
-   */
-  void beginVisit();
+    /**
+     * Called after visitation is complete.
+     */
+    fun endVisit()
 
-  /**
-   *  Called after visitation is complete.
-   */
-  void endVisit();
+    /**
+     * 
+     *  Called for each edge. 
+     * 
+     * TODO(bazel-team): This method is not essential, and in all known cases so
+     * far, the visitEdge code can always be placed within visitNode.  Perhaps
+     * we should remove it, and the begin/end methods, and make this just a
+     * NodeVisitor?  Are there any algorithms for which edge-visitation order is
+     * important?
+     */
+    fun visitEdge(lhs: Node<T?>?, rhs: Node<T?>?)
 
-  /**
-   *  <p> Called for each edge. </p>
-   *
-   *  TODO(bazel-team): This method is not essential, and in all known cases so
-   *  far, the visitEdge code can always be placed within visitNode.  Perhaps
-   *  we should remove it, and the begin/end methods, and make this just a
-   *  NodeVisitor?  Are there any algorithms for which edge-visitation order is
-   *  important?
-   */
-  void visitEdge(Node<T> lhs, Node<T> rhs);
-  /**
-   *  Called for each node.
-   */
-  void visitNode(Node<T> node);
+    /**
+     * Called for each node.
+     */
+    fun visitNode(node: Node<T?>?)
 }

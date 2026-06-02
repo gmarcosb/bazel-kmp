@@ -11,29 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.SchedulingActionEvent;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.exec.SpawnRunner.ProgressStatus;
+import com.google.devtools.build.lib.actions.ActionExecutionMetadata
 
 /**
- * Notifies that {@link SpawnRunner} is waiting for local or remote resources to become available.
+ * Notifies that [SpawnRunner] is waiting for local or remote resources to become available.
  */
-public record SpawnSchedulingEvent(String name) implements ProgressStatus {
-  public SpawnSchedulingEvent {
-    requireNonNull(name, "name");
-  }
+@kotlin.jvm.JvmRecord
+data class SpawnSchedulingEvent(val name: String?) : ProgressStatus {
+    override fun postTo(
+        eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler,
+        action: ActionExecutionMetadata?
+    ) {
+        eventHandler.post(SchedulingActionEvent(action, this.name))
+    }
 
-  public static SpawnSchedulingEvent create(String name) {
-    return new SpawnSchedulingEvent(name);
-  }
+    init {
+        java.util.Objects.requireNonNull<String?>(name, "name")
+    }
 
-  @Override
-  public void postTo(ExtendedEventHandler eventHandler, ActionExecutionMetadata action) {
-    eventHandler.post(new SchedulingActionEvent(action, name()));
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun create(name: String?): SpawnSchedulingEvent {
+            return SpawnSchedulingEvent(name)
+        }
+    }
 }

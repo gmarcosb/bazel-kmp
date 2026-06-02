@@ -363,7 +363,7 @@ public final class BuildTypeTest {
             Label.parseCanonical("//conditions:c"),
             Label.parseCanonical("//conditions:d"));
 
-    List<Selector<List<Label>>> selectors = selectorList.getSelectors();
+    List<Selector<List<Label>>> selectors = selectorList.selectors;
     assertThat(selectors.get(0).mapCopy())
         .containsExactly(
             Label.parseCanonical("//conditions:a"),
@@ -411,7 +411,7 @@ public final class BuildTypeTest {
             Label.parseCanonical("//conditions:c"),
             Label.parseCanonical("//conditions:d"));
 
-    List<Selector<Map<Label, String>>> selectors = selectorList.getSelectors();
+    List<Selector<Map<Label, String>>> selectors = selectorList.selectors;
     assertThat(selectors.get(0).mapCopy())
         .containsExactly(
             Label.parseCanonical("//conditions:a"),
@@ -543,7 +543,7 @@ public final class BuildTypeTest {
             labelConverter,
             /* simplifyUnconditionalSelects= */ false);
     BuildType.SelectorList<?> selectorList = (BuildType.SelectorList<?>) converted;
-    assertThat(((Selector<Label>) selectorList.getSelectors().get(0)).mapCopy())
+    assertThat(((Selector<Label>) selectorList.selectors.get(0)).mapCopy())
         .containsExactly(
             Label.parseCanonical("//conditions:a"),
             expectedLabels,
@@ -604,8 +604,7 @@ public final class BuildTypeTest {
             /* simplifyUnconditionalSelects= */ true);
     assertThat(unsimplified).isInstanceOf(BuildType.SelectorList.class);
     assertThat(
-            ((BuildType.SelectorList<?>) unsimplified)
-                .getSelectors().stream().map(Selector::mapCopy).collect(toImmutableList()))
+            ((BuildType.SelectorList<?>) unsimplified).selectors.stream().map(Selector::mapCopy).collect(toImmutableList()))
         .containsExactlyElementsIn(
             ((BuildType.SelectorList<?>)
                     BuildType.selectableConvert(
@@ -613,8 +612,7 @@ public final class BuildTypeTest {
                         SelectorList.of(ImmutableList.of(valueA, conditionalSelectorYz)),
                         null,
                         labelConverter,
-                        /* simplifyUnconditionalSelects= */ false))
-                .getSelectors().stream().map(Selector::mapCopy).collect(toImmutableList()))
+                        /* simplifyUnconditionalSelects= */ false)).selectors.stream().map(Selector::mapCopy).collect(toImmutableList()))
         .inOrder();
   }
 
@@ -750,7 +748,7 @@ public final class BuildTypeTest {
 
     assertThat(converted instanceof SelectorList).isTrue();
     SelectorList selectorList = (SelectorList) converted;
-    assertThat(((SelectorValue) selectorList.getElements().get(0)).getDictionary())
+    assertThat(((SelectorValue) selectorList.elements.get(0)).getDictionary())
         .containsExactly(
             Label.parseCanonical("//conditions:a"),
             expectedLabels,

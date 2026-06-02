@@ -11,157 +11,159 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.time.Duration;
-import java.util.Locale;
-import javax.annotation.Nullable;
-import one.profiler.AsyncProfiler;
+import com.google.common.flogger.GoogleLogger
+import com.google.devtools.build.lib.profiler.CommandProfilerModule
+import com.google.devtools.build.lib.runtime.BlazeModule
+import com.google.devtools.build.lib.runtime.CommandEnvironment
+import java.util.Locale
 
-/** Bazel module to record a Java Flight Recorder profile for a single command. */
-public class CommandProfilerModule extends BlazeModule {
+/** Bazel module to record a Java Flight Recorder profile for a single command.  */
+class CommandProfilerModule : BlazeModule() {
+    /** The type of profile to capture.  */
+    internal enum class ProfileType {
+        CPU,
+        WALL,
+        ALLOC,
+        LOCK;
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  private static final Duration PROFILING_INTERVAL = Duration.ofMillis(10);
-
-  /** The type of profile to capture. */
-  enum ProfileType {
-    CPU,
-    WALL,
-    ALLOC,
-    LOCK;
-
-    @Override
-    public String toString() {
-      return name().toLowerCase(Locale.US);
-    }
-  }
-
-  /** Options converter for --experimental_command_profile. */
-  public static final class ProfileTypeConverter extends EnumConverter<ProfileType> {
-
-    public ProfileTypeConverter() {
-      super(ProfileType.class, "--experimental_command_profile setting");
-    }
-  }
-
-  /** CommandProfilerModule options. */
-  @OptionsClass
-  public abstract static class Options extends OptionsBase {
-
-    @Option(
-        name = "experimental_command_profile",
-        defaultValue = "null",
-        converter = ProfileTypeConverter.class,
-        documentationCategory = OptionDocumentationCategory.LOGGING,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help =
-            "Records a Java Flight Recorder profile for the duration of the command. One of the"
-                + " supported profiling event types (cpu, wall, alloc or lock) must be given as an"
-                + " argument. The profile is written to a file named after the event type under the"
-                + " output base directory."
-                + " The syntax and semantics of this flag might change in the future to support"
-                + " additional profile types or output formats; use at your own risk.")
-    public abstract ProfileType getProfileType();
-  }
-
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getCommonCommandOptions() {
-    return ImmutableList.of(Options.class);
-  }
-
-  @Nullable private ProfileType profileType;
-  @Nullable private Reporter reporter;
-  @Nullable private Path outputBase;
-  @Nullable private Path outputPath;
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    Options options = env.getOptions().getOptions(Options.class);
-    profileType = options.getProfileType();
-    outputBase = env.getBlazeWorkspace().getOutputBase();
-    reporter = env.getReporter();
-
-    if (profileType == null) {
-      // Early exit so we don't attempt to load the JNI unless necessary.
-      return;
+        override fun toString(): String {
+            return name().toLowerCase(Locale.US)
+        }
     }
 
-    AsyncProfiler profiler = getProfiler();
-    if (profiler == null) {
-      return;
+    /** Options converter for --experimental_command_profile.  */
+    class ProfileTypeConverter : com.google.devtools.common.options.EnumConverter<ProfileType?>(
+        ProfileType::class.java,
+        "--experimental_command_profile setting"
+    )
+
+    /** CommandProfilerModule options.  */
+    @com.google.devtools.common.options.OptionsClass
+    abstract class Options : com.google.devtools.common.options.OptionsBase() {
+        @com.google.devtools.common.options.Option(
+            name = "experimental_command_profile",
+            defaultValue = "null",
+            converter = ProfileTypeConverter::class,
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+            help = ("Records a Java Flight Recorder profile for the duration of the command. One of the"
+                    + " supported profiling event types (cpu, wall, alloc or lock) must be given as an"
+                    + " argument. The profile is written to a file named after the event type under the"
+                    + " output base directory."
+                    + " The syntax and semantics of this flag might change in the future to support"
+                    + " additional profile types or output formats; use at your own risk.")
+        )
+        abstract fun getProfileType(): ProfileType?
     }
 
-    outputPath = getProfilerOutputPath(profileType);
-
-    try {
-      profiler.execute(getProfilerCommand(profileType, outputPath));
-    } catch (Exception e) {
-      // This may occur if the user has insufficient privileges to capture performance events.
-      reporter.handle(
-          Event.error(String.format("Starting JFR %s profile failed: %s", profileType, e)));
-      profileType = null;
+    override fun getCommonCommandOptions(): Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?> {
+        return com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+            com.google.devtools.build.lib.profiler.CommandProfilerModule.Options::class.java
+        )
     }
 
-    if (profileType != null) {
-      reporter.handle(
-          Event.info(String.format("Writing JFR %s profile to %s", profileType, outputPath)));
+    private var profileType: ProfileType? = null
+    private var reporter: com.google.devtools.build.lib.events.Reporter? = null
+    private var outputBase: com.google.devtools.build.lib.vfs.Path? = null
+    private var outputPath: com.google.devtools.build.lib.vfs.Path? = null
+
+    override fun beforeCommand(env: CommandEnvironment) {
+        val options: Options? = env.getOptions()
+            .getOptions<Options?>(com.google.devtools.build.lib.profiler.CommandProfilerModule.Options::class.java)
+        profileType = options!!.getProfileType()
+        outputBase = env.getBlazeWorkspace().getOutputBase()
+        reporter = env.getReporter()
+
+        if (profileType == null) {
+            // Early exit so we don't attempt to load the JNI unless necessary.
+            return
+        }
+
+        val profiler: one.profiler.AsyncProfiler? = getProfiler()
+        if (profiler == null) {
+            return
+        }
+
+        outputPath = getProfilerOutputPath(profileType)
+
+        try {
+            profiler.execute(getProfilerCommand(profileType, outputPath))
+        } catch (e: java.lang.Exception) {
+            // This may occur if the user has insufficient privileges to capture performance events.
+            reporter.handle(
+                com.google.devtools.build.lib.events.Event.error(
+                    java.lang.String.format(
+                        "Starting JFR %s profile failed: %s",
+                        profileType,
+                        e
+                    )
+                )
+            )
+            profileType = null
+        }
+
+        if (profileType != null) {
+            reporter.handle(
+                com.google.devtools.build.lib.events.Event.info(
+                    java.lang.String.format(
+                        "Writing JFR %s profile to %s",
+                        profileType,
+                        outputPath
+                    )
+                )
+            )
+        }
     }
-  }
 
-  @Override
-  public void afterCommand() {
-    if (profileType == null) {
-      // Early exit so we don't attempt to load the JNI unless necessary.
-      return;
+    override fun afterCommand() {
+        if (profileType == null) {
+            // Early exit so we don't attempt to load the JNI unless necessary.
+            return
+        }
+
+        val profiler: one.profiler.AsyncProfiler? = getProfiler()
+        if (profiler == null) {
+            return
+        }
+
+        profiler.stop()
+
+        profileType = null
+        outputBase = null
+        reporter = null
+        outputPath = null
     }
 
-    AsyncProfiler profiler = getProfiler();
-    if (profiler == null) {
-      return;
+    private fun getProfilerOutputPath(profileType: ProfileType?): com.google.devtools.build.lib.vfs.Path? {
+        return outputBase.getChild(profileType.toString() + ".jfr")
     }
 
-    profiler.stop();
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
 
-    profileType = null;
-    outputBase = null;
-    reporter = null;
-    outputPath = null;
-  }
+        private val PROFILING_INTERVAL: java.time.Duration = java.time.Duration.ofMillis(10)
 
-  @Nullable
-  private static AsyncProfiler getProfiler() {
-    try {
-      return AsyncProfiler.getInstance();
-    } catch (Throwable t) {
-      // Loading the JNI must be allowed to fail, as we might be running on an unsupported platform.
-      logger.atWarning().withCause(t).log("Failed to load async_profiler JNI");
+        private fun getProfiler(): one.profiler.AsyncProfiler? {
+            try {
+                return one.profiler.AsyncProfiler.getInstance()
+            } catch (t: Throwable) {
+                // Loading the JNI must be allowed to fail, as we might be running on an unsupported platform.
+                logger.atWarning().withCause(t).log("Failed to load async_profiler JNI")
+            }
+            return null
+        }
+
+        private fun getProfilerCommand(
+            profileType: ProfileType?,
+            outputPath: com.google.devtools.build.lib.vfs.Path?
+        ): String? {
+            // See https://github.com/async-profiler/async-profiler/blob/master/src/arguments.cpp.
+            return java.lang.String.format(
+                "start,event=%s,interval=%s,file=%s,jfr",
+                profileType, PROFILING_INTERVAL.toNanos(), outputPath
+            )
+        }
     }
-    return null;
-  }
-
-  private Path getProfilerOutputPath(ProfileType profileType) {
-    return outputBase.getChild(profileType + ".jfr");
-  }
-
-  private static String getProfilerCommand(ProfileType profileType, Path outputPath) {
-    // See https://github.com/async-profiler/async-profiler/blob/master/src/arguments.cpp.
-    return String.format(
-        "start,event=%s,interval=%s,file=%s,jfr",
-        profileType, PROFILING_INTERVAL.toNanos(), outputPath);
-  }
 }

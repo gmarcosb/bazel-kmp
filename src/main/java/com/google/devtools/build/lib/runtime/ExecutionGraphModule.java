@@ -298,7 +298,7 @@ public class ExecutionGraphModule extends BlazeModule {
   @Subscribe
   public void buildComplete(BuildCompleteEvent event) {
     try {
-      shutdown(event.getResult().getBuildToolLogCollection());
+      shutdown(event.getResult().buildToolLogCollection);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       // Env might be set to null by a concurrent call to shutdown (via afterCommand).
@@ -940,7 +940,7 @@ public class ExecutionGraphModule extends BlazeModule {
       throws InvalidPackagePathSymlinkException {
     return env.getRuntime()
         .getBuildEventArtifactUploaderFactoryMap()
-        .select(bepOptions.getBuildEventUploadStrategy())
+        .select(bepOptions.buildEventUploadStrategy)
         .create(env);
   }
 
@@ -951,12 +951,12 @@ public class ExecutionGraphModule extends BlazeModule {
         checkNotNull(parsingResult.getOptions(BuildEventProtocolOptions.class));
     ExecutionGraphOptions executionGraphOptions =
         checkNotNull(parsingResult.getOptions(ExecutionGraphOptions.class));
-    if (bepOptions.getStreamingLogFileUploads()
+    if (bepOptions.streamingLogFileUploads
         && executionGraphOptions.getExecutionGraphLogPath().isBlank()) {
       return new StreamingActionDumpWriter(
           env.getRuntime().getBugReporter(),
           env.getEventBus(),
-          env.getOptions().getOptions(LocalExecutionOptions.class).getLocalLockfreeOutput(),
+              env.getOptions().getOptions(LocalExecutionOptions.class).localLockfreeOutput,
           executionGraphOptions.getLogFileWriteEdges(),
           newUploader(env, bepOptions).startUpload(LocalFileType.PERFORMANCE_LOG, null),
           executionGraphOptions.getDepType(),
@@ -973,7 +973,7 @@ public class ExecutionGraphModule extends BlazeModule {
       return new FilesystemActionDumpWriter(
           env.getRuntime().getBugReporter(),
           env.getEventBus(),
-          env.getOptions().getOptions(LocalExecutionOptions.class).getLocalLockfreeOutput(),
+              env.getOptions().getOptions(LocalExecutionOptions.class).localLockfreeOutput,
           executionGraphOptions.getLogFileWriteEdges(),
           actionGraphFile,
           executionGraphOptions.getDepType(),
@@ -1051,7 +1051,7 @@ public class ExecutionGraphModule extends BlazeModule {
           eventBus,
           localLockFreeOutputEnabled,
           logFileWriteEdges,
-          uploadContext.getOutputStream(),
+              uploadContext.outputStream,
           depType,
           queueSize,
           queuedBytesLimit);

@@ -11,14 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.analysis;
-
-import net.starlark.java.eval.StarlarkValue;
+package com.google.devtools.build.lib.analysis
 
 /**
- * Common interface for {@link ToolchainInfo} and {@link
- * AspectBaseTargetResolvedToolchainContext.ToolchainAspectsProviders} used to provide the resolved
+ * Common interface for [ToolchainInfo] and [ ] used to provide the resolved
  * toolchain data in starlark through `ctx.toolchains` and `ctx.rule.toolchains` respectively.
  */
-public interface ResolvedToolchainData extends StarlarkValue {}
+interface ResolvedToolchainData : net.starlark.java.eval.StarlarkValue

@@ -11,274 +11,253 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.cquery;
+package com.google.devtools.build.lib.query2.cquery
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.HashBasedTable;
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Multimaps;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.DependencyKind;
-import com.google.devtools.build.lib.analysis.DependencyKind.NonAttributeDependencyKind;
-import com.google.devtools.build.lib.analysis.DependencyKind.ToolchainDependencyKind;
-import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.StarlarkTransitionCache;
-import com.google.devtools.build.lib.analysis.config.transitions.ComposingTransitionFactory;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.NoTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.analysis.constraints.IncompatibleTargetChecker.IncompatibleTargetException;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.ReportedException;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.UnreportedException;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.DependencyResolver;
-import com.google.devtools.build.lib.util.OrderedSetMultimap;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
 /**
- * TransitionResolver resolves the dependencies of a {@link
- * com.google.devtools.build.lib.analysis.ConfiguredTarget}, reporting which configurations its
- * dependencies are actually needed in according to the transitions applied to them. See {@link
- * TransitionsOutputFormatterCallback}.
+ * TransitionResolver resolves the dependencies of a [ ], reporting which configurations its
+ * dependencies are actually needed in according to the transitions applied to them. See [ ].
  */
-public class CqueryTransitionResolver {
+class CqueryTransitionResolver(
+    eventHandler: ExtendedEventHandler?,
+    accessor: ConfiguredTargetAccessor,
+    cqueryThreadsafeCallback: CqueryThreadsafeCallback,
+    ruleClassProvider: RuleClassProvider,
+    transitionCache: StarlarkTransitionCache?
+) {
+    /**
+     * ResolvedTransition represents a single edge in the dependency graph, between some target and a
+     * target it depends on, reachable via a single attribute.
+     */
+    @AutoValue
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    abstract class ResolvedTransition {
+        /** The label of the target being depended on.  */
+        abstract fun label(): Label?
 
-  /**
-   * ResolvedTransition represents a single edge in the dependency graph, between some target and a
-   * target it depends on, reachable via a single attribute.
-   */
-  @AutoValue
-  @Immutable
-  public abstract static class ResolvedTransition {
+        /**
+         * The configuration(s) this edge results in. This is a collection because a split transition
+         * may lead to a single attribute requesting a dependency in multiple configurations.
+         * 
+         * 
+         * If a target is depended on via two attributes, separate ResolvedTransitions should be
+         * used, rather than combining the two into a single ResolvedTransition with multiple options.
+         * 
+         * 
+         * If no transition was applied to an attribute, this collection will be empty.
+         */
+        abstract fun options(): com.google.common.collect.ImmutableCollection<BuildOptions?>?
 
-    static ResolvedTransition create(
-        Label label,
-        ImmutableCollection<BuildOptions> buildOptions,
-        String attributeName,
-        String transitionName) {
-      return new AutoValue_CqueryTransitionResolver_ResolvedTransition(
-          label, buildOptions, attributeName, transitionName);
+        /** The name of the attribute via which the dependency was requested.  */
+        abstract fun attributeName(): String?
+
+        /** The name of the transition applied to the attribute.  */
+        abstract fun transitionName(): String?
+
+        companion object {
+            fun create(
+                label: Label?,
+                buildOptions: com.google.common.collect.ImmutableCollection<BuildOptions?>?,
+                attributeName: String?,
+                transitionName: String?
+            ): ResolvedTransition {
+                return AutoValue_CqueryTransitionResolver_ResolvedTransition(
+                    label, buildOptions, attributeName, transitionName
+                )
+            }
+        }
     }
 
-    /** The label of the target being depended on. */
-    abstract Label label();
+    private val eventHandler: ExtendedEventHandler?
+    private val accessor: ConfiguredTargetAccessor
+    private val cqueryThreadsafeCallback: CqueryThreadsafeCallback
+    private val ruleClassProvider: RuleClassProvider
+    private val transitionCache: StarlarkTransitionCache?
+
+    init {
+        this.eventHandler = eventHandler
+        this.accessor = accessor
+        this.cqueryThreadsafeCallback = cqueryThreadsafeCallback
+        this.ruleClassProvider = ruleClassProvider
+        this.transitionCache = transitionCache
+    }
 
     /**
-     * The configuration(s) this edge results in. This is a collection because a split transition
-     * may lead to a single attribute requesting a dependency in multiple configurations.
-     *
-     * <p>If a target is depended on via two attributes, separate ResolvedTransitions should be
-     * used, rather than combining the two into a single ResolvedTransition with multiple options.
-     *
-     * <p>If no transition was applied to an attribute, this collection will be empty.
+     * Return the set of dependencies of a ConfiguredTarget, including information about the
+     * configuration transitions applied to the dependencies.
+     * 
+     * @see ResolvedTransition for more details.
+     * 
+     * @param configuredTarget the configured target whose dependencies are being looked up.
      */
-    abstract ImmutableCollection<BuildOptions> options();
-
-    /** The name of the attribute via which the dependency was requested. */
-    abstract String attributeName();
-
-    /** The name of the transition applied to the attribute. */
-    abstract String transitionName();
-  }
-
-  private final ExtendedEventHandler eventHandler;
-  private final ConfiguredTargetAccessor accessor;
-  private final CqueryThreadsafeCallback cqueryThreadsafeCallback;
-  private final RuleClassProvider ruleClassProvider;
-  private final StarlarkTransitionCache transitionCache;
-
-  public CqueryTransitionResolver(
-      ExtendedEventHandler eventHandler,
-      ConfiguredTargetAccessor accessor,
-      CqueryThreadsafeCallback cqueryThreadsafeCallback,
-      RuleClassProvider ruleClassProvider,
-      StarlarkTransitionCache transitionCache) {
-    this.eventHandler = eventHandler;
-    this.accessor = accessor;
-    this.cqueryThreadsafeCallback = cqueryThreadsafeCallback;
-    this.ruleClassProvider = ruleClassProvider;
-    this.transitionCache = transitionCache;
-  }
-
-  /**
-   * Return the set of dependencies of a ConfiguredTarget, including information about the
-   * configuration transitions applied to the dependencies.
-   *
-   * @see ResolvedTransition for more details.
-   * @param configuredTarget the configured target whose dependencies are being looked up.
-   */
-  ImmutableSet<ResolvedTransition> dependencies(CqueryNode configuredTarget)
-      throws EvaluateException, InterruptedException, IncompatibleTargetException {
-    if (!(configuredTarget instanceof RuleConfiguredTarget)) {
-      return ImmutableSet.of();
-    }
-
-    Target target = accessor.getTarget(configuredTarget);
-    BuildConfigurationValue configuration =
-        cqueryThreadsafeCallback.getConfiguration(configuredTarget.getConfigurationKey());
-
-    var targetAndConfiguration = new TargetAndConfiguration(target, configuration);
-    var attributeTransitionCollector =
-        HashBasedTable.<DependencyKind, Label, ConfigurationTransition>create();
-    var state =
-        DependencyResolver.State.createForCquery(
-            targetAndConfiguration, attributeTransitionCollector::put);
-
-    var producer = new DependencyResolver(targetAndConfiguration);
-    try {
-      if (!producer.evaluate(
-          state,
-          ConfiguredTargetKey.fromConfiguredTarget(configuredTarget),
-          ruleClassProvider,
-          transitionCache,
-          /* semaphoreLocker= */ () -> {},
-          accessor.getLookupEnvironment(),
-          eventHandler)) {
-        throw new EvaluateException("DependencyResolver.evaluate did not complete");
-      }
-    } catch (ReportedException | UnreportedException e) {
-      throw new EvaluateException(e.getMessage());
-    }
-
-    if (!state.transitiveRootCauses().isEmpty()) {
-      throw new EvaluateException(
-          "expected empty: " + state.transitiveRootCauses().build().toList());
-    }
-
-    OrderedSetMultimap<DependencyKind, ConfiguredTargetAndData> deps = producer.getDepValueMap();
-
-    var resolved = ImmutableSet.<ResolvedTransition>builder();
-    for (Map.Entry<DependencyKind, Collection<ConfiguredTargetAndData>> entry :
-        deps.asMap().entrySet()) {
-      DependencyKind kind = entry.getKey();
-      if (kind instanceof NonAttributeDependencyKind) {
-        continue; // No attribute edge to report.
-      }
-
-      // There can be multiple labels under a given kind. Groups the targets by label.
-      ImmutableListMultimap<Label, ConfiguredTargetAndData> targetsByLabel =
-          Multimaps.index(
-              entry.getValue(),
-              prerequisite -> prerequisite.getConfiguredTarget().getOriginalLabel());
-      String dependencyName = getDependencyName(kind);
-      Map<Label, ConfigurationTransition> attributeTransitions =
-          attributeTransitionCollector.row(kind);
-
-      for (Map.Entry<Label, Collection<ConfiguredTargetAndData>> labelEntry :
-          targetsByLabel.asMap().entrySet()) {
-        Label label = labelEntry.getKey();
-        Collection<ConfiguredTargetAndData> targets = labelEntry.getValue();
-
-        // The most common case, so short-circuit this.
-        String transitionName = usesNoTransition(configuration, targets);
-        if (transitionName != null) {
-          resolved.add(
-              ResolvedTransition.create(
-                  label, /* buildOptions= */ ImmutableList.of(), dependencyName, transitionName));
-          continue;
+    @Throws(EvaluateException::class, java.lang.InterruptedException::class, IncompatibleTargetException::class)
+    fun dependencies(configuredTarget: CqueryNode): com.google.common.collect.ImmutableSet<ResolvedTransition?> {
+        if (configuredTarget !is RuleConfiguredTarget) {
+            return com.google.common.collect.ImmutableSet.of<ResolvedTransition?>()
         }
 
-        // The rule transition does not vary across a split so using the first target is sufficient.
-        ConfigurationTransition ruleTransition =
-            getRuleTransition(targets.iterator().next().getConfiguredTarget());
+        val target: Target? = accessor.getTarget(configuredTarget)
+        val configuration: BuildConfigurationValue? =
+            cqueryThreadsafeCallback.getConfiguration(configuredTarget.getConfigurationKey())
 
-        var toOptions =
-            targets.stream().map(t -> t.getConfiguration().getOptions()).collect(toImmutableList());
+        val targetAndConfiguration: TargetAndConfiguration = TargetAndConfiguration(target, configuration)
+        val attributeTransitionCollector: com.google.common.collect.HashBasedTable<DependencyKind?, Label?, ConfigurationTransition?> =
+            com.google.common.collect.HashBasedTable.create<DependencyKind?, Label?, ConfigurationTransition?>()
+        val state: com.google.devtools.build.lib.skyframe.DependencyResolver.State =
+            DependencyResolver.State.createForCquery(
+                targetAndConfiguration, attributeTransitionCollector::put
+            )
 
-        resolved.add(
-            ResolvedTransition.create(
-                label,
-                toOptions,
-                dependencyName,
-                getTransitionName(attributeTransitions.get(label), ruleTransition)));
-      }
+        val producer: DependencyResolver = DependencyResolver(targetAndConfiguration)
+        try {
+            if (!producer.evaluate(
+                    state,
+                    ConfiguredTargetKey.fromConfiguredTarget(configuredTarget),
+                    ruleClassProvider,
+                    transitionCache,  /* semaphoreLocker= */
+                    SemaphoreAcquirer {},
+                    accessor.getLookupEnvironment(),
+                    eventHandler
+                )
+            ) {
+                throw EvaluateException("DependencyResolver.evaluate did not complete")
+            }
+        } catch (e: ReportedException) {
+            throw EvaluateException(e.getMessage())
+        } catch (e: UnreportedException) {
+            throw EvaluateException(e.getMessage())
+        }
+
+        if (!state.transitiveRootCauses().isEmpty()) {
+            throw EvaluateException(
+                "expected empty: " + state.transitiveRootCauses().build().toList()
+            )
+        }
+
+        val deps: OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?> = producer.getDepValueMap()
+
+        val resolved: com.google.common.collect.ImmutableSet.Builder<ResolvedTransition?> =
+            com.google.common.collect.ImmutableSet.builder<ResolvedTransition?>()
+        for (entry in deps.asMap().entrySet()) {
+            val kind: DependencyKind = entry.getKey()
+            if (kind is NonAttributeDependencyKind) {
+                continue  // No attribute edge to report.
+            }
+
+            // There can be multiple labels under a given kind. Groups the targets by label.
+            val targetsByLabel: com.google.common.collect.ImmutableListMultimap<Label?, ConfiguredTargetAndData?> =
+                com.google.common.collect.Multimaps.index<Label?, ConfiguredTargetAndData?>(
+                    entry.getValue(),
+                    com.google.common.base.Function { prerequisite: ConfiguredTargetAndData? ->
+                        prerequisite.getConfiguredTarget().getOriginalLabel()
+                    })
+            val dependencyName = getDependencyName(kind)
+            val attributeTransitions: MutableMap<Label?, ConfigurationTransition?> =
+                attributeTransitionCollector.row(kind)
+
+            for (labelEntry in targetsByLabel.asMap().entrySet()) {
+                val label: Label? = labelEntry.getKey()
+                val targets: MutableCollection<ConfiguredTargetAndData> = labelEntry.getValue()
+
+                // The most common case, so short-circuit this.
+                val transitionName = usesNoTransition(configuration, targets)
+                if (transitionName != null) {
+                    resolved.add(
+                        ResolvedTransition.Companion.create(
+                            label,  /* buildOptions= */
+                            com.google.common.collect.ImmutableList.of<BuildOptions?>(),
+                            dependencyName,
+                            transitionName
+                        )
+                    )
+                    continue
+                }
+
+                // The rule transition does not vary across a split so using the first target is sufficient.
+                val ruleTransition: ConfigurationTransition? =
+                    getRuleTransition(targets.iterator().next().getConfiguredTarget())
+
+                val toOptions: com.google.common.collect.ImmutableList<Any?> =
+                    targets.stream().map<Any?>(java.util.function.Function { t: ConfiguredTargetAndData? ->
+                        t.getConfiguration().getOptions()
+                    }).collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+
+                resolved.add(
+                    ResolvedTransition.Companion.create(
+                        label,
+                        toOptions,
+                        dependencyName,
+                        getTransitionName(attributeTransitions.get(label), ruleTransition)
+                    )
+                )
+            }
+        }
+        return resolved.build()
     }
-    return resolved.build();
-  }
 
-  static class EvaluateException extends Exception {
-    private EvaluateException(String message) {
-      super(message);
-    }
-  }
+    internal class EvaluateException private constructor(message: String?) : java.lang.Exception(message)
 
-  @Nullable
-  private static String usesNoTransition(
-      BuildConfigurationValue fromConfiguration, Collection<ConfiguredTargetAndData> targets) {
-    ConfiguredTargetAndData first = targets.iterator().next();
-    // Check whether the configuration changed.
-    if (targets.size() == 1 && Objects.equals(fromConfiguration, first.getConfiguration())) {
-      return NoTransition.INSTANCE.getName();
-    }
-    // If any target has a null configuration, they all do, so it's sufficient to check the first.
-    if (first.getConfiguration() == null) {
-      return "(null transition)";
-    }
-    return null;
-  }
+    // Keep in sync with TargetAndConfigurationProducer.computeTransition.
+    private fun getRuleTransition(configuredTarget: CqueryNode): ConfigurationTransition? {
+        val rule: Rule? = accessor.getTarget(configuredTarget).getAssociatedRule()
+        if (rule == null) {
+            return null
+        }
+        var transitionFactory: TransitionFactory<RuleTransitionData?> =
+            rule.getRuleClassObject().getTransitionFactory()
+        val trimmingTransitionFactory: TransitionFactory<RuleTransitionData?>? =
+            (ruleClassProvider as ConfiguredRuleClassProvider).getTrimmingTransitionFactory()
 
-  private static String getDependencyName(DependencyKind kind) {
-    if (DependencyKind.isToolchain(kind)) {
-      ToolchainDependencyKind tdk = (ToolchainDependencyKind) kind;
-      if (tdk.isDefaultExecGroup()) {
-        return "[toolchain dependency]";
-      }
-      return String.format("[toolchain dependency: %s]", tdk.getExecGroupName());
-    }
-    return kind.getAttribute().getName();
-  }
+        val isAlias: Boolean = rule.getAssociatedRule().getName().equals("alias")
+        if (trimmingTransitionFactory != null && !isAlias) {
+            transitionFactory =
+                ComposingTransitionFactory.of(transitionFactory, trimmingTransitionFactory)
+        }
 
-  // Keep in sync with TargetAndConfigurationProducer.computeTransition.
-  @Nullable
-  private ConfigurationTransition getRuleTransition(CqueryNode configuredTarget) {
-    Rule rule = accessor.getTarget(configuredTarget).getAssociatedRule();
-    if (rule == null) {
-      return null;
-    }
-    TransitionFactory<RuleTransitionData> transitionFactory =
-        rule.getRuleClassObject().getTransitionFactory();
-    TransitionFactory<RuleTransitionData> trimmingTransitionFactory =
-        ((ConfiguredRuleClassProvider) ruleClassProvider).getTrimmingTransitionFactory();
-
-    boolean isAlias = rule.getAssociatedRule().getName().equals("alias");
-    if (trimmingTransitionFactory != null && !isAlias) {
-      transitionFactory =
-          ComposingTransitionFactory.of(transitionFactory, trimmingTransitionFactory);
+        val transitionData: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RuleTransitionData.create(rule,  /* configConditions= */null, "")
+        return transitionFactory.create(transitionData)
     }
 
-    var transitionData = RuleTransitionData.create(rule, /* configConditions= */ null, "");
-    return transitionFactory.create(transitionData);
-  }
+    companion object {
+        private fun usesNoTransition(
+            fromConfiguration: BuildConfigurationValue?, targets: MutableCollection<ConfiguredTargetAndData>
+        ): String? {
+            val first: ConfiguredTargetAndData = targets.iterator().next()
+            // Check whether the configuration changed.
+            if (targets.size() == 1 && fromConfiguration == first.getConfiguration()) {
+                return NoTransition.INSTANCE.getName()
+            }
+            // If any target has a null configuration, they all do, so it's sufficient to check the first.
+            if (first.getConfiguration() == null) {
+                return "(null transition)"
+            }
+            return null
+        }
 
-  private static String getTransitionName(
-      @Nullable ConfigurationTransition attributeTransition,
-      ConfigurationTransition ruleTransition) {
-    if (attributeTransition == null || NoTransition.isInstance(attributeTransition)) {
-      return ruleTransition.getName();
-    } else if (NoTransition.isInstance(ruleTransition)) {
-      return attributeTransition.getName();
-    } else {
-      return "(" + attributeTransition.getName() + " + " + ruleTransition.getName() + ")";
+        private fun getDependencyName(kind: DependencyKind): String? {
+            if (DependencyKind.isToolchain(kind)) {
+                val tdk: ToolchainDependencyKind = kind as ToolchainDependencyKind
+                if (tdk.isDefaultExecGroup()) {
+                    return "[toolchain dependency]"
+                }
+                return java.lang.String.format("[toolchain dependency: %s]", tdk.getExecGroupName())
+            }
+            return kind.getAttribute().getName()
+        }
+
+        private fun getTransitionName(
+            attributeTransition: ConfigurationTransition?,
+            ruleTransition: ConfigurationTransition
+        ): String? {
+            if (attributeTransition == null || NoTransition.isInstance(attributeTransition)) {
+                return ruleTransition.getName()
+            } else if (NoTransition.isInstance(ruleTransition)) {
+                return attributeTransition.getName()
+            } else {
+                return "(" + attributeTransition.getName() + " + " + ruleTransition.getName() + ")"
+            }
+        }
     }
-  }
 }

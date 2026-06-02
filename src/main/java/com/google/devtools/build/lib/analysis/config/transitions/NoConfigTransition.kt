@@ -11,91 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config.transitions;
+package com.google.devtools.build.lib.analysis.config.transitions
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.CommonOptions;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.starlarkbuildapi.config.ConfigurationTransitionApi;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
 /**
  * Transitions to a stable, empty configuration for rules that don't rely on configuration.
- *
- * <p>This prevents unnecessary configured target forking, which prevents unnecessary build graph
+ * 
+ * 
+ * This prevents unnecessary configured target forking, which prevents unnecessary build graph
  * bloat. That in turn reduces build time and memory use.
- *
- * <p>For example, imagine {@code cc_library //:foo} in config A depends on config-independent
- * target {@code //:noconfig} and {@code cc_library //:bar} in config B also depends on {@code
- * //:noconfig}. Without transitions, {@code //:noconfig} will be configured and analyzed twice: for
- * configs A and B. This is completely wasteful if {@code //:noconfig} does the same thing
- * regardless of configuration. Instead, apply this transition to {@code //:noconfig}.
- *
- * <p>The empty configuration produced by this transition has no native fragments other than {@link
- * CoreOptions}, and even this has only the default values for its options. This can have surprising
- * effects; for instance, {@code --check_visibility} gets reset to {@code true}, making it
- * impossible to disable visibility checking within a {@code constraint_value}'s {@code
- * constraint_setting} attribute.
- *
- * <p>This is safest for rules that don't produce actions and don't have dependencies. Remember that
+ * 
+ * 
+ * For example, imagine `cc_library //:foo` in config A depends on config-independent
+ * target `//:noconfig` and `cc_library //:bar` in config B also depends on `//:noconfig`. Without transitions, `//:noconfig` will be configured and analyzed twice: for
+ * configs A and B. This is completely wasteful if `//:noconfig` does the same thing
+ * regardless of configuration. Instead, apply this transition to `//:noconfig`.
+ * 
+ * 
+ * The empty configuration produced by this transition has no native fragments other than [ ], and even this has only the default values for its options. This can have surprising
+ * effects; for instance, `--check_visibility` gets reset to `true`, making it
+ * impossible to disable visibility checking within a `constraint_value`'s `constraint_setting` attribute.
+ * 
+ * 
+ * This is safest for rules that don't produce actions and don't have dependencies. Remember that
  * even if a rule doesn't read configuration, if any of its transitive dependencies read
- * configuration or if the rule has a {@code select()}, its output may still be
+ * configuration or if the rule has a `select()`, its output may still be
  * configuration-dependent. So use with careful discretion.
  */
-public class NoConfigTransition implements PatchTransition {
-
-  @SerializationConstant public static final NoConfigTransition INSTANCE = new NoConfigTransition();
-  private static final TransitionFactory<? extends TransitionFactory.Data> FACTORY_INSTANCE =
-      new Factory<>();
-
-  /**
-   * Returns {@code true} if the given {@link TransitionFactory} is an instance of the no
-   * transition.
-   */
-  public static <T extends TransitionFactory.Data> boolean isInstance(
-      TransitionFactory<T> instance) {
-    return instance instanceof Factory;
-  }
-
-  private NoConfigTransition() {}
-
-  @Override
-  public ImmutableSet<Class<? extends FragmentOptions>> requiresOptionFragments() {
-    return ImmutableSet.of(CoreOptions.class);
-  }
-
-  @Override
-  public BuildOptions patch(BuildOptionsView options, EventHandler eventHandler) {
-    return CommonOptions.EMPTY_OPTIONS;
-  }
-
-  /** Returns a {@link TransitionFactory} instance that generates the transition. */
-  public static <T extends TransitionFactory.Data> TransitionFactory<T> getFactory() {
-    @SuppressWarnings("unchecked")
-    TransitionFactory<T> castFactory = (TransitionFactory<T>) FACTORY_INSTANCE;
-    return castFactory;
-  }
-
-  /** A {@link TransitionFactory} implementation that generates the transition. */
-  record Factory<T extends TransitionFactory.Data>()
-      implements TransitionFactory<T>, ConfigurationTransitionApi {
-    @Override
-    public PatchTransition create(T unused) {
-      return INSTANCE;
+class NoConfigTransition private constructor() : PatchTransition {
+    override fun requiresOptionFragments(): com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> {
+        return com.google.common.collect.ImmutableSet.of<E?>(CoreOptions::class.java)
     }
 
-    @Override
-    public TransitionType transitionType() {
-      return TransitionType.ANY;
+    override fun patch(
+        options: BuildOptionsView?,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler?
+    ): BuildOptions {
+        return CommonOptions.EMPTY_OPTIONS
     }
 
-    @Override
-    public boolean isTool() {
-      return true;
+    /** A [TransitionFactory] implementation that generates the transition.  */
+    internal class Factory<T : com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory.Data?> :
+        TransitionFactory<T?>, ConfigurationTransitionApi {
+        override fun create(unused: T?): PatchTransition {
+            return INSTANCE
+        }
+
+        override fun transitionType(): TransitionType {
+            return TransitionType.ANY
+        }
+
+        val isTool: Boolean
+            get() = true
     }
-  }
+
+    companion object {
+        @SerializationConstant
+        val INSTANCE: NoConfigTransition = NoConfigTransition()
+        private val FACTORY_INSTANCE: TransitionFactory<out com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory.Data?> =
+            com.google.devtools.build.lib.analysis.config.transitions.NoConfigTransition.Factory<com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory.Data?>()
+
+        /**
+         * Returns `true` if the given [TransitionFactory] is an instance of the no
+         * transition.
+         */
+        fun <T : com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory.Data?> isInstance(
+            instance: TransitionFactory<T?>?
+        ): Boolean {
+            return instance is Factory<*>
+        }
+
+        /** Returns a [TransitionFactory] instance that generates the transition.  */
+        @kotlin.jvm.JvmStatic
+        fun <T : com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory.Data?> getFactory(): TransitionFactory<T?>? {
+            val castFactory: TransitionFactory<T?>? = FACTORY_INSTANCE as TransitionFactory<T?>?
+            return castFactory
+        }
+    }
 }

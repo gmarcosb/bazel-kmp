@@ -40,16 +40,16 @@ public class ExtremaTest {
     extrema.aggregate(1);
     extrema.aggregate(3);
     extrema.aggregate(1);
-    assertThat(extrema.getExtremeElements()).containsExactly(1, 1, 1);
+    assertThat(extrema.extremeElements).containsExactly(1, 1, 1);
   }
 
   @Test
   public void testIsEmpty() {
     Extrema<Integer> extrema = Extrema.max(2);
-    assertThat(extrema.isEmpty()).isTrue();
+    assertThat(extrema.isEmpty).isTrue();
 
     extrema.aggregate(1);
-    assertThat(extrema.isEmpty()).isFalse();
+    assertThat(extrema.isEmpty).isFalse();
   }
 
   @Test
@@ -58,7 +58,7 @@ public class ExtremaTest {
 
     extrema.aggregate(1);
     extrema.clear();
-    assertThat(extrema.isEmpty()).isTrue();
+    assertThat(extrema.isEmpty).isTrue();
   }
 
   @Test
@@ -85,7 +85,7 @@ public class ExtremaTest {
     extrema.aggregate(new BoxedInt(3));
     extrema.aggregate(new BoxedInt(5));
     ImmutableList<Integer> extremeElements =
-        extrema.getExtremeElements().stream()
+        extrema.extremeElements.stream()
             .map(bi -> bi.i)
             .collect(ImmutableList.toImmutableList());
     assertThat(extremeElements).containsExactly(5, 4).inOrder();
@@ -115,12 +115,12 @@ public class ExtremaTest {
   public void testEmptyExtrema() {
     Extrema<Integer> extrema = Extrema.max(0);
     extrema.aggregate(1);
-    assertThat(extrema.isEmpty()).isTrue();
-    assertThat(extrema.getExtremeElements()).isEmpty();
+    assertThat(extrema.isEmpty).isTrue();
+    assertThat(extrema.extremeElements).isEmpty();
 
     extrema.clear();
-    assertThat(extrema.isEmpty()).isTrue();
-    assertThat(extrema.getExtremeElements()).isEmpty();
+    assertThat(extrema.isEmpty).isTrue();
+    assertThat(extrema.extremeElements).isEmpty();
   }
 
   @Test
@@ -135,11 +135,11 @@ public class ExtremaTest {
       int leftEndpointInclusive,
       int rightEndpointInclusive,
       ImmutableList<Integer> expected) {
-    assertThat(extrema.getExtremeElements()).isEmpty();
+    assertThat(extrema.extremeElements).isEmpty();
     closedRangeShuffled(leftEndpointInclusive, rightEndpointInclusive).forEach(extrema::aggregate);
-    assertThat(extrema.getExtremeElements()).containsExactlyElementsIn(expected).inOrder();
+    assertThat(extrema.extremeElements).containsExactlyElementsIn(expected).inOrder();
     extrema.clear();
-    assertThat(extrema.getExtremeElements()).isEmpty();
+    assertThat(extrema.extremeElements).isEmpty();
   }
 
   private static Stream<Integer> closedRangeShuffled(

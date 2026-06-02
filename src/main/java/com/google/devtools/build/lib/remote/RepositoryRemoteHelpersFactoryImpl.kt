@@ -11,80 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.remote.common.RemoteExecutionClient;
-import com.google.devtools.build.lib.runtime.RemoteRepoContentsCache;
-import com.google.devtools.build.lib.runtime.RepositoryRemoteExecutor;
-import com.google.devtools.build.lib.runtime.RepositoryRemoteHelpersFactory;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-/** Factory for {@link RemoteRepositoryRemoteExecutor} and {@link RemoteRepoContentsCacheImpl}. */
-class RepositoryRemoteHelpersFactoryImpl implements RepositoryRemoteHelpersFactory {
+/** Factory for [RemoteRepositoryRemoteExecutor] and [RemoteRepoContentsCacheImpl].  */
+internal class RepositoryRemoteHelpersFactoryImpl(
+    directories: BlazeDirectories?,
+    cache: CombinedCache,
+    remoteExecutor: RemoteExecutionClient?,
+    buildRequestId: String?,
+    commandId: String?,
+    workspaceName: String?,
+    remoteInstanceName: String?,
+    acceptCached: Boolean,
+    uploadLocalResults: Boolean,
+    verboseFailures: Boolean
+) : RepositoryRemoteHelpersFactory {
+    private val directories: BlazeDirectories?
+    private val cache: CombinedCache
+    private val remoteExecutor: RemoteExecutionClient?
+    private val buildRequestId: String?
+    private val commandId: String?
+    private val workspaceName: String?
 
-  private final BlazeDirectories directories;
-  private final CombinedCache cache;
-  @Nullable private final RemoteExecutionClient remoteExecutor;
-  private final String buildRequestId;
-  private final String commandId;
-  private final String workspaceName;
+    private val remoteInstanceName: String?
+    private val acceptCached: Boolean
+    private val uploadLocalResults: Boolean
+    private val verboseFailures: Boolean
 
-  private final String remoteInstanceName;
-  private final boolean acceptCached;
-  private final boolean uploadLocalResults;
-  private final boolean verboseFailures;
-
-  RepositoryRemoteHelpersFactoryImpl(
-      BlazeDirectories directories,
-      CombinedCache cache,
-      @Nullable RemoteExecutionClient remoteExecutor,
-      String buildRequestId,
-      String commandId,
-      String workspaceName,
-      String remoteInstanceName,
-      boolean acceptCached,
-      boolean uploadLocalResults,
-      boolean verboseFailures) {
-    this.directories = directories;
-    this.cache = cache;
-    this.remoteExecutor = remoteExecutor;
-    this.buildRequestId = buildRequestId;
-    this.commandId = commandId;
-    this.workspaceName = workspaceName;
-    this.remoteInstanceName = remoteInstanceName;
-    this.acceptCached = acceptCached;
-    this.uploadLocalResults = uploadLocalResults;
-    this.verboseFailures = verboseFailures;
-  }
-
-  @Nullable
-  @Override
-  public RepositoryRemoteExecutor createExecutor() {
-    if (remoteExecutor == null) {
-      return null;
+    init {
+        this.directories = directories
+        this.cache = cache
+        this.remoteExecutor = remoteExecutor
+        this.buildRequestId = buildRequestId
+        this.commandId = commandId
+        this.workspaceName = workspaceName
+        this.remoteInstanceName = remoteInstanceName
+        this.acceptCached = acceptCached
+        this.uploadLocalResults = uploadLocalResults
+        this.verboseFailures = verboseFailures
     }
-    return new RemoteRepositoryRemoteExecutor(
-        (RemoteExecutionCache) cache,
-        remoteExecutor,
-        cache.digestUtil,
-        buildRequestId,
-        commandId,
-        workspaceName,
-        remoteInstanceName,
-        acceptCached);
-  }
 
-  @Nullable
-  @Override
-  public RemoteRepoContentsCache createRepoContentsCache() {
-    return new RemoteRepoContentsCacheImpl(
-        directories,
-        cache,
-        buildRequestId,
-        commandId,
-        acceptCached,
-        uploadLocalResults,
-        verboseFailures);
-  }
+    override fun createExecutor(): RepositoryRemoteExecutor? {
+        if (remoteExecutor == null) {
+            return null
+        }
+        return RemoteRepositoryRemoteExecutor(
+            cache as RemoteExecutionCache?,
+            remoteExecutor,
+            cache.digestUtil,
+            buildRequestId,
+            commandId,
+            workspaceName,
+            remoteInstanceName,
+            acceptCached
+        )
+    }
+
+    override fun createRepoContentsCache(): RemoteRepoContentsCache? {
+        return RemoteRepoContentsCacheImpl(
+            directories,
+            cache,
+            buildRequestId,
+            commandId,
+            acceptCached,
+            uploadLocalResults,
+            verboseFailures
+        )
+    }
 }

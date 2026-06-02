@@ -393,11 +393,11 @@ public class RemoteSpawnCacheTest {
     // act
     CacheHandle entry = cache.lookup(simpleSpawn, simplePolicy);
     assertThat(entry.hasResult()).isTrue();
-    SpawnResult result = entry.getResult();
+    SpawnResult result = entry.result;
 
     // assert
     // All other methods on RemoteActionCache have side effects, so we verify all of them.
-    assertThat(simplePolicy.getDigest())
+    assertThat(simplePolicy.digest)
         .isEqualTo(digestUtil.asSpawnLogProto(actionKeyCaptor.getValue()));
     verify(service)
         .downloadOutputs(
@@ -428,7 +428,7 @@ public class RemoteSpawnCacheTest {
 
     CacheHandle entry = cache.lookup(simpleSpawn, simplePolicy);
 
-    assertThat(simplePolicy.getDigest())
+    assertThat(simplePolicy.digest)
         .isEqualTo(digestUtil.asSpawnLogProto(actionKeyCaptor.getValue()));
     assertThat(entry.hasResult()).isFalse();
     SpawnResult result =
@@ -467,7 +467,7 @@ public class RemoteSpawnCacheTest {
             simpleSpawnWithExecutionInfo(ImmutableMap.of(requirement, ""));
         CacheHandle entry = remoteSpawnCache.lookup(uncacheableSpawn, simplePolicy);
         verify(remoteSpawnCache.getRemoteExecutionService(), never()).lookupCache(any());
-        assertThat(simplePolicy.getDigest()).isNull();
+        assertThat(simplePolicy.digest).isNull();
         assertThat(entry.hasResult()).isFalse();
         SpawnResult result =
             new SpawnResult.Builder()
@@ -508,7 +508,7 @@ public class RemoteSpawnCacheTest {
               any(ActionKey.class),
               anyBoolean(),
               ArgumentMatchers.<Set<String>>any());
-      assertThat(simplePolicy.getDigest()).isNull();
+      assertThat(simplePolicy.digest).isNull();
       assertThat(entry.hasResult()).isFalse();
       SpawnResult result =
           new SpawnResult.Builder()
@@ -543,7 +543,7 @@ public class RemoteSpawnCacheTest {
               any(ActionKey.class),
               /* inlineOutErr= */ eq(false),
               /* inlineOutputFiles= */ eq(ImmutableSet.of()));
-      assertThat(simplePolicy.getDigest()).isNull();
+      assertThat(simplePolicy.digest).isNull();
       assertThat(entry.hasResult()).isFalse();
       SpawnResult result =
           new SpawnResult.Builder()
@@ -575,7 +575,7 @@ public class RemoteSpawnCacheTest {
 
     cache.lookup(cacheableSpawn, simplePolicy);
 
-    assertThat(simplePolicy.getDigest())
+    assertThat(simplePolicy.digest)
         .isEqualTo(digestUtil.asSpawnLogProto(actionKeyCaptor.getValue()));
     verify(combinedCache)
         .downloadActionResult(
@@ -600,7 +600,7 @@ public class RemoteSpawnCacheTest {
 
     cache.lookup(cacheableSpawn, simplePolicy);
 
-    assertThat(simplePolicy.getDigest())
+    assertThat(simplePolicy.digest)
         .isEqualTo(digestUtil.asSpawnLogProto(actionKeyCaptor.getValue()));
     verify(combinedCache)
         .downloadActionResult(
@@ -749,7 +749,7 @@ public class RemoteSpawnCacheTest {
 
     // assert
     assertThat(cacheHandle.hasResult()).isTrue();
-    assertThat(cacheHandle.getResult().exitCode()).isEqualTo(0);
+    assertThat(cacheHandle.result.exitCode()).isEqualTo(0);
     verify(cache.getRemoteExecutionService())
         .downloadOutputs(
             any(),
@@ -838,7 +838,7 @@ public class RemoteSpawnCacheTest {
 
     // assert
     assertThat(secondCacheHandle.hasResult()).isTrue();
-    assertThat(secondCacheHandle.getResult().getRunnerName()).isEqualTo("deduplicated");
+    assertThat(secondCacheHandle.result.getRunnerName()).isEqualTo("deduplicated");
     assertThat(
             FileSystemUtils.readContent(
                 fs.getPath("/exec/root/bazel-bin/k8-opt/bin/output"), UTF_8))
@@ -954,7 +954,7 @@ public class RemoteSpawnCacheTest {
     // assert
     assertThat(spawnsThatWaitedForOutputReuse).containsExactly(secondSpawn);
     assertThat(secondCacheHandle.hasResult()).isTrue();
-    assertThat(secondCacheHandle.getResult().getRunnerName()).isEqualTo("deduplicated");
+    assertThat(secondCacheHandle.result.getRunnerName()).isEqualTo("deduplicated");
     assertThat(
             FileSystemUtils.readContent(
                 fs.getPath("/exec/root/bazel-bin/k8-opt/bin/output"), UTF_8))
@@ -1011,8 +1011,8 @@ public class RemoteSpawnCacheTest {
     // assert
     ActionInput inMemoryOutput = secondSpawn.getOutputFiles().getFirst();
     assertThat(secondCacheHandle.hasResult()).isTrue();
-    assertThat(secondCacheHandle.getResult().getRunnerName()).isEqualTo("deduplicated");
-    assertThat(secondCacheHandle.getResult().getInMemoryOutput(inMemoryOutput).toStringUtf8())
+    assertThat(secondCacheHandle.result.getRunnerName()).isEqualTo("deduplicated");
+    assertThat(secondCacheHandle.result.getInMemoryOutput(inMemoryOutput).toStringUtf8())
         .isEqualTo("in-memory");
     assertThat(execRoot.getRelative(inMemoryOutput.getExecPath()).exists()).isFalse();
     assertThat(secondCacheHandle.willStore()).isFalse();

@@ -11,205 +11,210 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
 
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.hash.Hasher;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.VirtualActionInput;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.concurrent.locks.ReentrantLock;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionInput
 
 /**
- * Maintains a mapping between relative path (from the execution root) to {@link ActionInput}, for
+ * Maintains a mapping between relative path (from the execution root) to [ActionInput], for
  * various auxiliary binaries used during action execution (alarm. etc).
  */
-public final class BinTools {
-  private final Path embeddedBinariesRoot;
-  private final ImmutableMap<String, ActionInput> actionInputs;
+class BinTools private constructor(
+    embeddedBinariesRoot: com.google.devtools.build.lib.vfs.Path,
+    embeddedToolNames: com.google.common.collect.ImmutableList<String?>
+) {
+    private val embeddedBinariesRoot: com.google.devtools.build.lib.vfs.Path
+    private val actionInputs: com.google.common.collect.ImmutableMap<String?, ActionInput?>
 
-  private BinTools(Path embeddedBinariesRoot, ImmutableList<String> embeddedToolNames) {
-    this.embeddedBinariesRoot = embeddedBinariesRoot;
+    init {
+        this.embeddedBinariesRoot = embeddedBinariesRoot
 
-    ImmutableMap.Builder<String, ActionInput> builder = ImmutableMap.builder();
-    for (String toolName : embeddedToolNames) {
-      Path path = embeddedBinariesRoot.getRelative(toolName);
-      PathFragment execPath = PathFragment.create("_bin").getRelative(toolName);
-      builder.put(toolName, new PathActionInput(path, execPath));
-    }
-    actionInputs = builder.buildOrThrow();
-  }
-
-
-  /**
-   * Creates an instance with the list of embedded tools obtained from scanning the directory
-   * into which said binaries were extracted by the launcher.
-   */
-  public static BinTools forProduction(BlazeDirectories directories) throws IOException {
-    Path embeddedBinariesRoot = directories.getEmbeddedBinariesRoot();
-    // All tools of interest are in the root directory, so don't scan subdirectories.
-    ImmutableList.Builder<String> builder = ImmutableList.builder();
-    for (Dirent dirent : embeddedBinariesRoot.readdir(Symlinks.NOFOLLOW)) {
-      if (dirent.getType() == Dirent.Type.FILE) {
-        builder.add(dirent.getName());
-      }
-    }
-    return new BinTools(embeddedBinariesRoot, builder.build());
-  }
-
-  /**
-   * Creates an empty instance for testing.
-   */
-  @VisibleForTesting
-  public static BinTools empty(BlazeDirectories directories) {
-    return new BinTools(directories.getEmbeddedBinariesRoot(), ImmutableList.of());
-  }
-
-  /**
-   * Creates an instance for testing with the given embedded binaries root.
-   */
-  @VisibleForTesting
-  public static BinTools forEmbeddedBin(Path embeddedBinariesRoot, Iterable<String> tools) {
-    return new BinTools(embeddedBinariesRoot, ImmutableList.copyOf(tools));
-  }
-
-  /**
-   * Creates an instance for testing without actually symlinking the tools.
-   *
-   * <p>Used for tests that need a set of embedded tools to be present, but not the actual files.
-   */
-  @VisibleForTesting
-  public static BinTools forUnitTesting(Path execroot, Iterable<String> tools) {
-    return new BinTools(execroot.getRelative("/fake/embedded/tools"), ImmutableList.copyOf(tools));
-  }
-
-  /**
-   * Returns a BinTools instance. Before calling this method, you have to populate the
-   * {@link BlazeDirectories#getEmbeddedBinariesRoot} directory.
-   */
-  @VisibleForTesting
-  public static BinTools forIntegrationTesting(
-      BlazeDirectories directories, Iterable<String> tools) {
-    return new BinTools(directories.getEmbeddedBinariesRoot(), ImmutableList.copyOf(tools));
-  }
-
-  /**
-   * Returns an action input for the given embedded tool.
-   */
-  public ActionInput getActionInput(String embeddedPath) {
-    return actionInputs.get(embeddedPath);
-  }
-
-  @Nullable
-  public Path getEmbeddedPath(String embedPath) {
-    if (!actionInputs.containsKey(embedPath)) {
-      return null;
-    }
-    return embeddedBinariesRoot.getRelative(embedPath);
-  }
-
-  /** An ActionInput pointing at an absolute path. */
-  @VisibleForTesting
-  public static final class PathActionInput extends VirtualActionInput {
-    private final ReentrantLock lock = new ReentrantLock();
-    private final Path path;
-    private final PathFragment execPath;
-    private volatile FileArtifactValue metadata;
-
-    /** Contains the digest of the input once it has been written. */
-    private volatile byte[] digest;
-
-    public PathActionInput(Path path, PathFragment execPath) {
-      this.path = path;
-      this.execPath = execPath;
-    }
-
-    @Override
-    public void writeTo(OutputStream out) throws IOException {
-      try (InputStream in = path.getInputStream()) {
-        ByteStreams.copy(in, out);
-      }
-    }
-
-    @Override
-    @CanIgnoreReturnValue
-    protected byte[] atomicallyWriteTo(Path outputPath) throws IOException {
-      // The embedded tools do not change, but we need to be sure they're written out without race
-      // conditions. We rely on the fact that no two {@link PathActionInput} instances refer to the
-      // same file to use in-memory synchronization and avoid writing to a temporary file first.
-      if (digest == null || !outputPath.exists()) {
-        lock.lock();
-        try {
-          if (digest == null || !outputPath.exists()) {
-            outputPath.getParentDirectory().createDirectoryAndParents();
-            digest = writeTo(outputPath);
-            // Some of the embedded tools are executable.
-            outputPath.setExecutable(true);
-          }
-        } finally {
-          lock.unlock();
+        val builder: com.google.common.collect.ImmutableMap.Builder<String?, ActionInput?> =
+            com.google.common.collect.ImmutableMap.builder<String?, ActionInput?>()
+        for (toolName in embeddedToolNames) {
+            val path: com.google.devtools.build.lib.vfs.Path = embeddedBinariesRoot.getRelative(toolName)
+            val execPath: PathFragment = PathFragment.create("_bin").getRelative(toolName)
+            builder.put(toolName, com.google.devtools.build.lib.exec.BinTools.PathActionInput(path, execPath))
         }
-      }
-      return digest;
+        actionInputs = builder.buildOrThrow()
     }
 
-    @Override
-    public FileArtifactValue getMetadata() throws IOException {
-      // We intentionally delay hashing until it is necessary.
-      if (metadata == null) {
-        lock.lock();
-        try {
-          if (metadata == null) {
-            metadata = hash(path);
-          }
-        } finally {
-          lock.unlock();
+
+    /**
+     * Returns an action input for the given embedded tool.
+     */
+    fun getActionInput(embeddedPath: String?): ActionInput? {
+        return actionInputs.get(embeddedPath)
+    }
+
+    fun getEmbeddedPath(embedPath: String?): com.google.devtools.build.lib.vfs.Path? {
+        if (!actionInputs.containsKey(embedPath)) {
+            return null
         }
-      }
-      return metadata;
+        return embeddedBinariesRoot.getRelative(embedPath)
     }
 
-    private static FileArtifactValue hash(Path path) throws IOException {
-      DigestHashFunction hashFn = path.getFileSystem().getDigestFunction();
-      Hasher hasher = hashFn.getHashFunction().newHasher();
-      int bytesCopied = 0;
-      try (InputStream in = path.getInputStream()) {
-        byte[] buffer = new byte[1024];
-        int len;
-        while ((len = in.read(buffer)) > 0) {
-          hasher.putBytes(buffer, 0, len);
-          bytesCopied += len;
+    /** An ActionInput pointing at an absolute path.  */
+    @com.google.common.annotations.VisibleForTesting
+    class PathActionInput(path: com.google.devtools.build.lib.vfs.Path, execPath: PathFragment) : VirtualActionInput() {
+        private val lock: ReentrantLock = ReentrantLock()
+        private val path: com.google.devtools.build.lib.vfs.Path
+        private val execPath: PathFragment
+
+        @get:Throws(IOException::class)
+        @kotlin.concurrent.Volatile
+        var metadata: FileArtifactValue? = null
+            get() {
+                // We intentionally delay hashing until it is necessary.
+                if (field == null) {
+                    lock.lock()
+                    try {
+                        if (field == null) {
+                            field = com.google.devtools.build.lib.exec.BinTools.PathActionInput.Companion.hash(path)
+                        }
+                    } finally {
+                        lock.unlock()
+                    }
+                }
+                return field
+            }
+            private set
+
+        /** Contains the digest of the input once it has been written.  */
+        @kotlin.concurrent.Volatile
+        private var digest: ByteArray?
+
+        init {
+            this.path = path
+            this.execPath = execPath
         }
-      }
-      return FileArtifactValue.createForVirtualActionInput(
-          hasher.hash().asBytes(),
-          bytesCopied);
+
+        @Throws(IOException::class)
+        public override fun writeTo(out: java.io.OutputStream) {
+            path.getInputStream().use { `in` ->
+                com.google.common.io.ByteStreams.copy(`in`, out)
+            }
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @Throws(IOException::class)
+        protected override fun atomicallyWriteTo(outputPath: com.google.devtools.build.lib.vfs.Path): ByteArray? {
+            // The embedded tools do not change, but we need to be sure they're written out without race
+            // conditions. We rely on the fact that no two {@link PathActionInput} instances refer to the
+            // same file to use in-memory synchronization and avoid writing to a temporary file first.
+            if (digest == null || !outputPath.exists()) {
+                lock.lock()
+                try {
+                    if (digest == null || !outputPath.exists()) {
+                        outputPath.getParentDirectory().createDirectoryAndParents()
+                        digest = writeTo(outputPath)
+                        // Some of the embedded tools are executable.
+                        outputPath.setExecutable(true)
+                    }
+                } finally {
+                    lock.unlock()
+                }
+            }
+            return digest
+        }
+
+        val execPathString: String?
+            get() = execPath.getPathString()
+
+        public override fun getExecPath(): PathFragment {
+            return execPath
+        }
+
+        companion object {
+            @Throws(IOException::class)
+            private fun hash(path: com.google.devtools.build.lib.vfs.Path): FileArtifactValue {
+                val hashFn: DigestHashFunction = path.getFileSystem().getDigestFunction()
+                val hasher: com.google.common.hash.Hasher = hashFn.getHashFunction().newHasher()
+                var bytesCopied = 0
+                path.getInputStream().use { `in` ->
+                    val buffer = ByteArray(1024)
+                    var len: Int
+                    while ((`in`.read(buffer).also { len = it }) > 0) {
+                        hasher.putBytes(buffer, 0, len)
+                        bytesCopied += len
+                    }
+                }
+                return FileArtifactValue.createForVirtualActionInput(
+                    hasher.hash().asBytes(),
+                    bytesCopied
+                )
+            }
+        }
     }
 
-    @Override
-    public String getExecPathString() {
-      return execPath.getPathString();
-    }
+    companion object {
+        /**
+         * Creates an instance with the list of embedded tools obtained from scanning the directory
+         * into which said binaries were extracted by the launcher.
+         */
+        @Throws(IOException::class)
+        fun forProduction(directories: BlazeDirectories): BinTools {
+            val embeddedBinariesRoot: com.google.devtools.build.lib.vfs.Path = directories.getEmbeddedBinariesRoot()
+            // All tools of interest are in the root directory, so don't scan subdirectories.
+            val builder: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.builder<String?>()
+            for (dirent in embeddedBinariesRoot.readdir(Symlinks.NOFOLLOW)) {
+                if (dirent.getType() == com.google.devtools.build.lib.vfs.Dirent.Type.FILE) {
+                    builder.add(dirent.getName())
+                }
+            }
+            return BinTools(embeddedBinariesRoot, builder.build())
+        }
 
-    @Override
-    public PathFragment getExecPath() {
-      return execPath;
+        /**
+         * Creates an empty instance for testing.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun empty(directories: BlazeDirectories): BinTools {
+            return BinTools(
+                directories.getEmbeddedBinariesRoot(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            )
+        }
+
+        /**
+         * Creates an instance for testing with the given embedded binaries root.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun forEmbeddedBin(
+            embeddedBinariesRoot: com.google.devtools.build.lib.vfs.Path,
+            tools: Iterable<String?>
+        ): BinTools {
+            return BinTools(embeddedBinariesRoot, com.google.common.collect.ImmutableList.copyOf<String?>(tools))
+        }
+
+        /**
+         * Creates an instance for testing without actually symlinking the tools.
+         * 
+         * 
+         * Used for tests that need a set of embedded tools to be present, but not the actual files.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun forUnitTesting(execroot: com.google.devtools.build.lib.vfs.Path, tools: Iterable<String?>): BinTools {
+            return BinTools(
+                execroot.getRelative("/fake/embedded/tools"),
+                com.google.common.collect.ImmutableList.copyOf<String?>(tools)
+            )
+        }
+
+        /**
+         * Returns a BinTools instance. Before calling this method, you have to populate the
+         * [BlazeDirectories.getEmbeddedBinariesRoot] directory.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun forIntegrationTesting(
+            directories: BlazeDirectories, tools: Iterable<String?>
+        ): BinTools {
+            return BinTools(
+                directories.getEmbeddedBinariesRoot(),
+                com.google.common.collect.ImmutableList.copyOf<String?>(tools)
+            )
+        }
     }
-  }
 }

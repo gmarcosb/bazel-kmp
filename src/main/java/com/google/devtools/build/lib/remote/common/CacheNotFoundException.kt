@@ -11,70 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.common
 
-package com.google.devtools.build.lib.remote.common;
-
-import build.bazel.remote.execution.v2.Digest;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import build.bazel.remote.execution.v2.Digest
 
 /**
  * An exception to indicate cache misses. TODO(olaola): have a class of checked
  * RemoteCacheExceptions.
  */
-public final class CacheNotFoundException extends IOException {
-  private final Digest missingDigest;
-  @Nullable private PathFragment execPath;
-  @Nullable private String filename;
+class CacheNotFoundException : IOException {
+    private val missingDigest: Digest
+    private var execPath: PathFragment? = null
 
-  public CacheNotFoundException(Digest missingDigest) {
-    this.missingDigest = missingDigest;
-  }
+    // A human-readable filename only used in error messages.
+    var filename: String? = null
 
-  public CacheNotFoundException(Digest missingDigest, PathFragment execPath) {
-    this.missingDigest = missingDigest;
-    this.execPath = execPath;
-  }
-
-  public CacheNotFoundException(Digest missingDigest, String filename) {
-    this.missingDigest = missingDigest;
-    this.filename = filename;
-  }
-
-  // The exec path of the artifact that was not found in the cache if the missing cache entry
-  // corresponds to one.
-  public void setExecPath(PathFragment execPath) {
-    this.execPath = execPath;
-  }
-
-  // A human-readable filename only used in error messages.
-  public void setFilename(String filename) {
-    this.filename = filename;
-  }
-
-  public Digest getMissingDigest() {
-    return missingDigest;
-  }
-
-  @Nullable
-  public PathFragment getExecPath() {
-    return execPath;
-  }
-
-  @Nullable
-  public String getFilename() {
-    return filename;
-  }
-
-  @Override
-  public String getMessage() {
-    String message =
-        "Missing digest: " + missingDigest.getHash() + "/" + missingDigest.getSizeBytes();
-    if (execPath != null || filename != null) {
-      // Prefer filename over execPath as it contains strictly more information.
-      message += " for " + (filename != null ? filename : execPath);
+    constructor(missingDigest: Digest) {
+        this.missingDigest = missingDigest
     }
-    return message;
-  }
+
+    constructor(missingDigest: Digest, execPath: PathFragment?) {
+        this.missingDigest = missingDigest
+        this.execPath = execPath
+    }
+
+    constructor(missingDigest: Digest, filename: String?) {
+        this.missingDigest = missingDigest
+        this.filename = filename
+    }
+
+    // The exec path of the artifact that was not found in the cache if the missing cache entry
+    // corresponds to one.
+    fun setExecPath(execPath: PathFragment?) {
+        this.execPath = execPath
+    }
+
+    fun getMissingDigest(): Digest {
+        return missingDigest
+    }
+
+    fun getExecPath(): PathFragment? {
+        return execPath
+    }
+
+    val message: String
+        get() {
+            var message =
+                "Missing digest: " + missingDigest.getHash() + "/" + missingDigest.getSizeBytes()
+            if (execPath != null || filename != null) {
+                // Prefer filename over execPath as it contains strictly more information.
+                message += " for " + (if (filename != null) filename else execPath)
+            }
+            return message
+        }
 }

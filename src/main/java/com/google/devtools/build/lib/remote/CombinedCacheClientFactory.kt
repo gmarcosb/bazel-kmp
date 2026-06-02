@@ -11,132 +11,129 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
+import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions
 
-import com.google.auth.Credentials;
-import com.google.common.base.Ascii;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions;
-import com.google.devtools.build.lib.remote.common.RemoteCacheClient;
-import com.google.devtools.build.lib.remote.disk.DiskCacheClient;
-import com.google.devtools.build.lib.remote.http.HttpCacheClient;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import io.netty.channel.unix.DomainSocketAddress;
-import java.io.IOException;
-import java.net.URI;
-import java.util.Map.Entry;
-import javax.annotation.Nullable;
-
-/** A factory class for providing a {@link CombinedCacheClient}. */
-public final class CombinedCacheClientFactory {
-
-  private CombinedCacheClientFactory() {}
-
-  /**
-   * A record holding a {@link DiskCacheClient} and {@link RemoteCacheClient} pair. Either may be
-   * absent.
-   */
-  public record CombinedCacheClient(
-      @Nullable RemoteCacheClient remoteCacheClient, @Nullable DiskCacheClient diskCacheClient) {}
-
-  public static CombinedCacheClient create(
-      RemoteOptions options,
-      @Nullable PathFragment diskCachePath,
-      @Nullable Credentials creds,
-      AuthAndTLSOptions authAndTlsOptions,
-      Path workingDirectory,
-      DigestUtil digestUtil,
-      RemoteRetrier retrier)
-      throws IOException {
-    Preconditions.checkNotNull(workingDirectory, "workingDirectory");
-    RemoteCacheClient httpCacheClient = null;
-    DiskCacheClient diskCacheClient = null;
-    if (isHttpCache(options)) {
-      httpCacheClient = createHttp(options, creds, authAndTlsOptions, digestUtil, retrier);
-    }
-    if (diskCachePath != null) {
-      diskCacheClient = createDiskCache(workingDirectory, diskCachePath, digestUtil);
-    }
-    if (httpCacheClient == null && diskCacheClient == null) {
-      throw new IllegalArgumentException(
-          "Unrecognized RemoteOptions configuration: remote Http cache URL and/or local disk cache"
-              + " options expected.");
-    }
-    return new CombinedCacheClient(httpCacheClient, diskCacheClient);
-  }
-
-  public static boolean isRemoteCacheOptions(RemoteOptions options) {
-    return isHttpCache(options) || options.isDiskCacheEnabled();
-  }
-
-  private static RemoteCacheClient createHttp(
-      RemoteOptions options,
-      Credentials creds,
-      AuthAndTLSOptions authAndTlsOptions,
-      DigestUtil digestUtil,
-      RemoteRetrier retrier) {
-    Preconditions.checkNotNull(options.getRemoteCache(), "remoteCache");
-
-    try {
-      URI uri = URI.create(options.getRemoteCache());
-      Preconditions.checkArgument(
-          Ascii.toLowerCase(uri.getScheme()).startsWith("http"),
-          "remoteCache should start with http");
-
-      if (options.getRemoteProxy() != null) {
-        if (options.getRemoteProxy().startsWith("unix:")) {
-          return HttpCacheClient.create(
-              new DomainSocketAddress(options.getRemoteProxy().replaceFirst("^unix:", "")),
-              uri,
-              Math.toIntExact(options.getRemoteTimeout().toSeconds()),
-              options.getRemoteMaxConnections(),
-              options.getRemoteVerifyDownloads(),
-              effectiveHeaders(options),
-              digestUtil,
-              retrier,
-              creds,
-              authAndTlsOptions);
-        } else {
-          throw new Exception("Remote cache proxy unsupported: " + options.getRemoteProxy());
+/** A factory class for providing a [CombinedCacheClient].  */
+object CombinedCacheClientFactory {
+    @Throws(IOException::class)
+    fun create(
+        options: RemoteOptions,
+        diskCachePath: PathFragment?,
+        creds: com.google.auth.Credentials?,
+        authAndTlsOptions: AuthAndTLSOptions?,
+        workingDirectory: com.google.devtools.build.lib.vfs.Path?,
+        digestUtil: DigestUtil,
+        retrier: RemoteRetrier?
+    ): CombinedCacheClient {
+        com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.Path?>(
+            workingDirectory,
+            "workingDirectory"
+        )
+        var httpCacheClient: RemoteCacheClient? = null
+        var diskCacheClient: DiskCacheClient? = null
+        if (isHttpCache(options)) {
+            httpCacheClient = createHttp(options, creds, authAndTlsOptions, digestUtil, retrier)
         }
-      } else {
-        return HttpCacheClient.create(
-            uri,
-            Math.toIntExact(options.getRemoteTimeout().toSeconds()),
-            options.getRemoteMaxConnections(),
-            options.getRemoteVerifyDownloads(),
-            effectiveHeaders(options),
-            digestUtil,
-            retrier,
-            creds,
-            authAndTlsOptions);
-      }
-    } catch (Exception e) {
-      throw new RuntimeException(e);
+        if (diskCachePath != null) {
+            diskCacheClient = createDiskCache(workingDirectory, diskCachePath, digestUtil)
+        }
+        require(!(httpCacheClient == null && diskCacheClient == null)) {
+            ("Unrecognized RemoteOptions configuration: remote Http cache URL and/or local disk cache"
+                    + " options expected.")
+        }
+        return CombinedCacheClient(httpCacheClient, diskCacheClient)
     }
-  }
 
-  public static DiskCacheClient createDiskCache(
-      Path workingDirectory, PathFragment diskCachePath, DigestUtil digestUtil) throws IOException {
-    Path cacheDir = workingDirectory.getRelative(Preconditions.checkNotNull(diskCachePath));
-    return new DiskCacheClient(cacheDir, digestUtil);
-  }
+    fun isRemoteCacheOptions(options: RemoteOptions): Boolean {
+        return isHttpCache(options) || options.isDiskCacheEnabled()
+    }
 
-  public static boolean isHttpCache(RemoteOptions options) {
-    return options.getRemoteCache() != null
-        && (Ascii.toLowerCase(options.getRemoteCache()).startsWith("http://")
-            || Ascii.toLowerCase(options.getRemoteCache()).startsWith("https://"));
-  }
+    private fun createHttp(
+        options: RemoteOptions,
+        creds: com.google.auth.Credentials?,
+        authAndTlsOptions: AuthAndTLSOptions?,
+        digestUtil: DigestUtil?,
+        retrier: RemoteRetrier?
+    ): RemoteCacheClient {
+        com.google.common.base.Preconditions.checkNotNull<String?>(options.getRemoteCache(), "remoteCache")
 
-  public static ImmutableList<Entry<String, String>> effectiveHeaders(RemoteOptions options) {
-    return ImmutableList.<Entry<String, String>>builder()
-        .addAll(options.getRemoteHeaders())
-        .addAll(options.getRemoteCacheHeaders())
-        .build();
-  }
+        try {
+            val uri: java.net.URI = java.net.URI.create(options.getRemoteCache())
+            com.google.common.base.Preconditions.checkArgument(
+                com.google.common.base.Ascii.toLowerCase(uri.getScheme()).startsWith("http"),
+                "remoteCache should start with http"
+            )
+
+            if (options.getRemoteProxy() != null) {
+                if (options.getRemoteProxy().startsWith("unix:")) {
+                    return HttpCacheClient.Companion.create(
+                        io.netty.channel.unix.DomainSocketAddress(options.getRemoteProxy().replaceFirst("^unix:", "")),
+                        uri,
+                        java.lang.Math.toIntExact(options.getRemoteTimeout().toSeconds()),
+                        options.getRemoteMaxConnections(),
+                        options.getRemoteVerifyDownloads(),
+                        effectiveHeaders(options),
+                        digestUtil,
+                        retrier,
+                        creds,
+                        authAndTlsOptions
+                    )
+                } else {
+                    throw java.lang.Exception("Remote cache proxy unsupported: " + options.getRemoteProxy())
+                }
+            } else {
+                return HttpCacheClient.Companion.create(
+                    uri,
+                    java.lang.Math.toIntExact(options.getRemoteTimeout().toSeconds()),
+                    options.getRemoteMaxConnections(),
+                    options.getRemoteVerifyDownloads(),
+                    effectiveHeaders(options),
+                    digestUtil,
+                    retrier,
+                    creds,
+                    authAndTlsOptions
+                )
+            }
+        } catch (e: java.lang.Exception) {
+            throw java.lang.RuntimeException(e)
+        }
+    }
+
+    @Throws(IOException::class)
+    fun createDiskCache(
+        workingDirectory: com.google.devtools.build.lib.vfs.Path, diskCachePath: PathFragment?, digestUtil: DigestUtil
+    ): DiskCacheClient {
+        val cacheDir: com.google.devtools.build.lib.vfs.Path =
+            workingDirectory.getRelative(com.google.common.base.Preconditions.checkNotNull<PathFragment?>(diskCachePath))
+        return DiskCacheClient(cacheDir, digestUtil)
+    }
+
+    fun isHttpCache(options: RemoteOptions): Boolean {
+        return options.getRemoteCache() != null
+                && (com.google.common.base.Ascii.toLowerCase(options.getRemoteCache()).startsWith("http://")
+                || com.google.common.base.Ascii.toLowerCase(options.getRemoteCache()).startsWith("https://"))
+    }
+
+    fun effectiveHeaders(options: RemoteOptions): com.google.common.collect.ImmutableList<MutableMap.MutableEntry<String?, String?>?> {
+        return com.google.common.collect.ImmutableList.builder<MutableMap.MutableEntry<String?, String?>?>()
+            .addAll(options.getRemoteHeaders())
+            .addAll(options.getRemoteCacheHeaders())
+            .build()
+    }
+
+    /**
+     * A record holding a [DiskCacheClient] and [RemoteCacheClient] pair. Either may be
+     * absent.
+     */
+    class CombinedCacheClient(remoteCacheClient: RemoteCacheClient?, diskCacheClient: DiskCacheClient?) {
+        val remoteCacheClient: RemoteCacheClient?
+        val diskCacheClient: DiskCacheClient?
+
+        init {
+            this.remoteCacheClient = remoteCacheClient
+            this.diskCacheClient = diskCacheClient
+        }
+    }
 }

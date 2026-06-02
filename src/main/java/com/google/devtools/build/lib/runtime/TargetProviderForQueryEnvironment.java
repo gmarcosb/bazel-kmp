@@ -60,7 +60,7 @@ public class TargetProviderForQueryEnvironment implements TargetProvider {
 
     Optional<Package> optional = getPackageFromWalkableGraph(label.getPackageIdentifier());
     if (optional.isPresent()) {
-      return optional.get().getTarget(label.getName());
+      return optional.get().getTarget(label.name);
     }
 
     return delegate.getTarget(eventHandler, label);

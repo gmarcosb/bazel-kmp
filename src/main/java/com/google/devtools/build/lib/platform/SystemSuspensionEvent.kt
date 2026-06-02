@@ -11,58 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.platform.SystemSuspensionEvent
 
 /**
- * This event is fired from {@link
- * com.google.devtools.build.lib.platform.SystemSuspensionModule#suspendCallback} to indicate that
+ * This event is fired from [ ][com.google.devtools.build.lib.platform.SystemSuspensionModule.suspendCallback] to indicate that
  * the user either suspended the build with a signal or put their computer to sleep.
  */
-public class SystemSuspensionEvent implements ExtendedEventHandler.Postable {
+class SystemSuspensionEvent(reason: Int) : Postable {
+    /** The possible reasons a system could be suspended.  */
+    enum class Reason(logString: String) {
+        SIGTSTP("Signal SIGTSTP"),
+        SIGCONT("Signal SIGCONT"),
+        SLEEP("Computer put to sleep"),
+        WAKE("Computer woken up");
 
-  /** The possible reasons a system could be suspended. */
-  public enum Reason {
-    SIGTSTP("Signal SIGTSTP"),
-    SIGCONT("Signal SIGCONT"),
-    SLEEP("Computer put to sleep"),
-    WAKE("Computer woken up");
+        private val logString: String
 
-    private final String logString;
+        init {
+            this.logString = logString
+        }
 
-    Reason(String logString) {
-      this.logString = logString;
+        fun logString(): String {
+            return logString
+        }
+
+        companion object {
+            /** These constants are mapped to enum in third_party/bazel/src/main/native/unix_jni.h.  */
+            fun fromInt(number: Int): Reason {
+                return when (number) {
+                    0 -> com.google.devtools.build.lib.platform.SystemSuspensionEvent.Reason.SIGTSTP
+                    1 -> com.google.devtools.build.lib.platform.SystemSuspensionEvent.Reason.SIGCONT
+                    2 -> com.google.devtools.build.lib.platform.SystemSuspensionEvent.Reason.SLEEP
+                    3 -> com.google.devtools.build.lib.platform.SystemSuspensionEvent.Reason.WAKE
+                    else -> throw java.lang.IllegalStateException("Unknown suspension reason: " + number)
+                }
+            }
+        }
     }
 
-    public String logString() {
-      return logString;
+    private val reason: Reason
+
+    init {
+        this.reason = com.google.devtools.build.lib.platform.SystemSuspensionEvent.Reason.Companion.fromInt(reason)
     }
 
-    /** These constants are mapped to enum in third_party/bazel/src/main/native/unix_jni.h. */
-    static Reason fromInt(int number) {
-      return switch (number) {
-        case 0 -> SIGTSTP;
-        case 1 -> SIGCONT;
-        case 2 -> SLEEP;
-        case 3 -> WAKE;
-        default -> throw new IllegalStateException("Unknown suspension reason: " + number);
-      };
+    fun reason(): Reason {
+        return reason
     }
-  };
 
-  private final Reason reason;
-
-  public SystemSuspensionEvent(int reason) {
-    this.reason = Reason.fromInt(reason);
-  }
-
-  public Reason reason() {
-    return reason;
-  }
-
-  public String logString() {
-    return "SystemSuspensionEvent: " + reason.logString();
-  }
+    fun logString(): String {
+        return "SystemSuspensionEvent: " + reason.logString()
+    }
 }

@@ -11,166 +11,131 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool
 
-package com.google.devtools.build.lib.buildtool;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.StarlarkDefinedConfigTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.BaselineOptionsValue;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkLateBoundDefault;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.StarlarkDefinedAspect;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.WorkspaceStatusValue;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.config.PlatformMappingValue;
-import com.google.devtools.build.lib.util.ObjectGraphTraverser.DomainSpecificTraverser;
-import com.google.devtools.build.lib.util.ObjectGraphTraverser.Traversal;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.lang.reflect.Field;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.StarlarkSemantics;
+internal class BuildObjectTraverser(
+    private val reportConfiguration: Boolean,
+    private val reportPrecomputed: Boolean,
+    private val reportWorkspaceStatus: Boolean
+) : DomainSpecificTraverser {
+    override fun isInterned(o: Any?): Boolean {
+        if (o is String) {
+            return true
+        }
 
-final class BuildObjectTraverser implements DomainSpecificTraverser {
-  private final boolean reportConfiguration;
-  private final boolean reportPrecomputed;
-  private final boolean reportWorkspaceStatus;
+        if (o is com.google.devtools.build.lib.cmdline.Label) {
+            return true
+        }
 
-  public BuildObjectTraverser(
-      boolean reportConfiguration, boolean reportPrecomputed, boolean reportWorkspaceStatus) {
-    this.reportConfiguration = reportConfiguration;
-    this.reportPrecomputed = reportPrecomputed;
-    this.reportWorkspaceStatus = reportWorkspaceStatus;
-  }
+        if (o is PackageIdentifier) {
+            return true
+        }
 
-  @Override
-  public boolean isInterned(Object o) {
-    if (o instanceof String) {
-      return true;
+        if (o is RepositoryName) {
+            return true
+        }
+
+        return false
     }
 
-    if (o instanceof Label) {
-      return true;
+    override fun maybeTraverse(
+        o: Any,
+        traversal: com.google.devtools.build.lib.util.ObjectGraphTraverser.Traversal
+    ): Boolean {
+        when (o) {
+            -> {
+                traversal.objectFound(o, null)
+                traversal.edgeFound(p.getPathString(), null)
+                return true
+            }
+
+            -> {
+                traversal.objectFound(o, null)
+                traversal.edgeFound(pf.getPathString(), null)
+                return true
+            }
+
+            else -> {
+                return false
+            }
+        }
     }
 
-    if (o instanceof PackageIdentifier) {
-      return true;
+    override fun admit(o: Any?): Boolean {
+        if (!reportPrecomputed) {
+            if (o is PrecomputedValue) {
+                return false
+            }
+        }
+
+        if (!reportWorkspaceStatus) {
+            if (o is WorkspaceStatusValue) {
+                return false
+            }
+        }
+
+        if (!reportConfiguration) {
+            if (o is BuildConfigurationValue) {
+                return false
+            }
+
+            if (o is PlatformMappingValue) {
+                return false
+            }
+
+            if (o is BaselineOptionsValue) {
+                return false
+            }
+
+            if (o is BuildConfigurationKey) {
+                return false
+            }
+        }
+
+        if (o is RuleClass) {
+            return false
+        }
+
+        if (o is com.google.devtools.build.lib.packages.Provider) {
+            return false
+        }
+
+        if (o is com.google.devtools.build.lib.packages.Type<*>) {
+            // These are BUILD types and are all singletons
+            return false
+        }
+
+        if (o is StarlarkLateBoundDefault) {
+            // These are cached and thus not assignable to individual Skyframe objects
+            return false
+        }
+
+        if (o is net.starlark.java.eval.StarlarkSemantics) {
+            return false
+        }
+
+        return true
     }
 
-    if (o instanceof RepositoryName) {
-      return true;
+    override fun contextForArrayItem(from: Any?, fromContext: String?, to: Any?): String? {
+        return null
     }
 
-    return false;
-  }
-
-  @Override
-  public boolean maybeTraverse(Object o, Traversal traversal) {
-    switch (o) {
-      case Path p -> {
-        traversal.objectFound(o, null);
-        traversal.edgeFound(p.getPathString(), null);
-        return true;
-      }
-
-      case PathFragment pf -> {
-        traversal.objectFound(o, null);
-        traversal.edgeFound(pf.getPathString(), null);
-        return true;
-      }
-
-      default -> {
-        return false;
-      }
-    }
-  }
-
-  @Override
-  public boolean admit(Object o) {
-    if (!reportPrecomputed) {
-      if (o instanceof PrecomputedValue) {
-        return false;
-      }
+    override fun contextForField(from: Any?, fromContext: String?, field: java.lang.reflect.Field?, to: Any?): String? {
+        return null
     }
 
-    if (!reportWorkspaceStatus) {
-      if (o instanceof WorkspaceStatusValue) {
-        return false;
-      }
+    override fun ignoredFields(clazz: java.lang.Class<*>?): com.google.common.collect.ImmutableSet<String?>? {
+        if (clazz == StarlarkDefinedConfigTransition::class.java) {
+            return com.google.common.collect.ImmutableSet.of<String?>("ruleTransitionCache")
+        }
+
+        if (clazz == StarlarkDefinedAspect::class.java) {
+            return com.google.common.collect.ImmutableSet.of<String?>("definitionCache")
+        }
+
+        return null
     }
-
-    if (!reportConfiguration) {
-      if (o instanceof BuildConfigurationValue) {
-        return false;
-      }
-
-      if (o instanceof PlatformMappingValue) {
-        return false;
-      }
-
-      if (o instanceof BaselineOptionsValue) {
-        return false;
-      }
-
-      if (o instanceof BuildConfigurationKey) {
-        return false;
-      }
-    }
-
-    if (o instanceof RuleClass) {
-      return false;
-    }
-
-    if (o instanceof Provider) {
-      return false;
-    }
-
-    if (o instanceof com.google.devtools.build.lib.packages.Type) {
-      // These are BUILD types and are all singletons
-      return false;
-    }
-
-    if (o instanceof StarlarkLateBoundDefault) {
-      // These are cached and thus not assignable to individual Skyframe objects
-      return false;
-    }
-
-    if (o instanceof StarlarkSemantics) {
-      return false;
-    }
-
-    return true;
-  }
-
-  @Nullable
-  @Override
-  public String contextForArrayItem(Object from, String fromContext, Object to) {
-    return null;
-  }
-
-  @Nullable
-  @Override
-  public String contextForField(Object from, String fromContext, Field field, Object to) {
-    return null;
-  }
-
-  @Nullable
-  @Override
-  public ImmutableSet<String> ignoredFields(Class<?> clazz) {
-    if (clazz == StarlarkDefinedConfigTransition.class) {
-      return ImmutableSet.of("ruleTransitionCache");
-    }
-
-    if (clazz == StarlarkDefinedAspect.class) {
-      return ImmutableSet.of("definitionCache");
-    }
-
-    return null;
-  }
 }

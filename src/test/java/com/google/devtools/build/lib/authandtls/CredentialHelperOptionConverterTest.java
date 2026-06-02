@@ -34,7 +34,7 @@ public class CredentialHelperOptionConverterTest {
     CredentialHelperOption helper1 =
         CredentialHelperOptionConverter.INSTANCE.convert("example.com=foo");
     assertThat(helper1.scope()).hasValue("example.com");
-    assertThat(helper1.path()).isEqualTo("foo");
+    assertThat(helper1.path).isEqualTo("foo");
   }
 
   @Test
@@ -42,7 +42,7 @@ public class CredentialHelperOptionConverterTest {
     CredentialHelperOption helper1 =
         CredentialHelperOptionConverter.INSTANCE.convert("*.example.com=foo");
     assertThat(helper1.scope()).hasValue("*.example.com");
-    assertThat(helper1.path()).isEqualTo("foo");
+    assertThat(helper1.path).isEqualTo("foo");
   }
 
   @Test
@@ -50,12 +50,12 @@ public class CredentialHelperOptionConverterTest {
     CredentialHelperOption helper1 =
         CredentialHelperOptionConverter.INSTANCE.convert("münchen.de=foo");
     assertThat(helper1.scope()).hasValue("xn--mnchen-3ya.de");
-    assertThat(helper1.path()).isEqualTo("foo");
+    assertThat(helper1.path).isEqualTo("foo");
 
     CredentialHelperOption helper2 =
         CredentialHelperOptionConverter.INSTANCE.convert("*.köln.de=foo");
     assertThat(helper2.scope()).hasValue("*.xn--kln-sna.de");
-    assertThat(helper2.path()).isEqualTo("foo");
+    assertThat(helper2.path).isEqualTo("foo");
   }
 
   @Test
@@ -63,7 +63,7 @@ public class CredentialHelperOptionConverterTest {
     CredentialHelperOption helper1 =
         CredentialHelperOptionConverter.INSTANCE.convert("/absolute/path");
     assertThat(helper1.scope()).isEmpty();
-    assertThat(helper1.path()).isEqualTo("/absolute/path");
+    assertThat(helper1.path).isEqualTo("/absolute/path");
   }
 
   @Test
@@ -71,14 +71,14 @@ public class CredentialHelperOptionConverterTest {
     CredentialHelperOption helper1 =
         CredentialHelperOptionConverter.INSTANCE.convert("%workspace%/path");
     assertThat(helper1.scope()).isEmpty();
-    assertThat(helper1.path()).isEqualTo("%workspace%/path");
+    assertThat(helper1.path).isEqualTo("%workspace%/path");
   }
 
   @Test
   public void pathLookup() throws Exception {
     CredentialHelperOption helper1 = CredentialHelperOptionConverter.INSTANCE.convert("foo");
     assertThat(helper1.scope()).isEmpty();
-    assertThat(helper1.path()).isEqualTo("foo");
+    assertThat(helper1.path).isEqualTo("foo");
   }
 
   @Test

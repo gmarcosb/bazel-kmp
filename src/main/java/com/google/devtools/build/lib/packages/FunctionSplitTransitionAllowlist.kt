@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.devtools.build.lib.cmdline.Label;
-
-/** This class provides constants associated with the function split transition allowlist. */
-public class FunctionSplitTransitionAllowlist {
-  public static final String NAME = "function_transition";
-  public static final String ATTRIBUTE_NAME = "$allowlist_function_transition";
-  public static final String LABEL_STR = "//tools/allowlists/function_transition_allowlist";
-  public static final Label LABEL = Label.parseCanonicalUnchecked(LABEL_STR);
-
-  private FunctionSplitTransitionAllowlist() {}
+/** This class provides constants associated with the function split transition allowlist.  */
+object FunctionSplitTransitionAllowlist {
+    const val NAME: String = "function_transition"
+    const val ATTRIBUTE_NAME: String = "\$allowlist_function_transition"
+    const val LABEL_STR: String = "//tools/allowlists/function_transition_allowlist"
+    val LABEL: Label? = Label.parseCanonicalUnchecked(LABEL_STR)
 }

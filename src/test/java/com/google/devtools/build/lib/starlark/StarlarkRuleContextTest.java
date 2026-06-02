@@ -577,7 +577,7 @@ public final class StarlarkRuleContextTest extends BuildViewTestCase {
     Object result = ev.eval("ruleContext.attr.srcjar");
     TransitiveInfoCollection tic = (TransitiveInfoCollection) result;
     assertThat(tic).isInstanceOf(FileConfiguredTarget.class);
-    assertThat(tic.getLabel().getName()).isEqualTo("asr-src.jar");
+    assertThat(tic.label.getName()).isEqualTo("asr-src.jar");
   }
 
   @Test

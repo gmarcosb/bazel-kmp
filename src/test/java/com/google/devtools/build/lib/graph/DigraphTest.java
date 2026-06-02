@@ -139,7 +139,7 @@ public class DigraphTest {
         new Function<Node<Target>, Label>() {
           @Override
           public Label apply(Node<Target> node) {
-            return node.getLabel().getLabel();
+            return node.label.getLabel();
           }
         };
     List<Label> nodes = Lists.transform(digraph.getTopologicalOrder(comparator), unwrap);

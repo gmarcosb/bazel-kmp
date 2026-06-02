@@ -461,7 +461,7 @@ public final class SandboxModule extends BlazeModule {
         checkNotNull(sandboxBase, "shouldCleanupSandboxBase implies sandboxBase has been set");
         for (SpawnRunner spawnRunner : spawnRunners) {
           spawnRunner.cleanupSandboxBase(sandboxBase, treeDeleter);
-          sandboxBase.getChild(spawnRunner.getName()).delete();
+          sandboxBase.getChild(spawnRunner.name).delete();
         }
       } catch (IOException e) {
         env.getReporter()

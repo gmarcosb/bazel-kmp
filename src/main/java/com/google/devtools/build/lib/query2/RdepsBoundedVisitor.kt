@@ -11,173 +11,175 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2;
-
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Streams;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.ParallelSkyQueryUtils.DepAndRdep;
-import com.google.devtools.build.lib.query2.ParallelSkyQueryUtils.DepAndRdepAtDepth;
-import com.google.devtools.build.lib.query2.ParallelVisitorUtils.ParallelQueryVisitor;
-import com.google.devtools.build.lib.query2.ParallelVisitorUtils.QueryVisitorFactory;
-import com.google.devtools.build.lib.query2.engine.Callback;
-import com.google.devtools.build.lib.query2.engine.MinDepthUniquifier;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.HashMap;
-import java.util.Map;
+package com.google.devtools.build.lib.query2
 
 /**
  * A helper class that computes bounded 'allrdeps(<expr>, <depth>)' or
  * 'rdeps(<precomputed-universe>, <expr>, <depth>)' via BFS.
- *
- * <p>This is very similar to {@link RdepsUnboundedVisitor}. A lot of the same concerns apply here
+ * 
+ * 
+ * This is very similar to [RdepsUnboundedVisitor]. A lot of the same concerns apply here
  * but there are additional subtle concerns about the correctness of the bounded traversal: just
- * like for the sequential implementation of bounded allrdeps, we use {@link MinDepthUniquifier}.
- */
-class RdepsBoundedVisitor extends AbstractTargetOuputtingVisitor<DepAndRdepAtDepth> {
-  private final int depth;
-  private final MinDepthUniquifier<SkyKey> validRdepMinDepthUniquifier;
-  private final Predicate<SkyKey> universe;
-  private final ImmutableSetMultimap<SkyKey, SkyKey> extraGlobalDeps;
+ * like for the sequential implementation of bounded allrdeps, we use [MinDepthUniquifier].
+</depth></expr></precomputed-universe></depth></expr> */
+internal class RdepsBoundedVisitor private constructor(
+    env: SkyQueryEnvironment,
+    private val depth: Int,
+    validRdepMinDepthUniquifier: MinDepthUniquifier<SkyKey?>,
+    universe: com.google.common.base.Predicate<SkyKey?>,
+    extraGlobalDeps: com.google.common.collect.ImmutableSetMultimap<SkyKey?, SkyKey?>,
+    callback: com.google.devtools.build.lib.query2.engine.Callback<Target?>?
+) : AbstractTargetOuputtingVisitor<DepAndRdepAtDepth?>(env, callback) {
+    private val validRdepMinDepthUniquifier: MinDepthUniquifier<SkyKey?>
+    private val universe: com.google.common.base.Predicate<SkyKey?>
+    private val extraGlobalDeps: com.google.common.collect.ImmutableSetMultimap<SkyKey?, SkyKey?>
 
-  private RdepsBoundedVisitor(
-      SkyQueryEnvironment env,
-      int depth,
-      MinDepthUniquifier<SkyKey> validRdepMinDepthUniquifier,
-      Predicate<SkyKey> universe,
-      ImmutableSetMultimap<SkyKey, SkyKey> extraGlobalDeps,
-      Callback<Target> callback) {
-    super(env, callback);
-    this.depth = depth;
-    this.validRdepMinDepthUniquifier = validRdepMinDepthUniquifier;
-    this.extraGlobalDeps = extraGlobalDeps;
-    this.universe = universe;
-  }
-
-  static class Factory implements QueryVisitorFactory<DepAndRdepAtDepth, SkyKey, Target> {
-    private final SkyQueryEnvironment env;
-    private final int depth;
-    private final MinDepthUniquifier<SkyKey> validRdepMinDepthUniquifier;
-    private final Predicate<SkyKey> universe;
-    private final ImmutableSetMultimap<SkyKey, SkyKey> extraGlobalDeps;
-    private final Callback<Target> callback;
-
-    Factory(
-        SkyQueryEnvironment env,
-        int depth,
-        Predicate<SkyKey> universe,
-        ImmutableSetMultimap<SkyKey, SkyKey> extraGlobalDeps,
-        Callback<Target> callback) {
-      this.env = env;
-      this.depth = depth;
-      this.universe = universe;
-      this.validRdepMinDepthUniquifier = env.createMinDepthSkyKeyUniquifier();
-      this.extraGlobalDeps = extraGlobalDeps;
-      this.callback = callback;
+    init {
+        this.validRdepMinDepthUniquifier = validRdepMinDepthUniquifier
+        this.extraGlobalDeps = extraGlobalDeps
+        this.universe = universe
     }
 
-    @Override
-    public ParallelQueryVisitor<DepAndRdepAtDepth, SkyKey, Target> create() {
-      return new RdepsBoundedVisitor(
-          env, depth, validRdepMinDepthUniquifier, universe, extraGlobalDeps, callback);
+    internal class Factory(
+        env: SkyQueryEnvironment,
+        depth: Int,
+        universe: com.google.common.base.Predicate<SkyKey?>,
+        extraGlobalDeps: com.google.common.collect.ImmutableSetMultimap<SkyKey?, SkyKey?>,
+        callback: com.google.devtools.build.lib.query2.engine.Callback<Target?>?
+    ) : QueryVisitorFactory<DepAndRdepAtDepth?, SkyKey?, Target?> {
+        private val env: SkyQueryEnvironment
+        private val depth: Int
+        private val validRdepMinDepthUniquifier: MinDepthUniquifier<SkyKey?>
+        private val universe: com.google.common.base.Predicate<SkyKey?>
+        private val extraGlobalDeps: com.google.common.collect.ImmutableSetMultimap<SkyKey?, SkyKey?>
+        private val callback: com.google.devtools.build.lib.query2.engine.Callback<Target?>?
+
+        init {
+            this.env = env
+            this.depth = depth
+            this.universe = universe
+            this.validRdepMinDepthUniquifier = env.createMinDepthSkyKeyUniquifier()
+            this.extraGlobalDeps = extraGlobalDeps
+            this.callback = callback
+        }
+
+        public override fun create(): ParallelQueryVisitor<DepAndRdepAtDepth?, SkyKey?, Target?> {
+            return RdepsBoundedVisitor(
+                env, depth, validRdepMinDepthUniquifier, universe, extraGlobalDeps, callback
+            )
+        }
     }
-  }
 
-  @Override
-  protected Visit getVisitResult(Iterable<DepAndRdepAtDepth> depAndRdepAtDepths)
-      throws InterruptedException, QueryException {
-    Map<SkyKey, Integer> shallowestRdepDepthMap = new HashMap<>();
-    depAndRdepAtDepths.forEach(
-        depAndRdepAtDepth ->
-            shallowestRdepDepthMap.merge(
-                depAndRdepAtDepth.depAndRdep.rdep, depAndRdepAtDepth.rdepDepth, Integer::min));
+    @Throws(java.lang.InterruptedException::class, com.google.devtools.build.lib.query2.engine.QueryException::class)
+    protected override fun getVisitResult(depAndRdepAtDepths: Iterable<DepAndRdepAtDepth?>): Visit? {
+        val shallowestRdepDepthMap: MutableMap<SkyKey?, Int?> = HashMap<SkyKey?, Int?>()
+        depAndRdepAtDepths.forEach(
+            java.util.function.Consumer { depAndRdepAtDepth: DepAndRdepAtDepth? ->
+                shallowestRdepDepthMap.merge(
+                    depAndRdepAtDepth.depAndRdep.rdep, depAndRdepAtDepth.rdepDepth
+                ) { a: Int?, b: Int? -> java.lang.Integer.min(a, b) }
+            })
 
-    ImmutableList.Builder<SkyKey> uniqueValidRdepsBuilder = ImmutableList.builder();
-    for (SkyKey validRdep :
-        RdepsVisitorUtils.getMaybeFilteredRdeps(
-            Iterables.transform(
-                depAndRdepAtDepths, depAndRdepAtDepth -> depAndRdepAtDepth.depAndRdep),
-            env)) {
-      if (validRdepMinDepthUniquifier.uniqueAtDepthLessThanOrEqualTo(
-          validRdep, shallowestRdepDepthMap.get(validRdep))) {
-        uniqueValidRdepsBuilder.add(validRdep);
-      }
+        val uniqueValidRdepsBuilder: com.google.common.collect.ImmutableList.Builder<SkyKey?> =
+            com.google.common.collect.ImmutableList.builder<SkyKey?>()
+        for (validRdep in RdepsVisitorUtils.getMaybeFilteredRdeps(
+            com.google.common.collect.Iterables.transform<DepAndRdepAtDepth?, DepAndRdep?>(
+                depAndRdepAtDepths,
+                com.google.common.base.Function { depAndRdepAtDepth: DepAndRdepAtDepth? -> depAndRdepAtDepth.depAndRdep }),
+            env
+        )) {
+            if (validRdepMinDepthUniquifier.uniqueAtDepthLessThanOrEqualTo(
+                    validRdep, shallowestRdepDepthMap.get(validRdep)
+                )
+            ) {
+                uniqueValidRdepsBuilder.add(validRdep)
+            }
+        }
+        val uniqueValidRdeps: com.google.common.collect.ImmutableList<SkyKey?> = uniqueValidRdepsBuilder.build()
+
+        // Don't bother getting the rdeps of the rdeps that are already at the depth bound.
+        val uniqueValidRdepsBelowDepthBound: Iterable<SkyKey?> =
+            com.google.common.collect.Iterables.filter<SkyKey?>(
+                uniqueValidRdeps,
+                com.google.common.base.Predicate { uniqueValidRdep: SkyKey? ->
+                    shallowestRdepDepthMap.get(
+                        uniqueValidRdep
+                    )!! < depth
+                })
+
+        // Retrieve the reverse deps as SkyKeys and defer the targetification and filtering to next
+        // recursive visitation.
+        val unfilteredRdepsOfRdeps: MutableMap<SkyKey?, Iterable<SkyKey?>?> =
+            env.getReverseDepLabelsOfLabels(uniqueValidRdepsBelowDepthBound, extraGlobalDeps)
+
+        val depAndRdepAtDepthsToVisitBuilder: com.google.common.collect.ImmutableList.Builder<DepAndRdepAtDepth?> =
+            com.google.common.collect.ImmutableList.builder<DepAndRdepAtDepth?>()
+        unfilteredRdepsOfRdeps
+            .entries
+            .forEach(
+                java.util.function.Consumer { entry: MutableMap.MutableEntry<SkyKey?, Iterable<SkyKey?>?>? ->
+                    val rdep: SkyKey? = entry!!.key
+                    val depthOfRdepOfRdep = shallowestRdepDepthMap.get(rdep)!! + 1
+                    com.google.common.collect.Streams.stream<SkyKey?>(entry.value)
+                        .filter(
+                            com.google.common.base.Predicates.and<SkyKey?>(
+                                SkyQueryEnvironment.Companion.IS_LABEL,
+                                universe
+                            )
+                        )
+                        .forEachOrdered { rdepOfRdep: SkyKey? ->
+                            depAndRdepAtDepthsToVisitBuilder.add(
+                                DepAndRdepAtDepth(
+                                    DepAndRdep(rdep, rdepOfRdep), depthOfRdepOfRdep
+                                )
+                            )
+                        }
+                })
+
+        return Visit( /*keysToUseForResult=*/
+            uniqueValidRdeps,  /*keysToVisit=*/
+            depAndRdepAtDepthsToVisitBuilder.build()
+        )
     }
-    ImmutableList<SkyKey> uniqueValidRdeps = uniqueValidRdepsBuilder.build();
 
-    // Don't bother getting the rdeps of the rdeps that are already at the depth bound.
-    Iterable<SkyKey> uniqueValidRdepsBelowDepthBound =
-        Iterables.filter(
-            uniqueValidRdeps,
-            uniqueValidRdep -> shallowestRdepDepthMap.get(uniqueValidRdep) < depth);
-
-    // Retrieve the reverse deps as SkyKeys and defer the targetification and filtering to next
-    // recursive visitation.
-    Map<SkyKey, Iterable<SkyKey>> unfilteredRdepsOfRdeps =
-        env.getReverseDepLabelsOfLabels(uniqueValidRdepsBelowDepthBound, extraGlobalDeps);
-
-    ImmutableList.Builder<DepAndRdepAtDepth> depAndRdepAtDepthsToVisitBuilder =
-        ImmutableList.builder();
-    unfilteredRdepsOfRdeps
-        .entrySet()
-        .forEach(
-            entry -> {
-              SkyKey rdep = entry.getKey();
-              int depthOfRdepOfRdep = shallowestRdepDepthMap.get(rdep) + 1;
-              Streams.stream(entry.getValue())
-                  .filter(Predicates.and(SkyQueryEnvironment.IS_LABEL, universe))
-                  .forEachOrdered(
-                      rdepOfRdep -> {
-                        depAndRdepAtDepthsToVisitBuilder.add(
-                            new DepAndRdepAtDepth(
-                                new DepAndRdep(rdep, rdepOfRdep), depthOfRdepOfRdep));
-                      });
-            });
-
-    return new Visit(
-        /*keysToUseForResult=*/ uniqueValidRdeps,
-        /*keysToVisit=*/ depAndRdepAtDepthsToVisitBuilder.build());
-  }
-
-  @Override
-  protected SkyKey visitationKeyToOutputKey(DepAndRdepAtDepth visitationKey) {
-    return visitationKey.depAndRdep.rdep;
-  }
-
-  @Override
-  protected Iterable<DepAndRdepAtDepth> noteAndReturnUniqueVisitationKeys(
-      Iterable<DepAndRdepAtDepth> prospectiveVisitationKeys) {
-    // See the comment in RdepsUnboundedVisitor#noteAndReturnUniqueVisitationKeys.
-    return Iterables.filter(
-        prospectiveVisitationKeys,
-        depAndRdepAtDepth ->
-            validRdepMinDepthUniquifier.uniqueAtDepthLessThanOrEqualToPure(
-                depAndRdepAtDepth.depAndRdep.rdep, depAndRdepAtDepth.rdepDepth));
-  }
-
-  @Override
-  protected Iterable<DepAndRdepAtDepth> preprocessInitialVisit(Iterable<SkyKey> skyKeys) {
-    return Iterables.transform(
-        skyKeys, key -> new DepAndRdepAtDepth(new DepAndRdep(/*dep=*/ null, key), 0));
-  }
-
-  @Override
-  protected Iterable<Target> outputKeysToOutputValues(Iterable<SkyKey> targetKeys)
-      throws InterruptedException, QueryException {
-    // Can't use Iterables.filter() with the uniquifier here because the filter function has
-    // side-effects and the resulting Iterable will be consumed more than once.
-    ImmutableList.Builder<SkyKey> notYetOutputKeysBuilder =
-        ImmutableList.builderWithExpectedSize(Iterables.size(targetKeys));
-    for (SkyKey targetKey : targetKeys) {
-      if (validRdepMinDepthUniquifier.uniqueForOutput(targetKey)) {
-        notYetOutputKeysBuilder.add(targetKey);
-      }
+    override fun visitationKeyToOutputKey(visitationKey: DepAndRdepAtDepth): SkyKey? {
+        return visitationKey.depAndRdep.rdep
     }
-    return super.outputKeysToOutputValues(notYetOutputKeysBuilder.build());
-  }
+
+    protected override fun noteAndReturnUniqueVisitationKeys(
+        prospectiveVisitationKeys: Iterable<DepAndRdepAtDepth?>
+    ): Iterable<DepAndRdepAtDepth?> {
+        // See the comment in RdepsUnboundedVisitor#noteAndReturnUniqueVisitationKeys.
+        return com.google.common.collect.Iterables.filter<DepAndRdepAtDepth?>(
+            prospectiveVisitationKeys,
+            com.google.common.base.Predicate { depAndRdepAtDepth: DepAndRdepAtDepth? ->
+                validRdepMinDepthUniquifier.uniqueAtDepthLessThanOrEqualToPure(
+                    depAndRdepAtDepth.depAndRdep.rdep, depAndRdepAtDepth.rdepDepth
+                )
+            })
+    }
+
+    protected override fun preprocessInitialVisit(skyKeys: Iterable<SkyKey?>): Iterable<DepAndRdepAtDepth?> {
+        return com.google.common.collect.Iterables.transform<SkyKey?, DepAndRdepAtDepth?>(
+            skyKeys,
+            com.google.common.base.Function { key: SkyKey? -> DepAndRdepAtDepth(DepAndRdep( /*dep=*/null, key), 0) })
+    }
+
+    @Throws(java.lang.InterruptedException::class, com.google.devtools.build.lib.query2.engine.QueryException::class)
+    override fun outputKeysToOutputValues(targetKeys: Iterable<SkyKey>): Iterable<Target?>? {
+        // Can't use Iterables.filter() with the uniquifier here because the filter function has
+        // side-effects and the resulting Iterable will be consumed more than once.
+        val notYetOutputKeysBuilder: com.google.common.collect.ImmutableList.Builder<SkyKey?> =
+            com.google.common.collect.ImmutableList.builderWithExpectedSize<SkyKey?>(
+                com.google.common.collect.Iterables.size(
+                    targetKeys
+                )
+            )
+        for (targetKey in targetKeys) {
+            if (validRdepMinDepthUniquifier.uniqueForOutput(targetKey)) {
+                notYetOutputKeysBuilder.add(targetKey)
+            }
+        }
+        return super.outputKeysToOutputValues(notYetOutputKeysBuilder.build())
+    }
 }

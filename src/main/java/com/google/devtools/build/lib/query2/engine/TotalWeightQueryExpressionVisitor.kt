@@ -11,58 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.query2.engine;
-
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
+package com.google.devtools.build.lib.query2.engine
 
 /**
- * A {@link QueryExpressionVisitor} that cheaply estimates the size of a {@link QueryExpression}
+ * A [QueryExpressionVisitor] that cheaply estimates the size of a [QueryExpression]
  * without stringify-ing it.
  */
-public class TotalWeightQueryExpressionVisitor implements QueryExpressionVisitor<Long, Void> {
-
-  @Override
-  public Long visit(TargetLiteral targetLiteral, Void context) {
-    return (long) targetLiteral.getPattern().length();
-  }
-
-  @Override
-  public Long visit(BinaryOperatorExpression binaryOperatorExpression, Void context) {
-    long totalWeight = 0L;
-    for (QueryExpression operand : binaryOperatorExpression.getOperands()) {
-      totalWeight += operand.accept(this);
+class TotalWeightQueryExpressionVisitor : QueryExpressionVisitor<Long?, Void?> {
+    override fun visit(targetLiteral: TargetLiteral, context: Void?): Long {
+        return targetLiteral.getPattern().length.toLong()
     }
-    return totalWeight;
-  }
 
-  @Override
-  public Long visit(FunctionExpression functionExpression, Void context) {
-    long totalWeight = 0L;
-    for (Argument arg : functionExpression.getArgs()) {
-      totalWeight +=
-          switch (arg.getType()) {
-            case WORD -> arg.getWord().length();
-            case INTEGER -> 1L;
-            case EXPRESSION -> arg.getExpression().accept(this);
-          };
+    override fun visit(binaryOperatorExpression: BinaryOperatorExpression, context: Void?): Long {
+        var totalWeight = 0L
+        for (operand in binaryOperatorExpression.getOperands()) {
+            totalWeight += operand.accept<Long?>(this)
+        }
+        return totalWeight
     }
-    return totalWeight;
-  }
 
-  @Override
-  public Long visit(LetExpression letExpression, Void context) {
-    return letExpression.getVarName().length()
-        + letExpression.getVarExpr().accept(this)
-        + letExpression.getBodyExpr().accept(this);
-  }
-
-  @Override
-  public Long visit(SetExpression setExpression, Void context) {
-    long totalWeight = 0L;
-    for (TargetLiteral word : setExpression.getWords()) {
-      totalWeight += word.getPattern().length();
+    override fun visit(functionExpression: FunctionExpression, context: Void?): Long {
+        var totalWeight = 0L
+        for (arg in functionExpression.getArgs()) {
+            totalWeight +=
+                when (arg.getType()) {
+                    QueryEnvironment.ArgumentType.WORD -> arg.getWord().length
+                    QueryEnvironment.ArgumentType.INTEGER -> 1L
+                    QueryEnvironment.ArgumentType.EXPRESSION -> arg.getExpression().accept<Long?>(this)
+                }
+        }
+        return totalWeight
     }
-    return totalWeight;
-  }
+
+    override fun visit(letExpression: LetExpression, context: Void?): Long {
+        return (letExpression.getVarName().length
+                + letExpression.getVarExpr().accept<Long?>(this)
+                + letExpression.getBodyExpr().accept<Long?>(this))
+    }
+
+    override fun visit(setExpression: SetExpression, context: Void?): Long {
+        var totalWeight = 0L
+        for (word in setExpression.getWords()) {
+            totalWeight += word.getPattern().length.toLong()
+        }
+        return totalWeight
+    }
 }

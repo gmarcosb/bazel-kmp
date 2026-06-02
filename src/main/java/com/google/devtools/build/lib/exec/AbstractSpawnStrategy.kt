@@ -11,314 +11,284 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
+import com.google.devtools.build.lib.actions.ActionContext
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Abstract common ancestor for spawn strategies implementing the common parts.  */
+abstract class AbstractSpawnStrategy protected constructor(
+    spawnRunner: SpawnRunner,
+    executionOptions: ExecutionOptions
+) : SandboxedSpawnStrategy {
+    private val spawnInputExpander: SpawnInputExpander = SpawnInputExpander()
+    private val spawnRunner: SpawnRunner
+    private val executionOptions: ExecutionOptions
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.EnvironmentalExecException;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.SandboxedSpawnStrategy;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnExecutedEvent;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnResult.Status;
-import com.google.devtools.build.lib.actions.Spawns;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.exec.Protos.Digest;
-import com.google.devtools.build.lib.exec.SpawnCache.CacheHandle;
-import com.google.devtools.build.lib.exec.SpawnRunner.AbstractSpawnExecutionContext;
-import com.google.devtools.build.lib.exec.SpawnRunner.ProgressStatus;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn.Code;
-import com.google.devtools.build.lib.util.CommandFailureUtils;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.SortedMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.annotation.Nullable;
-
-/** Abstract common ancestor for spawn strategies implementing the common parts. */
-public abstract class AbstractSpawnStrategy implements SandboxedSpawnStrategy {
-
-  /**
-   * Last unique identifier assigned to a spawn by this strategy.
-   *
-   * <p>These identifiers must be unique per strategy within the context of a Bazel server instance
-   * to avoid cross-contamination across actions in case we perform asynchronous deletions.
-   */
-  private static final AtomicInteger execCount = new AtomicInteger();
-
-  private final SpawnInputExpander spawnInputExpander = new SpawnInputExpander();
-  private final SpawnRunner spawnRunner;
-  private final ExecutionOptions executionOptions;
-
-  protected AbstractSpawnStrategy(SpawnRunner spawnRunner, ExecutionOptions executionOptions) {
-    this.spawnRunner = spawnRunner;
-    this.executionOptions = executionOptions;
-  }
-
-  /**
-   * Gets the {@link SpawnRunner} that this {@link AbstractSpawnStrategy} uses to actually run
-   * spawns.
-   *
-   * <p>This is considered a stop-gap until we refactor the entire SpawnStrategy / SpawnRunner
-   * mechanism to no longer need Spawn strategies.
-   */
-  public SpawnRunner getSpawnRunner() {
-    return spawnRunner;
-  }
-
-  @Override
-  public boolean canExec(Spawn spawn, ActionContext.ActionContextRegistry actionContextRegistry) {
-    return spawnRunner.canExec(spawn);
-  }
-
-  @Override
-  public ImmutableList<SpawnResult> exec(Spawn spawn, ActionExecutionContext actionExecutionContext)
-      throws ExecException, InterruptedException {
-    return exec(spawn, actionExecutionContext, null);
-  }
-
-  @Override
-  public ImmutableList<SpawnResult> exec(
-      Spawn spawn,
-      ActionExecutionContext actionExecutionContext,
-      @Nullable SandboxedSpawnStrategy.StopConcurrentSpawns stopConcurrentSpawns)
-      throws ExecException, InterruptedException {
-    actionExecutionContext.maybeReportSubcommand(spawn, spawnRunner.getName());
-
-    final Duration timeout = Spawns.getTimeout(spawn);
-    SpawnExecutionContext context =
-        new SpawnExecutionContextImpl(spawn, actionExecutionContext, stopConcurrentSpawns, timeout);
-
-    // Avoid caching for runners which handle caching internally e.g. RemoteSpawnRunner.
-    SpawnCache cache =
-        spawnRunner.handlesCaching()
-            ? SpawnCache.NO_CACHE
-            : actionExecutionContext.getContext(SpawnCache.class);
-
-    // In production, the getContext method guarantees that we never get null back. However, our
-    // integration tests don't set it up correctly, so cache may be null in testing.
-    if (cache == null) {
-      cache = SpawnCache.NO_CACHE;
+    init {
+        this.spawnRunner = spawnRunner
+        this.executionOptions = executionOptions
     }
 
-    // Avoid using the remote cache of a dynamic execution setup for the local runner.
-    if (context.speculating() && !cache.usefulInDynamicExecution()) {
-      cache = SpawnCache.NO_CACHE;
+    /**
+     * Gets the [SpawnRunner] that this [AbstractSpawnStrategy] uses to actually run
+     * spawns.
+     * 
+     * 
+     * This is considered a stop-gap until we refactor the entire SpawnStrategy / SpawnRunner
+     * mechanism to no longer need Spawn strategies.
+     */
+    fun getSpawnRunner(): SpawnRunner {
+        return spawnRunner
     }
-    SpawnResult spawnResult;
-    ExecException ex = null;
-    try (CacheHandle cacheHandle = cache.lookup(spawn, context)) {
-      if (cacheHandle.hasResult()) {
-        spawnResult = Preconditions.checkNotNull(cacheHandle.getResult());
-      } else {
-        Instant startTime =
-            Instant.ofEpochMilli(actionExecutionContext.getClock().currentTimeMillis());
-        // Actual execution.
-        spawnResult = spawnRunner.exec(spawn, context);
 
-        String spawnIdentifier = null;
-        if (spawnResult.getDigest() != null) {
-          spawnIdentifier = spawnResult.getDigest().getHash();
+    public override fun canExec(spawn: Spawn?, actionContextRegistry: ActionContext.ActionContextRegistry?): Boolean {
+        return spawnRunner.canExec(spawn)
+    }
+
+    @Throws(ExecException::class, java.lang.InterruptedException::class)
+    public override fun exec(
+        spawn: Spawn,
+        actionExecutionContext: ActionExecutionContext
+    ): com.google.common.collect.ImmutableList<SpawnResult?> {
+        return exec(spawn, actionExecutionContext, null)
+    }
+
+    @Throws(ExecException::class, java.lang.InterruptedException::class)
+    public override fun exec(
+        spawn: Spawn,
+        actionExecutionContext: ActionExecutionContext,
+        stopConcurrentSpawns: SandboxedSpawnStrategy.StopConcurrentSpawns?
+    ): com.google.common.collect.ImmutableList<SpawnResult?> {
+        actionExecutionContext.maybeReportSubcommand(spawn, spawnRunner.getName())
+
+        val timeout: java.time.Duration? = Spawns.getTimeout(spawn)
+        val context: SpawnExecutionContext =
+            SpawnExecutionContextImpl(spawn, actionExecutionContext, stopConcurrentSpawns, timeout)
+
+        // Avoid caching for runners which handle caching internally e.g. RemoteSpawnRunner.
+        var cache: SpawnCache? =
+            if (spawnRunner.handlesCaching())
+                SpawnCache.Companion.NO_CACHE
+            else
+                actionExecutionContext.getContext(SpawnCache::class.java)
+
+        // In production, the getContext method guarantees that we never get null back. However, our
+        // integration tests don't set it up correctly, so cache may be null in testing.
+        if (cache == null) {
+            cache = SpawnCache.Companion.NO_CACHE
         }
-        actionExecutionContext
-            .getEventHandler()
-            .post(
-                new SpawnExecutedEvent(
+
+        // Avoid using the remote cache of a dynamic execution setup for the local runner.
+        if (context.speculating() && !cache.usefulInDynamicExecution()) {
+            cache = SpawnCache.Companion.NO_CACHE
+        }
+        var spawnResult: SpawnResult
+        var ex: ExecException? = null
+        try {
+            cache.lookup(spawn, context).use { cacheHandle ->
+                if (cacheHandle.hasResult()) {
+                    spawnResult =
+                        com.google.common.base.Preconditions.checkNotNull<SpawnResult>(cacheHandle.getResult())
+                } else {
+                    val startTime: Instant? =
+                        Instant.ofEpochMilli(actionExecutionContext.getClock().currentTimeMillis())
+                    // Actual execution.
+                    spawnResult = spawnRunner.exec(spawn, context)
+
+                    var spawnIdentifier: String? = null
+                    if (spawnResult.getDigest() != null) {
+                        spawnIdentifier = spawnResult.getDigest().getHash()
+                    }
+                    actionExecutionContext
+                        .getEventHandler()
+                        .post(
+                            SpawnExecutedEvent(
+                                spawn,
+                                actionExecutionContext.getInputMetadataProvider(),
+                                actionExecutionContext.getActionFileSystem(),
+                                actionExecutionContext.getFileOutErr(),
+                                spawnResult,
+                                startTime,
+                                spawnIdentifier
+                            )
+                        )
+                    if (cacheHandle.willStore()) {
+                        cacheHandle.store(spawnResult)
+                    }
+                }
+            }
+        } catch (e: InterruptedIOException) {
+            throw java.lang.InterruptedException(e.getMessage())
+        } catch (e: IOException) {
+            throw EnvironmentalExecException(
+                e,
+                FailureDetail.newBuilder()
+                    .setMessage("Exec failed due to IOException")
+                    .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.EXEC_IO_EXCEPTION))
+                    .build()
+            )
+        } catch (e: SpawnExecException) {
+            ex = e
+            spawnResult = e.getSpawnResult()
+            // Log the Spawn and re-throw.
+        }
+
+        val spawnLogContext: SpawnLogContext? = actionExecutionContext.getContext(SpawnLogContext::class.java)
+        if (spawnLogContext != null) {
+            try {
+                spawnLogContext.logSpawn(
                     spawn,
                     actionExecutionContext.getInputMetadataProvider(),
-                    actionExecutionContext.getActionFileSystem(),
-                    actionExecutionContext.getFileOutErr(),
-                    spawnResult,
-                    startTime,
-                    spawnIdentifier));
-        if (cacheHandle.willStore()) {
-          cacheHandle.store(spawnResult);
+                    java.util.function.Supplier {
+                        context.getInputMapping(
+                            PathFragment.EMPTY_FRAGMENT,  /* willAccessRepeatedly= */false
+                        )
+                    },
+                    if (actionExecutionContext.getActionFileSystem() != null)
+                        actionExecutionContext.getActionFileSystem()
+                    else
+                        actionExecutionContext.getExecRoot().getFileSystem(),
+                    context.getTimeout(),
+                    spawnResult
+                )
+            } catch (e: IOException) {
+                throw EnvironmentalExecException(
+                    e,
+                    FailureDetail.newBuilder()
+                        .setMessage("IOException while logging spawn")
+                        .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.SPAWN_LOG_IO_EXCEPTION))
+                        .build()
+                )
+            }
         }
-      }
-    } catch (InterruptedIOException e) {
-      throw new InterruptedException(e.getMessage());
-    } catch (IOException e) {
-      throw new EnvironmentalExecException(
-          e,
-          FailureDetail.newBuilder()
-              .setMessage("Exec failed due to IOException")
-              .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.EXEC_IO_EXCEPTION))
-              .build());
-    } catch (SpawnExecException e) {
-      ex = e;
-      spawnResult = e.getSpawnResult();
-      // Log the Spawn and re-throw.
+        if (ex != null) {
+            throw ex
+        }
+
+        if (spawnResult.status() !== Status.SUCCESS) {
+            val cwd: String? = actionExecutionContext.getExecRoot().getPathString()
+            val resultMessage: String = spawnResult.getFailureMessage()
+            val message =
+                if (!com.google.common.base.Strings.isNullOrEmpty(resultMessage))
+                    resultMessage
+                else
+                    CommandFailureUtils.describeCommandFailure(
+                        executionOptions.getVerboseFailures(), cwd, spawn
+                    )
+            throw SpawnExecException(message, spawnResult,  /* forciblyRunRemotely= */false)
+        }
+        return com.google.common.collect.ImmutableList.of<SpawnResult?>(spawnResult)
     }
 
-    SpawnLogContext spawnLogContext = actionExecutionContext.getContext(SpawnLogContext.class);
-    if (spawnLogContext != null) {
-      try {
-        spawnLogContext.logSpawn(
-            spawn,
-            actionExecutionContext.getInputMetadataProvider(),
-            () ->
-                context.getInputMapping(
-                    PathFragment.EMPTY_FRAGMENT, /* willAccessRepeatedly= */ false),
-            actionExecutionContext.getActionFileSystem() != null
-                ? actionExecutionContext.getActionFileSystem()
-                : actionExecutionContext.getExecRoot().getFileSystem(),
-            context.getTimeout(),
-            spawnResult);
-      } catch (IOException e) {
-        throw new EnvironmentalExecException(
-            e,
-            FailureDetail.newBuilder()
-                .setMessage("IOException while logging spawn")
-                .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.SPAWN_LOG_IO_EXCEPTION))
-                .build());
-      }
-    }
-    if (ex != null) {
-      throw ex;
-    }
+    private inner class SpawnExecutionContextImpl(
+        spawn: Spawn?,
+        actionExecutionContext: ActionExecutionContext?,
+        stopConcurrentSpawns: SandboxedSpawnStrategy.StopConcurrentSpawns?,
+        timeout: java.time.Duration?
+    ) : AbstractSpawnExecutionContext(spawn, actionExecutionContext) {
+        private val stopConcurrentSpawns: SandboxedSpawnStrategy.StopConcurrentSpawns?
+        private val timeout: java.time.Duration?
 
-    if (spawnResult.status() != Status.SUCCESS) {
-      String cwd = actionExecutionContext.getExecRoot().getPathString();
-      String resultMessage = spawnResult.getFailureMessage();
-      String message =
-          !Strings.isNullOrEmpty(resultMessage)
-              ? resultMessage
-              : CommandFailureUtils.describeCommandFailure(
-                  executionOptions.getVerboseFailures(), cwd, spawn);
-      throw new SpawnExecException(message, spawnResult, /* forciblyRunRemotely= */ false);
-    }
-    return ImmutableList.of(spawnResult);
-  }
+        val id: Int = execCount.incrementAndGet()
 
-  private final class SpawnExecutionContextImpl extends AbstractSpawnExecutionContext {
-    @Nullable private final SandboxedSpawnStrategy.StopConcurrentSpawns stopConcurrentSpawns;
-    private final Duration timeout;
+        // Memoize the input mapping so that prefetchInputs can reuse it instead of recomputing it.
+        // TODO(ulfjack): Guard against client modification of this map.
+        private var lazyInputMapping: SortedMap<PathFragment?, ActionInput?>? = null
+        private var inputMappingBaseDirectory: PathFragment? = null
 
-    private final int id = execCount.incrementAndGet();
-    // Memoize the input mapping so that prefetchInputs can reuse it instead of recomputing it.
-    // TODO(ulfjack): Guard against client modification of this map.
-    private SortedMap<PathFragment, ActionInput> lazyInputMapping;
-    private PathFragment inputMappingBaseDirectory;
+        private var digest: Digest? = null
 
-    @Nullable private Digest digest;
+        init {
+            this.stopConcurrentSpawns = stopConcurrentSpawns
+            this.timeout = timeout
+        }
 
-    SpawnExecutionContextImpl(
-        Spawn spawn,
-        ActionExecutionContext actionExecutionContext,
-        @Nullable SandboxedSpawnStrategy.StopConcurrentSpawns stopConcurrentSpawns,
-        Duration timeout) {
-      super(spawn, actionExecutionContext);
-      this.stopConcurrentSpawns = stopConcurrentSpawns;
-      this.timeout = timeout;
-    }
+        override fun setDigest(digest: Digest?) {
+            if (this.digest != null) {
+                checkArgument(
+                    this.digest.equals(digest),
+                    "setDigest was called more than once with different digests: %s vs %s",
+                    this.digest,
+                    digest
+                )
+            }
+            this.digest = com.google.common.base.Preconditions.checkNotNull<Digest?>(digest)
+        }
 
-    @Override
-    public int getId() {
-      return id;
-    }
+        override fun getDigest(): Digest? {
+            return digest
+        }
 
-    @Override
-    public void setDigest(Digest digest) {
-      if (this.digest != null) {
-        checkArgument(
-            this.digest.equals(digest),
-            "setDigest was called more than once with different digests: %s vs %s",
-            this.digest,
-            digest);
-      }
-      this.digest = checkNotNull(digest);
-    }
+        val inputMetadataProvider: InputMetadataProvider
+            get() = actionExecutionContext.getInputMetadataProvider()
 
-    @Override
-    @Nullable
-    public Digest getDigest() {
-      return digest;
-    }
+        @Throws(java.lang.InterruptedException::class)
+        override fun lockOutputFiles(exitCode: Int, errorMessage: String?, outErr: FileOutErr?) {
+            if (stopConcurrentSpawns != null) {
+                stopConcurrentSpawns.stop(exitCode, errorMessage, outErr)
+            }
+        }
 
-    @Override
-    public InputMetadataProvider getInputMetadataProvider() {
-      return actionExecutionContext.getInputMetadataProvider();
-    }
+        override fun speculating(): Boolean {
+            return stopConcurrentSpawns != null
+        }
 
-    @Override
-    public void lockOutputFiles(int exitCode, String errorMessage, FileOutErr outErr)
-        throws InterruptedException {
-      if (stopConcurrentSpawns != null) {
-        stopConcurrentSpawns.stop(exitCode, errorMessage, outErr);
-      }
-    }
+        override fun getTimeout(): java.time.Duration? {
+            return timeout
+        }
 
-    @Override
-    public boolean speculating() {
-      return stopConcurrentSpawns != null;
+        override fun getInputMapping(
+            baseDirectory: PathFragment, willAccessRepeatedly: Boolean
+        ): SortedMap<PathFragment?, ActionInput?> {
+            // Return previously computed copy if present.
+            if (lazyInputMapping != null && inputMappingBaseDirectory == baseDirectory) {
+                return lazyInputMapping
+            }
+
+            val inputMapping: SortedMap<PathFragment?, ActionInput?>
+            com.google.devtools.build.lib.profiler.Profiler.instance().profile("AbstractSpawnStrategy.getInputMapping")
+                .use { c ->
+                    inputMapping =
+                        spawnInputExpander.getInputMapping(
+                            spawn, actionExecutionContext.getInputMetadataProvider(), baseDirectory
+                        )
+                }
+            // Don't cache the input mapping if it is unlikely that it is used again.
+            // This reduces memory usage in the case where remote caching/execution is
+            // used, and the expected cache hit rate is high.
+            if (willAccessRepeatedly) {
+                inputMappingBaseDirectory = baseDirectory
+                lazyInputMapping = inputMapping
+            }
+            return inputMapping
+        }
+
+        override fun report(progress: ProgressStatus) {
+            val action: ActionExecutionMetadata = spawn.getResourceOwner()
+            if (action.getOwner() == null) {
+                return
+            }
+
+            // TODO(djasper): This should not happen as per the contract of ActionExecutionMetadata, but
+            // there are implementations that violate the contract. Remove when those are gone.
+            if (action.getPrimaryOutput() == null) {
+                return
+            }
+
+            val eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler? =
+                actionExecutionContext.getEventHandler()
+            progress.postTo(eventHandler, action)
+        }
     }
 
-    @Override
-    public Duration getTimeout() {
-      return timeout;
+    companion object {
+        /**
+         * Last unique identifier assigned to a spawn by this strategy.
+         * 
+         * 
+         * These identifiers must be unique per strategy within the context of a Bazel server instance
+         * to avoid cross-contamination across actions in case we perform asynchronous deletions.
+         */
+        private val execCount: AtomicInteger = AtomicInteger()
     }
-
-    @Override
-    public SortedMap<PathFragment, ActionInput> getInputMapping(
-        PathFragment baseDirectory, boolean willAccessRepeatedly) {
-      // Return previously computed copy if present.
-      if (lazyInputMapping != null && inputMappingBaseDirectory.equals(baseDirectory)) {
-        return lazyInputMapping;
-      }
-
-      SortedMap<PathFragment, ActionInput> inputMapping;
-      try (SilentCloseable c =
-          Profiler.instance().profile("AbstractSpawnStrategy.getInputMapping")) {
-        inputMapping =
-            spawnInputExpander.getInputMapping(
-                spawn, actionExecutionContext.getInputMetadataProvider(), baseDirectory);
-      }
-
-      // Don't cache the input mapping if it is unlikely that it is used again.
-      // This reduces memory usage in the case where remote caching/execution is
-      // used, and the expected cache hit rate is high.
-      if (willAccessRepeatedly) {
-        inputMappingBaseDirectory = baseDirectory;
-        lazyInputMapping = inputMapping;
-      }
-      return inputMapping;
-    }
-
-    @Override
-    public void report(ProgressStatus progress) {
-      ActionExecutionMetadata action = spawn.getResourceOwner();
-      if (action.getOwner() == null) {
-        return;
-      }
-
-      // TODO(djasper): This should not happen as per the contract of ActionExecutionMetadata, but
-      // there are implementations that violate the contract. Remove when those are gone.
-      if (action.getPrimaryOutput() == null) {
-        return;
-      }
-
-      ExtendedEventHandler eventHandler = actionExecutionContext.getEventHandler();
-      progress.postTo(eventHandler, action);
-    }
-  }
 }

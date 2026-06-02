@@ -11,53 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
-
-import static com.google.common.base.Strings.isNullOrEmpty;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.bazel.repository.RepositoryFunctionException;
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import javax.annotation.Nullable;
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
-import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import com.google.common.base.Strings
+import com.google.common.io.ByteStreams
+import com.google.devtools.build.lib.bazel.repository.RepositoryFunctionException
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor.CouldNotFindPrefixException
+import com.google.devtools.build.lib.vfs.Path
+import com.google.devtools.build.lib.vfs.PathFragment
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
+import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import java.io.IOException
+import java.lang.String
+import java.nio.charset.StandardCharsets
+import java.util.*
+import java.util.function.Consumer
 
 /**
  * Creates a repository by decompressing a 7-zip file. This implementation generally follows the
- * logic from {@link ZipDecompressor} with the exception that the 7z format does not support file
+ * logic from [ZipDecompressor] with the exception that the 7z format does not support file
  * permissions or symbolic links.
  */
-public class SevenZDecompressor implements Decompressor {
-  public static final Decompressor INSTANCE = new SevenZDecompressor();
+class SevenZDecompressor : DecompressorValue.Decompressor {
+    /** Decompresses the file to directory [DecompressorDescriptor.destinationPath]  */
+    @Throws(IOException::class, RepositoryFunctionException::class, InterruptedException::class)
+    override fun decompress(descriptor: DecompressorDescriptor): Path? {
+        val destinationDirectory = descriptor.destinationPath
+        val prefix = descriptor.prefix
+        val renameFiles = descriptor.renameFiles
+        var foundPrefix = false
 
-  /** Decompresses the file to directory {@link DecompressorDescriptor#destinationPath()} */
-  @Override
-  @Nullable
-  public Path decompress(DecompressorDescriptor descriptor)
-      throws IOException, RepositoryFunctionException, InterruptedException {
-    Path destinationDirectory = descriptor.destinationPath();
-    Optional<String> prefix = descriptor.prefix();
-    ImmutableMap<String, String> renameFiles = descriptor.renameFiles();
-    boolean foundPrefix = false;
-
-    try (SevenZFile sevenZFile =
-        SevenZFile.builder().setFile(descriptor.archivePath().getPathFile()).get()) {
-      Iterable<SevenZArchiveEntry> entries = sevenZFile.getEntries();
-      for (SevenZArchiveEntry entry : entries) {
-        String entryName = entry.getName();
-        /*
+        SevenZFile.builder().setFile(descriptor.archivePath.getPathFile()).get().use { sevenZFile ->
+            val entries: Iterable<SevenZArchiveEntry> = sevenZFile.getEntries()
+            for (entry in entries) {
+                var entryName = entry.getName()
+                /*
          * From https://commons.apache.org/proper/commons-compress/examples.html
          *
          * <blockquote>
@@ -77,71 +65,83 @@ public class SevenZDecompressor implements Decompressor {
          * there should be a flag/option to dictate the behavior, but it's probably too small of an
          * edge case.
          */
-        if (isNullOrEmpty(entryName)) {
-          throw new IOException("7z archive contains unnamed entry");
+                if (Strings.isNullOrEmpty(entryName)) {
+                    throw IOException("7z archive contains unnamed entry")
+                }
+                entryName = renameFiles.getOrDefault(entryName, entryName)
+                val entryPath: StripPrefixedPath =
+                    StripPrefixedPath.Companion.maybeDeprefix(entryName.getBytes(StandardCharsets.UTF_8), prefix)
+                foundPrefix = foundPrefix || entryPath.foundPrefix()
+                if (entryPath.skip()) {
+                    continue
+                }
+                val pathFragment =
+                    entryPath.getPathFragment().stripComponents(descriptor.stripComponents)
+                if (pathFragment == PathFragment.EMPTY_FRAGMENT) {
+                    continue
+                }
+                extract7zEntry(sevenZFile, entry, destinationDirectory, pathFragment)
+            }
+            if (prefix.isPresent() && !foundPrefix) {
+                val prefixes: MutableSet<String?> = HashSet<String?>()
+                for (entry in entries) {
+                    val entryPath: StripPrefixedPath =
+                        StripPrefixedPath.Companion.maybeDeprefix(
+                            entry.getName().getBytes(StandardCharsets.UTF_8),
+                            Optional.empty<String?>()
+                        )
+                    CouldNotFindPrefixException.Companion.maybeMakePrefixSuggestion(entryPath.getPathFragment())
+                        .ifPresent(Consumer { e: String? -> prefixes.add(e) })
+                }
+                throw CouldNotFindPrefixException(prefix.get(), prefixes)
+            }
         }
-        entryName = renameFiles.getOrDefault(entryName, entryName);
-        StripPrefixedPath entryPath =
-            StripPrefixedPath.maybeDeprefix(entryName.getBytes(UTF_8), prefix);
-        foundPrefix = foundPrefix || entryPath.foundPrefix();
-        if (entryPath.skip()) {
-          continue;
-        }
-        PathFragment pathFragment =
-            entryPath.getPathFragment().stripComponents(descriptor.stripComponents());
-        if (Objects.equals(pathFragment, PathFragment.EMPTY_FRAGMENT)) {
-          continue;
-        }
-        extract7zEntry(sevenZFile, entry, destinationDirectory, pathFragment);
-      }
+        return destinationDirectory
+    }
 
-      if (prefix.isPresent() && !foundPrefix) {
-        Set<String> prefixes = new HashSet<>();
-        for (SevenZArchiveEntry entry : entries) {
-          StripPrefixedPath entryPath =
-              StripPrefixedPath.maybeDeprefix(entry.getName().getBytes(UTF_8), Optional.empty());
-          CouldNotFindPrefixException.maybeMakePrefixSuggestion(entryPath.getPathFragment())
-              .ifPresent(prefixes::add);
-        }
-        throw new CouldNotFindPrefixException(prefix.get(), prefixes);
-      }
-    }
-    return destinationDirectory;
-  }
+    companion object {
+        val INSTANCE: DecompressorValue.Decompressor = SevenZDecompressor()
 
-  private static void extract7zEntry(
-      SevenZFile sevenZFile,
-      SevenZArchiveEntry entry,
-      Path destinationDirectory,
-      PathFragment strippedRelativePath)
-      throws IOException, InterruptedException {
-    if (strippedRelativePath.isAbsolute()) {
-      throw new IOException(
-          String.format(
-              "Failed to extract %s, 7-zipped paths cannot be absolute", strippedRelativePath));
-    }
-    Path outputPath = destinationDirectory.getRelative(strippedRelativePath);
-    if (!outputPath.startsWith(destinationDirectory)) {
-      throw new IOException(
-          String.format(
-              "Failed to extract %s, path is escaping the destination directory",
-              strippedRelativePath));
-    }
-    outputPath.getParentDirectory().createDirectoryAndParents();
-    boolean isDirectory = entry.isDirectory();
-    if (isDirectory) {
-      outputPath.createDirectoryAndParents();
-    } else {
-      try (InputStream input = sevenZFile.getInputStream(entry);
-          OutputStream output = outputPath.getOutputStream()) {
-        ByteStreams.copy(input, output);
-        if (Thread.interrupted()) {
-          throw new InterruptedException();
+        @Throws(IOException::class, InterruptedException::class)
+        private fun extract7zEntry(
+            sevenZFile: SevenZFile,
+            entry: SevenZArchiveEntry,
+            destinationDirectory: Path,
+            strippedRelativePath: PathFragment
+        ) {
+            if (strippedRelativePath.isAbsolute()) {
+                throw IOException(
+                    String.format(
+                        "Failed to extract %s, 7-zipped paths cannot be absolute", strippedRelativePath
+                    )
+                )
+            }
+            val outputPath = destinationDirectory.getRelative(strippedRelativePath)
+            if (!outputPath.startsWith(destinationDirectory)) {
+                throw IOException(
+                    String.format(
+                        "Failed to extract %s, path is escaping the destination directory",
+                        strippedRelativePath
+                    )
+                )
+            }
+            outputPath.getParentDirectory()!!.createDirectoryAndParents()
+            val isDirectory = entry.isDirectory()
+            if (isDirectory) {
+                outputPath.createDirectoryAndParents()
+            } else {
+                sevenZFile.getInputStream(entry).use { input ->
+                    outputPath.getOutputStream().use { output ->
+                        ByteStreams.copy(input, output)
+                        if (Thread.interrupted()) {
+                            throw InterruptedException()
+                        }
+                    }
+                }
+                if (entry.getHasLastModifiedDate()) {
+                    outputPath.setLastModifiedTime(entry.getLastModifiedTime().toMillis())
+                }
+            }
         }
-      }
-      if (entry.getHasLastModifiedDate()) {
-        outputPath.setLastModifiedTime(entry.getLastModifiedTime().toMillis());
-      }
     }
-  }
 }

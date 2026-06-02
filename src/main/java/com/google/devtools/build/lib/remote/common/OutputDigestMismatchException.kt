@@ -11,50 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
+import build.bazel.remote.execution.v2.Digest
 
-/** An exception to indicate the digest of downloaded output does not match the expected value. */
-public class OutputDigestMismatchException extends IOException {
-  private final Digest expected;
-  private final Digest actual;
+/** An exception to indicate the digest of downloaded output does not match the expected value.  */
+class OutputDigestMismatchException(expected: Digest, actual: Digest) : IOException() {
+    private val expected: Digest
+    private val actual: Digest
 
-  private Path localPath;
-  private String outputPath;
+    private var localPath: com.google.devtools.build.lib.vfs.Path? = null
+    var outputPath: String? = null
 
-  public OutputDigestMismatchException(Digest expected, Digest actual) {
-    this.expected = expected;
-    this.actual = actual;
-  }
+    init {
+        this.expected = expected
+        this.actual = actual
+    }
 
-  public void setOutputPath(String outputPath) {
-    this.outputPath = outputPath;
-  }
+    fun getLocalPath(): com.google.devtools.build.lib.vfs.Path? {
+        return localPath
+    }
 
-  public String getOutputPath() {
-    return outputPath;
-  }
+    fun setLocalPath(localPath: com.google.devtools.build.lib.vfs.Path?) {
+        this.localPath = localPath
+    }
 
-  public Path getLocalPath() {
-    return localPath;
-  }
-
-  public void setLocalPath(Path localPath) {
-    this.localPath = localPath;
-  }
-
-  @Override
-  public String getMessage() {
-    return String.format(
-        "Output %s download failed: Expected digest '%s/%d' does not match "
-            + "received digest '%s/%d'.",
-        outputPath,
-        expected.getHash(),
-        expected.getSizeBytes(),
-        actual.getHash(),
-        actual.getSizeBytes());
-  }
+    val message: String?
+        get() = java.lang.String.format(
+            "Output %s download failed: Expected digest '%s/%d' does not match "
+                    + "received digest '%s/%d'.",
+            outputPath,
+            expected.getHash(),
+            expected.getSizeBytes(),
+            actual.getHash(),
+            actual.getSizeBytes()
+        )
 }

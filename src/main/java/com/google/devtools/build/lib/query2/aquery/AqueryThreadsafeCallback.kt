@@ -11,31 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.aquery;
+package com.google.devtools.build.lib.query2.aquery
 
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.query2.NamedThreadSafeOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import java.io.OutputStream;
-import java.io.PrintStream;
+import com.google.devtools.build.lib.analysis.ConfiguredTargetValue
 
-/** Base class for aquery output callbacks. */
-public abstract class AqueryThreadsafeCallback
-    extends NamedThreadSafeOutputFormatterCallback<ConfiguredTargetValue> {
-  protected final ExtendedEventHandler eventHandler;
-  protected final AqueryOptions options;
-  protected final PrintStream printStream;
-  protected final ConfiguredTargetValueAccessor accessor;
+/** Base class for aquery output callbacks.  */
+abstract class AqueryThreadsafeCallback
+internal constructor(
+    eventHandler: ExtendedEventHandler?,
+    options: AqueryOptions?,
+    out: java.io.OutputStream?,
+    accessor: TargetAccessor<ConfiguredTargetValue?>?
+) : NamedThreadSafeOutputFormatterCallback<ConfiguredTargetValue?>() {
+    protected val eventHandler: ExtendedEventHandler?
+    protected val options: AqueryOptions?
+    protected val printStream: PrintStream?
+    protected val accessor: ConfiguredTargetValueAccessor?
 
-  AqueryThreadsafeCallback(
-      ExtendedEventHandler eventHandler,
-      AqueryOptions options,
-      OutputStream out,
-      TargetAccessor<ConfiguredTargetValue> accessor) {
-    this.eventHandler = eventHandler;
-    this.options = options;
-    this.printStream = out == null ? null : new PrintStream(out);
-    this.accessor = (ConfiguredTargetValueAccessor) accessor;
-  }
+    init {
+        this.eventHandler = eventHandler
+        this.options = options
+        this.printStream = if (out == null) null else PrintStream(out)
+        this.accessor = accessor as ConfiguredTargetValueAccessor?
+    }
 }

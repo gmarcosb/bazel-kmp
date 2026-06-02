@@ -11,209 +11,220 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableBiMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.ryanharter.auto.value.gson.GenerateTypeAdapter;
-import java.util.Optional;
-import net.starlark.java.syntax.Location;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId.IsolationKey
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.ryanharter.auto.value.gson.GenerateTypeAdapter
 
 /**
  * Represents the usage of a module extension in one module. This class records all the information
- * pertinent to all the proxy objects returned from any {@code use_extension} calls in this module
+ * pertinent to all the proxy objects returned from any `use_extension` calls in this module
  * that refer to the same extension (or isolate, when applicable).
- *
- * <p>When adding new fields, make sure to update {@link #trimForEvaluation()} as well.
+ * 
+ * 
+ * When adding new fields, make sure to update [.trimForEvaluation] as well.
  */
 @AutoValue
 @GenerateTypeAdapter
-public abstract class ModuleExtensionUsage {
-  /** An unresolved label pointing to the Starlark file where the module extension is defined. */
-  public abstract String getExtensionBzlFile();
+abstract class ModuleExtensionUsage {
+    /** An unresolved label pointing to the Starlark file where the module extension is defined.  */
+    abstract val extensionBzlFile: String?
 
-  /** The name of the extension. */
-  public abstract String getExtensionName();
-
-  /**
-   * The isolation key of this module extension usage. This is present if and only if the usage is
-   * created with {@code isolate = True}.
-   */
-  public abstract Optional<ModuleExtensionId.IsolationKey> getIsolationKey();
-
-  /** Represents one "proxy object" returned from one {@code use_extension} call. */
-  @AutoValue
-  @GenerateTypeAdapter
-  public abstract static class Proxy {
-    /** The location of the {@code use_extension} call. */
-    public abstract Location getLocation();
+    /** The name of the extension.  */
+    abstract val extensionName: String?
 
     /**
-     * The name of the proxy object; as in, the name that the return value of {@code use_extension}
-     * is bound to. Is the empty string if the return value is not bound to any name (e.g. {@code
-     * use_repo(use_extension(...))}).
+     * The isolation key of this module extension usage. This is present if and only if the usage is
+     * created with `isolate = True`.
      */
-    public abstract String getProxyName();
+    abstract val isolationKey: java.util.Optional<IsolationKey?>?
 
-    /**
-     * The path to the MODULE.bazel file (or one of its includes) that contains this proxy object.
-     * This path should be relative to the workspace root.
-     */
-    public abstract PathFragment getContainingModuleFilePath();
+    /** Represents one "proxy object" returned from one `use_extension` call.  */
+    @AutoValue
+    @GenerateTypeAdapter
+    abstract class Proxy {
+        /** The location of the `use_extension` call.  */
+        abstract val location: net.starlark.java.syntax.Location?
 
-    /** Whether {@code dev_dependency} is set to true. */
-    public abstract boolean isDevDependency();
+        /**
+         * The name of the proxy object; as in, the name that the return value of `use_extension`
+         * is bound to. Is the empty string if the return value is not bound to any name (e.g. `use_repo(use_extension(...))`).
+         */
+        abstract val proxyName: String?
 
-    /**
-     * All the repos imported, through this proxy, from this module extension into the scope of the
-     * current module. The key is the local repo name (in the scope of the current module), and the
-     * value is the name exported by the module extension.
-     */
-    public abstract ImmutableBiMap<String, String> getImports();
+        /**
+         * The path to the MODULE.bazel file (or one of its includes) that contains this proxy object.
+         * This path should be relative to the workspace root.
+         */
+        abstract val containingModuleFilePath: PathFragment?
 
-    public static Builder builder() {
-      return new AutoValue_ModuleExtensionUsage_Proxy.Builder().setProxyName("");
+        /** Whether `dev_dependency` is set to true.  */
+        abstract val isDevDependency: Boolean
+
+        /**
+         * All the repos imported, through this proxy, from this module extension into the scope of the
+         * current module. The key is the local repo name (in the scope of the current module), and the
+         * value is the name exported by the module extension.
+         */
+        abstract val imports: com.google.common.collect.ImmutableBiMap<String?, String?>?
+
+        /** Builder for [ModuleExtensionUsage.Proxy].  */
+        @AutoValue.Builder
+        abstract class Builder {
+            abstract fun setLocation(value: net.starlark.java.syntax.Location?): Builder?
+
+            abstract val proxyName: String?
+
+            abstract fun setProxyName(value: String?): Builder?
+
+            abstract fun setContainingModuleFilePath(value: PathFragment?): Builder?
+
+            abstract val isDevDependency: Boolean
+
+            abstract fun setDevDependency(value: Boolean): Builder?
+
+            abstract fun importsBuilder(): com.google.common.collect.ImmutableBiMap.Builder<String?, String?>?
+
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addImport(key: String, value: String): Builder {
+                importsBuilder().put(key, value)
+                return this
+            }
+
+            abstract fun setImports(value: com.google.common.collect.ImmutableBiMap<String?, String?>?): Builder?
+
+            abstract fun build(): Proxy?
+        }
+
+        companion object {
+            @kotlin.jvm.JvmStatic
+            fun builder(): Builder {
+                return Builder().setProxyName("")!!
+            }
+        }
     }
 
-    /** Builder for {@link ModuleExtensionUsage.Proxy}. */
+    /** The list of proxy objects that constitute  */
+    abstract val proxies: com.google.common.collect.ImmutableList<Proxy?>?
+
+    /** All the tags specified by this module for this extension.  */
+    abstract val tags: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Tag?>?
+
+    val hasDevUseExtension: Boolean
+        /**
+         * Whether any `use_extension` calls for this usage had `dev_dependency = True` set.
+         */
+        get() = this.proxies.stream()
+            .anyMatch(java.util.function.Predicate { p: Proxy? -> p!!.isDevDependency })
+
+    val hasNonDevUseExtension: Boolean
+        /**
+         * Whether any `use_extension` calls for this usage had `dev_dependency = False` set.
+         */
+        get() = this.proxies.stream()
+            .anyMatch(java.util.function.Predicate { p: Proxy? -> !p!!.isDevDependency })
+
+    /**
+     * Represents a repo that overrides another repo within the scope of the extension.
+     * 
+     * @param overridingRepoName The apparent name of the overriding repo in the root module.
+     * @param mustExist Whether this override should apply to an existing repo.
+     * @param location The location of the `override_repo` or `inject_repo` call.
+     */
+    @AutoCodec
+    @GenerateTypeAdapter
+    class RepoOverride(
+        val overridingRepoName: String?,
+        val mustExist: Boolean,
+        location: net.starlark.java.syntax.Location?
+    ) {
+        val location: net.starlark.java.syntax.Location?
+
+        init {
+            this.location = location
+        }
+    }
+
+    /**
+     * Contains information about overrides that apply to repos generated by this extension. Keyed by
+     * the extension-local repo name.
+     * 
+     * 
+     * This is only non-empty for root module usages.
+     */
+    @kotlin.jvm.JvmField
+    abstract val repoOverrides: com.google.common.collect.ImmutableMap<String?, RepoOverride?>?
+
+    abstract fun toBuilder(): Builder?
+
+    /**
+     * Returns a new usage with all information removed that does not influence the evaluation of the
+     * extension.
+     */
+    fun trimForEvaluation(): ModuleExtensionUsage? {
+        // We start with the full usage and selectively remove information that does not influence the
+        // evaluation of the extension. Compared to explicitly copying over the parts that do, this
+        // preserves correctness in case new fields are added without updating this code.
+        return toBuilder()!!
+            .setTags(
+                this.tags.stream()
+                    .map<com.google.devtools.build.lib.bazel.bzlmod.Tag?>(java.util.function.Function { obj: com.google.devtools.build.lib.bazel.bzlmod.Tag? -> obj.trimForEvaluation() })
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Tag?>())
+            )!! // Clear out all proxies as information contained therein isn't useful for evaluation.
+            // Locations are only used for error reporting and thus don't influence whether the
+            // evaluation of the extension is successful and what its result is in case of success.
+            // Extension implementation functions do not see the imports, they are only validated
+            // against the set of generated repos in a validation step that comes afterward.
+            .setProxies(com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy?>())!! // Tracked in SingleExtensionUsagesValue instead, using canonical instead of apparent names.
+            // Whether this override must apply to an existing repo as well as its source location also
+            // don't influence the evaluation of the extension as they are checked in
+            // SingleExtensionFunction.
+            .setRepoOverrides(com.google.common.collect.ImmutableMap.of<kotlin.String?, com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.RepoOverride?>())!!
+            .build()
+    }
+
+    /** Builder for [ModuleExtensionUsage].  */
     @AutoValue.Builder
-    public abstract static class Builder {
-      public abstract Builder setLocation(Location value);
+    abstract class Builder {
+        abstract fun setExtensionBzlFile(value: String?): Builder?
 
-      public abstract String getProxyName();
+        abstract fun setExtensionName(value: String?): Builder?
 
-      public abstract Builder setProxyName(String value);
+        abstract fun setIsolationKey(value: java.util.Optional<IsolationKey?>?): Builder?
 
-      public abstract Builder setContainingModuleFilePath(PathFragment value);
+        abstract fun setProxies(value: com.google.common.collect.ImmutableList<Proxy?>?): Builder?
 
-      public abstract boolean isDevDependency();
+        abstract fun proxiesBuilder(): com.google.common.collect.ImmutableList.Builder<Proxy?>?
 
-      public abstract Builder setDevDependency(boolean value);
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addProxy(value: Proxy): Builder {
+            proxiesBuilder().add(value)
+            return this
+        }
 
-      abstract ImmutableBiMap.Builder<String, String> importsBuilder();
+        abstract fun setTags(value: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Tag?>?): Builder?
 
-      @CanIgnoreReturnValue
-      public final Builder addImport(String key, String value) {
-        importsBuilder().put(key, value);
-        return this;
-      }
+        abstract fun tagsBuilder(): com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.bazel.bzlmod.Tag?>?
 
-      public abstract Builder setImports(ImmutableBiMap<String, String> value);
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addTag(value: com.google.devtools.build.lib.bazel.bzlmod.Tag): Builder {
+            tagsBuilder().add(value)
+            return this
+        }
 
-      public abstract Proxy build();
-    }
-  }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        abstract fun setRepoOverrides(repoOverrides: com.google.common.collect.ImmutableMap<String?, RepoOverride?>?): Builder?
 
-  /** The list of proxy objects that constitute */
-  public abstract ImmutableList<Proxy> getProxies();
-
-  /** All the tags specified by this module for this extension. */
-  public abstract ImmutableList<Tag> getTags();
-
-  /**
-   * Whether any {@code use_extension} calls for this usage had {@code dev_dependency = True} set.
-   */
-  public final boolean getHasDevUseExtension() {
-    return getProxies().stream().anyMatch(p -> p.isDevDependency());
-  }
-
-  /**
-   * Whether any {@code use_extension} calls for this usage had {@code dev_dependency = False} set.
-   */
-  public final boolean getHasNonDevUseExtension() {
-    return getProxies().stream().anyMatch(p -> !p.isDevDependency());
-  }
-
-  /**
-   * Represents a repo that overrides another repo within the scope of the extension.
-   *
-   * @param overridingRepoName The apparent name of the overriding repo in the root module.
-   * @param mustExist Whether this override should apply to an existing repo.
-   * @param location The location of the {@code override_repo} or {@code inject_repo} call.
-   */
-  @AutoCodec
-  @GenerateTypeAdapter
-  public record RepoOverride(String overridingRepoName, boolean mustExist, Location location) {}
-
-  /**
-   * Contains information about overrides that apply to repos generated by this extension. Keyed by
-   * the extension-local repo name.
-   *
-   * <p>This is only non-empty for root module usages.
-   */
-  public abstract ImmutableMap<String, RepoOverride> getRepoOverrides();
-
-  public abstract Builder toBuilder();
-
-  public static Builder builder() {
-    return new AutoValue_ModuleExtensionUsage.Builder();
-  }
-
-  /**
-   * Returns a new usage with all information removed that does not influence the evaluation of the
-   * extension.
-   */
-  ModuleExtensionUsage trimForEvaluation() {
-    // We start with the full usage and selectively remove information that does not influence the
-    // evaluation of the extension. Compared to explicitly copying over the parts that do, this
-    // preserves correctness in case new fields are added without updating this code.
-    return toBuilder()
-        .setTags(getTags().stream().map(Tag::trimForEvaluation).collect(toImmutableList()))
-        // Clear out all proxies as information contained therein isn't useful for evaluation.
-        // Locations are only used for error reporting and thus don't influence whether the
-        // evaluation of the extension is successful and what its result is in case of success.
-        // Extension implementation functions do not see the imports, they are only validated
-        // against the set of generated repos in a validation step that comes afterward.
-        .setProxies(ImmutableList.of())
-        // Tracked in SingleExtensionUsagesValue instead, using canonical instead of apparent names.
-        // Whether this override must apply to an existing repo as well as its source location also
-        // don't influence the evaluation of the extension as they are checked in
-        // SingleExtensionFunction.
-        .setRepoOverrides(ImmutableMap.of())
-        .build();
-  }
-
-  /** Builder for {@link ModuleExtensionUsage}. */
-  @AutoValue.Builder
-  public abstract static class Builder {
-
-    public abstract Builder setExtensionBzlFile(String value);
-
-    public abstract Builder setExtensionName(String value);
-
-    public abstract Builder setIsolationKey(Optional<ModuleExtensionId.IsolationKey> value);
-
-    public abstract Builder setProxies(ImmutableList<Proxy> value);
-
-    abstract ImmutableList.Builder<Proxy> proxiesBuilder();
-
-    @CanIgnoreReturnValue
-    public Builder addProxy(Proxy value) {
-      proxiesBuilder().add(value);
-      return this;
+        abstract fun build(): ModuleExtensionUsage?
     }
 
-    public abstract Builder setTags(ImmutableList<Tag> value);
-
-    abstract ImmutableList.Builder<Tag> tagsBuilder();
-
-    @CanIgnoreReturnValue
-    public Builder addTag(Tag value) {
-      tagsBuilder().add(value);
-      return this;
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return Builder()
+        }
     }
-
-    @CanIgnoreReturnValue
-    public abstract Builder setRepoOverrides(ImmutableMap<String, RepoOverride> repoOverrides);
-
-    public abstract ModuleExtensionUsage build();
-  }
 }

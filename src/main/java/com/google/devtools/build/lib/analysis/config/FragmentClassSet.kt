@@ -11,97 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config
 
-package com.google.devtools.build.lib.analysis.config;
-
-import static com.google.common.base.Predicates.not;
-
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Interner;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.util.ClassName;
-import java.util.AbstractSet;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.Iterator;
-import javax.annotation.concurrent.Immutable;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
+import java.util.AbstractSet
 
 /**
- * A wrapper class for an {@code ImmutableSortedSet<Class<? extends Fragment>>}. Interning these
+ * A wrapper class for an `ImmutableSortedSet<Class<? extends Fragment>>`. Interning these
  * objects allows us to do cheap reference equality checks when these sets are in frequently used
  * keys.
  */
-@Immutable
-public final class FragmentClassSet extends AbstractSet<Class<? extends Fragment>> {
+@javax.annotation.concurrent.Immutable
+class FragmentClassSet private constructor(
+    fragments: com.google.common.collect.ImmutableSortedSet<java.lang.Class<out Fragment?>?>,
+    hashCode: Int
+) : AbstractSet<java.lang.Class<out Fragment?>?>() {
+    private val fragments: com.google.common.collect.ImmutableSortedSet<java.lang.Class<out Fragment?>?>
+    private val hashCode: Int
 
-  /**
-   * Sorts fragments by class name. This produces a stable order which, e.g., facilitates consistent
-   * output from buildMnemonic.
-   */
-  @SerializationConstant
-  public static final Comparator<Class<? extends Fragment>> LEXICAL_FRAGMENT_SORTER =
-      Comparator.comparing(Class::getName);
-
-  private static final Interner<FragmentClassSet> interner = BlazeInterners.newWeakInterner();
-
-  public static FragmentClassSet of(Collection<Class<? extends Fragment>> fragments) {
-    ImmutableSortedSet<Class<? extends Fragment>> sortedFragments =
-        ImmutableSortedSet.copyOf(LEXICAL_FRAGMENT_SORTER, fragments);
-    return interner.intern(new FragmentClassSet(sortedFragments, sortedFragments.hashCode()));
-  }
-
-  private final ImmutableSortedSet<Class<? extends Fragment>> fragments;
-  private final int hashCode;
-
-  private FragmentClassSet(ImmutableSortedSet<Class<? extends Fragment>> fragments, int hashCode) {
-    this.fragments = fragments;
-    this.hashCode = hashCode;
-  }
-
-  @Override
-  public int size() {
-    return fragments.size();
-  }
-
-  @Override
-  public boolean contains(Object o) {
-    return fragments.contains(o);
-  }
-
-  /** Returns a set of fragment classes identical to this one but without the given fragment. */
-  public FragmentClassSet trim(Class<? extends Fragment> fragment) {
-    if (!contains(fragment)) {
-      return this;
+    init {
+        this.fragments = fragments
+        this.hashCode = hashCode
     }
-    return of(Sets.filter(fragments, not(fragment::equals)));
-  }
 
-  @Override
-  public Iterator<Class<? extends Fragment>> iterator() {
-    return fragments.iterator();
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (this == other) {
-      return true;
+    override fun size(): Int {
+        return fragments.size
     }
-    if (!(other instanceof FragmentClassSet that)) {
-      return false;
+
+    override fun contains(o: Any?): Boolean {
+        return fragments.contains(o)
     }
-    return hashCode == that.hashCode && fragments.equals(that.fragments);
-  }
 
-  @Override
-  public int hashCode() {
-    return hashCode;
-  }
+    /** Returns a set of fragment classes identical to this one but without the given fragment.  */
+    fun trim(fragment: java.lang.Class<out Fragment?>): FragmentClassSet? {
+        if (!contains(fragment)) {
+            return this
+        }
+        return of(
+            com.google.common.collect.Sets.filter<java.lang.Class<out Fragment?>?>(
+                fragments,
+                com.google.common.base.Predicates.not<java.lang.Class<out Fragment?>?>(com.google.common.base.Predicate { obj: java.lang.Class<out Fragment?>? ->
+                    fragment.equals(obj)
+                })
+            )
+        )
+    }
 
-  @Override
-  public String toString() {
-    return Collections2.transform(fragments, ClassName::getSimpleNameWithOuter).toString();
-  }
+    override fun iterator(): MutableIterator<java.lang.Class<out Fragment?>?> {
+        return fragments.iterator()
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) {
+            return true
+        }
+        if (other !is FragmentClassSet) {
+            return false
+        }
+        return hashCode == other.hashCode && fragments == other.fragments
+    }
+
+    override fun hashCode(): Int {
+        return hashCode
+    }
+
+    override fun toString(): String {
+        return com.google.common.collect.Collections2.transform<java.lang.Class<out Fragment?>?, String?>(
+            fragments,
+            com.google.common.base.Function { clazz: java.lang.Class<out Fragment?>? ->
+                com.google.devtools.build.lib.util.ClassName.getSimpleNameWithOuter(clazz)
+            }).toString()
+    }
+
+    companion object {
+        /**
+         * Sorts fragments by class name. This produces a stable order which, e.g., facilitates consistent
+         * output from buildMnemonic.
+         */
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val LEXICAL_FRAGMENT_SORTER: java.util.Comparator<java.lang.Class<out Fragment?>?> =
+            java.util.Comparator.comparing<java.lang.Class<out Fragment?>?, String?>(java.util.function.Function { obj: java.lang.Class<out Fragment?>? -> obj.getName() })
+
+        private val interner: com.google.common.collect.Interner<FragmentClassSet> =
+            com.google.devtools.build.lib.concurrent.BlazeInterners.newWeakInterner<FragmentClassSet?>()
+
+        fun of(fragments: MutableCollection<java.lang.Class<out Fragment?>?>): FragmentClassSet {
+            val sortedFragments: com.google.common.collect.ImmutableSortedSet<java.lang.Class<out Fragment?>?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<java.lang.Class<out Fragment?>?>(
+                    LEXICAL_FRAGMENT_SORTER,
+                    fragments
+                )
+            return interner.intern(FragmentClassSet(sortedFragments, sortedFragments.hashCode()))
+        }
+    }
 }

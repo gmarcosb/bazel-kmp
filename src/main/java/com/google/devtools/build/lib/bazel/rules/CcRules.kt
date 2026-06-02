@@ -11,60 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.rules;
+package com.google.devtools.build.lib.bazel.rules
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses.EmptyRule;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
-import com.google.devtools.build.lib.bazel.rules.cpp.BazelCcModule;
-import com.google.devtools.build.lib.rules.core.CoreRules;
-import com.google.devtools.build.lib.rules.cpp.CcLibcTopAlias;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainAliasRule;
-import com.google.devtools.build.lib.rules.cpp.CppConfiguration;
-import com.google.devtools.build.lib.rules.platform.PlatformRules;
-import com.google.devtools.build.lib.starlarkbuildapi.cpp.CcBootstrap;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.analysis.BaseRuleClasses.EmptyRule
 
 /**
  * Rules for C++ support in Bazel.
  */
-public class CcRules implements RuleSet {
-  public static final CcRules INSTANCE = new CcRules();
+class CcRules private constructor() : RuleSet {
+    public override fun init(builder: ConfiguredRuleClassProvider.Builder) {
+        val bazelCcModule: BazelCcModule = BazelCcModule()
+        builder.addConfigurationFragment(CppConfiguration::class.java)
+        builder.addBzlToplevel("CcInfo", net.starlark.java.eval.Starlark.NONE)
+        builder.addBzlToplevel("DebugPackageInfo", net.starlark.java.eval.Starlark.NONE)
+        builder.addBzlToplevel("CcSharedLibraryInfo", net.starlark.java.eval.Starlark.NONE)
+        builder.addBzlToplevel("CcSharedLibraryHintInfo", net.starlark.java.eval.Starlark.NONE)
 
-  private CcRules() {
-    // Use the static INSTANCE field instead.
-  }
+        builder.addRuleDefinition(object : EmptyRule("cc_toolchain") {})
+        builder.addRuleDefinition(object : EmptyRule("cc_toolchain_suite") {})
+        builder.addRuleDefinition(CcToolchainAliasRule())
+        builder.addRuleDefinition(CcLibcTopAlias())
+        builder.addRuleDefinition(object : EmptyRule("cc_binary") {})
+        builder.addRuleDefinition(object : EmptyRule("cc_shared_library") {})
+        builder.addRuleDefinition(object : EmptyRule("cc_static_library") {})
+        builder.addRuleDefinition(object : EmptyRule("cc_test") {})
+        builder.addRuleDefinition(object : EmptyRule("cc_library") {})
+        builder.addRuleDefinition(object : EmptyRule("cc_import") {})
+        builder.addRuleDefinition(object : EmptyRule("fdo_profile") {})
+        builder.addRuleDefinition(object : EmptyRule("fdo_prefetch_hints") {})
+        builder.addRuleDefinition(object : EmptyRule("memprof_profile") {})
+        builder.addRuleDefinition(object : EmptyRule("propeller_optimize") {})
+        builder.addStarlarkBuiltinsInternal("cc_common", bazelCcModule)
+        builder.addStarlarkBootstrap(CcBootstrap(bazelCcModule))
+    }
 
-  @Override
-  public void init(ConfiguredRuleClassProvider.Builder builder) {
-    BazelCcModule bazelCcModule = new BazelCcModule();
-    builder.addConfigurationFragment(CppConfiguration.class);
-    builder.addBzlToplevel("CcInfo", Starlark.NONE);
-    builder.addBzlToplevel("DebugPackageInfo", Starlark.NONE);
-    builder.addBzlToplevel("CcSharedLibraryInfo", Starlark.NONE);
-    builder.addBzlToplevel("CcSharedLibraryHintInfo", Starlark.NONE);
+    public override fun requires(): com.google.common.collect.ImmutableList<RuleSet?> {
+        return com.google.common.collect.ImmutableList.of<E?>(CoreRules.INSTANCE, PlatformRules.INSTANCE)
+    }
 
-    builder.addRuleDefinition(new EmptyRule("cc_toolchain") {});
-    builder.addRuleDefinition(new EmptyRule("cc_toolchain_suite") {});
-    builder.addRuleDefinition(new CcToolchainAliasRule());
-    builder.addRuleDefinition(new CcLibcTopAlias());
-    builder.addRuleDefinition(new EmptyRule("cc_binary") {});
-    builder.addRuleDefinition(new EmptyRule("cc_shared_library") {});
-    builder.addRuleDefinition(new EmptyRule("cc_static_library") {});
-    builder.addRuleDefinition(new EmptyRule("cc_test") {});
-    builder.addRuleDefinition(new EmptyRule("cc_library") {});
-    builder.addRuleDefinition(new EmptyRule("cc_import") {});
-    builder.addRuleDefinition(new EmptyRule("fdo_profile") {});
-    builder.addRuleDefinition(new EmptyRule("fdo_prefetch_hints") {});
-    builder.addRuleDefinition(new EmptyRule("memprof_profile") {});
-    builder.addRuleDefinition(new EmptyRule("propeller_optimize") {});
-    builder.addStarlarkBuiltinsInternal("cc_common", bazelCcModule);
-    builder.addStarlarkBootstrap(new CcBootstrap(bazelCcModule));
-  }
-
-  @Override
-  public ImmutableList<RuleSet> requires() {
-    return ImmutableList.of(CoreRules.INSTANCE, PlatformRules.INSTANCE);
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: CcRules = CcRules()
+    }
 }

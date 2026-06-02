@@ -11,87 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import build.bazel.remote.execution.v2.ExecutionGrpc;
-import com.google.devtools.build.lib.remote.common.NetworkTime;
-import io.grpc.CallOptions;
-import io.grpc.Channel;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.ForwardingClientCall;
-import io.grpc.ForwardingClientCallListener;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
-import io.grpc.Status;
-import java.util.function.Supplier;
+import build.bazel.remote.execution.v2.ExecutionGrpc
 
-/** The ClientInterceptor used to track network time. */
-public class NetworkTimeInterceptor implements ClientInterceptor {
+/** The ClientInterceptor used to track network time.  */
+class NetworkTimeInterceptor(networkTimeSupplier: java.util.function.Supplier<NetworkTime?>) : ClientInterceptor {
+    private val networkTimeSupplier: java.util.function.Supplier<NetworkTime?>
 
-  private final Supplier<NetworkTime> networkTimeSupplier;
-
-  public NetworkTimeInterceptor(Supplier<NetworkTime> networkTimeSupplier) {
-    this.networkTimeSupplier = networkTimeSupplier;
-  }
-
-  @Override
-  public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
-      MethodDescriptor<ReqT, RespT> method, CallOptions callOptions, Channel next) {
-    ClientCall<ReqT, RespT> call = next.newCall(method, callOptions);
-    // prevent accounting for execution wait time
-    if (method != ExecutionGrpc.getExecuteMethod()
-        && method != ExecutionGrpc.getWaitExecutionMethod()) {
-      NetworkTime networkTime = networkTimeSupplier.get();
-      if (networkTime != null) {
-        call = new NetworkTimeCall<>(call, networkTime);
-      }
-    }
-    return call;
-  }
-
-  private static class NetworkTimeCall<ReqT, RespT>
-      extends ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT> {
-    private final NetworkTime networkTime;
-    private boolean firstMessage = true;
-
-    protected NetworkTimeCall(ClientCall<ReqT, RespT> delegate, NetworkTime networkTime) {
-      super(delegate);
-      this.networkTime = networkTime;
+    init {
+        this.networkTimeSupplier = networkTimeSupplier
     }
 
-    @Override
-    public void start(Listener<RespT> responseListener, Metadata headers) {
-      super.start(
-          new ForwardingClientCallListener.SimpleForwardingClientCallListener<RespT>(
-              responseListener) {
-
-            @Override
-            public void onClose(Status status, Metadata trailers) {
-              try {
-                networkTime.stop();
-              } catch (RuntimeException e) {
-                // An unchecked exception means we have bugs in the above try block, force crash
-                // Bazel so we can have a chance to look into.
-                throw new AssertionError(
-                    "networkTime.stop() must not throw unchecked exception: " + networkTime, e);
-              } finally {
-                // Make sure to call super.onClose, otherwise gRPC will silently hang indefinitely.
-                // See https://github.com/grpc/grpc-java/pull/6107.
-                super.onClose(status, trailers);
-              }
+    override fun <ReqT, RespT> interceptCall(
+        method: io.grpc.MethodDescriptor<ReqT?, RespT?>?, callOptions: CallOptions?, next: io.grpc.Channel
+    ): ClientCall<ReqT?, RespT?>? {
+        var call: ClientCall<ReqT?, RespT?>? = next.newCall<ReqT?, RespT?>(method, callOptions)
+        // prevent accounting for execution wait time
+        if (method != ExecutionGrpc.getExecuteMethod()
+            && method != ExecutionGrpc.getWaitExecutionMethod()
+        ) {
+            val networkTime: NetworkTime? = networkTimeSupplier.get()
+            if (networkTime != null) {
+                call = NetworkTimeCall<ReqT?, RespT?>(call, networkTime)
             }
-          },
-          headers);
+        }
+        return call
     }
 
-    @Override
-    public void sendMessage(ReqT message) {
-      if (firstMessage) {
-        networkTime.start();
-        firstMessage = false;
-      }
-      super.sendMessage(message);
+    private class NetworkTimeCall<ReqT, RespT>
+        (delegate: ClientCall<ReqT?, RespT?>?, networkTime: NetworkTime) :
+        SimpleForwardingClientCall<ReqT?, RespT?>(delegate) {
+        private val networkTime: NetworkTime
+        private var firstMessage = true
+
+        init {
+            this.networkTime = networkTime
+        }
+
+        override fun start(responseListener: io.grpc.ClientCall.Listener<RespT?>?, headers: io.grpc.Metadata?) {
+            super.start(
+                object : SimpleForwardingClientCallListener<RespT?>(
+                    responseListener
+                ) {
+                    override fun onClose(status: io.grpc.Status?, trailers: io.grpc.Metadata?) {
+                        try {
+                            networkTime.stop()
+                        } catch (e: java.lang.RuntimeException) {
+                            // An unchecked exception means we have bugs in the above try block, force crash
+                            // Bazel so we can have a chance to look into.
+                            throw java.lang.AssertionError(
+                                "networkTime.stop() must not throw unchecked exception: " + networkTime, e
+                            )
+                        } finally {
+                            // Make sure to call super.onClose, otherwise gRPC will silently hang indefinitely.
+                            // See https://github.com/grpc/grpc-java/pull/6107.
+                            super.onClose(status, trailers)
+                        }
+                    }
+                },
+                headers
+            )
+        }
+
+        override fun sendMessage(message: ReqT?) {
+            if (firstMessage) {
+                networkTime.start()
+                firstMessage = false
+            }
+            super.sendMessage(message)
+        }
     }
-  }
 }

@@ -11,130 +11,114 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import build.bazel.remote.execution.v2.Action;
-import build.bazel.remote.execution.v2.Command;
-import build.bazel.remote.execution.v2.Digest;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import com.google.devtools.build.lib.remote.common.ActionKey;
-import com.google.devtools.build.lib.remote.common.NetworkTime;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemotePathResolver;
-import com.google.devtools.build.lib.remote.merkletree.MerkleTree;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.SortedMap;
+import build.bazel.remote.execution.v2.Action
 
 /**
  * A value class representing an action which can be executed remotely.
- *
- * <p>Terminology note: "action" is used here in the remote execution protocol sense, which is
+ * 
+ * 
+ * Terminology note: "action" is used here in the remote execution protocol sense, which is
  * equivalent to a Bazel "spawn" (a Bazel "action" being a higher-level concept).
  */
-public class RemoteAction {
+class RemoteAction internal constructor(
+    spawn: Spawn?,
+    spawnExecutionContext: SpawnExecutionContext,
+    remoteActionExecutionContext: RemoteActionExecutionContext,
+    remotePathResolver: RemotePathResolver,
+    merkleTree: MerkleTree,
+    commandHash: Digest?,
+    command: Command?,
+    action: Action?,
+    actionKey: ActionKey
+) {
+    private val spawn: Spawn?
+    private val spawnExecutionContext: SpawnExecutionContext
+    private val remoteActionExecutionContext: RemoteActionExecutionContext
+    private val remotePathResolver: RemotePathResolver
+    private val merkleTree: MerkleTree
+    private val commandHash: Digest?
+    private val command: Command?
+    private val action: Action?
+    private val actionKey: ActionKey
 
-  private final Spawn spawn;
-  private final SpawnExecutionContext spawnExecutionContext;
-  private final RemoteActionExecutionContext remoteActionExecutionContext;
-  private final RemotePathResolver remotePathResolver;
-  private final MerkleTree merkleTree;
-  private final Digest commandHash;
-  private final Command command;
-  private final Action action;
-  private final ActionKey actionKey;
+    init {
+        this.spawn = spawn
+        this.spawnExecutionContext = spawnExecutionContext
+        this.remoteActionExecutionContext = remoteActionExecutionContext
+        this.remotePathResolver = remotePathResolver
+        this.merkleTree = merkleTree
+        this.commandHash = commandHash
+        this.command = command
+        this.action = action
+        this.actionKey = actionKey
+    }
 
-  RemoteAction(
-      Spawn spawn,
-      SpawnExecutionContext spawnExecutionContext,
-      RemoteActionExecutionContext remoteActionExecutionContext,
-      RemotePathResolver remotePathResolver,
-      MerkleTree merkleTree,
-      Digest commandHash,
-      Command command,
-      Action action,
-      ActionKey actionKey) {
-    this.spawn = spawn;
-    this.spawnExecutionContext = spawnExecutionContext;
-    this.remoteActionExecutionContext = remoteActionExecutionContext;
-    this.remotePathResolver = remotePathResolver;
-    this.merkleTree = merkleTree;
-    this.commandHash = commandHash;
-    this.command = command;
-    this.action = action;
-    this.actionKey = actionKey;
-  }
+    fun getRemoteActionExecutionContext(): RemoteActionExecutionContext {
+        return remoteActionExecutionContext
+    }
 
-  public RemoteActionExecutionContext getRemoteActionExecutionContext() {
-    return remoteActionExecutionContext;
-  }
+    fun getSpawnExecutionContext(): SpawnExecutionContext {
+        return spawnExecutionContext
+    }
 
-  public SpawnExecutionContext getSpawnExecutionContext() {
-    return spawnExecutionContext;
-  }
+    /** Returns the [Spawn] that owns this action.  */
+    fun getSpawn(): Spawn? {
+        return spawn
+    }
 
-  /** Returns the {@link Spawn} that owns this action. */
-  public Spawn getSpawn() {
-    return spawn;
-  }
+    val inputBytes: Long
+        /**
+         * Returns the sum of file sizes plus protobuf sizes used to represent the inputs of this action.
+         */
+        get() = merkleTree.inputBytes()
 
-  /**
-   * Returns the sum of file sizes plus protobuf sizes used to represent the inputs of this action.
-   */
-  public long getInputBytes() {
-    return merkleTree.inputBytes();
-  }
+    val inputFiles: Long
+        /** Returns the number of input files of this action.  */
+        get() = merkleTree.inputFiles()
 
-  /** Returns the number of input files of this action. */
-  public long getInputFiles() {
-    return merkleTree.inputFiles();
-  }
+    val actionId: String
+        /** Returns the id this is action.  */
+        get() = actionKey.digest.getHash()
 
-  /** Returns the id this is action. */
-  public String getActionId() {
-    return actionKey.digest().getHash();
-  }
+    /** Returns the [ActionKey] of this action.  */
+    fun getActionKey(): ActionKey {
+        return actionKey
+    }
 
-  /** Returns the {@link ActionKey} of this action. */
-  public ActionKey getActionKey() {
-    return actionKey;
-  }
+    /** Returns underlying [Action] of this remote action.  */
+    fun getAction(): Action? {
+        return action
+    }
 
-  /** Returns underlying {@link Action} of this remote action. */
-  public Action getAction() {
-    return action;
-  }
+    fun getCommandHash(): Digest? {
+        return commandHash
+    }
 
-  public Digest getCommandHash() {
-    return commandHash;
-  }
+    fun getCommand(): Command? {
+        return command
+    }
 
-  public Command getCommand() {
-    return command;
-  }
+    fun getRemotePathResolver(): RemotePathResolver {
+        return remotePathResolver
+    }
 
-  public RemotePathResolver getRemotePathResolver() {
-    return remotePathResolver;
-  }
+    fun getMerkleTree(): MerkleTree {
+        return merkleTree
+    }
 
-  public MerkleTree getMerkleTree() {
-    return merkleTree;
-  }
+    /**
+     * Returns a [SortedMap] which maps from input paths for remote action to [ ].
+     */
+    fun getInputMap(willAccessRepeatedly: Boolean): SortedMap<PathFragment?, ActionInput?>? {
+        return remotePathResolver.getInputMapping(spawnExecutionContext, willAccessRepeatedly)
+    }
 
-  /**
-   * Returns a {@link SortedMap} which maps from input paths for remote action to {@link
-   * ActionInput}.
-   */
-  public SortedMap<PathFragment, ActionInput> getInputMap(boolean willAccessRepeatedly) {
-    return remotePathResolver.getInputMapping(spawnExecutionContext, willAccessRepeatedly);
-  }
-
-  /**
-   * Returns the {@link NetworkTime} instance used to measure the network time during the action
-   * execution.
-   */
-  public NetworkTime getNetworkTime() {
-    return remoteActionExecutionContext.getNetworkTime();
-  }
+    val networkTime: NetworkTime?
+        /**
+         * Returns the [NetworkTime] instance used to measure the network time during the action
+         * execution.
+         */
+        get() = remoteActionExecutionContext.getNetworkTime()
 }

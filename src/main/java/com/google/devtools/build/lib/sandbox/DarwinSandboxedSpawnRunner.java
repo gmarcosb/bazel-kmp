@@ -180,7 +180,7 @@ final class DarwinSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
     // Note that the value returned by context.getId() is only unique inside one given SpawnRunner,
     // so we have to prefix our name to turn it into a globally unique value.
     Path sandboxPath =
-        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.getId()));
+        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.id));
     sandboxPath.getParentDirectory().createDirectory();
     sandboxPath.createDirectory();
 
@@ -205,7 +205,7 @@ final class DarwinSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
     SandboxOutputs outputs = SandboxHelpers.getOutputs(spawn);
 
     final Path sandboxConfigPath = sandboxPath.getRelative("sandbox.sb");
-    Duration timeout = context.getTimeout();
+    Duration timeout = context.timeout;
 
     ProcessWrapper.CommandLineBuilder processWrapperCommandLineBuilder =
         processWrapper

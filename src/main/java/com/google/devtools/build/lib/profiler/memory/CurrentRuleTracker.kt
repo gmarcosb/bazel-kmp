@@ -11,70 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler.memory
 
-package com.google.devtools.build.lib.profiler.memory;
+import com.google.devtools.build.lib.packages.AspectClass
+import com.google.devtools.build.lib.packages.RuleClass
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.packages.AspectClass;
-import com.google.devtools.build.lib.packages.RuleClass;
+/** Thread-local variables that keep track of the current rule being configured.  */
+object CurrentRuleTracker {
+    private val currentRule: java.lang.ThreadLocal<RuleClass?> = java.lang.ThreadLocal<RuleClass?>()
+    private val currentAspect: java.lang.ThreadLocal<AspectClass?> = java.lang.ThreadLocal<AspectClass?>()
+    private var enabled = false
 
-/** Thread-local variables that keep track of the current rule being configured. */
-public final class CurrentRuleTracker {
-  private static final ThreadLocal<RuleClass> currentRule = new ThreadLocal<>();
-  private static final ThreadLocal<AspectClass> currentAspect = new ThreadLocal<>();
-  private static boolean enabled;
-
-  private CurrentRuleTracker() {}
-
-  public static void setEnabled(boolean enabled) {
-    CurrentRuleTracker.enabled = enabled;
-  }
-
-  /**
-   * Sets the current rule being instantiated. Used for memory tracking.
-   *
-   * <p>You must call {@link CurrentRuleTracker#endConfiguredTarget()} after calling this.
-   */
-  public static void beginConfiguredTarget(RuleClass ruleClass) {
-    if (!enabled) {
-      return;
+    @kotlin.jvm.JvmStatic
+    fun setEnabled(enabled: Boolean) {
+        CurrentRuleTracker.enabled = enabled
     }
-    currentRule.set(ruleClass);
-  }
 
-  public static void endConfiguredTarget() {
-    if (!enabled) {
-      return;
+    /**
+     * Sets the current rule being instantiated. Used for memory tracking.
+     * 
+     * 
+     * You must call [CurrentRuleTracker.endConfiguredTarget] after calling this.
+     */
+    fun beginConfiguredTarget(ruleClass: RuleClass?) {
+        if (!enabled) {
+            return
+        }
+        currentRule.set(ruleClass)
     }
-    currentRule.set(null);
-  }
 
-  /**
-   * Sets the current aspect being instantiated. Used for memory tracking.
-   *
-   * <p>You must call {@link CurrentRuleTracker#endConfiguredAspect()} after calling this.
-   */
-  public static void beginConfiguredAspect(AspectClass aspectClass) {
-    if (!enabled) {
-      return;
+    @kotlin.jvm.JvmStatic
+    fun endConfiguredTarget() {
+        if (!enabled) {
+            return
+        }
+        currentRule.set(null)
     }
-    currentAspect.set(aspectClass);
-  }
 
-  public static void endConfiguredAspect() {
-    if (!enabled) {
-      return;
+    /**
+     * Sets the current aspect being instantiated. Used for memory tracking.
+     * 
+     * 
+     * You must call [CurrentRuleTracker.endConfiguredAspect] after calling this.
+     */
+    fun beginConfiguredAspect(aspectClass: AspectClass?) {
+        if (!enabled) {
+            return
+        }
+        currentAspect.set(aspectClass)
     }
-    currentAspect.set(null);
-  }
 
-  public static RuleClass getRule() {
-    Preconditions.checkState(enabled);
-    return currentRule.get();
-  }
+    @kotlin.jvm.JvmStatic
+    fun endConfiguredAspect() {
+        if (!enabled) {
+            return
+        }
+        currentAspect.set(null)
+    }
 
-  public static AspectClass getAspect() {
-    Preconditions.checkState(enabled);
-    return currentAspect.get();
-  }
+    fun getRule(): RuleClass? {
+        com.google.common.base.Preconditions.checkState(enabled)
+        return currentRule.get()
+    }
+
+    fun getAspect(): AspectClass? {
+        com.google.common.base.Preconditions.checkState(enabled)
+        return currentAspect.get()
+    }
 }

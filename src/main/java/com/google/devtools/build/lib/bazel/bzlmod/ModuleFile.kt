@@ -12,22 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.auto.value.AutoValue
 
-import com.google.auto.value.AutoValue;
-
-/** A MODULE.bazel file's content and location. */
+/** A MODULE.bazel file's content and location.  */
 @AutoValue
-public abstract class ModuleFile {
-  /** The raw content of the module file. */
-  @SuppressWarnings("mutable")
-  public abstract byte[] getContent();
+abstract class ModuleFile {
+    /** The raw content of the module file.  */
+    abstract val content: ByteArray?
 
-  /** The user-facing location of the module file, e.g. a file system path or URL. */
-  public abstract String getLocation();
+    /** The user-facing location of the module file, e.g. a file system path or URL.  */
+    abstract val location: String?
 
-  public static ModuleFile create(byte[] content, String location) {
-    return new AutoValue_ModuleFile(content, location);
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun create(content: ByteArray?, location: String?): ModuleFile {
+            return AutoValue_ModuleFile(content, location)
+        }
+    }
 }

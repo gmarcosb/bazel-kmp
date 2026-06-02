@@ -26,64 +26,655 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.google.devtools.build.lib.collect.compacthashmap
 
-package com.google.devtools.build.lib.collect.compacthashmap;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.primitives.Ints;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.AbstractCollection;
-import java.util.AbstractMap;
-import java.util.AbstractSet;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.ConcurrentModificationException;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Set;
-import java.util.Spliterator;
-import java.util.Spliterators;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.common.base.Objects
+import com.google.common.base.Preconditions
+import com.google.common.primitives.Ints
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import java.util.*
+import java.util.function.BiConsumer
+import java.util.function.BiFunction
+import java.util.function.Consumer
 
 /**
  * CompactHashMap is an implementation of a Map. All optional operations (put and remove) are
  * supported. Null keys and values are supported.
- *
- * <p>{@code containsKey(k)}, {@code put(k, v)} and {@code remove(k)} are all (expected and
+ * 
+ * 
+ * `containsKey(k)`, `put(k, v)` and `remove(k)` are all (expected and
  * amortized) constant time operations. Expected in the hashtable sense (depends on the hash
  * function doing a good job of distributing the elements to the buckets to a distribution not far
  * from uniform), and amortized since some operations can trigger a hash table resize.
- *
- * <p>Unlike {@code java.util.HashMap}, iteration is only proportional to the actual {@code size()},
- * which is optimal, and <i>not</i> the size of the internal hashtable, which could be much larger
- * than {@code size()}. Furthermore, this structure places significantly reduced load on the garbage
+ * 
+ * 
+ * Unlike `java.util.HashMap`, iteration is only proportional to the actual `size()`,
+ * which is optimal, and *not* the size of the internal hashtable, which could be much larger
+ * than `size()`. Furthermore, this structure places significantly reduced load on the garbage
  * collector by only using a constant number of internal objects.
- *
- * <p>If there are no removals, then iteration order for the {@link #entrySet}, {@link #keySet()},
- * and {@link #values} views is the same as insertion order. Any removal invalidates any ordering
+ * 
+ * 
+ * If there are no removals, then iteration order for the [.entrySet], [.keySet],
+ * and [.values] views is the same as insertion order. Any removal invalidates any ordering
  * guarantees.
- *
- * <p>This class should not be assumed to be universally superior to {@code java.util.HashMap}.
+ * 
+ * 
+ * This class should not be assumed to be universally superior to `java.util.HashMap`.
  * Generally speaking, this class reduces object allocation and memory consumption at the price of
  * moderately increased constant factors of CPU. Only use this class when there is a specific reason
  * to prioritize memory over CPU.
- *
+ * 
  * @author Louis Wasserman
  */
-public class CompactHashMap<K, V> extends AbstractMap<K, V> {
-  // A partial copy of com.google.common.collect.Hashing.
-  private static final int C1 = 0xcc9e2d51;
-  private static final int C2 = 0x1b873593;
+class CompactHashMap<K, V> internal constructor(expectedSize: Int) : AbstractMap<K?, V?>() {
+    /**
+     * The hashtable. Its values are indexes to the keys, values, and entries arrays.
+     * 
+     * 
+     * Currently, the UNSET value means "null pointer", and any non negative value x is the actual
+     * index.
+     * 
+     * 
+     * Its size must be a power of two.
+     */
+    @Transient
+    private var table: IntArray?
 
-  /*
+    /**
+     * Contains the logical entries, in the range of [0, size()). The high 32 bits of each long is the
+     * smeared hash of the element, whereas the low 32 bits is the "next" pointer (pointing to the
+     * next entry in the bucket chain). The pointers in [size(), entries.length) are all "null"
+     * (UNSET).
+     */
+    @Transient
+    private var entries: LongArray
+
+    /**
+     * The keys of the entries in the map, in the range of [0, size()). The keys in [size(),
+     * keys.length) are all `null`.
+     */
+    @Transient
+    private var keys: Array<Any?>
+
+    /**
+     * The values of the entries in the map, in the range of [0, size()). The values in [size(),
+     * values.length) are all `null`.
+     */
+    @Transient
+    private var values: Array<Any?>
+
+    /**
+     * Keeps track of modifications of this set, to make it possible to throw
+     * ConcurrentModificationException in the iterator. Note that we choose not to make this volatile,
+     * so we do less of a "best effort" to track such errors, for better performance.
+     */
+    @Transient
+    private var modCount: Int
+
+    /** The number of elements contained in the set.  */
+    @Transient
+    private var size = 0
+
+    /** Returns whether arrays need to be allocated.  */
+    private fun needsAllocArrays(): Boolean {
+        return table == null
+    }
+
+    /** Handle lazy allocation of arrays.  */
+    private fun allocArrays() {
+        Preconditions.checkState(needsAllocArrays(), "Arrays already allocated")
+
+        val expectedSize = modCount
+        val buckets: Int = closedTableSize(expectedSize)
+        this.table = newTable(buckets)
+
+        this.entries = newEntries(expectedSize)
+        this.keys = arrayOfNulls<Any>(expectedSize)
+        this.values = arrayOfNulls<Any>(expectedSize)
+    }
+
+    private fun hashTableMask(): Int {
+        return table.length - 1
+    }
+
+    @CanIgnoreReturnValue
+    override fun put(key: K?, value: V?): V? {
+        if (needsAllocArrays()) {
+            allocArrays()
+        }
+        val entries: LongArray = this.entries
+        val keys: Array<Any?> = this.keys
+        val values: Array<Any?> = this.values
+
+        val hash: Int = smearedHash(key)
+        val tableIndex = hash and hashTableMask()
+        val newEntryIndex = this.size // current size, and pointer to the entry to be appended
+        var next = table!![tableIndex]
+        if (next == UNSET) { // uninitialized bucket
+            table!![tableIndex] = newEntryIndex
+        } else {
+            var last: Int
+            var entry: Long
+            do {
+                last = next
+                entry = entries[next]
+                if (getHash(entry) == hash && Objects.equal(key, keys[next])) {
+                    val oldValue = values[next] as V?
+
+                    values[next] = value
+                    return oldValue
+                }
+                next = getNext(entry)
+            } while (next != UNSET)
+            entries[last] = swapNext(entry, newEntryIndex)
+        }
+        check(newEntryIndex != Integer.MAX_VALUE) { "Cannot contain more than Integer.MAX_VALUE elements!" }
+        val newSize = newEntryIndex + 1
+        resizeMeMaybe(newSize)
+        insertEntry(newEntryIndex, key, value, hash)
+        this.size = newSize
+        val oldCapacity: Int = table.length
+        if (needsResizing(newEntryIndex, oldCapacity)) {
+            resizeTable(2 * oldCapacity)
+        }
+        modCount++
+        return null
+    }
+
+    /**
+     * Creates a fresh entry with the specified object at the specified position in the entry arrays.
+     */
+    private fun insertEntry(entryIndex: Int, key: K?, value: V?, hash: Int) {
+        this.entries[entryIndex] = (hash.toLong() shl 32) or (NEXT_MASK and UNSET.toLong())
+        this.keys[entryIndex] = key
+        this.values[entryIndex] = value
+    }
+
+    /** Resizes the entries storage if necessary.  */
+    private fun resizeMeMaybe(newSize: Int) {
+        val entriesSize: Int = entries.length
+        if (newSize > entriesSize) {
+            var newCapacity = entriesSize + Math.max(1, entriesSize ushr 1)
+            if (newCapacity < 0) {
+                newCapacity = Integer.MAX_VALUE
+            }
+            if (newCapacity != entriesSize) {
+                resizeEntries(newCapacity)
+            }
+        }
+    }
+
+    /**
+     * Resizes the internal entries array to the specified capacity, which may be greater or less than
+     * the current capacity.
+     */
+    private fun resizeEntries(newCapacity: Int) {
+        this.keys = Arrays.copyOf<Any?>(keys, newCapacity)
+        this.values = Arrays.copyOf<Any?>(values, newCapacity)
+        var entries: LongArray = this.entries
+        val oldCapacity: Int = entries.length
+        entries = Arrays.copyOf(entries, newCapacity)
+        if (newCapacity > oldCapacity) {
+            Arrays.fill(entries, oldCapacity, newCapacity, UNSET.toLong())
+        }
+        this.entries = entries
+    }
+
+    private fun resizeTable(newCapacity: Int) { // newCapacity always a power of two
+        val newTable: IntArray = newTable(newCapacity)
+        val entries: LongArray = this.entries
+
+        val mask: Int = newTable.length - 1
+        for (i in 0..<size) {
+            val oldEntry = entries[i]
+            val hash: Int = getHash(oldEntry)
+            val tableIndex = hash and mask
+            val next = newTable[tableIndex]
+            newTable[tableIndex] = i
+            entries[i] = (hash.toLong() shl 32) or (NEXT_MASK and next.toLong())
+        }
+
+        this.table = newTable
+    }
+
+    private fun indexOf(key: Any?): Int {
+        if (needsAllocArrays()) {
+            return -1
+        }
+        val hash: Int = smearedHash(key)
+        var next = table!![hash and hashTableMask()]
+        while (next != UNSET) {
+            val entry: Long = entries[next]
+            if (getHash(entry) == hash && Objects.equal(key, keys[next])) {
+                return next
+            }
+            next = getNext(entry)
+        }
+        return -1
+    }
+
+    override fun containsKey(key: Any?): Boolean {
+        return indexOf(key) != -1
+    }
+
+    override fun get(key: Any?): V? {
+        val index = indexOf(key)
+        return if (index == -1) null else values[index] as V?
+    }
+
+    @CanIgnoreReturnValue
+    override fun remove(key: Any?): V? {
+        if (needsAllocArrays()) {
+            return null
+        }
+        return remove(key, smearedHash(key))
+    }
+
+    private fun remove(key: Any?, hash: Int): V? {
+        val tableIndex = hash and hashTableMask()
+        var next = table!![tableIndex]
+        if (next == UNSET) { // empty bucket
+            return null
+        }
+        var last: Int = UNSET
+        do {
+            if (getHash(entries[next]) == hash && Objects.equal(key, keys[next])) {
+                val oldValue = values[next] as V?
+
+                if (last == UNSET) {
+                    // we need to update the root link from table[]
+                    table!![tableIndex] = getNext(entries[next])
+                } else {
+                    // we need to update the link from the chain
+                    entries[last] = swapNext(entries[last], getNext(entries[next]))
+                }
+
+                moveLastEntry(next)
+                size--
+                modCount++
+                return oldValue
+            }
+            last = next
+            next = getNext(entries[next])
+        } while (next != UNSET)
+        return null
+    }
+
+    @CanIgnoreReturnValue
+    private fun removeEntry(entryIndex: Int): V? {
+        return remove(keys[entryIndex], getHash(entries[entryIndex]))
+    }
+
+    /**
+     * Moves the last entry in the entry array into `dstIndex`, and nulls out its old position.
+     */
+    private fun moveLastEntry(dstIndex: Int) {
+        val srcIndex: Int = size() - 1
+        if (dstIndex < srcIndex) {
+            // move last entry to deleted spot
+            keys[dstIndex] = keys[srcIndex]
+            values[dstIndex] = values[srcIndex]
+            keys[srcIndex] = null
+            values[srcIndex] = null
+
+            // move the last entry to the removed spot, just like we moved the element
+            val lastEntry: Long = entries[srcIndex]
+            entries[dstIndex] = lastEntry
+            entries[srcIndex] = UNSET.toLong()
+
+            // also need to update whoever's "next" pointer was pointing to the last entry place
+            // reusing "tableIndex" and "next"; these variables were no longer needed
+            val tableIndex: Int = getHash(lastEntry) and hashTableMask()
+            var lastNext = table!![tableIndex]
+            if (lastNext == srcIndex) {
+                // we need to update the root pointer
+                table!![tableIndex] = dstIndex
+            } else {
+                // we need to update a pointer in an entry
+                var previous: Int
+                var entry: Long
+                do {
+                    previous = lastNext
+                    lastNext = getNext(entries[lastNext].also { entry = it })
+                } while (lastNext != srcIndex)
+                // here, entries[previous] points to the old entry location; update it
+                entries[previous] = swapNext(entry, dstIndex)
+            }
+        } else {
+            keys[dstIndex] = null
+            values[dstIndex] = null
+            entries[dstIndex] = UNSET.toLong()
+        }
+    }
+
+    private fun firstEntryIndex(): Int {
+        return if (isEmpty()) -1 else 0
+    }
+
+    private fun getSuccessor(entryIndex: Int): Int {
+        return if (entryIndex + 1 < size) entryIndex + 1 else -1
+    }
+
+    private abstract inner class Itr<T> : MutableIterator<T?> {
+        var expectedModCount: Int = modCount
+        var currentIndex: Int = firstEntryIndex()
+        var indexToRemove: Int = -1
+
+        override fun hasNext(): Boolean {
+            return currentIndex >= 0
+        }
+
+        abstract fun getOutput(entry: Int): T?
+
+        override fun next(): T? {
+            checkForConcurrentModification()
+            if (!hasNext()) {
+                throw NoSuchElementException()
+            }
+            indexToRemove = currentIndex
+            val result = getOutput(currentIndex)
+            currentIndex = getSuccessor(currentIndex)
+            return result
+        }
+
+        override fun remove() {
+            checkForConcurrentModification()
+            Preconditions.checkState(indexToRemove >= 0, "no calls to next() since the last call to remove()")
+            expectedModCount++
+            removeEntry(indexToRemove)
+            currentIndex = adjustAfterRemove(currentIndex)
+            indexToRemove = -1
+        }
+
+        fun checkForConcurrentModification() {
+            if (modCount != expectedModCount) {
+                throw ConcurrentModificationException()
+            }
+        }
+    }
+
+    // keys/values only contains Ks/Vs
+    override fun replaceAll(function: BiFunction<in K?, in V?, out V?>?) {
+        Preconditions.checkNotNull(function)
+        for (i in 0..<size) {
+            values[i] = function!!.apply(keys[i] as K?, values[i] as V?)
+        }
+    }
+
+    @Transient
+    private var keySetView: MutableSet<K?>? = null
+
+    override fun keySet(): MutableSet<K?> {
+        return (if (keySetView == null) createKeySet().also { keySetView = it } else keySetView)!!
+    }
+
+    private fun createKeySet(): MutableSet<K?> {
+        return CompactHashMap.KeySetView()
+    }
+
+    internal inner class KeySetView : AbstractSet<K?>() {
+        override fun size(): Int {
+            return size
+        }
+
+        override fun toArray(): Array<Any?> {
+            if (needsAllocArrays()) {
+                return arrayOfNulls<Any>(0)
+            }
+            return Arrays.copyOf<Any?>(keys, size)
+        }
+
+        override fun remove(o: Any?): Boolean {
+            val index = indexOf(o)
+            if (index == -1) {
+                return false
+            } else {
+                removeEntry(index)
+                return true
+            }
+        }
+
+        override fun iterator(): MutableIterator<K?> {
+            return keySetIterator()
+        }
+
+        override fun spliterator(): Spliterator<K?> {
+            if (needsAllocArrays()) {
+                return Spliterators.spliterator<K?>(arrayOfNulls<Any>(0), Spliterator.DISTINCT or Spliterator.ORDERED)
+            }
+            return Spliterators.spliterator<K?>(keys, 0, size, Spliterator.DISTINCT or Spliterator.ORDERED)
+        }
+
+        override fun contains(o: Any?): Boolean {
+            return containsKey(o)
+        }
+
+        // keys contains only Ks
+        override fun forEach(action: Consumer<in K?>?) {
+            Preconditions.checkNotNull(action)
+            var i = firstEntryIndex()
+            while (i >= 0) {
+                action!!.accept(keys[i] as K?) // unchecked
+                i = getSuccessor(i)
+            }
+        }
+    }
+
+    private fun keySetIterator(): MutableIterator<K?> {
+        return object : Itr<K?>() {
+            override fun getOutput(entry: Int): K? {
+                return keys[entry] as K?
+            }
+        }
+    }
+
+    // keys/values contains only Ks/Vs
+    override fun forEach(action: BiConsumer<in K?, in V?>?) {
+        Preconditions.checkNotNull(action)
+        var i = firstEntryIndex()
+        while (i >= 0) {
+            action!!.accept(keys[i] as K?, values[i] as V?)
+            i = getSuccessor(i)
+        }
+    }
+
+    @Transient
+    private var entrySetView: MutableSet<MutableMap.MutableEntry<K?, V?>?>? = null
+
+    override fun entrySet(): MutableSet<MutableMap.MutableEntry<K?, V?>?> {
+        return (if (entrySetView == null) createEntrySet().also { entrySetView = it } else entrySetView)!!
+    }
+
+    private fun createEntrySet(): MutableSet<MutableMap.MutableEntry<K?, V?>?> {
+        return CompactHashMap.EntrySetView()
+    }
+
+    internal inner class EntrySetView : AbstractSet<MutableMap.MutableEntry<K?, V?>?>() {
+        override fun size(): Int {
+            return size
+        }
+
+        override fun iterator(): MutableIterator<MutableMap.MutableEntry<K?, V?>?> {
+            return entrySetIterator()
+        }
+
+        override fun contains(o: Any?): Boolean {
+            if (o is MutableMap.MutableEntry<*, *>) {
+                val index = indexOf(o.getKey())
+                return index != -1 && Objects.equal(values[index], o.getValue())
+            }
+            return false
+        }
+
+        override fun remove(o: Any?): Boolean {
+            if (o is MutableMap.MutableEntry<*, *>) {
+                val index = indexOf(o.getKey())
+                if (index != -1 && Objects.equal(values[index], o.getValue())) {
+                    removeEntry(index)
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
+    private fun entrySetIterator(): MutableIterator<MutableMap.MutableEntry<K?, V?>?> {
+        return object : Itr<MutableMap.MutableEntry<K?, V?>?>() {
+            override fun getOutput(entry: Int): MutableMap.MutableEntry<K?, V?> {
+                return CompactHashMap.MapEntry(entry)
+            }
+        }
+    }
+
+    internal inner class MapEntry(private var lastKnownIndex: Int) : MutableMap.MutableEntry<K?, V?> {
+        val key: K?
+
+        init {
+            this.key = keys[lastKnownIndex] as K?
+        }
+
+        private fun updateLastKnownIndex() {
+            if (lastKnownIndex == -1 || lastKnownIndex >= size() || !Objects.equal(key, keys[lastKnownIndex])) {
+                lastKnownIndex = indexOf(key)
+            }
+        }
+
+        val value: V?
+            get() {
+                updateLastKnownIndex()
+                return if (lastKnownIndex == -1) null else values[lastKnownIndex] as V?
+            }
+
+        override fun setValue(value: V?): V? {
+            updateLastKnownIndex()
+            if (lastKnownIndex == -1) {
+                put(key, value)
+                return null
+            } else {
+                val old = values[lastKnownIndex] as V?
+                values[lastKnownIndex] = value
+                return old
+            }
+        }
+
+        override fun equals(`object`: Any?): Boolean {
+            if (`object` is MutableMap.MutableEntry<*, *>) {
+                return Objects.equal(this.key, `object`.getKey())
+                        && Objects.equal(this.value, `object`.getValue())
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            val k = key
+            val v = this.value
+            return (if (k == null) 0 else k.hashCode()) xor (if (v == null) 0 else v.hashCode())
+        }
+
+        /** Returns a string representation of the form `{key}={value}`.  */
+        override fun toString(): String {
+            return key.toString() + "=" + this.value
+        }
+    }
+
+    override fun size(): Int {
+        return size
+    }
+
+    override fun isEmpty(): Boolean {
+        return size == 0
+    }
+
+    override fun containsValue(value: Any?): Boolean {
+        for (i in 0..<size) {
+            if (Objects.equal(value, values[i])) {
+                return true
+            }
+        }
+        return false
+    }
+
+    @Transient
+    private var valuesView: MutableCollection<V?>? = null
+
+    /**
+     * Constructs a new instance of `CompactHashMap` with the specified capacity.
+     * 
+     * @param expectedSize the initial capacity of this `CompactHashMap`.
+     */
+    init {
+        Preconditions.checkArgument(expectedSize >= 0, "Expected size must be non-negative")
+        this.modCount = Math.max(1, expectedSize) // Save expectedSize for use in allocArrays()
+    }
+
+    override fun values(): MutableCollection<V?> {
+        return (if (valuesView == null) createValues().also { valuesView = it } else valuesView)!!
+    }
+
+    private fun createValues(): MutableCollection<V?> {
+        return CompactHashMap.ValuesView()
+    }
+
+    internal inner class ValuesView : AbstractCollection<V?>() {
+        override fun size(): Int {
+            return size
+        }
+
+        override fun iterator(): MutableIterator<V?> {
+            return valuesIterator()
+        }
+
+        // values contains only Vs
+        override fun forEach(action: Consumer<in V?>?) {
+            Preconditions.checkNotNull(action)
+            var i = firstEntryIndex()
+            while (i >= 0) {
+                action!!.accept(values[i] as V?)
+                i = getSuccessor(i)
+            }
+        }
+
+        override fun spliterator(): Spliterator<V?> {
+            if (needsAllocArrays()) {
+                return Spliterators.spliterator<V?>(arrayOfNulls<Any>(0), Spliterator.ORDERED)
+            }
+            return Spliterators.spliterator<V?>(values, 0, size, Spliterator.ORDERED)
+        }
+
+        override fun toArray(): Array<Any?> {
+            if (needsAllocArrays()) {
+                return arrayOfNulls<Any>(0)
+            }
+            return Arrays.copyOf<Any?>(values, size)
+        }
+    }
+
+    private fun valuesIterator(): MutableIterator<V?> {
+        return object : Itr<V?>() {
+            override fun getOutput(entry: Int): V? {
+                return values[entry] as V?
+            }
+        }
+    }
+
+    override fun clear() {
+        if (needsAllocArrays()) {
+            return
+        }
+        modCount++
+        Arrays.fill(keys, 0, size, null)
+        Arrays.fill(values, 0, size, null)
+        Arrays.fill(table, UNSET)
+        Arrays.fill(entries, 0, size, UNSET.toLong())
+        this.size = 0
+    }
+
+    companion object {
+        // A partial copy of com.google.common.collect.Hashing.
+        private const val C1 = -0x3361d2af
+        private const val C2 = 0x1b873593
+
+        /*
    * This method was rewritten in Java from an intermediate step of the Murmur hash function in
    * http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp, which contained the
    * following header:
@@ -91,34 +682,35 @@ public class CompactHashMap<K, V> extends AbstractMap<K, V> {
    * MurmurHash3 was written by Austin Appleby, and is placed in the public domain. The author
    * hereby disclaims copyright to this source code.
    */
-  private static int smear(int hashCode) {
-    return C2 * Integer.rotateLeft(hashCode * C1, 15);
-  }
+        private fun smear(hashCode: Int): Int {
+            return C2 * Integer.rotateLeft(hashCode * C1, 15)
+        }
 
-  private static int smearedHash(@Nullable Object o) {
-    return smear((o == null) ? 0 : o.hashCode());
-  }
+        private fun smearedHash(o: Any?): Int {
+            return smear(if (o == null) 0 else o.hashCode())
+        }
 
-  private static final int MAX_TABLE_SIZE = Ints.MAX_POWER_OF_TWO;
+        private val MAX_TABLE_SIZE = Ints.MAX_POWER_OF_TWO
 
-  private static int closedTableSize(int expectedEntries) {
-    // Get the recommended table size.
-    // Round down to the nearest power of 2.
-    expectedEntries = Math.max(expectedEntries, 2);
-    int tableSize = Integer.highestOneBit(expectedEntries);
-    // Check to make sure that we will not exceed the maximum load factor.
-    if (expectedEntries > (int) (LOAD_FACTOR * tableSize)) {
-      tableSize <<= 1;
-      return (tableSize > 0) ? tableSize : MAX_TABLE_SIZE;
-    }
-    return tableSize;
-  }
+        private fun closedTableSize(expectedEntries: Int): Int {
+            // Get the recommended table size.
+            // Round down to the nearest power of 2.
+            var expectedEntries = expectedEntries
+            expectedEntries = Math.max(expectedEntries, 2)
+            var tableSize = Integer.highestOneBit(expectedEntries)
+            // Check to make sure that we will not exceed the maximum load factor.
+            if (expectedEntries > (LOAD_FACTOR * tableSize).toInt()) {
+                tableSize = tableSize shl 1
+                return if (tableSize > 0) tableSize else MAX_TABLE_SIZE
+            }
+            return tableSize
+        }
 
-  private static boolean needsResizing(int size, int tableSize) {
-    return size > LOAD_FACTOR * tableSize && tableSize < MAX_TABLE_SIZE;
-  }
+        private fun needsResizing(size: Int, tableSize: Int): Boolean {
+            return size > LOAD_FACTOR * tableSize && tableSize < MAX_TABLE_SIZE
+        }
 
-  /*
+        /*
    * TODO: Make this a drop-in replacement for j.u. versions, actually drop them in, and test the
    * world. Figure out what sort of space-time tradeoff we're actually going to get here with the
    * *Map variants. Followon optimizations, such as using 16-bit indices for small collections, will
@@ -126,725 +718,73 @@ public class CompactHashMap<K, V> extends AbstractMap<K, V> {
    * is not only in less allocation, but also having the GC do less work to scan the heap because of
    * fewer references, which is particularly hard to quantify.
    */
-
-  /** Creates an empty {@code CompactHashMap} instance. */
-  public static <K, V> CompactHashMap<K, V> create() {
-    return new CompactHashMap<>(DEFAULT_SIZE);
-  }
-
-  /**
-   * Creates a {@code CompactHashMap} instance, with a high enough "initial capacity" that it
-   * <i>should</i> hold {@code expectedSize} elements without growth.
-   *
-   * @param expectedSize the number of elements you expect to add to the returned set
-   * @return a new, empty {@code CompactHashMap} with enough capacity to hold {@code expectedSize}
-   *     elements without resizing
-   * @throws IllegalArgumentException if {@code expectedSize} is negative
-   */
-  public static <K, V> CompactHashMap<K, V> createWithExpectedSize(int expectedSize) {
-    return new CompactHashMap<>(expectedSize);
-  }
-
-  private static final float LOAD_FACTOR = 1.0f;
-
-  /** Bitmask that selects the low 32 bits. */
-  private static final long NEXT_MASK = (1L << 32) - 1;
-
-  /** Bitmask that selects the high 32 bits. */
-  private static final long HASH_MASK = ~NEXT_MASK;
-
-  // TODO(bazel-team): decide default size
-  private static final int DEFAULT_SIZE = 3;
-
-  // used to indicate blank table entries
-  private static final int UNSET = -1;
-
-  /**
-   * The hashtable. Its values are indexes to the keys, values, and entries arrays.
-   *
-   * <p>Currently, the UNSET value means "null pointer", and any non negative value x is the actual
-   * index.
-   *
-   * <p>Its size must be a power of two.
-   */
-  private transient int[] table;
-
-  /**
-   * Contains the logical entries, in the range of [0, size()). The high 32 bits of each long is the
-   * smeared hash of the element, whereas the low 32 bits is the "next" pointer (pointing to the
-   * next entry in the bucket chain). The pointers in [size(), entries.length) are all "null"
-   * (UNSET).
-   */
-  private transient long[] entries;
-
-  /**
-   * The keys of the entries in the map, in the range of [0, size()). The keys in [size(),
-   * keys.length) are all {@code null}.
-   */
-  private transient Object[] keys;
-
-  /**
-   * The values of the entries in the map, in the range of [0, size()). The values in [size(),
-   * values.length) are all {@code null}.
-   */
-  private transient Object[] values;
-
-  /**
-   * Keeps track of modifications of this set, to make it possible to throw
-   * ConcurrentModificationException in the iterator. Note that we choose not to make this volatile,
-   * so we do less of a "best effort" to track such errors, for better performance.
-   */
-  private transient int modCount;
-
-  /** The number of elements contained in the set. */
-  private transient int size;
-
-  /**
-   * Constructs a new instance of {@code CompactHashMap} with the specified capacity.
-   *
-   * @param expectedSize the initial capacity of this {@code CompactHashMap}.
-   */
-  CompactHashMap(int expectedSize) {
-    Preconditions.checkArgument(expectedSize >= 0, "Expected size must be non-negative");
-    this.modCount = Math.max(1, expectedSize); // Save expectedSize for use in allocArrays()
-  }
-
-  /** Returns whether arrays need to be allocated. */
-  private boolean needsAllocArrays() {
-    return table == null;
-  }
-
-  /** Handle lazy allocation of arrays. */
-  private void allocArrays() {
-    checkState(needsAllocArrays(), "Arrays already allocated");
-
-    int expectedSize = modCount;
-    int buckets = closedTableSize(expectedSize);
-    this.table = newTable(buckets);
-
-    this.entries = newEntries(expectedSize);
-    this.keys = new Object[expectedSize];
-    this.values = new Object[expectedSize];
-  }
-
-  private static int[] newTable(int size) {
-    int[] array = new int[size];
-    Arrays.fill(array, UNSET);
-    return array;
-  }
-
-  private static long[] newEntries(int size) {
-    long[] array = new long[size];
-    Arrays.fill(array, UNSET);
-    return array;
-  }
-
-  private int hashTableMask() {
-    return table.length - 1;
-  }
-
-  private static int getHash(long entry) {
-    return (int) (entry >>> 32);
-  }
-
-  /** Returns the index, or UNSET if the pointer is "null" */
-  private static int getNext(long entry) {
-    return (int) entry;
-  }
-
-  /** Returns a new entry value by changing the "next" index of an existing entry */
-  private static long swapNext(long entry, int newNext) {
-    return (HASH_MASK & entry) | (NEXT_MASK & newNext);
-  }
-
-  @CanIgnoreReturnValue
-  @Override
-  @Nullable
-  public V put(@Nullable K key, @Nullable V value) {
-    if (needsAllocArrays()) {
-      allocArrays();
-    }
-    long[] entries = this.entries;
-    Object[] keys = this.keys;
-    Object[] values = this.values;
-
-    int hash = smearedHash(key);
-    int tableIndex = hash & hashTableMask();
-    int newEntryIndex = this.size; // current size, and pointer to the entry to be appended
-    int next = table[tableIndex];
-    if (next == UNSET) { // uninitialized bucket
-      table[tableIndex] = newEntryIndex;
-    } else {
-      int last;
-      long entry;
-      do {
-        last = next;
-        entry = entries[next];
-        if (getHash(entry) == hash && Objects.equal(key, keys[next])) {
-          @SuppressWarnings("unchecked") // known to be a V
-          @Nullable
-          V oldValue = (V) values[next];
-
-          values[next] = value;
-          return oldValue;
-        }
-        next = getNext(entry);
-      } while (next != UNSET);
-      entries[last] = swapNext(entry, newEntryIndex);
-    }
-    if (newEntryIndex == Integer.MAX_VALUE) {
-      throw new IllegalStateException("Cannot contain more than Integer.MAX_VALUE elements!");
-    }
-    int newSize = newEntryIndex + 1;
-    resizeMeMaybe(newSize);
-    insertEntry(newEntryIndex, key, value, hash);
-    this.size = newSize;
-    int oldCapacity = table.length;
-    if (needsResizing(newEntryIndex, oldCapacity)) {
-      resizeTable(2 * oldCapacity);
-    }
-    modCount++;
-    return null;
-  }
-
-  /**
-   * Creates a fresh entry with the specified object at the specified position in the entry arrays.
-   */
-  private void insertEntry(int entryIndex, @Nullable K key, @Nullable V value, int hash) {
-    this.entries[entryIndex] = ((long) hash << 32) | (NEXT_MASK & UNSET);
-    this.keys[entryIndex] = key;
-    this.values[entryIndex] = value;
-  }
-
-  /** Resizes the entries storage if necessary. */
-  private void resizeMeMaybe(int newSize) {
-    int entriesSize = entries.length;
-    if (newSize > entriesSize) {
-      int newCapacity = entriesSize + Math.max(1, entriesSize >>> 1);
-      if (newCapacity < 0) {
-        newCapacity = Integer.MAX_VALUE;
-      }
-      if (newCapacity != entriesSize) {
-        resizeEntries(newCapacity);
-      }
-    }
-  }
-
-  /**
-   * Resizes the internal entries array to the specified capacity, which may be greater or less than
-   * the current capacity.
-   */
-  private void resizeEntries(int newCapacity) {
-    this.keys = Arrays.copyOf(keys, newCapacity);
-    this.values = Arrays.copyOf(values, newCapacity);
-    long[] entries = this.entries;
-    int oldCapacity = entries.length;
-    entries = Arrays.copyOf(entries, newCapacity);
-    if (newCapacity > oldCapacity) {
-      Arrays.fill(entries, oldCapacity, newCapacity, UNSET);
-    }
-    this.entries = entries;
-  }
-
-  private void resizeTable(int newCapacity) { // newCapacity always a power of two
-    int[] newTable = newTable(newCapacity);
-    long[] entries = this.entries;
-
-    int mask = newTable.length - 1;
-    for (int i = 0; i < size; i++) {
-      long oldEntry = entries[i];
-      int hash = getHash(oldEntry);
-      int tableIndex = hash & mask;
-      int next = newTable[tableIndex];
-      newTable[tableIndex] = i;
-      entries[i] = ((long) hash << 32) | (NEXT_MASK & next);
-    }
-
-    this.table = newTable;
-  }
-
-  private int indexOf(@Nullable Object key) {
-    if (needsAllocArrays()) {
-      return -1;
-    }
-    int hash = smearedHash(key);
-    int next = table[hash & hashTableMask()];
-    while (next != UNSET) {
-      long entry = entries[next];
-      if (getHash(entry) == hash && Objects.equal(key, keys[next])) {
-        return next;
-      }
-      next = getNext(entry);
-    }
-    return -1;
-  }
-
-  @Override
-  public boolean containsKey(@Nullable Object key) {
-    return indexOf(key) != -1;
-  }
-
-  @Nullable
-  @SuppressWarnings("unchecked") // values only contains Vs
-  @Override
-  public V get(@Nullable Object key) {
-    int index = indexOf(key);
-    return (index == -1) ? null : (V) values[index];
-  }
-
-  @CanIgnoreReturnValue
-  @Override
-  @Nullable
-  public V remove(@Nullable Object key) {
-    if (needsAllocArrays()) {
-      return null;
-    }
-    return remove(key, smearedHash(key));
-  }
-
-  @Nullable
-  private V remove(@Nullable Object key, int hash) {
-    int tableIndex = hash & hashTableMask();
-    int next = table[tableIndex];
-    if (next == UNSET) { // empty bucket
-      return null;
-    }
-    int last = UNSET;
-    do {
-      if (getHash(entries[next]) == hash && Objects.equal(key, keys[next])) {
-        @SuppressWarnings("unchecked") // values only contains Vs
-        @Nullable
-        V oldValue = (V) values[next];
-
-        if (last == UNSET) {
-          // we need to update the root link from table[]
-          table[tableIndex] = getNext(entries[next]);
-        } else {
-          // we need to update the link from the chain
-          entries[last] = swapNext(entries[last], getNext(entries[next]));
+        /** Creates an empty `CompactHashMap` instance.  */
+        @kotlin.jvm.JvmStatic
+        fun <K, V> create(): CompactHashMap<K?, V?> {
+            return CompactHashMap<K?, V?>(DEFAULT_SIZE)
         }
 
-        moveLastEntry(next);
-        size--;
-        modCount++;
-        return oldValue;
-      }
-      last = next;
-      next = getNext(entries[next]);
-    } while (next != UNSET);
-    return null;
-  }
-
-  @CanIgnoreReturnValue
-  private V removeEntry(int entryIndex) {
-    return remove(keys[entryIndex], getHash(entries[entryIndex]));
-  }
-
-  /**
-   * Moves the last entry in the entry array into {@code dstIndex}, and nulls out its old position.
-   */
-  private void moveLastEntry(int dstIndex) {
-    int srcIndex = size() - 1;
-    if (dstIndex < srcIndex) {
-      // move last entry to deleted spot
-      keys[dstIndex] = keys[srcIndex];
-      values[dstIndex] = values[srcIndex];
-      keys[srcIndex] = null;
-      values[srcIndex] = null;
-
-      // move the last entry to the removed spot, just like we moved the element
-      long lastEntry = entries[srcIndex];
-      entries[dstIndex] = lastEntry;
-      entries[srcIndex] = UNSET;
-
-      // also need to update whoever's "next" pointer was pointing to the last entry place
-      // reusing "tableIndex" and "next"; these variables were no longer needed
-      int tableIndex = getHash(lastEntry) & hashTableMask();
-      int lastNext = table[tableIndex];
-      if (lastNext == srcIndex) {
-        // we need to update the root pointer
-        table[tableIndex] = dstIndex;
-      } else {
-        // we need to update a pointer in an entry
-        int previous;
-        long entry;
-        do {
-          previous = lastNext;
-          lastNext = getNext(entry = entries[lastNext]);
-        } while (lastNext != srcIndex);
-        // here, entries[previous] points to the old entry location; update it
-        entries[previous] = swapNext(entry, dstIndex);
-      }
-    } else {
-      keys[dstIndex] = null;
-      values[dstIndex] = null;
-      entries[dstIndex] = UNSET;
-    }
-  }
-
-  private int firstEntryIndex() {
-    return isEmpty() ? -1 : 0;
-  }
-
-  private int getSuccessor(int entryIndex) {
-    return (entryIndex + 1 < size) ? entryIndex + 1 : -1;
-  }
-
-  /**
-   * Updates the index an iterator is pointing to after a call to remove: returns the index of the
-   * entry that should be looked at after a removal on indexRemoved, with indexBeforeRemove as the
-   * index that *was* the next entry that would be looked at.
-   */
-  private static int adjustAfterRemove(int indexBeforeRemove) {
-    return indexBeforeRemove - 1;
-  }
-
-  private abstract class Itr<T> implements Iterator<T> {
-    int expectedModCount = modCount;
-    int currentIndex = firstEntryIndex();
-    int indexToRemove = -1;
-
-    @Override
-    public boolean hasNext() {
-      return currentIndex >= 0;
-    }
-
-    abstract T getOutput(int entry);
-
-    @Override
-    public T next() {
-      checkForConcurrentModification();
-      if (!hasNext()) {
-        throw new NoSuchElementException();
-      }
-      indexToRemove = currentIndex;
-      T result = getOutput(currentIndex);
-      currentIndex = getSuccessor(currentIndex);
-      return result;
-    }
-
-    @Override
-    public void remove() {
-      checkForConcurrentModification();
-      checkState(indexToRemove >= 0, "no calls to next() since the last call to remove()");
-      expectedModCount++;
-      removeEntry(indexToRemove);
-      currentIndex = adjustAfterRemove(currentIndex);
-      indexToRemove = -1;
-    }
-
-    private void checkForConcurrentModification() {
-      if (modCount != expectedModCount) {
-        throw new ConcurrentModificationException();
-      }
-    }
-  }
-
-  @Override
-  @SuppressWarnings("unchecked") // keys/values only contains Ks/Vs
-  public void replaceAll(BiFunction<? super K, ? super V, ? extends V> function) {
-    checkNotNull(function);
-    for (int i = 0; i < size; i++) {
-      values[i] = function.apply((K) keys[i], (V) values[i]);
-    }
-  }
-
-  private transient Set<K> keySetView;
-
-  @Override
-  public Set<K> keySet() {
-    return (keySetView == null) ? keySetView = createKeySet() : keySetView;
-  }
-
-  private Set<K> createKeySet() {
-    return new KeySetView();
-  }
-
-  class KeySetView extends AbstractSet<K> {
-    KeySetView() {}
-
-    @Override
-    public int size() {
-      return size;
-    }
-
-    @Override
-    public Object[] toArray() {
-      if (needsAllocArrays()) {
-        return new Object[0];
-      }
-      return Arrays.copyOf(keys, size);
-    }
-
-    @Override
-    public boolean remove(@Nullable Object o) {
-      int index = indexOf(o);
-      if (index == -1) {
-        return false;
-      } else {
-        removeEntry(index);
-        return true;
-      }
-    }
-
-    @Override
-    public Iterator<K> iterator() {
-      return keySetIterator();
-    }
-
-    @Override
-    public Spliterator<K> spliterator() {
-      if (needsAllocArrays()) {
-        return Spliterators.spliterator(new Object[0], Spliterator.DISTINCT | Spliterator.ORDERED);
-      }
-      return Spliterators.spliterator(keys, 0, size, Spliterator.DISTINCT | Spliterator.ORDERED);
-    }
-
-    @Override
-    public boolean contains(Object o) {
-      return containsKey(o);
-    }
-
-    @Override
-    @SuppressWarnings("unchecked") // keys contains only Ks
-    public void forEach(Consumer<? super K> action) {
-      checkNotNull(action);
-      for (int i = firstEntryIndex(); i >= 0; i = getSuccessor(i)) {
-        action.accept((K) keys[i]); // unchecked
-      }
-    }
-  }
-
-  private Iterator<K> keySetIterator() {
-    return new Itr<K>() {
-      @SuppressWarnings("unchecked") // keys only contains Ks
-      @Override
-      K getOutput(int entry) {
-        return (K) keys[entry];
-      }
-    };
-  }
-
-  @Override
-  @SuppressWarnings("unchecked") // keys/values contains only Ks/Vs
-  public void forEach(BiConsumer<? super K, ? super V> action) {
-    checkNotNull(action);
-    for (int i = firstEntryIndex(); i >= 0; i = getSuccessor(i)) {
-      action.accept((K) keys[i], (V) values[i]);
-    }
-  }
-
-  private transient Set<Entry<K, V>> entrySetView;
-
-  @Override
-  public Set<Entry<K, V>> entrySet() {
-    return (entrySetView == null) ? entrySetView = createEntrySet() : entrySetView;
-  }
-
-  private Set<Entry<K, V>> createEntrySet() {
-    return new EntrySetView();
-  }
-
-  class EntrySetView extends AbstractSet<Entry<K, V>> {
-    @Override
-    public int size() {
-      return size;
-    }
-
-    @Override
-    public Iterator<Entry<K, V>> iterator() {
-      return entrySetIterator();
-    }
-
-    @Override
-    public boolean contains(@Nullable Object o) {
-      if (o instanceof Entry<?, ?> entry) {
-        int index = indexOf(entry.getKey());
-        return index != -1 && Objects.equal(values[index], entry.getValue());
-      }
-      return false;
-    }
-
-    @Override
-    public boolean remove(@Nullable Object o) {
-      if (o instanceof Entry<?, ?> entry) {
-        int index = indexOf(entry.getKey());
-        if (index != -1 && Objects.equal(values[index], entry.getValue())) {
-          removeEntry(index);
-          return true;
+        /**
+         * Creates a `CompactHashMap` instance, with a high enough "initial capacity" that it
+         * *should* hold `expectedSize` elements without growth.
+         * 
+         * @param expectedSize the number of elements you expect to add to the returned set
+         * @return a new, empty `CompactHashMap` with enough capacity to hold `expectedSize`
+         * elements without resizing
+         * @throws IllegalArgumentException if `expectedSize` is negative
+         */
+        @kotlin.jvm.JvmStatic
+        fun <K, V> createWithExpectedSize(expectedSize: Int): CompactHashMap<K?, V?> {
+            return CompactHashMap<K?, V?>(expectedSize)
         }
-      }
-      return false;
+
+        private const val LOAD_FACTOR = 1.0f
+
+        /** Bitmask that selects the low 32 bits.  */
+        private val NEXT_MASK = (1L shl 32) - 1
+
+        /** Bitmask that selects the high 32 bits.  */
+        private val HASH_MASK: Long = NEXT_MASK.inv()
+
+        // TODO(bazel-team): decide default size
+        private const val DEFAULT_SIZE = 3
+
+        // used to indicate blank table entries
+        private val UNSET = -1
+
+        private fun newTable(size: Int): IntArray {
+            val array = IntArray(size)
+            Arrays.fill(array, UNSET)
+            return array
+        }
+
+        private fun newEntries(size: Int): LongArray {
+            val array = LongArray(size)
+            Arrays.fill(array, UNSET.toLong())
+            return array
+        }
+
+        private fun getHash(entry: Long): Int {
+            return (entry ushr 32).toInt()
+        }
+
+        /** Returns the index, or UNSET if the pointer is "null"  */
+        private fun getNext(entry: Long): Int {
+            return entry.toInt()
+        }
+
+        /** Returns a new entry value by changing the "next" index of an existing entry  */
+        private fun swapNext(entry: Long, newNext: Int): Long {
+            return (HASH_MASK and entry) or (NEXT_MASK and newNext.toLong())
+        }
+
+        /**
+         * Updates the index an iterator is pointing to after a call to remove: returns the index of the
+         * entry that should be looked at after a removal on indexRemoved, with indexBeforeRemove as the
+         * index that *was* the next entry that would be looked at.
+         */
+        private fun adjustAfterRemove(indexBeforeRemove: Int): Int {
+            return indexBeforeRemove - 1
+        }
     }
-  }
-
-  private Iterator<Entry<K, V>> entrySetIterator() {
-    return new Itr<Entry<K, V>>() {
-      @Override
-      Entry<K, V> getOutput(int entry) {
-        return new MapEntry(entry);
-      }
-    };
-  }
-
-  final class MapEntry implements Map.Entry<K, V> {
-    @Nullable private final K key;
-
-    private int lastKnownIndex;
-
-    @SuppressWarnings("unchecked") // keys only contains Ks
-    MapEntry(int index) {
-      this.key = (K) keys[index];
-      this.lastKnownIndex = index;
-    }
-
-    @Override
-    public K getKey() {
-      return key;
-    }
-
-    private void updateLastKnownIndex() {
-      if (lastKnownIndex == -1
-          || lastKnownIndex >= size()
-          || !Objects.equal(key, keys[lastKnownIndex])) {
-        lastKnownIndex = indexOf(key);
-      }
-    }
-
-    @SuppressWarnings("unchecked") // values only contains Vs
-    @Override
-    public V getValue() {
-      updateLastKnownIndex();
-      return (lastKnownIndex == -1) ? null : (V) values[lastKnownIndex];
-    }
-
-    @SuppressWarnings("unchecked") // values only contains Vs
-    @Override
-    public V setValue(V value) {
-      updateLastKnownIndex();
-      if (lastKnownIndex == -1) {
-        put(key, value);
-        return null;
-      } else {
-        V old = (V) values[lastKnownIndex];
-        values[lastKnownIndex] = value;
-        return old;
-      }
-    }
-
-    @Override
-    public boolean equals(@Nullable Object object) {
-      if (object instanceof Entry<?, ?> that) {
-        return Objects.equal(this.key, that.getKey())
-            && Objects.equal(this.getValue(), that.getValue());
-      }
-      return false;
-    }
-
-    @Override
-    public int hashCode() {
-      K k = key;
-      V v = getValue();
-      return ((k == null) ? 0 : k.hashCode()) ^ ((v == null) ? 0 : v.hashCode());
-    }
-
-    /** Returns a string representation of the form {@code {key}={value}}. */
-    @Override
-    public String toString() {
-      return key + "=" + getValue();
-    }
-  }
-
-  @Override
-  public int size() {
-    return size;
-  }
-
-  @Override
-  public boolean isEmpty() {
-    return size == 0;
-  }
-
-  @Override
-  public boolean containsValue(@Nullable Object value) {
-    for (int i = 0; i < size; i++) {
-      if (Objects.equal(value, values[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private transient Collection<V> valuesView;
-
-  @Override
-  public Collection<V> values() {
-    return (valuesView == null) ? valuesView = createValues() : valuesView;
-  }
-
-  private Collection<V> createValues() {
-    return new ValuesView();
-  }
-
-  class ValuesView extends AbstractCollection<V> {
-    ValuesView() {}
-
-    @Override
-    public int size() {
-      return size;
-    }
-
-    @Override
-    public Iterator<V> iterator() {
-      return valuesIterator();
-    }
-
-    @Override
-    @SuppressWarnings("unchecked") // values contains only Vs
-    public void forEach(Consumer<? super V> action) {
-      checkNotNull(action);
-      for (int i = firstEntryIndex(); i >= 0; i = getSuccessor(i)) {
-        action.accept((V) values[i]);
-      }
-    }
-
-    @Override
-    public Spliterator<V> spliterator() {
-      if (needsAllocArrays()) {
-        return Spliterators.spliterator(new Object[0], Spliterator.ORDERED);
-      }
-      return Spliterators.spliterator(values, 0, size, Spliterator.ORDERED);
-    }
-
-    @Override
-    public Object[] toArray() {
-      if (needsAllocArrays()) {
-        return new Object[0];
-      }
-      return Arrays.copyOf(values, size);
-    }
-  }
-
-  private Iterator<V> valuesIterator() {
-    return new Itr<V>() {
-      @SuppressWarnings("unchecked") // values only contains Vs
-      @Override
-      V getOutput(int entry) {
-        return (V) values[entry];
-      }
-    };
-  }
-
-  @Override
-  public void clear() {
-    if (needsAllocArrays()) {
-      return;
-    }
-    modCount++;
-    Arrays.fill(keys, 0, size, null);
-    Arrays.fill(values, 0, size, null);
-    Arrays.fill(table, UNSET);
-    Arrays.fill(entries, 0, size, UNSET);
-    this.size = 0;
-  }
 }

@@ -748,10 +748,10 @@ public final class BazelBuildEventServiceModuleTest extends BuildIntegrationTest
     assertThat(getBepTransports()).hasSize(4);
 
     BuildEventArtifactUploader uploader =
-        Iterables.getFirst(getBepTransports(), null).getUploader();
+            Iterables.getFirst(getBepTransports(), null).uploader;
     assertThat(uploader).isNotNull();
     for (BuildEventTransport transport : getBepTransports()) {
-      assertThat(uploader).isSameInstanceAs(transport.getUploader());
+      assertThat(uploader).isSameInstanceAs(transport.uploader);
     }
   }
 
@@ -784,8 +784,8 @@ public final class BazelBuildEventServiceModuleTest extends BuildIntegrationTest
     runBuildWithOptions();
     BuildEventServiceOptions besOptions = Options.getDefaults(BuildEventServiceOptions.class);
     AuthAndTLSOptions authAndTLSOptions = Options.getDefaults(AuthAndTLSOptions.class);
-    besOptions.setBesBackend("bes-backend");
-    besOptions.setBesProxy("bes-proxy");
+    besOptions.besBackend = "bes-backend";
+    besOptions.besProxy = "bes-proxy";
     besOptions.setBesHeaders(
         ImmutableList.of(
             Map.entry("key1", "val1"),

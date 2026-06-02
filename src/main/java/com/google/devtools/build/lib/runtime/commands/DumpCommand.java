@@ -473,7 +473,7 @@ public class DumpCommand implements BlazeCommand {
         } else {
           out.print(", ");
         }
-        out.print(attribute.getName());
+        out.print(attribute.name);
       }
       out.println(")");
     }
@@ -534,7 +534,7 @@ public class DumpCommand implements BlazeCommand {
       printWithPaddingBefore(out, formatLong(ruleStat.getActionCount()), numberColumnWidth);
       if (bytesEnabled) {
         RuleBytes ruleBytes = ruleToBytes.get(ruleStat.getKey());
-        long bytes = ruleBytes != null ? ruleBytes.getBytes() : 0L;
+        long bytes = ruleBytes != null ? ruleBytes.bytes : 0L;
         printWithPaddingBefore(out, formatLong(bytes), bytesColumnWidth);
         printWithPaddingBefore(out, formatLong(bytes / ruleStat.getCount()), eachColumnWidth);
       }

@@ -11,26 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.metrics;
+package com.google.devtools.build.lib.metrics
 
-import com.sun.management.GarbageCollectionNotificationInfo;
+import com.sun.management.GarbageCollectionNotificationInfo
 
-/** Utility methods for garbage collection metrics. */
-public final class GarbageCollectionMetricsUtils {
-  private GarbageCollectionMetricsUtils() {}
+/** Utility methods for garbage collection metrics.  */
+object GarbageCollectionMetricsUtils {
+    @kotlin.jvm.JvmStatic
+    fun isTenuredSpace(name: String?): Boolean {
+        return "CMS Old Gen" == name
+                || "G1 Old Gen" == name
+                || "PS Old Gen" == name
+                || "Tenured Gen" == name
+                || "Shenandoah" == name
+                || "Shenandoah Old Gen" == name
+                || "ZHeap" == name
+                || "ZGC Old Generation" == name
+    }
 
-  public static boolean isTenuredSpace(String name) {
-    return "CMS Old Gen".equals(name)
-        || "G1 Old Gen".equals(name)
-        || "PS Old Gen".equals(name)
-        || "Tenured Gen".equals(name)
-        || "Shenandoah".equals(name)
-        || "Shenandoah Old Gen".equals(name)
-        || "ZHeap".equals(name)
-        || "ZGC Old Generation".equals(name);
-  }
-
-  public static boolean isFullGc(GarbageCollectionNotificationInfo info) {
-    return info.getGcAction().equals("end of major GC");
-  }
+    fun isFullGc(info: GarbageCollectionNotificationInfo): Boolean {
+        return info.getGcAction() == "end of major GC"
+    }
 }

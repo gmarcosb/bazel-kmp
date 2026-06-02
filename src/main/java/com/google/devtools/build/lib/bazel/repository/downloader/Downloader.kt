@@ -11,46 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
+import com.google.auth.Credentials
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import com.google.devtools.build.lib.vfs.Path
+import java.io.IOException
+import java.net.URI
+import java.util.*
 
-import com.google.auth.Credentials;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import java.net.URI;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
-/** Interface for implementing the download of a file. */
-public interface Downloader {
-
-  /**
-   * Downloads a file and writes it to the specified output path.
-   *
-   * <p>On failure the output file will be in an undefined state, and may or may not exist. The
-   * caller is responsible for cleaning up outputs of failed downloads.
-   *
-   * @param urls list of mirror URLs with identical content
-   * @param credentials credentials to use when connecting to URLs
-   * @param checksum valid checksum which is checked, or absent to disable
-   * @param output path to the destination file to write
-   * @param type extension, e.g. "tar.gz" to force on downloaded filename, or empty to not do this
-   * @param context free-form string that describes the origin of the download for logging
-   * @throws IOException if download was attempted and ended up failing
-   * @throws InterruptedException if this thread is being cast into oblivion
-   */
-  void download(
-      List<URI> urls,
-      Map<String, List<String>> headers,
-      Credentials credentials,
-      Optional<Checksum> checksum,
-      String canonicalId,
-      Path output,
-      ExtendedEventHandler eventHandler,
-      Map<String, String> clientEnv,
-      Optional<String> type,
-      String context)
-      throws IOException, InterruptedException;
+/** Interface for implementing the download of a file.  */
+interface Downloader {
+    /**
+     * Downloads a file and writes it to the specified output path.
+     * 
+     * 
+     * On failure the output file will be in an undefined state, and may or may not exist. The
+     * caller is responsible for cleaning up outputs of failed downloads.
+     * 
+     * @param urls list of mirror URLs with identical content
+     * @param credentials credentials to use when connecting to URLs
+     * @param checksum valid checksum which is checked, or absent to disable
+     * @param output path to the destination file to write
+     * @param type extension, e.g. "tar.gz" to force on downloaded filename, or empty to not do this
+     * @param context free-form string that describes the origin of the download for logging
+     * @throws IOException if download was attempted and ended up failing
+     * @throws InterruptedException if this thread is being cast into oblivion
+     */
+    @Throws(IOException::class, InterruptedException::class)
+    fun download(
+        urls: MutableList<URI?>?,
+        headers: MutableMap<String?, MutableList<String?>?>?,
+        credentials: Credentials?,
+        checksum: Optional<Checksum?>?,
+        canonicalId: String?,
+        output: Path?,
+        eventHandler: ExtendedEventHandler?,
+        clientEnv: MutableMap<String?, String?>?,
+        type: Optional<String?>?,
+        context: String?
+    )
 }

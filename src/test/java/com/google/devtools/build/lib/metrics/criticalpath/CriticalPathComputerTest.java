@@ -115,7 +115,7 @@ public class CriticalPathComputerTest extends FoundationTestCase {
   public void testNoSpawnMetrics() {
     CriticalPathComponent cp = new CriticalPathComponent(1, new NullAction(), 0);
     assertThat(cp.getSpawnMetrics()).isEqualTo(AggregatedSpawnMetrics.EMPTY);
-    assertThat(cp.getLongestPhaseSpawnRunnerName()).isNull();
+    assertThat(cp.longestPhaseSpawnRunnerName).isNull();
   }
 
   @Test
@@ -141,7 +141,7 @@ public class CriticalPathComputerTest extends FoundationTestCase {
     // between sequential or parallel spawn invocations within a single Bazel action. So while it is
     // still 'incorrect', it is more fair than keeping the latest invocation data.
     assertThat(cp.getSpawnMetrics().getRemoteMetrics().totalTimeInMs()).isEqualTo(30 * 1000);
-    assertThat(cp.getLongestPhaseSpawnRunnerName()).isEqualTo("second");
+    assertThat(cp.longestPhaseSpawnRunnerName).isEqualTo("second");
   }
 
   /**
@@ -399,7 +399,7 @@ public class CriticalPathComputerTest extends FoundationTestCase {
   public void testEmptyCriticalPath() {
     AggregatedCriticalPath empty = computer.aggregate();
     assertThat(empty.components()).isEmpty();
-    assertThat(empty.getAggregatedElapsedTime().toMillis()).isEqualTo(0);
+    assertThat(empty.aggregatedElapsedTime.toMillis()).isEqualTo(0);
     checkTopComponentsTimes(computer);
   }
 
@@ -586,7 +586,7 @@ public class CriticalPathComputerTest extends FoundationTestCase {
       }
       if (actionMatches(action2, cpath)) {
         assertThat(cpath.getElapsedTime()).isEqualTo(Duration.ofMillis(11));
-        assertThat(cpath.getChild().getElapsedTime()).isEqualTo(Duration.ofMillis(1012));
+        assertThat(cpath.child.getElapsedTime()).isEqualTo(Duration.ofMillis(1012));
       }
     }
   }
@@ -1228,7 +1228,7 @@ public class CriticalPathComputerTest extends FoundationTestCase {
     AggregatedCriticalPath criticalPath = computer.aggregate();
 
     assertThat(criticalPath).isNotNull();
-    assertThat(criticalPath.getAggregatedElapsedTime())
+    assertThat(criticalPath.aggregatedElapsedTime)
         .isEqualTo(Duration.ofMillis(totalWallTimeInMillis));
 
     String summary = criticalPath.toStringSummary();
@@ -1246,7 +1246,7 @@ public class CriticalPathComputerTest extends FoundationTestCase {
     AggregatedCriticalPath criticalPath = computer.aggregate();
 
     assertThat(criticalPath).isNotNull();
-    assertThat(criticalPath.getAggregatedElapsedTime())
+    assertThat(criticalPath.aggregatedElapsedTime)
         .isEqualTo(Duration.ofMillis(totalWallTime.toMillis()));
     assertThat(criticalPath.getSpawnMetrics().getRemoteMetrics().totalTimeInMs())
         .isEqualTo(totalTime.toMillis());

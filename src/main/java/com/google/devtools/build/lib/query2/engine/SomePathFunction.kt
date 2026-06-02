@@ -11,124 +11,114 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import com.google.common.collect.Sets.SetView;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.CustomFunctionQueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskCallable;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ThreadSafeMutableSet;
-import java.util.List;
-import java.util.OptionalInt;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSet
+import com.google.common.collect.Sets
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.*
+import java.util.*
 
 /**
  * A somepath(x, y) query expression, which computes the set of nodes on some arbitrary path from a
  * target in set x to a target in set y.
- *
+ * 
  * <pre>expr ::= SOMEPATH '(' expr ',' expr ')'</pre>
  */
-public class SomePathFunction implements QueryFunction {
-  public SomePathFunction() {}
-
-  @Override
-  public String getName() {
-    return "somepath";
-  }
-
-  @Override
-  public int getMandatoryArguments() {
-    return 2;
-  }
-
-  @Override
-  public List<ArgumentType> getArgumentTypes() {
-    return ImmutableList.of(ArgumentType.EXPRESSION, ArgumentType.EXPRESSION);
-  }
-
-  @Override
-  public boolean requiresEdges() {
-    return true;
-  }
-
-  @Override
-  public <T> QueryTaskFuture<Void> eval(
-      final QueryEnvironment<T> env,
-      QueryExpressionContext<T> context,
-      final QueryExpression expression,
-      List<Argument> args,
-      final Callback<T> callback) {
-    if (env instanceof StreamableQueryEnvironment) {
-      return ((StreamableQueryEnvironment<T>) env)
-          .somePath(
-              args.get(0).getExpression(),
-              args.get(1).getExpression(),
-              context,
-              callback,
-              expression);
+class SomePathFunction : QueryFunction {
+    override fun getName(): String {
+        return "somepath"
     }
 
-    final QueryTaskFuture<ThreadSafeMutableSet<T>> fromValueFuture =
-        QueryUtil.evalAll(env, context, args.get(0).getExpression());
-    final QueryTaskFuture<ThreadSafeMutableSet<T>> toValueFuture =
-        QueryUtil.evalAll(env, context, args.get(1).getExpression());
-
-    if (env instanceof CustomFunctionQueryEnvironment) {
-      return env.whenAllSucceedCall(
-          ImmutableList.of(fromValueFuture, toValueFuture),
-          new QueryTaskCallable<Void>() {
-            @Override
-            public Void call() throws QueryException, InterruptedException {
-              ThreadSafeMutableSet<T> fromValue = fromValueFuture.getIfSuccessful();
-              ThreadSafeMutableSet<T> toValue = toValueFuture.getIfSuccessful();
-              ((CustomFunctionQueryEnvironment<T>) env)
-                  .somePath(fromValue, toValue, expression, callback);
-              return null;
-            }
-          });
+    override fun getMandatoryArguments(): Int {
+        return 2
     }
-    return env.whenAllSucceedCall(
-        ImmutableList.of(fromValueFuture, toValueFuture),
-        new QueryTaskCallable<Void>() {
-          @Override
-          public Void call() throws QueryException, InterruptedException {
-            // Implementation strategy: for each x in "from", compute its forward
-            // transitive closure.  If it intersects "to", then do a path search from x
-            // to an arbitrary node in the intersection, and return the path.  This
-            // avoids computing the full transitive closure of "from" in some cases.
 
-            ThreadSafeMutableSet<T> fromValue = fromValueFuture.getIfSuccessful();
-            ThreadSafeMutableSet<T> toValue = toValueFuture.getIfSuccessful();
+    override fun getArgumentTypes(): MutableList<QueryEnvironment.ArgumentType?> {
+        return ImmutableList.of<QueryEnvironment.ArgumentType?>(
+            QueryEnvironment.ArgumentType.EXPRESSION,
+            QueryEnvironment.ArgumentType.EXPRESSION
+        )
+    }
 
-            env.buildTransitiveClosure(expression, fromValue, OptionalInt.empty());
+    override fun requiresEdges(): Boolean {
+        return true
+    }
 
-            for (T x : fromValue) {
-              // TODO(b/122548314): if x was already seen as part of a previous node's tc, we should
-              // skip it here. That's subsumed by the TODO below.
-              ThreadSafeMutableSet<T> xSet = env.createThreadSafeMutableSet();
-              xSet.add(x);
-              // TODO(b/122548314): this transitive closure building should stop at any nodes that
-              // have already been visited.
-              ThreadSafeMutableSet<T> xtc = env.getTransitiveClosure(xSet, context);
-              SetView<T> result;
-              if (xtc.size() > toValue.size()) {
-                result = Sets.intersection(toValue, xtc);
-              } else {
-                result = Sets.intersection(xtc, toValue);
-              }
-              if (!result.isEmpty()) {
-                callback.process(env.getNodesOnPath(x, result.iterator().next(), context));
-                return null;
-              }
-            }
-            callback.process(ImmutableSet.<T>of());
-            return null;
-          }
-        });
-  }
+    override fun <T> eval(
+        env: QueryEnvironment<T?>,
+        context: QueryExpressionContext<T?>?,
+        expression: QueryExpression?,
+        args: MutableList<QueryEnvironment.Argument?>,
+        callback: Callback<T?>
+    ): QueryTaskFuture<Void?>? {
+        if (env is StreamableQueryEnvironment<*>) {
+            return (env as StreamableQueryEnvironment<T?>)
+                .somePath(
+                    args.get(0)!!.getExpression(),
+                    args.get(1)!!.getExpression(),
+                    context,
+                    callback,
+                    expression
+                )
+        }
+
+        val fromValueFuture =
+            QueryUtil.evalAll<T?>(env, context, args.get(0)!!.getExpression())
+        val toValueFuture =
+            QueryUtil.evalAll<T?>(env, context, args.get(1)!!.getExpression())
+
+        if (env is CustomFunctionQueryEnvironment<*>) {
+            return env.whenAllSucceedCall<Void?>(
+                ImmutableList.of<QueryTaskFuture<ThreadSafeMutableSet<T?>?>?>(fromValueFuture, toValueFuture),
+                object : QueryTaskCallable<Void?> {
+                    @Throws(QueryException::class, InterruptedException::class)
+                    override fun call(): Void? {
+                        val fromValue = fromValueFuture!!.getIfSuccessful()
+                        val toValue = toValueFuture!!.getIfSuccessful()
+                        (env as CustomFunctionQueryEnvironment<T?>)
+                            .somePath(fromValue, toValue, expression, callback)
+                        return null
+                    }
+                })
+        }
+        return env.whenAllSucceedCall<Void?>(
+            ImmutableList.of<QueryTaskFuture<ThreadSafeMutableSet<T?>?>?>(fromValueFuture, toValueFuture),
+            object : QueryTaskCallable<Void?> {
+                @Throws(QueryException::class, InterruptedException::class)
+                override fun call(): Void? {
+                    // Implementation strategy: for each x in "from", compute its forward
+                    // transitive closure.  If it intersects "to", then do a path search from x
+                    // to an arbitrary node in the intersection, and return the path.  This
+                    // avoids computing the full transitive closure of "from" in some cases.
+
+                    val fromValue = fromValueFuture!!.getIfSuccessful()
+                    val toValue = toValueFuture!!.getIfSuccessful()
+
+                    env.buildTransitiveClosure(expression, fromValue, OptionalInt.empty())
+
+                    for (x in fromValue) {
+                        // TODO(b/122548314): if x was already seen as part of a previous node's tc, we should
+                        // skip it here. That's subsumed by the TODO below.
+                        val xSet = env.createThreadSafeMutableSet()
+                        xSet.add(x)
+                        // TODO(b/122548314): this transitive closure building should stop at any nodes that
+                        // have already been visited.
+                        val xtc = env.getTransitiveClosure(xSet, context)
+                        val result: Sets.SetView<T?>?
+                        if (xtc.size > toValue.size) {
+                            result = Sets.intersection<T?>(toValue, xtc)
+                        } else {
+                            result = Sets.intersection<T?>(xtc, toValue)
+                        }
+                        if (!result.isEmpty()) {
+                            callback.process(env.getNodesOnPath(x, result.iterator().next(), context))
+                            return null
+                        }
+                    }
+                    callback.process(ImmutableSet.of<T?>())
+                    return null
+                }
+            })
+    }
 }

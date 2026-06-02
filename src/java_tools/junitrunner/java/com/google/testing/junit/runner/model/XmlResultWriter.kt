@@ -11,19 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.model
 
-package com.google.testing.junit.runner.model;
+import java.io.IOException
 
-import java.io.IOException;
-
-public interface XmlResultWriter {
-  /**
-   * Converts the {@link TestResult} to an XML representation and writes it into the
-   * {@link XmlWriter} passed to the constructor.
-   *
-   * @param writer where to write the generated XML.
-   * @param result the {@link TestResult} to process.
-   * @throws IOException
-   */
-  void writeTestSuites(XmlWriter writer, TestResult result) throws IOException;
+interface XmlResultWriter {
+    /**
+     * Converts the [TestResult] to an XML representation and writes it into the
+     * [XmlWriter] passed to the constructor.
+     * 
+     * @param writer where to write the generated XML.
+     * @param result the [TestResult] to process.
+     * @throws IOException
+     */
+    @Throws(IOException::class)
+    fun writeTestSuites(writer: XmlWriter?, result: TestResult?)
 }

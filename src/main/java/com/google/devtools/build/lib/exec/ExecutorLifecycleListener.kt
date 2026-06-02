@@ -11,46 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionGraph;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.skyframe.EphemeralCheckIfOutputConsumed;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionGraph
 
 /**
  * Type that can get informed about executor lifecycle events.
- *
- * <p>Notifications occur in this order:
- *
- * <ol>
- *   <li>{@link #executorCreated}
- *   <li>{@link #executionPhaseStarting}
- *   <li>{@link #executionPhaseEnding}
- * </ol>
+ * 
+ * 
+ * Notifications occur in this order:
+ * 
+ * 
+ *  1. [.executorCreated]
+ *  1. [.executionPhaseStarting]
+ *  1. [.executionPhaseEnding]
+ * 
  */
-public interface ExecutorLifecycleListener {
+interface ExecutorLifecycleListener {
+    /** Handles executor creation.  */
+    @Throws(AbruptExitException::class)
+    fun executorCreated()
 
-  /** Handles executor creation. */
-  void executorCreated() throws AbruptExitException;
+    /**
+     * Handles the start of the execution phase.
+     * 
+     * @param actionGraph actions as calculated in the analysis phase. Null in Skymeld mode.
+     * @param topLevelArtifacts supplies all output artifacts from top-level targets and aspects. Null
+     * in skymeld mode.
+     * @param ephemeralCheckIfOutputConsumed tests whether an artifact is consumed in this build.
+     */
+    @Throws(AbruptExitException::class, java.lang.InterruptedException::class)
+    fun executionPhaseStarting(
+        actionGraph: ActionGraph?,
+        topLevelArtifacts: java.util.function.Supplier<com.google.common.collect.ImmutableSet<Artifact?>?>?,
+        ephemeralCheckIfOutputConsumed: EphemeralCheckIfOutputConsumed?
+    )
 
-  /**
-   * Handles the start of the execution phase.
-   *
-   * @param actionGraph actions as calculated in the analysis phase. Null in Skymeld mode.
-   * @param topLevelArtifacts supplies all output artifacts from top-level targets and aspects. Null
-   *     in skymeld mode.
-   * @param ephemeralCheckIfOutputConsumed tests whether an artifact is consumed in this build.
-   */
-  void executionPhaseStarting(
-      @Nullable ActionGraph actionGraph,
-      @Nullable Supplier<ImmutableSet<Artifact>> topLevelArtifacts,
-      @Nullable EphemeralCheckIfOutputConsumed ephemeralCheckIfOutputConsumed)
-      throws AbruptExitException, InterruptedException;
-
-  /** Handles the end of the execution phase. */
-  void executionPhaseEnding();
+    /** Handles the end of the execution phase.  */
+    fun executionPhaseEnding()
 }

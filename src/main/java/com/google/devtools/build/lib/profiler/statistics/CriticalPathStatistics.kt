@@ -11,39 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler.statistics;
+package com.google.devtools.build.lib.profiler.statistics
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.TraceEvent;
-import java.time.Duration;
-import java.util.List;
+import com.google.devtools.build.lib.profiler.TraceEvent
 
 /**
- * Keeps a predefined list of {@link TraceEvent}'s cumulative durations and allows iterating over
+ * Keeps a predefined list of [TraceEvent]'s cumulative durations and allows iterating over
  * pairs of their descriptions and relative durations.
  */
-public final class CriticalPathStatistics {
-  private final ImmutableList<TraceEvent> criticalPathEntries;
-  private Duration totalDuration = Duration.ZERO;
+class CriticalPathStatistics(traceEvents: MutableList<TraceEvent>) {
+    private val criticalPathEntries: com.google.common.collect.ImmutableList<TraceEvent?>
+    private var totalDuration: java.time.Duration = java.time.Duration.ZERO
 
-  public CriticalPathStatistics(List<TraceEvent> traceEvents) {
-    ImmutableList.Builder<TraceEvent> criticalPathEntriesBuilder = new ImmutableList.Builder<>();
-    for (TraceEvent traceEvent : traceEvents) {
-      if (ProfilerTask.CRITICAL_PATH_COMPONENT.description.equals(traceEvent.category())) {
-        criticalPathEntriesBuilder.add(traceEvent);
-        totalDuration = totalDuration.plus(traceEvent.duration());
-      }
+    init {
+        val criticalPathEntriesBuilder: com.google.common.collect.ImmutableList.Builder<TraceEvent?> =
+            com.google.common.collect.ImmutableList.Builder<TraceEvent?>()
+        for (traceEvent in traceEvents) {
+            if (com.google.devtools.build.lib.profiler.ProfilerTask.CRITICAL_PATH_COMPONENT.description == traceEvent.category) {
+                criticalPathEntriesBuilder.add(traceEvent)
+                totalDuration = totalDuration.plus(traceEvent.duration)
+            }
+        }
+        this.criticalPathEntries = criticalPathEntriesBuilder.build()
     }
-    this.criticalPathEntries = criticalPathEntriesBuilder.build();
-  }
 
-  public Duration getTotalDuration() {
-    return totalDuration;
-  }
+    fun getTotalDuration(): java.time.Duration {
+        return totalDuration
+    }
 
-  public ImmutableList<TraceEvent> getCriticalPathEntries() {
-    return criticalPathEntries;
-  }
+    fun getCriticalPathEntries(): com.google.common.collect.ImmutableList<TraceEvent?> {
+        return criticalPathEntries
+    }
 }
 

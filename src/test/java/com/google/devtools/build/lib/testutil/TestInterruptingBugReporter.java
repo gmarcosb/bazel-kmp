@@ -140,7 +140,7 @@ public final class TestInterruptingBugReporter
 
   @Override
   public void handleCrash(Crash crash, CrashContext ctx) {
-    handle(crash.getThrowable(), "call to handleCrash", Thread.currentThread());
+    handle(crash.throwable, "call to handleCrash", Thread.currentThread());
   }
 
   @Override

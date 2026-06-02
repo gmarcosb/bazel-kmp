@@ -11,134 +11,124 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.Set;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.cmdline.Label
 
-/** Properties of a target needed by its parent targets. */
-public interface TargetData {
+/** Properties of a target needed by its parent targets.  */
+interface TargetData {
+    /**
+     * Returns a string describing this kind of target: e.g. "cc_library rule", "source file",
+     * "generated file".
+     */
+    fun getTargetKind(): String?
 
-  /**
-   * Returns a string describing this kind of target: e.g. "cc_library rule", "source file",
-   * "generated file".
-   */
-  String getTargetKind();
+    /**
+     * Returns the place where the target was defined.
+     * 
+     * 
+     * The location of a rule instance is generally its "generator location", the location of the
+     * outermost call on the stack, which is in the BUILD file. However, the location of a source file
+     * target created by an explicit call to `exports_files` is the location of the innermost
+     * call, which may be in an arbitrary .bzl file and is not necessarily beneath the package's
+     * directory. The inconsistency seems unintentional.
+     */
+    fun getLocation(): net.starlark.java.syntax.Location?
 
-  /**
-   * Returns the place where the target was defined.
-   *
-   * <p>The location of a rule instance is generally its "generator location", the location of the
-   * outermost call on the stack, which is in the BUILD file. However, the location of a source file
-   * target created by an explicit call to {@code exports_files} is the location of the innermost
-   * call, which may be in an arbitrary .bzl file and is not necessarily beneath the package's
-   * directory. The inconsistency seems unintentional.
-   */
-  Location getLocation();
+    /** Returns the rule class name if the target is a rule and "" otherwise.  */
+    fun getRuleClass(): String? {
+        return ""
+    }
 
-  /** Returns the rule class name if the target is a rule and "" otherwise. */
-  default String getRuleClass() {
-    return "";
-  }
+    /** Returns the rule tags if the target is a rule and an empty set otherwise.  */
+    fun getRuleTags(): MutableSet<String?>? {
+        return com.google.common.collect.ImmutableSet.of<String?>()
+    }
 
-  /** Returns the rule tags if the target is a rule and an empty set otherwise. */
-  default Set<String> getRuleTags() {
-    return ImmutableSet.of();
-  }
+    /**
+     * Returns the name part of the label of the target.
+     * 
+     * 
+     * Equivalent to `getLabel().getName()`.
+     */
+    fun getName(): String {
+        return getLabel().name
+    }
 
-  /**
-   * Returns the name part of the label of the target.
-   *
-   * <p>Equivalent to {@code getLabel().getName()}.
-   */
-  default String getName() {
-    return getLabel().getName();
-  }
+    /** Returns the label of the target.  */
+    fun getLabel(): Label?
 
-  /** Returns the label of the target. */
-  Label getLabel();
+    fun isRule(): Boolean {
+        return false
+    }
 
-  default boolean isRule() {
-    return false;
-  }
+    fun isFile(): Boolean {
+        return false
+    }
 
-  default boolean isFile() {
-    return false;
-  }
+    fun isInputFile(): Boolean {
+        return false
+    }
 
-  default boolean isInputFile() {
-    return false;
-  }
+    fun isOutputFile(): Boolean {
+        return false
+    }
 
-  default boolean isOutputFile() {
-    return false;
-  }
+    /** The generating rule's label if the target is an [OutputFile] otherwise null.  */
+    fun getGeneratingRuleLabel(): Label? {
+        return null
+    }
 
-  /** The generating rule's label if the target is an {@link OutputFile} otherwise null. */
-  @Nullable
-  default Label getGeneratingRuleLabel() {
-    return null;
-  }
+    /** The input file path if the target is an [InputFile] otherwise null.  */
+    fun getInputPath(): com.google.devtools.build.lib.vfs.Path? {
+        return null
+    }
 
-  /** The input file path if the target is an {@link InputFile} otherwise null. */
-  @Nullable
-  default Path getInputPath() {
-    return null;
-  }
+    /** Any deprecation warning of the associated rule (maybe generating) otherwise null.  */
+    fun getDeprecationWarning(): String? {
+        return null
+    }
 
-  /** Any deprecation warning of the associated rule (maybe generating) otherwise null. */
-  @Nullable
-  default String getDeprecationWarning() {
-    return null;
-  }
+    /** True if the target is a testonly rule or an output file generated by a testonly rule.  */
+    fun isTestOnly(): Boolean {
+        return false
+    }
 
-  /** True if the target is a testonly rule or an output file generated by a testonly rule. */
-  default boolean isTestOnly() {
-    return false;
-  }
+    /** True if the target is a materializer rule.  */
+    fun isMaterializerRule(): Boolean {
+        return false
+    }
 
-  /** True if the target is a materializer rule. */
-  default boolean isMaterializerRule() {
-    return false;
-  }
+    /** Returns only the `tags` attribute value if the target is a rule, otherwise null.  */
+    fun getOnlyTagsAttribute(): com.google.common.collect.ImmutableList<String?>? {
+        return null
+    }
 
-  /** Returns only the `tags` attribute value if the target is a rule, otherwise null. */
-  @Nullable
-  default ImmutableList<String> getOnlyTagsAttribute() {
-    return null;
-  }
+    fun getRuleDefinitionEnvironmentLabel(): Label? {
+        return null
+    }
 
-  @Nullable // non-null if the target is a Starlark defined rule
-  default Label getRuleDefinitionEnvironmentLabel() {
-    return null;
-  }
+    /**
+     * True if the underlying target advertises the required providers.
+     * 
+     * 
+     * This is used to determine whether an aspect should propagate to this target.
+     */
+    fun satisfies(required: RequiredProviders?): Boolean {
+        return false
+    }
 
-  /**
-   * True if the underlying target advertises the required providers.
-   *
-   * <p>This is used to determine whether an aspect should propagate to this target.
-   */
-  default boolean satisfies(RequiredProviders required) {
-    return false;
-  }
+    /** A test timeout if the associated rule has one.  */
+    fun getTestTimeout(): TestTimeout? {
+        return null
+    }
 
-  /** A test timeout if the associated rule has one. */
-  @Nullable
-  default TestTimeout getTestTimeout() {
-    return null;
-  }
+    /** Whether this target can be made available during dependency resolution.  */
+    fun isForDependencyResolution(): Boolean {
+        return false
+    }
 
-  /** Whether this target can be made available during dependency resolution. */
-  default boolean isForDependencyResolution() {
-    return false;
-  }
-
-  default AdvertisedProviderSet getAdvertisedProviders() {
-    return AdvertisedProviderSet.EMPTY;
-  }
+    fun getAdvertisedProviders(): AdvertisedProviderSet? {
+        return AdvertisedProviderSet.Companion.EMPTY
+    }
 }

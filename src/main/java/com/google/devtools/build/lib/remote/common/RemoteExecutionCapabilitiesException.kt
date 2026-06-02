@@ -11,13 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import java.io.IOException;
+import java.io.IOException
 
-/** An exception to indicate that Bazel failed to query remote execution capabilities. */
-public class RemoteExecutionCapabilitiesException extends IOException {
-  public RemoteExecutionCapabilitiesException(Throwable cause) {
-    super(cause);
-  }
-}
+/** An exception to indicate that Bazel failed to query remote execution capabilities.  */
+class RemoteExecutionCapabilitiesException(cause: Throwable?) : IOException(cause)

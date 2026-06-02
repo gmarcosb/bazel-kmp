@@ -77,7 +77,7 @@ class SkyframePackageManager implements PackageManager, CachingPackageLocator {
     // TODO(https://github.com/bazelbuild/bazel/issues/23852): don't expand the full package if lazy
     // macro expansion is enabled.
     return Preconditions.checkNotNull(getPackage(eventHandler, label.getPackageIdentifier()), label)
-        .getTarget(label.getName());
+        .getTarget(label.name);
   }
 
   @Override

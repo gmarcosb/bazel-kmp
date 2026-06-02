@@ -11,30 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
+import build.bazel.remote.execution.v2.WaitExecutionRequest
 
-import build.bazel.remote.execution.v2.WaitExecutionRequest;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.WaitExecutionDetails;
-import com.google.longrunning.Operation;
+/** LoggingHandler for [build.bazel.remote.execution.v2.WaitExecution] gRPC call.  */
+class WaitExecutionHandler : LoggingHandler<WaitExecutionRequest?, Operation?> {
+    private val builder: WaitExecutionDetails.Builder = WaitExecutionDetails.newBuilder()
 
-/** LoggingHandler for {@link build.bazel.remote.execution.v2.WaitExecution} gRPC call. */
-public class WaitExecutionHandler implements LoggingHandler<WaitExecutionRequest, Operation> {
-  private final WaitExecutionDetails.Builder builder = WaitExecutionDetails.newBuilder();
+    override fun handleReq(message: WaitExecutionRequest?) {
+        builder.setRequest(message)
+    }
 
-  @Override
-  public void handleReq(WaitExecutionRequest message) {
-    builder.setRequest(message);
-  }
+    override fun handleResp(message: Operation?) {
+        builder.addResponses(message)
+    }
 
-  @Override
-  public void handleResp(Operation message) {
-    builder.addResponses(message);
-  }
-
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder().setWaitExecution(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder().setWaitExecution(builder).build()
+    }
 }

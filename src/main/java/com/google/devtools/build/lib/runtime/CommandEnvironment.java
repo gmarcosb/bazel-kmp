@@ -198,7 +198,7 @@ public class CommandEnvironment {
       if (buildFile == null) {
         return null;
       }
-      return buildFile.getParentDirectory().getRelative(label.getName());
+      return buildFile.getParentDirectory().getRelative(label.name);
     }
 
     @Override
@@ -1022,7 +1022,7 @@ public class CommandEnvironment {
       if (outputDirectoryHelper == null) {
         var buildRequestOptions = options.getOptions(BuildRequestOptions.class);
         outputDirectoryHelper =
-            new ActionOutputDirectoryHelper(buildRequestOptions.getDirectoryCreationCacheSpec());
+            new ActionOutputDirectoryHelper(buildRequestOptions.directoryCreationCacheSpec);
       }
       return outputDirectoryHelper;
     }

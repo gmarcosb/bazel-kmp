@@ -343,7 +343,7 @@ public class RunCommand implements BlazeCommand {
     }
 
     ExecutionOptions executionOptions = options.getOptions(ExecutionOptions.class);
-    ActionExecutionContext.ShowSubcommands showSubcommands = executionOptions.getShowSubcommands();
+    ActionExecutionContext.ShowSubcommands showSubcommands = executionOptions.showSubcommands;
 
     String commandDescription;
     if (showSubcommands != ActionExecutionContext.ShowSubcommands.FALSE) {
@@ -384,8 +384,7 @@ public class RunCommand implements BlazeCommand {
               new ExecRequestEvent(
                   execRequest.build(),
                   /* redactedArgv= */ options
-                          .getOptions(BuildEventProtocolOptions.class)
-                          .getIncludeResidueInRunBepEvent()
+                          .getOptions(BuildEventProtocolOptions.class).includeResidueInRunBepEvent
                       ? ImmutableList.copyOf(execRequest.getArgvList())
                       : getArgvWithoutResidue(
                           env, runCommandLine, builtTargets.configuration, builtTargets.stopTime)));
@@ -422,7 +421,7 @@ public class RunCommand implements BlazeCommand {
                 request,
                 (Collection<Target> tgts, boolean keepGoing) ->
                     validateTargets(
-                        env.getReporter(), request.getTargets(), tgts, runUnder, keepGoing),
+                        env.getReporter(), request.targets, tgts, runUnder, keepGoing),
                 options);
     if (!buildResult.getSuccess()) {
       env.getReporter().handle(Event.error("Build failed. Not running target"));

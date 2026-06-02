@@ -11,13 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler.memory
 
-package com.google.devtools.build.lib.profiler.memory;
+import com.google.devtools.build.lib.profiler.memory.AllocationTracker
+import com.google.monitoring.runtime.instrumentation.AllocationRecorder
 
-import com.google.monitoring.runtime.instrumentation.AllocationRecorder;
-
-class AllocationTrackerInstaller {
-  static void installAllocationTracker(AllocationTracker tracker) {
-    AllocationRecorder.addSampler(tracker);
-  }
+internal object AllocationTrackerInstaller {
+    fun installAllocationTracker(tracker: AllocationTracker?) {
+        AllocationRecorder.addSampler(tracker)
+    }
 }

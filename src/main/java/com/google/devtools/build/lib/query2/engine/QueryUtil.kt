@@ -11,371 +11,342 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSortedSet
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.cmdline.Label
+import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet
+import kotlin.Any
+import kotlin.Boolean
+import kotlin.Comparator
+import kotlin.Int
+import kotlin.collections.ArrayList
+import kotlin.collections.Iterable
+import kotlin.collections.MutableIterator
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
+import kotlin.collections.MutableSet
+import kotlin.collections.Set
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskCallable;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ThreadSafeMutableSet;
-import java.util.AbstractSet;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
-/** Several query utilities to make easier to work with query callbacks and uniquifiers. */
-public final class QueryUtil {
-
-  private QueryUtil() { }
-
-  /** A {@link Callback} that can aggregate all the partial results into a single value. */
-  public interface AggregateAllCallback<T, V> extends Callback<T> {
-    /** Returns a value representing a combination of all the partial results. */
-    V getResult();
-  }
-
-  /** A {@link OutputFormatterCallback} that is also a {@link AggregateAllCallback}. */
-  public abstract static class AggregateAllOutputFormatterCallback<T, S extends Set<T>>
-      extends ThreadSafeOutputFormatterCallback<T> implements AggregateAllCallback<T, S>  {
-  }
-
-  private static class AggregateAllOutputFormatterCallbackImpl<T>
-      extends AggregateAllOutputFormatterCallback<T, ThreadSafeMutableSet<T>> {
-    private final ThreadSafeMutableSet<T> result;
-
-    private AggregateAllOutputFormatterCallbackImpl(QueryEnvironment<T> env) {
-      this.result = env.createThreadSafeMutableSet();
+/** Several query utilities to make easier to work with query callbacks and uniquifiers.  */
+object QueryUtil {
+    /**
+     * Returns a fresh [AggregateAllOutputFormatterCallback] instance whose
+     * [AggregateAllCallback.getResult] returns all the elements of the result in the order they
+     * were processed.
+     */
+    fun <T> newOrderedAggregateAllOutputFormatterCallback(env: QueryEnvironment<T?>): AggregateAllOutputFormatterCallback<T?, MutableSet<T?>?> {
+        return OrderedAggregateAllOutputFormatterCallbackImpl<T?>(env)
     }
 
-    @Override
-    public final void processOutput(Iterable<T> partialResult) {
-      Iterables.addAll(result, partialResult);
+    /**
+     * Returns a fresh [AggregateAllOutputFormatterCallback] instance whose [ ][AggregateAllCallback.getResult] returns all the targets in the result sorted lexicographically
+     * by [Label].
+     */
+    @kotlin.jvm.JvmStatic
+    fun newLexicographicallySortedTargetAggregator(): AggregateAllOutputFormatterCallback<Target?, MutableSet<Target?>?> {
+        return LexicographicallySortedTargetAggregator()
     }
 
-    @Override
-    public ThreadSafeMutableSet<T> getResult() {
-      return result;
-    }
-  }
-
-  private static final class OrderedAggregateAllOutputFormatterCallbackImpl<T>
-      extends AggregateAllOutputFormatterCallback<T, Set<T>> {
-    private final Set<T> resultSet;
-    private final List<T> resultList;
-
-    private OrderedAggregateAllOutputFormatterCallbackImpl(QueryEnvironment<T> env) {
-      this.resultSet = env.createThreadSafeMutableSet();
-      this.resultList = new ArrayList<>();
+    /**
+     * Returns a fresh [AggregateAllCallback] instance that aggregates all of the values into an
+     * [ThreadSafeMutableSet].
+     */
+    fun <T> newAggregateAllCallback(
+        env: QueryEnvironment<T?>
+    ): AggregateAllCallback<T?, ThreadSafeMutableSet<T?>?> {
+        return AggregateAllOutputFormatterCallbackImpl<T?>(env)
     }
 
-    @Override
-    public synchronized void processOutput(Iterable<T> partialResult) {
-      for (T element : partialResult) {
-        if (resultSet.add(element)) {
-          resultList.add(element);
+    /**
+     * Returns a [QueryTaskFuture] representing the evaluation of `expr` as a mutable,
+     * thread safe [Set] comprised of all the results.
+     * 
+     * 
+     * Should only be used by QueryExpressions when it is the only way of achieving correctness.
+     */
+    fun <T> evalAll(
+        env: QueryEnvironment<T?>, context: QueryExpressionContext<T?>?, expr: QueryExpression?
+    ): QueryTaskFuture<ThreadSafeMutableSet<T?>?>? {
+        val callback: AggregateAllCallback<T?, ThreadSafeMutableSet<T?>?> = newAggregateAllCallback<T?>(env)
+        return env.whenSucceedsCall<ThreadSafeMutableSet<T?>?>(
+            env.eval(expr, context, callback),
+            object : QueryTaskCallable<ThreadSafeMutableSet<T?>?> {
+                override fun call(): ThreadSafeMutableSet<T?>? {
+                    return callback.result
+                }
+            })
+    }
+
+    /** A [Callback] that can aggregate all the partial results into a single value.  */
+    interface AggregateAllCallback<T, V> : Callback<T?> {
+        /** Returns a value representing a combination of all the partial results.  */
+        @kotlin.jvm.JvmField
+        val result: V?
+    }
+
+    /** A [OutputFormatterCallback] that is also a [AggregateAllCallback].  */
+    abstract class AggregateAllOutputFormatterCallback<T, S : MutableSet<T?>?>
+        : ThreadSafeOutputFormatterCallback<T?>(), AggregateAllCallback<T?, S?>
+
+    private class AggregateAllOutputFormatterCallbackImpl<T>
+        (env: QueryEnvironment<T?>) : AggregateAllOutputFormatterCallback<T?, ThreadSafeMutableSet<T?>?>() {
+        private val result: ThreadSafeMutableSet<T?>
+
+        init {
+            this.result = env.createThreadSafeMutableSet()
         }
-      }
-    }
 
-    @Override
-    public synchronized Set<T> getResult() {
-      // A CompactHashSet's iteration order is the same as its insertion order.
-      CompactHashSet<T> result = CompactHashSet.createWithExpectedSize(resultList.size());
-      result.addAll(resultList);
-      return result;
-    }
-  }
-
-  private static final class LexicographicallySortedTargetAggregator
-      extends AggregateAllOutputFormatterCallback<Target, Set<Target>> {
-    private final Map<Label, Target> resultMap = new HashMap<>();
-
-    @Override
-    public synchronized void processOutput(Iterable<Target> partialResult) {
-      for (Target target : partialResult) {
-        resultMap.put(target.getLabel(), target);
-      }
-    }
-
-    @Override
-    public synchronized ImmutableSortedSet<Target> getResult() {
-      return ImmutableSortedSet.copyOf(
-          LexicographicallySortedTargetAggregator::compareTargetsByLabel, resultMap.values());
-    }
-
-    // A reference to this method is significantly more efficient than using Comparator#comparing.
-    private static int compareTargetsByLabel(Target t1, Target t2) {
-      return t1.getLabel().compareTo(t2.getLabel());
-    }
-  }
-
-  /**
-   * Returns a fresh {@link AggregateAllOutputFormatterCallback} instance whose
-   * {@link AggregateAllCallback#getResult} returns all the elements of the result in the order they
-   * were processed.
-   */
-  public static <T> AggregateAllOutputFormatterCallback<T, Set<T>>
-      newOrderedAggregateAllOutputFormatterCallback(QueryEnvironment<T> env) {
-    return new OrderedAggregateAllOutputFormatterCallbackImpl<>(env);
-  }
-
-  /**
-   * Returns a fresh {@link AggregateAllOutputFormatterCallback} instance whose {@link
-   * AggregateAllCallback#getResult} returns all the targets in the result sorted lexicographically
-   * by {@link Label}.
-   */
-  public static AggregateAllOutputFormatterCallback<Target, Set<Target>>
-      newLexicographicallySortedTargetAggregator() {
-    return new LexicographicallySortedTargetAggregator();
-  }
-
-  /**
-   * Returns a fresh {@link AggregateAllCallback} instance that aggregates all of the values into an
-   * {@link ThreadSafeMutableSet}.
-   */
-  public static <T> AggregateAllCallback<T, ThreadSafeMutableSet<T>> newAggregateAllCallback(
-      QueryEnvironment<T> env) {
-    return new AggregateAllOutputFormatterCallbackImpl<>(env);
-  }
-
-  /**
-   * Returns a {@link QueryTaskFuture} representing the evaluation of {@code expr} as a mutable,
-   * thread safe {@link Set} comprised of all the results.
-   *
-   * <p>Should only be used by QueryExpressions when it is the only way of achieving correctness.
-   */
-  public static <T> QueryTaskFuture<ThreadSafeMutableSet<T>> evalAll(
-      QueryEnvironment<T> env, QueryExpressionContext<T> context, QueryExpression expr) {
-    final AggregateAllCallback<T, ThreadSafeMutableSet<T>> callback = newAggregateAllCallback(env);
-    return env.whenSucceedsCall(
-        env.eval(expr, context, callback),
-        new QueryTaskCallable<ThreadSafeMutableSet<T>>() {
-          @Override
-          public ThreadSafeMutableSet<T> call() {
-            return callback.getResult();
-          }
-        });
-  }
-
-  /**
-   * A mutable thread safe {@link Set} that uses a {@link KeyExtractor} for determining equality of
-   * its elements. This is useful e.g. when {@code T} isn't guaranteed to have a useful
-   * {@link Object#equals} and {@link Object#hashCode} but {@code K} is.
-   */
-  public static class ThreadSafeMutableKeyExtractorBackedSetImpl<T, K>
-      extends AbstractSet<T> implements ThreadSafeMutableSet<T> {
-    private final KeyExtractor<T, K> extractor;
-    private final Class<T> elementClass;
-    private final ConcurrentMap<K, T> map;
-
-    public ThreadSafeMutableKeyExtractorBackedSetImpl(
-        KeyExtractor<T, K> extractor, Class<T> elementClass) {
-      this(extractor, elementClass, /*concurrencyLevel=*/ 1);
-    }
-
-    public ThreadSafeMutableKeyExtractorBackedSetImpl(
-        KeyExtractor<T, K> extractor,
-        Class<T> elementClass,
-        int concurrencyLevel) {
-      this.extractor = extractor;
-      this.elementClass = elementClass;
-      this.map =
-          new ConcurrentHashMap<>(/*initialCapacity=*/ concurrencyLevel, /*loadFactor=*/ 0.75f);
-    }
-
-    @Override
-    public Iterator<T> iterator() {
-      return map.values().iterator();
-    }
-
-    @Override
-    public int size() {
-      return map.size();
-    }
-
-    @Override
-    public boolean add(T element) {
-      return map.putIfAbsent(extractor.extractKey(element), element) == null;
-    }
-
-    @Override
-    public boolean contains(Object obj) {
-      if (!elementClass.isInstance(obj)) {
-        return false;
-      }
-      T element = elementClass.cast(obj);
-      return map.containsKey(extractor.extractKey(element));
-    }
-
-    @Override
-    public boolean remove(Object obj) {
-      if (!elementClass.isInstance(obj)) {
-        return false;
-      }
-      T element = elementClass.cast(obj);
-      return map.remove(extractor.extractKey(element)) != null;
-    }
-  }
-
-  /** A {@link Uniquifier} whose methods do not throw {@link QueryException}. */
-  public interface NonExceptionalUniquifier<T> extends Uniquifier<T> {
-    @Override
-    boolean unique(T newElement);
-
-    @Override
-    ImmutableList<T> unique(Iterable<T> newElements);
-  }
-
-  /**
-   * A {@link NonExceptionalUniquifier} that doesn't do anything and always says an element is
-   * unique.
-   */
-  public static class NullUniquifierImpl<T> implements NonExceptionalUniquifier<T> {
-    private static final NullUniquifierImpl<Object> INSTANCE = new NullUniquifierImpl<>();
-
-    private NullUniquifierImpl() {
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <T> NullUniquifierImpl<T> instance() {
-      return (NullUniquifierImpl<T>) INSTANCE;
-    }
-
-    @Override
-    public boolean uniquePure(T newElement) {
-      return true;
-    }
-
-    @Override
-    public boolean unique(T newElement) {
-      return true;
-    }
-
-    @Override
-    public ImmutableList<T> unique(Iterable<T> newElements) {
-      return ImmutableList.copyOf(newElements);
-    }
-  }
-
-  /** A trivial {@link Uniquifier} implementation. */
-  public static class UniquifierImpl<T, K> implements NonExceptionalUniquifier<T> {
-    private final KeyExtractor<T, K> extractor;
-    private final Set<K> alreadySeen;
-
-    public UniquifierImpl(KeyExtractor<T, K> extractor) {
-      this(extractor, /*queryEvaluationParallelismLevel=*/ 1);
-    }
-
-    public UniquifierImpl(KeyExtractor<T, K> extractor, int queryEvaluationParallelismLevel) {
-      this.extractor = extractor;
-      this.alreadySeen =
-          Collections.newSetFromMap(
-              // Note that ConcurrentHashMap sadly only uses these 3 parameters as an *initial*
-              // sizing hint.
-              new ConcurrentHashMap<>(
-                  /*initialCapacity=*/ 16,
-                  /*loadFactor=*/ 0.75f,
-                  /*concurrencyLevel=*/ queryEvaluationParallelismLevel));
-    }
-
-    @Override
-    public boolean uniquePure(T element) {
-      return !alreadySeen.contains(extractor.extractKey(element));
-    }
-
-    @Override
-    public boolean unique(T element) {
-      return alreadySeen.add(extractor.extractKey(element));
-    }
-
-    @Override
-    public ImmutableList<T> unique(Iterable<T> newElements) {
-      ImmutableList.Builder<T> result = ImmutableList.builder();
-      for (T element : newElements) {
-        if (unique(element)) {
-          result.add(element);
+        override fun processOutput(partialResult: Iterable<T?>) {
+            Iterables.addAll<T?>(result, partialResult)
         }
-      }
-      return result.build();
-    }
-  }
 
-  /** A trivial {@link MinDepthUniquifier} implementation. */
-  public static class MinDepthUniquifierImpl<T, K> implements MinDepthUniquifier<T> {
-    private final KeyExtractor<T, K> extractor;
-    private final ConcurrentMap<K, KeyState> alreadySeenAtDepth;
-
-    public MinDepthUniquifierImpl(KeyExtractor<T, K> extractor, int concurrencyLevel) {
-      this.extractor = extractor;
-      this.alreadySeenAtDepth =
-          new ConcurrentHashMap<>(/*initialCapacity=*/ concurrencyLevel, /*loadFactor=*/ 0.75f);
-    }
-
-    @Override
-    public final ImmutableList<T> uniqueAtDepthLessThanOrEqualTo(
-        Iterable<T> newElements, int depth) {
-      ImmutableList.Builder<T> resultBuilder = ImmutableList.builder();
-      for (T newElement : newElements) {
-        if (uniqueAtDepthLessThanOrEqualTo(newElement, depth)) {
-          resultBuilder.add(newElement);
+        override fun getResult(): ThreadSafeMutableSet<T?> {
+            return result
         }
-      }
-      return resultBuilder.build();
     }
 
-    @Override
-    public boolean uniqueAtDepthLessThanOrEqualTo(T newElement, int depth) {
-      KeyState newState = new KeyState(new AtomicInteger(depth), new AtomicBoolean(false));
-      KeyState previousState =
-          alreadySeenAtDepth.putIfAbsent(extractor.extractKey(newElement), newState);
-      if (previousState == null) {
-        return true;
-      }
-      if (depth < previousState.depth.get()) {
-        synchronized (previousState) {
-          if (depth < previousState.depth.get()) {
-            // We've seen the element before, but never at a depth this shallow.
-            previousState.depth.set(depth);
-            return true;
-          }
+    private class OrderedAggregateAllOutputFormatterCallbackImpl<T>
+        (env: QueryEnvironment<T?>) : AggregateAllOutputFormatterCallback<T?, MutableSet<T?>?>() {
+        private val resultSet: MutableSet<T?>
+        private val resultList: MutableList<T?>
+
+        init {
+            this.resultSet = env.createThreadSafeMutableSet()
+            this.resultList = ArrayList<T?>()
         }
-      }
-      return false;
+
+        @kotlin.jvm.Synchronized
+        override fun processOutput(partialResult: Iterable<T?>) {
+            for (element in partialResult) {
+                if (resultSet.add(element)) {
+                    resultList.add(element)
+                }
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        override fun getResult(): MutableSet<T?> {
+            // A CompactHashSet's iteration order is the same as its insertion order.
+            val result = CompactHashSet.createWithExpectedSize<T?>(resultList.size)
+            result.addAll(resultList)
+            return result
+        }
     }
 
-    @Override
-    public boolean uniqueAtDepthLessThanOrEqualToPure(T newElement, int depth) {
-      KeyState previousState = alreadySeenAtDepth.get(extractor.extractKey(newElement));
-      return previousState == null || depth < previousState.depth.get();
+    private class LexicographicallySortedTargetAggregator
+
+        : AggregateAllOutputFormatterCallback<Target?, MutableSet<Target?>?>() {
+        private val resultMap: MutableMap<Label?, Target?> = HashMap<Label?, Target?>()
+
+        @kotlin.jvm.Synchronized
+        override fun processOutput(partialResult: Iterable<Target>) {
+            for (target in partialResult) {
+                resultMap.put(target.getLabel(), target)
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        override fun getResult(): ImmutableSortedSet<Target?> {
+            return ImmutableSortedSet.copyOf<Target?>(
+                Comparator { t1: Target?, t2: Target? -> Companion.compareTargetsByLabel(t1!!, t2!!) }, resultMap.values
+            )
+        }
+
+        companion object {
+            // A reference to this method is significantly more efficient than using Comparator#comparing.
+            private fun compareTargetsByLabel(t1: Target, t2: Target): Int {
+                return t1.getLabel().compareTo(t2.getLabel())
+            }
+        }
     }
 
-    @Override
-    public boolean uniqueForOutput(T element) {
-      KeyState keyState = alreadySeenAtDepth.get(extractor.extractKey(element));
-      checkNotNull(keyState, "Must visit an element before outputting that element.");
-      return !keyState.hasBeenOutput.getAndSet(true);
+    /**
+     * A mutable thread safe [Set] that uses a [KeyExtractor] for determining equality of
+     * its elements. This is useful e.g. when `T` isn't guaranteed to have a useful
+     * [Object.equals] and [Object.hashCode] but `K` is.
+     */
+    class ThreadSafeMutableKeyExtractorBackedSetImpl<T, K>
+    @kotlin.jvm.JvmOverloads constructor(
+        private val extractor: KeyExtractor<T?, K?>,
+        private val elementClass: Class<T?>,
+        concurrencyLevel: Int = 1
+    ) : AbstractSet<T?>(), ThreadSafeMutableSet<T?> {
+        private val map: ConcurrentMap<K?, T?>
+
+        init {
+            this.map =
+                ConcurrentHashMap<K?, T?>( /*initialCapacity=*/concurrencyLevel,  /*loadFactor=*/0.75f)
+        }
+
+        override fun iterator(): MutableIterator<T?>? {
+            return map.values.iterator()
+        }
+
+        override fun size(): Int {
+            return map.size
+        }
+
+        override fun add(element: T?): Boolean {
+            return map.putIfAbsent(extractor.extractKey(element), element) == null
+        }
+
+        override fun contains(obj: Any?): Boolean {
+            if (!elementClass.isInstance(obj)) {
+                return false
+            }
+            val element = elementClass.cast(obj)
+            return map.containsKey(extractor.extractKey(element))
+        }
+
+        override fun remove(obj: Any?): Boolean {
+            if (!elementClass.isInstance(obj)) {
+                return false
+            }
+            val element = elementClass.cast(obj)
+            return map.remove(extractor.extractKey(element)) != null
+        }
     }
 
-    @Override
-    public int uniqueElementsCount() {
-      return alreadySeenAtDepth.size();
+    /** A [Uniquifier] whose methods do not throw [QueryException].  */
+    interface NonExceptionalUniquifier<T> : Uniquifier<T?> {
+        override fun unique(newElement: T?): Boolean
+
+        override fun unique(newElements: Iterable<T?>?): ImmutableList<T?>?
     }
 
-    /** State tracked for each key tracked by the uniquifier. */
-    private record KeyState(AtomicInteger depth, AtomicBoolean hasBeenOutput) {}
-  }
+    /**
+     * A [NonExceptionalUniquifier] that doesn't do anything and always says an element is
+     * unique.
+     */
+    class NullUniquifierImpl<T> private constructor() : NonExceptionalUniquifier<T?> {
+        override fun uniquePure(newElement: T?): Boolean {
+            return true
+        }
+
+        override fun unique(newElement: T?): Boolean {
+            return true
+        }
+
+        override fun unique(newElements: Iterable<T?>): ImmutableList<T?> {
+            return ImmutableList.copyOf<T?>(newElements)
+        }
+
+        companion object {
+            private val INSTANCE = NullUniquifierImpl<Any?>()
+
+            fun <T> instance(): NullUniquifierImpl<T?>? {
+                return INSTANCE as NullUniquifierImpl<T?>?
+            }
+        }
+    }
+
+    /** A trivial [Uniquifier] implementation.  */
+    class UniquifierImpl<T, K> @kotlin.jvm.JvmOverloads constructor(
+        private val extractor: KeyExtractor<T?, K?>,
+        queryEvaluationParallelismLevel: Int = 1
+    ) : NonExceptionalUniquifier<T?> {
+        private val alreadySeen: MutableSet<K?>
+
+        init {
+            this.alreadySeen =
+                Collections.newSetFromMap<K?>( // Note that ConcurrentHashMap sadly only uses these 3 parameters as an *initial*
+                    // sizing hint.
+                    ConcurrentHashMap<K?, Boolean?>( /*initialCapacity=*/
+                        16,  /*loadFactor=*/
+                        0.75f,  /*concurrencyLevel=*/
+                        queryEvaluationParallelismLevel
+                    )
+                )
+        }
+
+        override fun uniquePure(element: T?): Boolean {
+            return !alreadySeen.contains(extractor.extractKey(element))
+        }
+
+        override fun unique(element: T?): Boolean {
+            return alreadySeen.add(extractor.extractKey(element))
+        }
+
+        override fun unique(newElements: Iterable<T?>): ImmutableList<T?> {
+            val result = ImmutableList.builder<T?>()
+            for (element in newElements) {
+                if (unique(element)) {
+                    result.add(element)
+                }
+            }
+            return result.build()
+        }
+    }
+
+    /** A trivial [MinDepthUniquifier] implementation.  */
+    class MinDepthUniquifierImpl<T, K>(private val extractor: KeyExtractor<T?, K?>, concurrencyLevel: Int) :
+        MinDepthUniquifier<T?> {
+        private val alreadySeenAtDepth: ConcurrentMap<K?, KeyState?>
+
+        init {
+            this.alreadySeenAtDepth =
+                ConcurrentHashMap<K?, KeyState?>( /*initialCapacity=*/concurrencyLevel,  /*loadFactor=*/0.75f)
+        }
+
+        override fun uniqueAtDepthLessThanOrEqualTo(
+            newElements: Iterable<T?>, depth: Int
+        ): ImmutableList<T?> {
+            val resultBuilder = ImmutableList.builder<T?>()
+            for (newElement in newElements) {
+                if (uniqueAtDepthLessThanOrEqualTo(newElement, depth)) {
+                    resultBuilder.add(newElement)
+                }
+            }
+            return resultBuilder.build()
+        }
+
+        override fun uniqueAtDepthLessThanOrEqualTo(newElement: T?, depth: Int): Boolean {
+            val newState = KeyState(AtomicInteger(depth), AtomicBoolean(false))
+            val previousState =
+                alreadySeenAtDepth.putIfAbsent(extractor.extractKey(newElement), newState)
+            if (previousState == null) {
+                return true
+            }
+            if (depth < previousState.depth.get()) {
+                synchronized(previousState) {
+                    if (depth < previousState.depth.get()) {
+                        // We've seen the element before, but never at a depth this shallow.
+                        previousState.depth.set(depth)
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        override fun uniqueAtDepthLessThanOrEqualToPure(newElement: T?, depth: Int): Boolean {
+            val previousState = alreadySeenAtDepth.get(extractor.extractKey(newElement))
+            return previousState == null || depth < previousState.depth.get()
+        }
+
+        override fun uniqueForOutput(element: T?): Boolean {
+            val keyState = alreadySeenAtDepth.get(extractor.extractKey(element))
+            Preconditions.checkNotNull<KeyState?>(keyState, "Must visit an element before outputting that element.")
+            return !keyState!!.hasBeenOutput.getAndSet(true)
+        }
+
+        override fun uniqueElementsCount(): Int {
+            return alreadySeenAtDepth.size
+        }
+
+        /** State tracked for each key tracked by the uniquifier.  */
+        private class KeyState(depth: AtomicInteger?, hasBeenOutput: AtomicBoolean?) {
+            val depth: AtomicInteger?
+            val hasBeenOutput: AtomicBoolean?
+
+            init {
+                this.depth = depth
+                this.hasBeenOutput = hasBeenOutput
+            }
+        }
+    }
 }

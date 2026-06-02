@@ -11,111 +11,99 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.util.HashCodes;
-import com.google.protobuf.TextFormat;
-import java.util.Map;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
 /**
- * A pair of {@link AspectClass} and {@link AspectParameters}.
- *
- * <p>Used for dependency resolution.
+ * A pair of [AspectClass] and [AspectParameters].
+ * 
+ * 
+ * Used for dependency resolution.
  */
 @Immutable
 @AutoCodec
-public final class AspectDescriptor {
+class AspectDescriptor private constructor(aspectClass: AspectClass?, aspectParameters: AspectParameters?) {
+    private val aspectClass: AspectClass
+    private val aspectParameters: AspectParameters
 
-  private static final Interner<AspectDescriptor> interner = BlazeInterners.newWeakInterner();
-
-  @VisibleForTesting
-  public static AspectDescriptor of(AspectClass aspectClass, AspectParameters aspectParameters) {
-    return interner.intern(new AspectDescriptor(aspectClass, aspectParameters));
-  }
-
-  private final AspectClass aspectClass;
-  private final AspectParameters aspectParameters;
-
-  private AspectDescriptor(AspectClass aspectClass, AspectParameters aspectParameters) {
-    this.aspectClass = checkNotNull(aspectClass);
-    this.aspectParameters = checkNotNull(aspectParameters);
-  }
-
-  public AspectClass getAspectClass() {
-    return aspectClass;
-  }
-
-  public AspectParameters getParameters() {
-    return aspectParameters;
-  }
-
-  @Override
-  public int hashCode() {
-    return HashCodes.hashObjects(aspectClass, aspectParameters);
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (obj == this) {
-      return true;
+    init {
+        this.aspectClass = com.google.common.base.Preconditions.checkNotNull<AspectClass>(aspectClass)
+        this.aspectParameters = com.google.common.base.Preconditions.checkNotNull<AspectParameters>(aspectParameters)
     }
 
-    if (!(obj instanceof AspectDescriptor)) {
-      return false;
+    fun getAspectClass(): AspectClass {
+        return aspectClass
     }
 
-    AspectDescriptor that = (AspectDescriptor) obj;
-    return aspectClass.equals(that.aspectClass) && aspectParameters.equals(that.aspectParameters);
-  }
-
-  @Override
-  public String toString() {
-    return getDescription();
-  }
-
-  /**
-   * Creates a presentable description of this aspect, available to Starlark via "Target.aspects".
-   *
-   * <p>The description is designed to be unique for each aspect descriptor, but not to be
-   * parseable.
-   */
-  public String getDescription() {
-    if (aspectParameters.isEmpty()) {
-      return aspectClass.getName();
+    fun getParameters(): AspectParameters {
+        return aspectParameters
     }
 
-    StringBuilder builder = new StringBuilder(aspectClass.getName());
-    builder.append('[');
-    ImmutableMultimap<String, String> attributes = aspectParameters.getAttributes();
-    boolean first = true;
-    for (Map.Entry<String, String> attribute : attributes.entries()) {
-      if (!first) {
-        builder.append(',');
-      } else {
-        first = false;
-      }
-      builder.append(attribute.getKey());
-      builder.append("=\"");
-      builder.append(TextFormat.escapeDoubleQuotesAndBackslashes(attribute.getValue()));
-      builder.append("\"");
+    override fun hashCode(): Int {
+        return HashCodes.hashObjects(aspectClass, aspectParameters)
     }
-    builder.append(']');
-    return builder.toString();
-  }
 
-  @AutoCodec.Interner
-  @VisibleForSerialization
-  static AspectDescriptor intern(AspectDescriptor descriptor) {
-    return interner.intern(descriptor);
-  }
+    override fun equals(obj: Any?): Boolean {
+        if (obj === this) {
+            return true
+        }
+
+        if (obj !is AspectDescriptor) {
+            return false
+        }
+
+        val that = obj
+        return aspectClass == that.aspectClass && aspectParameters == that.aspectParameters
+    }
+
+    override fun toString(): String {
+        return getDescription()!!
+    }
+
+    /**
+     * Creates a presentable description of this aspect, available to Starlark via "Target.aspects".
+     * 
+     * 
+     * The description is designed to be unique for each aspect descriptor, but not to be
+     * parseable.
+     */
+    fun getDescription(): String? {
+        if (aspectParameters.isEmpty()) {
+            return aspectClass.getName()
+        }
+
+        val builder: java.lang.StringBuilder = java.lang.StringBuilder(aspectClass.getName())
+        builder.append('[')
+        val attributes: com.google.common.collect.ImmutableMultimap<String?, String?> = aspectParameters.getAttributes()
+        var first = true
+        for (attribute in attributes.entries()) {
+            if (!first) {
+                builder.append(',')
+            } else {
+                first = false
+            }
+            builder.append(attribute.getKey())
+            builder.append("=\"")
+            builder.append(TextFormat.escapeDoubleQuotesAndBackslashes(attribute.getValue()))
+            builder.append("\"")
+        }
+        builder.append(']')
+        return builder.toString()
+    }
+
+    companion object {
+        private val interner: com.google.common.collect.Interner<AspectDescriptor> = BlazeInterners.newWeakInterner()
+
+        @com.google.common.annotations.VisibleForTesting
+        fun of(aspectClass: AspectClass?, aspectParameters: AspectParameters?): AspectDescriptor {
+            return interner.intern(AspectDescriptor(aspectClass, aspectParameters))
+        }
+
+        @AutoCodec.Interner
+        @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+        fun intern(descriptor: AspectDescriptor?): AspectDescriptor {
+            return interner.intern(descriptor)
+        }
+    }
 }

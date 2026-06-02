@@ -11,65 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import com.google.devtools.build.lib.util.Fingerprint;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 
 /**
- * Declared Provider (a constructor for {@link Info}).
- *
- * <p>Declared providers can be declared either natively ({@link BuiltinProvider} or in Starlark
- * {@link StarlarkProvider}.
- *
- * <p>{@link Provider} serves both as "type identifier" for declared provider instances and as a
+ * Declared Provider (a constructor for [Info]).
+ * 
+ * 
+ * Declared providers can be declared either natively ([BuiltinProvider] or in Starlark
+ * [StarlarkProvider].
+ * 
+ * 
+ * [Provider] serves both as "type identifier" for declared provider instances and as a
  * function that can be called to construct a provider. To the Starlark user, there are "providers"
  * and "provider instances"; the former is a Java instance of this class, and the latter is a Java
- * instance of {@link Info}.
- *
- * <p>Prefer to use {@link Key} as a serializable identifier of {@link Provider}. In particular,
- * {@link Key} should be used in all data structures exposed to Skyframe.
+ * instance of [Info].
+ * 
+ * 
+ * Prefer to use [Key] as a serializable identifier of [Provider]. In particular,
+ * [Key] should be used in all data structures exposed to Skyframe.
  */
 @Immutable
-public interface Provider extends ProviderApi {
-
-  @Override
-  public default boolean hasInstance(Object value) {
-    if (value instanceof Info info) {
-      return info.getProvider().equals(this);
+interface Provider : ProviderApi {
+    override fun hasInstance(value: Any?): Boolean {
+        if (value is com.google.devtools.build.lib.packages.Info) {
+            return value.getProvider() == this
+        }
+        return false
     }
-    return false;
-  }
 
-  /**
-   * Has this {@link Provider} been exported? All built-in providers are always exported. Starlark
-   * providers are exported if they are assigned to top-level name in a Starlark module.
-   */
-  boolean isExported();
+    /**
+     * Has this [Provider] been exported? All built-in providers are always exported. Starlark
+     * providers are exported if they are assigned to top-level name in a Starlark module.
+     */
+    fun isExported(): Boolean
 
-  /** Returns a serializable representation of this {@link Provider}. */
-  Key getKey();
+    /** Returns a serializable representation of this [Provider].  */
+    fun getKey(): Key?
 
-  /** Returns a name of this {@link Provider} that should be used in error messages. */
-  String getPrintableName();
+    /** Returns a name of this [Provider] that should be used in error messages.  */
+    fun getPrintableName(): String?
 
-  /**
-   * Returns an error message for instances to use for their {@link
-   * net.starlark.java.eval.Structure#getErrorMessageForUnknownField(String)}.
-   */
-  default String getErrorMessageForUnknownField(String name) {
-    return String.format("'%s' value has no field or method '%s'", getPrintableName(), name);
-  }
+    /**
+     * Returns an error message for instances to use for their [ ][net.starlark.java.eval.Structure.getErrorMessageForUnknownField].
+     */
+    fun getErrorMessageForUnknownField(name: String?): String? {
+        return java.lang.String.format("'%s' value has no field or method '%s'", getPrintableName(), name)
+    }
 
-  /**
-   * Returns the location at which provider was defined.
-   */
-  Location getLocation();
+    /**
+     * Returns the location at which provider was defined.
+     */
+    fun getLocation(): net.starlark.java.syntax.Location?
 
-  /** A serializable and fingerprintable representation of {@link Provider}. */
-  abstract class Key {
-    abstract void fingerprint(Fingerprint fp);
-  }
+    /** A serializable and fingerprintable representation of [Provider].  */
+    class Key {
+        abstract fun fingerprint(fp: Fingerprint?)
+    }
 }

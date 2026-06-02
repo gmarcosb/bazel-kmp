@@ -11,151 +11,149 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.util.BytesSink;
-import com.google.devtools.build.lib.util.Fingerprint;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.nio.ByteOrder;
+import com.google.devtools.build.lib.util.BytesSink
+import com.google.devtools.build.lib.util.Fingerprint
+import java.nio.ByteOrder
 
 /**
  * A fixed-size deduplicator for digests.
- *
- * <p>This class is not thread safe.
+ * 
+ * 
+ * This class is not thread safe.
  */
-final class DigestDeduper {
-  // Creates a VarHandle using generic type int[].class, telling it we want to read 'int' values.
-  private static final VarHandle INT_HANDLE =
-      MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.nativeOrder());
+internal class DigestDeduper(maxSize: Int, private val digestLength: Int) {
+    /**
+     * Bytes indicating presence of data.
+     * 
+     * 
+     * The first bit of the i-th byte is 1 iff the slot is occupied. The remaining bits in the byte
+     * are the last 7 bits of the corresponding digest. This allows efficient probing, relying mostly
+     * on just the control bytes.
+     */
+    private val control: ByteArray
 
-  /** Mask for setting the top bit of the control byte to 1. */
-  private static final byte CONTROL_BIT = (byte) 0x80;
+    private val data: ByteArray
 
-  private final int digestLength;
+    /**
+     * Bit mask that helps implement the modulo operation.
+     * 
+     * 
+     * The size is always a power of 2, and this mask has a value of size - 1.
+     */
+    private val sizeMask: Int
 
-  /**
-   * Bytes indicating presence of data.
-   *
-   * <p>The first bit of the i-th byte is 1 iff the slot is occupied. The remaining bits in the byte
-   * are the last 7 bits of the corresponding digest. This allows efficient probing, relying mostly
-   * on just the control bytes.
-   */
-  private final byte[] control;
+    internal class DigestReference : BytesSink {
+        private var buffer: ByteArray?
+        private var offset = 0
+        private var length = 0
 
-  private final byte[] data;
+        override fun acceptBytes(buffer: ByteArray?, offset: Int, length: Int) {
+            com.google.common.base.Preconditions.checkArgument(length >= 4, "length=%s < 4", length)
+            this.buffer = buffer
+            this.offset = offset
+            this.length = length
+        }
 
-  /**
-   * Bit mask that helps implement the modulo operation.
-   *
-   * <p>The size is always a power of 2, and this mask has a value of size - 1.
-   */
-  private final int sizeMask;
+        /**
+         * Clears the reference.
+         * 
+         * 
+         * The purpose of this method is to allow the client to avoid retaining [.buffer]
+         * longer than necessary.
+         */
+        fun clear() {
+            this.buffer = null
+            this.offset = 0
+            this.length = 0
+        }
 
-  static class DigestReference implements BytesSink {
-    private byte[] buffer;
-    private int offset;
-    private int length;
+        fun hash(): Int {
+            // Interprets the last 4 bytes of the digest as an integer. Since it is a digest, it should be
+            // uniformly distributed.
+            return INT_HANDLE.get(buffer, offset + length - 4) as Int
+        }
 
-    @Override
-    public void acceptBytes(byte[] buffer, int offset, int length) {
-      checkArgument(length >= 4, "length=%s < 4", length);
-      this.buffer = buffer;
-      this.offset = offset;
-      this.length = length;
+        fun controlByte(): Byte {
+            return (buffer!![offset + length - 1].toInt() or CONTROL_BIT.toInt()).toByte()
+        }
+
+        fun equalsBytesAt(thatBuffer: ByteArray, thatOffset: Int): Boolean {
+            // `length` might be less than `digestLength`. In such cases, the prefix contains a length
+            // specifier that is implicitly matched by the following comparison.
+            for (i in 0..<length) {
+                if (buffer!![offset + i] != thatBuffer[thatOffset + i]) {
+                    return false
+                }
+            }
+            return true
+        }
+
+        fun copyTo(dest: ByteArray?, destOffset: Int) {
+            java.lang.System.arraycopy(buffer, offset, dest, destOffset, length)
+        }
+
+        fun addTo(fingerprint: Fingerprint) {
+            fingerprint.addBytes(buffer, offset, length)
+        }
+    }
+
+    init {
+        val sizeBits = sizeBitsFor(maxSize)
+        val size = 1 shl sizeBits
+        this.sizeMask = size - 1
+        this.control = ByteArray(size)
+        this.data = ByteArray(size * digestLength)
     }
 
     /**
-     * Clears the reference.
-     *
-     * <p>The purpose of this method is to allow the client to avoid retaining {@link #buffer}
-     * longer than necessary.
+     * Adds `digest` to this deduper.
+     * 
+     * @return true if the digest was added and false if it was a duplicate
      */
-    void clear() {
-      this.buffer = null;
-      this.offset = 0;
-      this.length = 0;
-    }
-
-    int hash() {
-      // Interprets the last 4 bytes of the digest as an integer. Since it is a digest, it should be
-      // uniformly distributed.
-      return (int) INT_HANDLE.get(buffer, offset + length - 4);
-    }
-
-    byte controlByte() {
-      return (byte) (buffer[offset + length - 1] | CONTROL_BIT);
-    }
-
-    boolean equalsBytesAt(byte[] thatBuffer, int thatOffset) {
-      // `length` might be less than `digestLength`. In such cases, the prefix contains a length
-      // specifier that is implicitly matched by the following comparison.
-      for (int i = 0; i < length; i++) {
-        if (buffer[offset + i] != thatBuffer[thatOffset + i]) {
-          return false;
+    fun add(digest: DigestReference): Boolean {
+        val digestControlByte = digest.controlByte()
+        var candidateSlot = digest.hash()
+        while (true) {
+            candidateSlot = candidateSlot and sizeMask // fast modulo
+            val controlByte = control[candidateSlot].toInt()
+            if (controlByte == 0.toByte().toInt()) {
+                // The slot was empty. Adds `digest` to the slot.
+                control[candidateSlot] = digestControlByte
+                digest.copyTo(data, candidateSlot * digestLength)
+                return true
+            }
+            if (controlByte == digestControlByte.toInt()) { // likely match
+                if (digest.equalsBytesAt(data, candidateSlot * digestLength)) {
+                    return false // It was a duplicate.
+                }
+            }
+            candidateSlot++
         }
-      }
-      return true;
     }
 
-    void copyTo(byte[] dest, int destOffset) {
-      System.arraycopy(buffer, offset, dest, destOffset, length);
-    }
+    companion object {
+        // Creates a VarHandle using generic type int[].class, telling it we want to read 'int' values.
+        private val INT_HANDLE: java.lang.invoke.VarHandle =
+            java.lang.invoke.MethodHandles.byteArrayViewVarHandle(IntArray::class.java, ByteOrder.nativeOrder())
 
-    void addTo(Fingerprint fingerprint) {
-      fingerprint.addBytes(buffer, offset, length);
-    }
-  }
+        /** Mask for setting the top bit of the control byte to 1.  */
+        private val CONTROL_BIT = 0x80.toByte()
 
-  DigestDeduper(int maxSize, int digestLength) {
-    this.digestLength = digestLength;
-    int sizeBits = sizeBitsFor(maxSize);
-    int size = 1 << sizeBits;
-    this.sizeMask = size - 1;
-    this.control = new byte[size];
-    this.data = new byte[size * digestLength];
-  }
+        @kotlin.jvm.JvmStatic
+        @com.google.common.annotations.VisibleForTesting
+        fun sizeBitsFor(maxSize: Int): Int {
+            com.google.common.base.Preconditions.checkArgument(maxSize > 0, "maxSize=%s not >0", maxSize)
+            // 1. Calculate the minimum capacity required to satisfy the 0.75 load factor.
+            // Formula: ceil(maxSize / 0.75)  =>  ceil((maxSize * 4) / 3)
+            // Integer ceiling division trick: (A + B - 1) / B
+            val minCapacity = (maxSize * 4 + 2) / 3
 
-  /**
-   * Adds {@code digest} to this deduper.
-   *
-   * @return true if the digest was added and false if it was a duplicate
-   */
-  boolean add(DigestReference digest) {
-    byte digestControlByte = digest.controlByte();
-    int candidateSlot = digest.hash();
-    while (true) {
-      candidateSlot &= sizeMask; // fast modulo
-      int controlByte = control[candidateSlot];
-      if (controlByte == (byte) 0) {
-        // The slot was empty. Adds `digest` to the slot.
-        control[candidateSlot] = digestControlByte;
-        digest.copyTo(data, candidateSlot * digestLength);
-        return true;
-      }
-      if (controlByte == digestControlByte) { // likely match
-        if (digest.equalsBytesAt(data, candidateSlot * digestLength)) {
-          return false; // It was a duplicate.
+            // 2. Find the smallest power of 2 >= minCapacity
+            // If minCapacity is already a power of 2, this returns minCapacity.
+            // If not, it returns the next power of 2.
+            return 32 - java.lang.Integer.numberOfLeadingZeros(minCapacity - 1)
         }
-      }
-      candidateSlot++;
     }
-  }
-
-  @VisibleForTesting
-  static int sizeBitsFor(int maxSize) {
-    checkArgument(maxSize > 0, "maxSize=%s not >0", maxSize);
-    // 1. Calculate the minimum capacity required to satisfy the 0.75 load factor.
-    // Formula: ceil(maxSize / 0.75)  =>  ceil((maxSize * 4) / 3)
-    // Integer ceiling division trick: (A + B - 1) / B
-    int minCapacity = (maxSize * 4 + 2) / 3;
-
-    // 2. Find the smallest power of 2 >= minCapacity
-    // If minCapacity is already a power of 2, this returns minCapacity.
-    // If not, it returns the next power of 2.
-    return 32 - Integer.numberOfLeadingZeros(minCapacity - 1);
-  }
 }

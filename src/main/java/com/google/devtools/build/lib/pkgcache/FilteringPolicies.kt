@@ -11,165 +11,159 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import java.util.Objects;
+import com.google.devtools.build.lib.packages.TargetUtils
+import com.google.devtools.build.lib.pkgcache.FilteringPolicy
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
  * Utility class for predefined filtering policies.
  */
-public final class FilteringPolicies {
-  public static final FilteringPolicy NO_FILTER = new NoFilter();
-  public static final FilteringPolicy FILTER_MANUAL = new FilterManual();
-  public static final FilteringPolicy FILTER_TESTS = new FilterTests();
-  public static final FilteringPolicy RULES_ONLY = new RulesOnly();
+object FilteringPolicies {
+    @kotlin.jvm.JvmField
+    val NO_FILTER: FilteringPolicy = NoFilter()
+    @kotlin.jvm.JvmField
+    val FILTER_MANUAL: FilteringPolicy = FilterManual()
+    @kotlin.jvm.JvmField
+    val FILTER_TESTS: FilteringPolicy = FilterTests()
+    @kotlin.jvm.JvmField
+    val RULES_ONLY: FilteringPolicy = RulesOnly()
 
-  /** Returns the result of applying y, if target passes x. */
-  public static FilteringPolicy and(final FilteringPolicy x, final FilteringPolicy y) {
-    if (x.equals(NO_FILTER)) {
-      return y;
-    }
-    if (y.equals(NO_FILTER)) {
-      return x;
-    }
-    return new AndFilteringPolicy(x, y);
-  }
-
-  public static FilteringPolicy ruleTypeExplicit(String ruleName) {
-    return RuleTypeFilter.create(ruleName, /*keepExplicit=*/ true);
-  }
-
-  private FilteringPolicies() {
-  }
-
-  /** Base class for singleton filtering policies. */
-  private abstract static class AbstractFilteringPolicy implements FilteringPolicy {
-    private final int hashCode = getClass().getSimpleName().hashCode();
-
-    @Override
-    public int hashCode() {
-      return hashCode;
+    /** Returns the result of applying y, if target passes x.  */
+    fun and(x: FilteringPolicy, y: FilteringPolicy): FilteringPolicy? {
+        if (x == NO_FILTER) {
+            return y
+        }
+        if (y == NO_FILTER) {
+            return x
+        }
+        return AndFilteringPolicy(x, y)
     }
 
-    @Override
-    public boolean equals(Object obj) {
-      if (obj == null) {
-        return false;
-      }
-      if (obj == this) {
-        return true;
-      }
-      return getClass().equals(obj.getClass());
-    }
-  }
-
-  private static class NoFilter extends AbstractFilteringPolicy {
-    @Override
-    public boolean shouldRetain(Target target, boolean explicit) {
-      return true;
+    @kotlin.jvm.JvmStatic
+    fun ruleTypeExplicit(ruleName: String?): FilteringPolicy {
+        return RuleTypeFilter.Companion.create(ruleName,  /*keepExplicit=*/true)
     }
 
-    @Override
-    public String toString() {
-      return "[]";
-    }
-  }
+    /** Base class for singleton filtering policies.  */
+    private abstract class AbstractFilteringPolicy : FilteringPolicy {
+        private val hashCode: Int = getClass().getSimpleName().hashCode()
 
-  private static class FilterManual extends AbstractFilteringPolicy {
-    @Override
-    public boolean shouldRetain(Target target, boolean explicit) {
-      return explicit || !TargetUtils.hasManualTag(target);
-    }
-  }
+        override fun hashCode(): Int {
+            return hashCode
+        }
 
-  private static class FilterTests extends AbstractFilteringPolicy {
-    @Override
-    public boolean shouldRetain(Target target, boolean explicit) {
-      return TargetUtils.isTestOrTestSuiteRule(target)
-          && FILTER_MANUAL.shouldRetain(target, explicit);
-    }
-  }
-
-  private static class RulesOnly extends AbstractFilteringPolicy {
-    @Override
-    public boolean shouldRetain(Target target, boolean explicit) {
-      return target instanceof Rule;
-    }
-  }
-
-  /** FilteringPolicy that only matches a specific rule name. */
-  @AutoCodec
-  record RuleTypeFilter(String ruleName, boolean keepExplicit) implements FilteringPolicy {
-    RuleTypeFilter {
-      requireNonNull(ruleName, "ruleName");
+        override fun equals(obj: Any?): Boolean {
+            if (obj == null) {
+                return false
+            }
+            if (obj === this) {
+                return true
+            }
+            return getClass() == obj.getClass()
+        }
     }
 
-    @Override
-    public boolean shouldRetain(Target target, boolean explicit) {
-      if (explicit && keepExplicit()) {
-        return true;
-      }
+    private class NoFilter : AbstractFilteringPolicy() {
+        override fun shouldRetain(target: com.google.devtools.build.lib.packages.Target?, explicit: Boolean): Boolean {
+            return true
+        }
 
-      var rule = target.getAssociatedRule();
-      if (rule != null && rule.getRuleClass().equals(ruleName())) {
-        return true;
-      }
-
-      return false;
+        override fun toString(): String {
+            return "[]"
+        }
     }
 
-    private static RuleTypeFilter create(String ruleName, boolean keepExplicit) {
-      return new RuleTypeFilter(ruleName, keepExplicit);
-    }
-  }
-
-  /** FilteringPolicy for combining FilteringPolicies. */
-  public static class AndFilteringPolicy implements FilteringPolicy {
-    private final FilteringPolicy firstPolicy;
-    private final FilteringPolicy secondPolicy;
-
-    private AndFilteringPolicy(FilteringPolicy firstPolicy, FilteringPolicy secondPolicy) {
-      this.firstPolicy = Preconditions.checkNotNull(firstPolicy);
-      this.secondPolicy = Preconditions.checkNotNull(secondPolicy);
+    private class FilterManual : AbstractFilteringPolicy() {
+        override fun shouldRetain(target: com.google.devtools.build.lib.packages.Target?, explicit: Boolean): Boolean {
+            return explicit || !TargetUtils.hasManualTag(target)
+        }
     }
 
-    @Override
-    public boolean shouldRetain(Target target, boolean explicit) {
-      return firstPolicy.shouldRetain(target, explicit)
-          && secondPolicy.shouldRetain(target, explicit);
+    private class FilterTests : AbstractFilteringPolicy() {
+        override fun shouldRetain(target: com.google.devtools.build.lib.packages.Target?, explicit: Boolean): Boolean {
+            return TargetUtils.isTestOrTestSuiteRule(target)
+                    && FILTER_MANUAL.shouldRetain(target, explicit)
+        }
     }
 
-    public FilteringPolicy getFirstPolicy() {
-      return firstPolicy;
+    private class RulesOnly : AbstractFilteringPolicy() {
+        override fun shouldRetain(target: com.google.devtools.build.lib.packages.Target?, explicit: Boolean): Boolean {
+            return target is com.google.devtools.build.lib.packages.Rule
+        }
     }
 
-    public FilteringPolicy getSecondPolicy() {
-      return secondPolicy;
+    /** FilteringPolicy that only matches a specific rule name.  */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    internal data class RuleTypeFilter(ruleName: String?, keepExplicit: Boolean) : FilteringPolicy {
+        override fun shouldRetain(target: com.google.devtools.build.lib.packages.Target, explicit: Boolean): Boolean {
+            if (explicit && this.keepExplicit) {
+                return true
+            }
+
+            val rule: com.google.devtools.build.lib.packages.Rule? = target.getAssociatedRule()
+            if (rule != null && rule.getRuleClass() == this.ruleName) {
+                return true
+            }
+
+            return false
+        }
+
+        val ruleName: String?
+        val keepExplicit: Boolean
+
+        init {
+            this.keepExplicit = keepExplicit
+            this.ruleName = ruleName
+            java.util.Objects.requireNonNull<String?>(ruleName, "ruleName")
+        }
+
+        companion object {
+            private fun create(ruleName: String?, keepExplicit: Boolean): RuleTypeFilter {
+                return RuleTypeFilter(ruleName, keepExplicit)
+            }
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(firstPolicy, secondPolicy);
-    }
+    /** FilteringPolicy for combining FilteringPolicies.  */
+    class AndFilteringPolicy private constructor(firstPolicy: FilteringPolicy?, secondPolicy: FilteringPolicy?) :
+        FilteringPolicy {
+        private val firstPolicy: FilteringPolicy
+        private val secondPolicy: FilteringPolicy
 
-    @Override
-    public boolean equals(Object obj) {
-      if (!(obj instanceof AndFilteringPolicy other)) {
-        return false;
-      }
-      return other.firstPolicy.equals(firstPolicy) && other.secondPolicy.equals(secondPolicy);
-    }
+        init {
+            this.firstPolicy = com.google.common.base.Preconditions.checkNotNull<FilteringPolicy>(firstPolicy)
+            this.secondPolicy = com.google.common.base.Preconditions.checkNotNull<FilteringPolicy>(secondPolicy)
+        }
 
-    @Override
-    public String toString() {
-      return String.format("and_filter(%s, %s)", firstPolicy, secondPolicy);
+        override fun shouldRetain(target: com.google.devtools.build.lib.packages.Target?, explicit: Boolean): Boolean {
+            return firstPolicy.shouldRetain(target, explicit)
+                    && secondPolicy.shouldRetain(target, explicit)
+        }
+
+        fun getFirstPolicy(): FilteringPolicy {
+            return firstPolicy
+        }
+
+        fun getSecondPolicy(): FilteringPolicy {
+            return secondPolicy
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(firstPolicy, secondPolicy)
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (obj !is AndFilteringPolicy) {
+                return false
+            }
+            return obj.firstPolicy == firstPolicy && obj.secondPolicy == secondPolicy
+        }
+
+        override fun toString(): String {
+            return java.lang.String.format("and_filter(%s, %s)", firstPolicy, secondPolicy)
+        }
     }
-  }
 }

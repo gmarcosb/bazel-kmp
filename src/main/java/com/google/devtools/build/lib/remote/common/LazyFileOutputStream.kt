@@ -11,80 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.remote.common.MaybePathBacked
+import java.io.FileOutputStream
+import java.io.IOException
 
 /**
- * Creates an {@link OutputStream} backed by a file that isn't actually opened until the first data
+ * Creates an [OutputStream] backed by a file that isn't actually opened until the first data
  * is written. This is useful to only have as many open file descriptors as necessary at a time to
  * avoid running into system limits.
  */
-public class LazyFileOutputStream extends OutputStream implements MaybePathBacked {
+class LazyFileOutputStream(path: com.google.devtools.build.lib.vfs.Path) : java.io.OutputStream(), MaybePathBacked {
+    private val path: com.google.devtools.build.lib.vfs.Path
+    private var out: java.io.OutputStream? = null
 
-  private final Path path;
-  private OutputStream out;
-
-  public LazyFileOutputStream(Path path) {
-    this.path = path;
-  }
-
-  @Override
-  public void write(byte[] b) throws IOException {
-    ensureOpen();
-    out.write(b);
-  }
-
-  @Override
-  public void write(byte[] b, int off, int len) throws IOException {
-    ensureOpen();
-    out.write(b, off, len);
-  }
-
-  @Override
-  public void write(int b) throws IOException {
-    ensureOpen();
-    out.write(b);
-  }
-
-  @Override
-  public void flush() throws IOException {
-    if (out != null) {
-      out.flush();
+    init {
+        this.path = path
     }
-  }
 
-  @Override
-  public void close() throws IOException {
-    if (out != null) {
-      out.close();
+    @Throws(IOException::class)
+    override fun write(b: ByteArray?) {
+        ensureOpen()
+        out.write(b)
     }
-  }
 
-  /**
-   * If the output stream is a {@link FileOutputStream}, call {@link FileDescriptor#sync} on it.
-   * Otherwise, do nothing.
-   */
-  public void syncIfPossible() throws IOException {
-    ensureOpen();
-    if (out instanceof FileOutputStream fileOutputStream) {
-      fileOutputStream.getFD().sync();
+    @Throws(IOException::class)
+    override fun write(b: ByteArray?, off: Int, len: Int) {
+        ensureOpen()
+        out.write(b, off, len)
     }
-  }
 
-  private void ensureOpen() throws IOException {
-    if (out == null) {
-      out = path.getOutputStream();
+    @Throws(IOException::class)
+    override fun write(b: Int) {
+        ensureOpen()
+        out.write(b)
     }
-  }
 
-  @Override
-  @Nullable
-  public Path maybeGetPath() {
-    return path;
-  }
+    @Throws(IOException::class)
+    override fun flush() {
+        if (out != null) {
+            out.flush()
+        }
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        if (out != null) {
+            out.close()
+        }
+    }
+
+    /**
+     * If the output stream is a [FileOutputStream], call [FileDescriptor.sync] on it.
+     * Otherwise, do nothing.
+     */
+    @Throws(IOException::class)
+    fun syncIfPossible() {
+        ensureOpen()
+        if (out is FileOutputStream) {
+            out.getFD().sync()
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun ensureOpen() {
+        if (out == null) {
+            out = path.getOutputStream()
+        }
+    }
+
+    override fun maybeGetPath(): com.google.devtools.build.lib.vfs.Path? {
+        return path
+    }
 }

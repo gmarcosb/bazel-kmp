@@ -11,43 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import java.util.Map;
-import net.starlark.java.eval.Dict;
+import com.google.devtools.build.lib.packages.BuiltinProvider
+import com.google.devtools.build.lib.packages.StarlarkInfo
+import com.google.devtools.build.lib.packages.StarlarkInfoWithMessage
+import com.google.devtools.build.lib.packages.StructImpl
+import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi.StructProviderApi
 
 /**
- * The provider for the built-in type {@code struct}.
- *
- * <p>Its singleton instance is {@link StructProvider#STRUCT}.
+ * The provider for the built-in type `struct`.
+ * 
+ * 
+ * Its singleton instance is [StructProvider.STRUCT].
  */
-public final class StructProvider extends BuiltinProvider<StarlarkInfo>
-    implements StructApi.StructProviderApi {
+class StructProvider private constructor() : BuiltinProvider<StarlarkInfo?>("struct", StarlarkInfo::class.java),
+    StructProviderApi {
+    /** Implementation of `struct(**kwargs)` function exposed to Starlark.  */
+    override fun createStruct(kwargs: net.starlark.java.eval.Dict<String?, Any?>?): StructImpl {
+        return StarlarkInfo.Companion.create(this, kwargs)
+    }
 
-  /** Provider of "struct" instances. */
-  public static final StructProvider STRUCT = new StructProvider();
+    /**
+     * Creates a struct with the given field values and message format for unknown fields.
+     * 
+     * 
+     * The custom message is useful for objects that have fields but aren't exactly used as
+     * providers, such as the `native` object, and the struct fields of `ctx` like `ctx.attr`.
+     */
+    fun create(fields: MutableMap<String?, Any?>?, errorMessageFormatForUnknownField: String?): StarlarkInfo {
+        return StarlarkInfoWithMessage.Companion.createWithCustomMessage(
+            this, fields, errorMessageFormatForUnknownField
+        )
+    }
 
-  private StructProvider() {
-    super("struct", StarlarkInfo.class);
-  }
-
-  /** Implementation of {@code struct(**kwargs)} function exposed to Starlark. */
-  @Override
-  public StructImpl createStruct(Dict<String, Object> kwargs) {
-    return StarlarkInfo.create(this, kwargs);
-  }
-
-  /**
-   * Creates a struct with the given field values and message format for unknown fields.
-   *
-   * <p>The custom message is useful for objects that have fields but aren't exactly used as
-   * providers, such as the {@code native} object, and the struct fields of {@code ctx} like {@code
-   * ctx.attr}.
-   */
-  public StarlarkInfo create(Map<String, Object> fields, String errorMessageFormatForUnknownField) {
-    return StarlarkInfoWithMessage.createWithCustomMessage(
-        this, fields, errorMessageFormatForUnknownField);
-  }
+    companion object {
+        /** Provider of "struct" instances.  */
+        @kotlin.jvm.JvmField
+        val STRUCT: StructProvider = StructProvider()
+    }
 }

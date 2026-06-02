@@ -11,41 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.constraints
 
-package com.google.devtools.build.lib.analysis.constraints;
-
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.analysis.config.transitions.NoConfigTransition;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
-import com.google.devtools.build.lib.packages.RuleClass.ToolchainResolutionMode;
-import com.google.devtools.build.lib.packages.Types;
-import com.google.devtools.build.lib.util.FileTypeSet;
+import com.google.devtools.build.lib.analysis.BaseRuleClasses
 
 /**
  * Rule definition for environment rules (for Bazel's constraint enforcement system).
  */
-public class EnvironmentRule implements RuleDefinition {
-
-  public static final String FULFILLS_ATTRIBUTE = "fulfills";
-
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    return builder
-        .cfg(NoConfigTransition.getFactory())
-        .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
-        .override(
-            attr("tags", Types.STRING_LIST)
-                // No need to show up in ":all", etc. target patterns.
-                .value(ImmutableList.of("manual"))
-                .nonconfigurable("low-level attribute, used in TargetUtils without configurations"))
-        /* <!-- #BLAZE_RULE(environment).ATTRIBUTE(fulfills) -->
+class EnvironmentRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+        return builder
+            .cfg(NoConfigTransition.Companion.getFactory<RuleTransitionData?>())
+            .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
+            .override<MutableList<String?>?>(
+                com.google.devtools.build.lib.packages.Attribute.attr<MutableList<String?>?>(
+                    "tags",
+                    com.google.devtools.build.lib.packages.Types.STRING_LIST
+                ) // No need to show up in ":all", etc. target patterns.
+                    .value(com.google.common.collect.ImmutableList.of<String?>("manual"))
+                    .nonconfigurable("low-level attribute, used in TargetUtils without configurations")
+            ) /* <!-- #BLAZE_RULE(environment).ATTRIBUTE(fulfills) -->
         The set of environments this one is considered a valid "standin" for.
         <p>
           If rule A depends on rule B, A declares compatibility with environment <code>:foo</code>,
@@ -58,26 +43,32 @@ public class EnvironmentRule implements RuleDefinition {
           Environments may only fulfill other environments in the same environment group.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(FULFILLS_ATTRIBUTE, BuildType.LABEL_LIST)
-                .allowedRuleClasses(ConstraintConstants.ENVIRONMENT_RULE)
-                .allowedFileTypes(FileTypeSet.NO_FILE)
-                .nonconfigurable(
-                    "used for defining constraint models - this shouldn't be configured"))
-        .exemptFromConstraintChecking("this rule *defines* a constraint")
-        .setUndocumented()
-        .build();
-  }
+            .add<MutableList<com.google.devtools.build.lib.cmdline.Label?>?>(
+                com.google.devtools.build.lib.packages.Attribute.attr<MutableList<com.google.devtools.build.lib.cmdline.Label?>?>(
+                    FULFILLS_ATTRIBUTE, BuildType.LABEL_LIST
+                )
+                    .allowedRuleClasses(ConstraintConstants.ENVIRONMENT_RULE)
+                    .allowedFileTypes(FileTypeSet.NO_FILE)
+                    .nonconfigurable(
+                        "used for defining constraint models - this shouldn't be configured"
+                    )
+            )
+            .exemptFromConstraintChecking("this rule *defines* a constraint")
+            .setUndocumented()
+            .build()
+    }
 
-  @Override
-  public Metadata getMetadata() {
-    return RuleDefinition.Metadata.builder()
-        .name(ConstraintConstants.ENVIRONMENT_RULE)
-        // Not allowed in symbolic macros: lazy expansion of symbolic macros could hide environment
-        // targets from environment groups.
-        .type(RuleClassType.BUILD_ONLY)
-        .ancestors(BaseRuleClasses.NativeBuildRule.class)
-        .factoryClass(Environment.class)
-        .build();
-  }
+    public override fun getMetadata(): Metadata {
+        return RuleDefinition.Metadata.builder()
+            .name(ConstraintConstants.ENVIRONMENT_RULE) // Not allowed in symbolic macros: lazy expansion of symbolic macros could hide environment
+            // targets from environment groups.
+            .type(RuleClassType.BUILD_ONLY)
+            .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+            .factoryClass(com.google.devtools.build.lib.analysis.constraints.Environment::class.java)
+            .build()
+    }
+
+    companion object {
+        const val FULFILLS_ATTRIBUTE: String = "fulfills"
+    }
 }

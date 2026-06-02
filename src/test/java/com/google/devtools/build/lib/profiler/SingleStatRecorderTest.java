@@ -31,7 +31,7 @@ public class SingleStatRecorderTest {
     recorder.addStat(51, null);
     recorder.addStat(57, null);
     MetricData metrics = recorder.snapshot();
-    assertThat(metrics.getAvg()).isWithin(.01).of(50);
-    assertThat(metrics.getStdDev()).isWithin(.01).of(5);
+    assertThat(metrics.avg).isWithin(.01).of(50);
+    assertThat(metrics.stdDev).isWithin(.01).of(5);
   }
 }

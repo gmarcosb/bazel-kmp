@@ -11,41 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Target;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * A bridge class that implements the legacy semantics of {@link #getLoadedTarget} using a normal
- * {@link PackageProvider} instance.
- *
- * <p>DO NOT USE! It will be removed when the transition to Skyframe is complete.
+ * A bridge class that implements the legacy semantics of [.getLoadedTarget] using a normal
+ * [PackageProvider] instance.
+ * 
+ * 
+ * DO NOT USE! It will be removed when the transition to Skyframe is complete.
  */
-public final class LoadedPackageProvider {
-  private final PackageProvider packageProvider;
-  private final ExtendedEventHandler eventHandler;
+class LoadedPackageProvider(packageProvider: PackageProvider, eventHandler: ExtendedEventHandler?) {
+    private val packageProvider: PackageProvider
+    private val eventHandler: ExtendedEventHandler?
 
-  public LoadedPackageProvider(PackageProvider packageProvider, ExtendedEventHandler eventHandler) {
-    this.packageProvider = packageProvider;
-    this.eventHandler = eventHandler;
-  }
+    init {
+        this.packageProvider = packageProvider
+        this.eventHandler = eventHandler
+    }
 
-  public ExtendedEventHandler getEventHandler() {
-    return eventHandler;
-  }
+    fun getEventHandler(): ExtendedEventHandler? {
+        return eventHandler
+    }
 
-  /**
-   * Returns a target if it was recently loaded, i.e., since the most recent cache sync. This throws
-   * an exception if the target was not loaded or not validated, even if it exists in the
-   * surrounding package. If the surrounding package is in error, still attempts to retrieve the
-   * target.
-   */
-  public Target getLoadedTarget(Label label)
-      throws NoSuchPackageException, NoSuchTargetException, InterruptedException {
-    return packageProvider.getTarget(eventHandler, label);
-  }
+    /**
+     * Returns a target if it was recently loaded, i.e., since the most recent cache sync. This throws
+     * an exception if the target was not loaded or not validated, even if it exists in the
+     * surrounding package. If the surrounding package is in error, still attempts to retrieve the
+     * target.
+     */
+    @Throws(NoSuchPackageException::class, NoSuchTargetException::class, java.lang.InterruptedException::class)
+    fun getLoadedTarget(label: Label?): com.google.devtools.build.lib.packages.Target? {
+        return packageProvider.getTarget(eventHandler, label)
+    }
 }

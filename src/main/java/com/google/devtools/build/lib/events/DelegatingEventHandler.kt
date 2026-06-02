@@ -11,30 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.events;
-
-import com.google.common.base.Preconditions;
+package com.google.devtools.build.lib.events
 
 /**
  * An EventHandler which delegates to another EventHandler. Primarily useful as a base class for
  * extending behavior.
  */
-public class DelegatingEventHandler implements ExtendedEventHandler {
-  protected final ExtendedEventHandler delegate;
+open class DelegatingEventHandler(delegate: com.google.devtools.build.lib.events.ExtendedEventHandler?) :
+    com.google.devtools.build.lib.events.ExtendedEventHandler {
+    protected val delegate: com.google.devtools.build.lib.events.ExtendedEventHandler
 
-  public DelegatingEventHandler(ExtendedEventHandler delegate) {
-    super();
-    this.delegate = Preconditions.checkNotNull(delegate);
-  }
+    init {
+        this.delegate =
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.events.ExtendedEventHandler>(
+                delegate
+            )
+    }
 
-  @Override
-  public void handle(Event e) {
-    delegate.handle(e);
-  }
+    override fun handle(e: com.google.devtools.build.lib.events.Event?) {
+        delegate.handle(e)
+    }
 
-  @Override
-  public void post(ExtendedEventHandler.Postable obj) {
-    delegate.post(obj);
-  }
+    override fun post(obj: com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?) {
+        delegate.post(obj)
+    }
 }

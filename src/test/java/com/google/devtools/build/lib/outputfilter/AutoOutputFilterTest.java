@@ -175,7 +175,7 @@ public class AutoOutputFilterTest {
     ListMultimap<String, String> targetsPerPackage = ArrayListMultimap.create();
     for (String targetName : targetLabels) {
       Label label = Label.parseCanonicalUnchecked(targetName);
-      targetsPerPackage.put(label.getPackageName(), label.getName());
+      targetsPerPackage.put(label.getPackageName(), label.name);
     }
 
     // Collect targets

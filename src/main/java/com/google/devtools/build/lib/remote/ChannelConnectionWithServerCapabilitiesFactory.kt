@@ -11,33 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import com.google.devtools.build.lib.remote.grpc.ChannelConnectionFactory;
-import io.grpc.ManagedChannel;
-import io.reactivex.rxjava3.core.Single;
+import build.bazel.remote.execution.v2.ServerCapabilities
 
 /**
- * A {@link ChannelConnectionFactory} that create {@link ChannelConnectionWithServerCapabilities}.
+ * A [ChannelConnectionFactory] that create [ChannelConnectionWithServerCapabilities].
  */
-public interface ChannelConnectionWithServerCapabilitiesFactory extends ChannelConnectionFactory {
+interface ChannelConnectionWithServerCapabilitiesFactory : ChannelConnectionFactory {
+    override fun create(): Single<out ChannelConnectionWithServerCapabilities?>?
 
-  @Override
-  Single<? extends ChannelConnectionWithServerCapabilities> create();
+    /** A [ChannelConnection] that provides [ServerCapabilities].  */
+    class ChannelConnectionWithServerCapabilities(
+        channel: ManagedChannel?,
+        serverCapabilities: Single<ServerCapabilities?>?
+    ) : ChannelConnection(channel) {
+        private val serverCapabilities: Single<ServerCapabilities?>?
 
-  /** A {@link ChannelConnection} that provides {@link ServerCapabilities}. */
-  class ChannelConnectionWithServerCapabilities extends ChannelConnection {
-    private final Single<ServerCapabilities> serverCapabilities;
+        init {
+            this.serverCapabilities = serverCapabilities
+        }
 
-    public ChannelConnectionWithServerCapabilities(
-        ManagedChannel channel, Single<ServerCapabilities> serverCapabilities) {
-      super(channel);
-      this.serverCapabilities = serverCapabilities;
+        fun getServerCapabilities(): Single<ServerCapabilities?>? {
+            return serverCapabilities
+        }
     }
-
-    public Single<ServerCapabilities> getServerCapabilities() {
-      return serverCapabilities;
-    }
-  }
 }

@@ -11,19 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkFunction;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.Structure;
+import com.google.devtools.build.lib.events.Event
 
 /**
  * A helper class for calling Starlark functions from Java, where the argument values are supplied
@@ -34,65 +24,78 @@ import net.starlark.java.eval.Structure;
 // the caller, i.e. in the thread evaluating a BUILD file. This might not be possible for implicit
 // outputs without some refactoring to cache the result of the computation (currently RuleContext
 // seems to reinvoke the callback).
-public final class StarlarkCallbackHelper {
+class StarlarkCallbackHelper(
+    callback: net.starlark.java.eval.StarlarkFunction,
+    starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?
+) {
+    private val callback: net.starlark.java.eval.StarlarkFunction
 
-  private final StarlarkFunction callback;
+    // These fields, parts of the state of the loading-phase
+    // thread that instantiated a rule, must be propagated to
+    // the child threads (implicit outputs, attribute defaults).
+    // This includes any other thread-local state, such as
+    // PackageFactory.PackageContext.
+    // TODO(adonovan): it would be cleaner and less error prone to
+    // perform these callbacks in the actual loading-phase thread,
+    // at the end of BUILD file execution.
+    // Alternatively (or additionally), we could put PackageContext
+    // into BazelStarlarkContext so there's only a single blob of state.
+    private val starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?
 
-  // These fields, parts of the state of the loading-phase
-  // thread that instantiated a rule, must be propagated to
-  // the child threads (implicit outputs, attribute defaults).
-  // This includes any other thread-local state, such as
-  // PackageFactory.PackageContext.
-  // TODO(adonovan): it would be cleaner and less error prone to
-  // perform these callbacks in the actual loading-phase thread,
-  // at the end of BUILD file execution.
-  // Alternatively (or additionally), we could put PackageContext
-  // into BazelStarlarkContext so there's only a single blob of state.
-  private final StarlarkSemantics starlarkSemantics;
-
-  public StarlarkCallbackHelper(StarlarkFunction callback, StarlarkSemantics starlarkSemantics) {
-    this.callback = callback;
-    this.starlarkSemantics = starlarkSemantics;
-  }
-
-  public ImmutableList<String> getParameterNames() {
-    return callback.getParameterNames();
-  }
-
-  // TODO(adonovan): opt: all current callers are forced to construct a temporary Structure.
-  // Instead, make them supply a map.
-  public Object call(EventHandler eventHandler, Structure struct, Object... arguments)
-      throws EvalException, InterruptedException {
-    try (Mutability mu = Mutability.create("callback", callback)) {
-      // TODO(brandjon): In principle, if we're creating a new symbol generator here, we should have
-      // a unique owner object to associate it with for distinguishing reference-equality objects.
-      // But I don't think implicit outputs or computed defaults care about identity.
-      StarlarkThread thread = StarlarkThread.createTransient(mu, starlarkSemantics);
-      thread.setPrintHandler(Event.makeDebugPrintHandler(eventHandler));
-      return Starlark.call(
-          thread, callback, buildArgumentList(struct, arguments), /*kwargs=*/ ImmutableMap.of());
-    } catch (ClassCastException | IllegalArgumentException e) { // TODO(adonovan): investigate
-      throw new EvalException(e);
+    init {
+        this.callback = callback
+        this.starlarkSemantics = starlarkSemantics
     }
-  }
 
-  /**
-   * Creates a list of actual arguments that contains the given arguments and all attribute values
-   * required from the specified structure.
-   */
-  private ImmutableList<Object> buildArgumentList(Structure struct, Object... arguments)
-      throws EvalException {
-    ImmutableList.Builder<Object> builder = ImmutableList.builder();
-    ImmutableList<String> names = getParameterNames();
-    int requiredParameters = names.size() - arguments.length;
-    for (int pos = 0; pos < requiredParameters; ++pos) {
-      String name = names.get(pos);
-      Object value = struct.getValue(name);
-      if (value == null) {
-        throw new IllegalArgumentException(struct.getErrorMessageForUnknownField(name));
-      }
-      builder.add(value);
+    fun getParameterNames(): com.google.common.collect.ImmutableList<String> {
+        return callback.getParameterNames()
     }
-    return builder.add(arguments).build();
-  }
+
+    // TODO(adonovan): opt: all current callers are forced to construct a temporary Structure.
+    // Instead, make them supply a map.
+    @Throws(net.starlark.java.eval.EvalException::class, java.lang.InterruptedException::class)
+    fun call(eventHandler: EventHandler?, struct: net.starlark.java.eval.Structure, vararg arguments: Any?): Any? {
+        try {
+            net.starlark.java.eval.Mutability.create("callback", callback).use { mu ->
+                // TODO(brandjon): In principle, if we're creating a new symbol generator here, we should have
+                // a unique owner object to associate it with for distinguishing reference-equality objects.
+                // But I don't think implicit outputs or computed defaults care about identity.
+                val thread: net.starlark.java.eval.StarlarkThread =
+                    net.starlark.java.eval.StarlarkThread.createTransient(mu, starlarkSemantics)
+                thread.setPrintHandler(Event.makeDebugPrintHandler(eventHandler))
+                return net.starlark.java.eval.Starlark.call(
+                    thread,
+                    callback,
+                    buildArgumentList(struct, *arguments),  /*kwargs=*/
+                    com.google.common.collect.ImmutableMap.of<String?, Any?>()
+                )
+            }
+        } catch (e: java.lang.ClassCastException) { // TODO(adonovan): investigate
+            throw net.starlark.java.eval.EvalException(e)
+        } catch (e: java.lang.IllegalArgumentException) {
+            throw net.starlark.java.eval.EvalException(e)
+        }
+    }
+
+    /**
+     * Creates a list of actual arguments that contains the given arguments and all attribute values
+     * required from the specified structure.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    private fun buildArgumentList(
+        struct: net.starlark.java.eval.Structure,
+        vararg arguments: Any?
+    ): com.google.common.collect.ImmutableList<Any?> {
+        val builder: com.google.common.collect.ImmutableList.Builder<Any?> =
+            com.google.common.collect.ImmutableList.builder<Any?>()
+        val names: com.google.common.collect.ImmutableList<String> = getParameterNames()
+        val requiredParameters: Int = names.size() - arguments.size
+        for (pos in 0..<requiredParameters) {
+            val name: String = names.get(pos)
+            val value: Any? = struct.getValue(name)
+            requireNotNull(value) { struct.getErrorMessageForUnknownField(name) }
+            builder.add(value)
+        }
+        return builder.add(*arguments).build()
+    }
 }

@@ -268,7 +268,7 @@ public class UrlRewriterTest {
       new UrlRewriterConfig("/some/file", new StringReader(config));
       fail();
     } catch (UrlRewriterParseException e) {
-      assertThat(e.getLocation()).isEqualTo(Location.fromFileLineColumn("/some/file", 2, 0));
+      assertThat(e.location).isEqualTo(Location.fromFileLineColumn("/some/file", 2, 0));
       assertThat(e.getMessage()).contains("Unable to parse: hello");
     }
   }
@@ -277,7 +277,7 @@ public class UrlRewriterTest {
   public void noAllBlockedMessage() throws Exception {
     String config = "";
     UrlRewriterConfig munger = new UrlRewriterConfig("/some/file", new StringReader(config));
-    assertThat(munger.getAllBlockedMessage()).isNull();
+    assertThat(munger.allBlockedMessage).isNull();
   }
 
   @Test
@@ -285,7 +285,7 @@ public class UrlRewriterTest {
     String config =
         "all_blocked_message I'm sorry Dave, I'm afraid I can't do that.\n" + "allow *\n";
     UrlRewriterConfig munger = new UrlRewriterConfig("/some/file", new StringReader(config));
-    assertThat(munger.getAllBlockedMessage())
+    assertThat(munger.allBlockedMessage)
         .isEqualTo("I'm sorry Dave, I'm afraid I can't do that.");
   }
 
@@ -296,7 +296,7 @@ public class UrlRewriterTest {
       new UrlRewriterConfig("/some/file", new StringReader(config));
       fail();
     } catch (UrlRewriterParseException e) {
-      assertThat(e.getLocation()).isEqualTo(Location.fromFileLineColumn("/some/file", 3, 0));
+      assertThat(e.location).isEqualTo(Location.fromFileLineColumn("/some/file", 3, 0));
     }
   }
 
@@ -467,7 +467,7 @@ public class UrlRewriterTest {
       UrlRewriter.newCredentialsFromNetrc(clientEnv, fileSystem.getPath("/workdir"));
       fail();
     } catch (UrlRewriterParseException e) {
-      assertThat(e.getLocation()).isEqualTo(Location.fromFileLineColumn("/home/foo/.netrc", 0, 0));
+      assertThat(e.location).isEqualTo(Location.fromFileLineColumn("/home/foo/.netrc", 0, 0));
     }
   }
 

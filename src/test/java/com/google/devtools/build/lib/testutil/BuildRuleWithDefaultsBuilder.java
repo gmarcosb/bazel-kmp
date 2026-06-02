@@ -108,7 +108,7 @@ public class BuildRuleWithDefaultsBuilder extends BuildRuleBuilder {
         Preconditions.checkArgument(
             !fileTypes.getExtensions().isEmpty(),
             "Attribute %s does not have any allowed file types",
-            attribute.getName());
+                attribute.name);
         extension = fileTypes.getExtensions().get(0);
       }
       label = getDummyFileLabel(rulePkg, filePkg, extension, attrType);
@@ -131,9 +131,9 @@ public class BuildRuleWithDefaultsBuilder extends BuildRuleBuilder {
     }
     if (label != null) {
       if (attrType instanceof ListType<?>) {
-        addMultiValueAttributes(attribute.getName(), label);
+        addMultiValueAttributes(attribute.name, label);
       } else {
-        setSingleValueAttribute(attribute.getName(), label);
+        setSingleValueAttribute(attribute.name, label);
       }
     }
     return this;
@@ -183,25 +183,25 @@ public class BuildRuleWithDefaultsBuilder extends BuildRuleBuilder {
 
   @CanIgnoreReturnValue
   public BuildRuleWithDefaultsBuilder populateStringListAttribute(Attribute attribute) {
-    addMultiValueAttributes(attribute.getName(), "x");
+    addMultiValueAttributes(attribute.name, "x");
     return this;
   }
 
   @CanIgnoreReturnValue
   public BuildRuleWithDefaultsBuilder populateStringAttribute(Attribute attribute) {
-    setSingleValueAttribute(attribute.getName(), "x");
+    setSingleValueAttribute(attribute.name, "x");
     return this;
   }
 
   @CanIgnoreReturnValue
   public BuildRuleWithDefaultsBuilder populateBooleanAttribute(Attribute attribute) {
-    setSingleValueAttribute(attribute.getName(), "false");
+    setSingleValueAttribute(attribute.name, "false");
     return this;
   }
 
   @CanIgnoreReturnValue
   public BuildRuleWithDefaultsBuilder populateIntegerAttribute(Attribute attribute) {
-    setSingleValueAttribute(attribute.getName(), 1);
+    setSingleValueAttribute(attribute.name, 1);
     return this;
   }
 
@@ -219,7 +219,7 @@ public class BuildRuleWithDefaultsBuilder extends BuildRuleBuilder {
           if (attribute.getAllowedValues() instanceof AllowedValueSet) {
             Collection<Object> allowedValues =
                 ((AllowedValueSet) attribute.getAllowedValues()).getAllowedValues();
-            setSingleValueAttribute(attribute.getName(), allowedValues.iterator().next());
+            setSingleValueAttribute(attribute.name, allowedValues.iterator().next());
           } else if (attribute.getType() == Type.STRING) {
             populateStringAttribute(attribute);
           } else if (attribute.getType() == Type.BOOLEAN) {
@@ -241,10 +241,10 @@ public class BuildRuleWithDefaultsBuilder extends BuildRuleBuilder {
   // Heuristics which might help to generate valid rules.
   // This is a bit hackish, but it helps some generated ruleclasses to pass analysis phase.
   private void populateAttributesHeuristics(String rulePkg, Attribute attribute) {
-    if (attribute.getName().equals("srcs") && attribute.getType() == BuildType.LABEL_LIST) {
+    if (attribute.name.equals("srcs") && attribute.getType() == BuildType.LABEL_LIST) {
       // If there is a srcs attribute it might be better to populate it even if it's not mandatory
       populateLabelAttribute(rulePkg, attribute);
-    } else if (attribute.getName().equals("main_class") && attribute.getType() == Type.STRING) {
+    } else if (attribute.name.equals("main_class") && attribute.getType() == Type.STRING) {
       populateStringAttribute(attribute);
     }
   }

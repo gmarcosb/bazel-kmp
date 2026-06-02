@@ -11,54 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.metrics;
+package com.google.devtools.build.lib.packages.metrics
 
-import com.google.auto.value.AutoValue;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.protobuf.util.Durations;
-import java.util.Comparator;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
+import java.util.function.Function
+import java.util.function.ToLongFunction
+import kotlin.Any
+import kotlin.Comparator
+import kotlin.toString
 
-/** Container class holding a PackageIdentifier and PackageMetrics proto. */
+/** Container class holding a PackageIdentifier and PackageMetrics proto.  */
 @AutoValue
-public abstract class PackageLoadMetricsContainer {
+abstract class PackageLoadMetricsContainer {
+    abstract fun getPackageIdentifier(): PackageIdentifier?
 
-  /** Sorts by LoadTime Duration. */
-  public static final Comparator<PackageLoadMetricsContainer> LOAD_TIMES_COMP =
-      Comparator.comparing(
-          c -> c.getPackageLoadMetricsInternal().getLoadDuration(), Durations.comparator());
+    abstract fun getPackageLoadMetricsInternal(): PackageLoadMetrics?
 
-  /** Sorts by Glob Filesystem Operation Cost. */
-  public static final Comparator<PackageLoadMetricsContainer> GLOB_FILESYSTEM_OPERATION_COST_COMP =
-      Comparator.comparing(c -> c.getPackageLoadMetricsInternal().getGlobFilesystemOperationCost());
+    /** Construct a full PackageMetrics object with the name set lazily from the PackageIdentifier.  */
+    fun getPackageLoadMetrics(): PackageLoadMetrics {
+        return getPackageLoadMetricsInternal().toBuilder()
+            .setName(getPackageIdentifier().toString())
+            .build()
+    }
 
-  /** Sorts by Num Target count . */
-  public static final Comparator<PackageLoadMetricsContainer> NUM_TARGETS_COMP =
-      Comparator.comparingLong(c -> c.getPackageLoadMetricsInternal().getNumTargets());
+    companion object {
+        /** Sorts by LoadTime Duration.  */
+        val LOAD_TIMES_COMP: Comparator<PackageLoadMetricsContainer?>? = Comparator.comparing<T?, U?>(
+            Function { c: T? -> c.getPackageLoadMetricsInternal().getLoadDuration() }, Durations.comparator()
+        )
 
-  /** Sorts by Computation Steps count. */
-  public static final Comparator<PackageLoadMetricsContainer> COMPUTATION_STEPS_COMP =
-      Comparator.comparingLong(c -> c.getPackageLoadMetricsInternal().getComputationSteps());
+        /** Sorts by Glob Filesystem Operation Cost.  */
+        val GLOB_FILESYSTEM_OPERATION_COST_COMP: Comparator<PackageLoadMetricsContainer?>? =
+            Comparator.comparing<PackageLoadMetricsContainer?, Any?>(
+                Function { c: PackageLoadMetricsContainer? ->
+                    c!!.getPackageLoadMetricsInternal().getGlobFilesystemOperationCost()
+                })
 
-  /** Sorts by Transitive Load Count. */
-  public static final Comparator<PackageLoadMetricsContainer> TRANSITIVE_LOADS_COMP =
-      Comparator.comparingLong(c -> c.getPackageLoadMetricsInternal().getNumTransitiveLoads());
-  /** Sorts by Package Overhead. */
-  public static final Comparator<PackageLoadMetricsContainer> OVERHEAD_COMP =
-      Comparator.comparingLong(c -> c.getPackageLoadMetricsInternal().getPackageOverhead());
+        /** Sorts by Num Target count .  */
+        val NUM_TARGETS_COMP: Comparator<PackageLoadMetricsContainer?>? =
+            Comparator.comparingLong<PackageLoadMetricsContainer?>(
+                ToLongFunction { c: PackageLoadMetricsContainer? ->
+                    c!!.getPackageLoadMetricsInternal().getNumTargets()
+                })
 
-  public static PackageLoadMetricsContainer create(
-      PackageIdentifier pkgId, PackageLoadMetrics metrics) {
-    return new AutoValue_PackageLoadMetricsContainer(pkgId, metrics);
-  }
+        /** Sorts by Computation Steps count.  */
+        val COMPUTATION_STEPS_COMP: Comparator<PackageLoadMetricsContainer?>? =
+            Comparator.comparingLong<PackageLoadMetricsContainer?>(
+                ToLongFunction { c: PackageLoadMetricsContainer? ->
+                    c!!.getPackageLoadMetricsInternal().getComputationSteps()
+                })
 
-  public abstract PackageIdentifier getPackageIdentifier();
+        /** Sorts by Transitive Load Count.  */
+        val TRANSITIVE_LOADS_COMP: Comparator<PackageLoadMetricsContainer?>? =
+            Comparator.comparingLong<PackageLoadMetricsContainer?>(
+                ToLongFunction { c: PackageLoadMetricsContainer? ->
+                    c!!.getPackageLoadMetricsInternal().getNumTransitiveLoads()
+                })
 
-  abstract PackageLoadMetrics getPackageLoadMetricsInternal();
+        /** Sorts by Package Overhead.  */
+        val OVERHEAD_COMP: Comparator<PackageLoadMetricsContainer?>? =
+            Comparator.comparingLong<PackageLoadMetricsContainer?>(
+                ToLongFunction { c: PackageLoadMetricsContainer? ->
+                    c!!.getPackageLoadMetricsInternal().getPackageOverhead()
+                })
 
-  /** Construct a full PackageMetrics object with the name set lazily from the PackageIdentifier. */
-  public PackageLoadMetrics getPackageLoadMetrics() {
-    return getPackageLoadMetricsInternal().toBuilder()
-        .setName(getPackageIdentifier().toString())
-        .build();
-  }
+        fun create(
+            pkgId: PackageIdentifier?, metrics: PackageLoadMetrics?
+        ): PackageLoadMetricsContainer {
+            return AutoValue_PackageLoadMetricsContainer(pkgId, metrics)
+        }
+    }
 }

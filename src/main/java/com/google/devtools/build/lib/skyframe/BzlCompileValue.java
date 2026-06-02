@@ -222,7 +222,7 @@ public abstract class BzlCompileValue implements NotComparableSkyValue {
     // See comment in BzlLoadValue#isSclDialect about distinguishing .scl keys by label as opposed
     // to by Kind.
     final boolean isSclDialect() {
-      return label != null && label.getName().endsWith(".scl");
+      return label != null && label.name.endsWith(".scl");
     }
 
     boolean isBuildPrelude() {

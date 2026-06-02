@@ -11,242 +11,215 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect;
+package com.google.devtools.build.lib.collect
 
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.vfs.PathFragment;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A simple matcher for checking whether a given label is part is a set of simple target patterns.
- *
- * <p>This does not implement full target patterns. Specifically, it handles:
- *
- * <ul>
- *   <li>Absolute labels, such as {@code //package:target} or {@code //package/subpackage}
- *   <li>Absolute package paths and all subpackages and targets, such as {@code //package/...}
- *   <li>Negative patterns of the above, such as {@code -//package:target}
- * </ul>
- *
+ * 
+ * 
+ * This does not implement full target patterns. Specifically, it handles:
+ * 
+ * 
+ *  * Absolute labels, such as `//package:target` or `//package/subpackage`
+ *  * Absolute package paths and all subpackages and targets, such as `//package/...`
+ *  * Negative patterns of the above, such as `-//package:target`
+ * 
+ * 
  * It does not handle:
- *
- * <ul>
- *   <li>Relative labels (all labels with no repository are assumed to be in the main repository)
- *   <li>The {@code :all} or {@code :*} qualifiers
- * </ul>
- *
+ * 
+ * 
+ *  * Relative labels (all labels with no repository are assumed to be in the main repository)
+ *  * The `:all` or `:*` qualifiers
+ * 
+ * 
  * Patterns are processed in the order given, including negative patterns that override previous
  * patterns. This means that if the patterns are
- *
- * <ul>
- *   <li>{@code //package/...}
- *   <li>{@code -//package/subpackage/...}
- *   <li>{@code //package/subpackage/further/...}
- * </ul>
- *
- * then the labels {@code //package:something}, {@code //package/another} and {@code
- * //package/subpackage/further:anything} all match, but the label {@code
- * //package/subpackage:something} does not match.
- *
- * <p>Further note that this class does no loading of BUILD files and performs no verification that
+ * 
+ * 
+ *  * `//package/...`
+ *  * `-//package/subpackage/...`
+ *  * `//package/subpackage/further/...`
+ * 
+ * 
+ * then the labels `//package:something`, `//package/another` and `//package/subpackage/further:anything` all match, but the label `//package/subpackage:something` does not match.
+ * 
+ * 
+ * Further note that this class does no loading of BUILD files and performs no verification that
  * targets actually exist: it simply matches abstract labels against patterns.
  */
-public class SimpleTargetPatternMatcher {
-  public static SimpleTargetPatternMatcher create(ImmutableList<String> patterns)
-      throws LabelSyntaxException {
-    ImmutableList.Builder<SinglePatternMatcher> singlePatternMatcherBuilder =
-        ImmutableList.builder();
-    for (String pattern : patterns) {
-      SinglePatternMatcher matcher = SimpleTargetPatternMatcher.createSinglePatternMatcher(pattern);
-      singlePatternMatcherBuilder.add(matcher);
-    }
-    return new SimpleTargetPatternMatcher(singlePatternMatcherBuilder.build());
-  }
+class SimpleTargetPatternMatcher private constructor(singlePatternMatchers: com.google.common.collect.ImmutableList<SinglePatternMatcher>) {
+    private val singlePatternMatchers: com.google.common.collect.ImmutableList<SinglePatternMatcher>
 
-  private final ImmutableList<SinglePatternMatcher> singlePatternMatchers;
-
-  private SimpleTargetPatternMatcher(ImmutableList<SinglePatternMatcher> singlePatternMatchers) {
-    this.singlePatternMatchers = singlePatternMatchers;
-  }
-
-  public boolean isEmpty() {
-    return this.singlePatternMatchers.isEmpty();
-  }
-
-  /** Returns {@code true} if the label matches all patterns in this matcher. */
-  public boolean contains(Label label) {
-    if (this.singlePatternMatchers.isEmpty()) {
-      return false;
+    init {
+        this.singlePatternMatchers = singlePatternMatchers
     }
 
-    // Check each sub-matcher.
-    MatchResult result = MatchResult.EXCLUDE;
-    for (SinglePatternMatcher matcher : this.singlePatternMatchers) {
-      MatchResult matchResult = matcher.matches(label);
-      if (matchResult == MatchResult.INCLUDE || matchResult == MatchResult.EXCLUDE) {
-        result = matchResult;
-      }
-    }
-    return result == MatchResult.INCLUDE;
-  }
+    val isEmpty: Boolean
+        get() = this.singlePatternMatchers.isEmpty()
 
-  @Override
-  public String toString() {
-    String joined =
-        this.singlePatternMatchers.stream()
-            .map(SinglePatternMatcher::toString)
-            .collect(joining(","));
-    return String.format("[%s]", joined);
-  }
+    /** Returns `true` if the label matches all patterns in this matcher.  */
+    fun contains(label: Label?): Boolean {
+        if (this.singlePatternMatchers.isEmpty()) {
+            return false
+        }
 
-  @Override
-  public boolean equals(Object other) {
-    if (other instanceof SimpleTargetPatternMatcher otherMatcher) {
-      return this.singlePatternMatchers.equals(otherMatcher.singlePatternMatchers);
-    }
-    return false;
-  }
-
-  @Override
-  public int hashCode() {
-    return this.singlePatternMatchers.hashCode();
-  }
-
-  private static SinglePatternMatcher createSinglePatternMatcher(String pattern)
-      throws LabelSyntaxException {
-    if (pattern.startsWith("-")) {
-      // Strip off the leading '-' and create a matcher for what remains. This will technically
-      // handle a series of nested negative patterns (like `---//exact:target`), but isn't worth
-      // detecting and throwing an error.
-      pattern = pattern.substring(1);
-      SinglePatternMatcher inner = createSinglePatternMatcher(pattern);
-      return new NegativeMatcher(inner);
-    } else if (pattern.endsWith("/...")) {
-      return new WildcardMatcher(pattern);
+        // Check each sub-matcher.
+        var result: MatchResult = com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.EXCLUDE
+        for (matcher in this.singlePatternMatchers) {
+            val matchResult: MatchResult = matcher.matches(label)
+            if (matchResult == com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.INCLUDE || matchResult == com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.EXCLUDE) {
+                result = matchResult
+            }
+        }
+        return result == com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.INCLUDE
     }
 
-    // Just match the pattern as an exact label.
-    return new ExactMatcher(pattern);
-  }
-
-  private enum MatchResult {
-    INCLUDE,
-    EXCLUDE,
-    NOT_RELEVANT;
-  }
-
-  private sealed interface SinglePatternMatcher
-      permits ExactMatcher, NegativeMatcher, WildcardMatcher {
-    MatchResult matches(Label label);
-  }
-
-  /** Checks if the given label exactly matches the pattern. */
-  private static final class ExactMatcher implements SinglePatternMatcher {
-    private final String rawPattern;
-    private final Label label;
-
-    private ExactMatcher(String pattern) throws LabelSyntaxException {
-      this.rawPattern = pattern;
-      this.label = Label.parseCanonical(pattern);
+    override fun toString(): String {
+        val joined: String? =
+            this.singlePatternMatchers.stream()
+                .map<String?>(java.util.function.Function { obj: SinglePatternMatcher? -> obj.toString() })
+                .collect(Collectors.joining(","))
+        return java.lang.String.format("[%s]", joined)
     }
 
-    @Override
-    public MatchResult matches(Label label) {
-      if (this.label.equals(label)) {
-        return MatchResult.INCLUDE;
-      }
-      return MatchResult.NOT_RELEVANT;
+    override fun equals(other: Any?): Boolean {
+        if (other is SimpleTargetPatternMatcher) {
+            return this.singlePatternMatchers == other.singlePatternMatchers
+        }
+        return false
     }
 
-    @Override
-    public String toString() {
-      return this.rawPattern;
+    override fun hashCode(): Int {
+        return this.singlePatternMatchers.hashCode()
     }
 
-    @Override
-    public boolean equals(Object other) {
-      if (other instanceof ExactMatcher otherMatcher) {
-        return this.rawPattern.equals(otherMatcher.rawPattern);
-      }
-      return false;
+    private enum class MatchResult {
+        INCLUDE,
+        EXCLUDE,
+        NOT_RELEVANT
     }
 
-    @Override
-    public int hashCode() {
-      return this.rawPattern.hashCode();
-    }
-  }
-
-  /** Checks if the given label fails to match the pattern. */
-  private static final class NegativeMatcher implements SinglePatternMatcher {
-    private final SinglePatternMatcher inner;
-
-    private NegativeMatcher(SinglePatternMatcher inner) {
-      this.inner = inner;
+    private interface SinglePatternMatcher {
+        fun matches(label: Label?): MatchResult
     }
 
-    @Override
-    public MatchResult matches(Label label) {
-      return switch (this.inner.matches(label)) {
-        case INCLUDE -> MatchResult.EXCLUDE;
-        case EXCLUDE, NOT_RELEVANT -> MatchResult.NOT_RELEVANT;
-      };
+    /** Checks if the given label exactly matches the pattern.  */
+    private class ExactMatcher(private val rawPattern: String) : SinglePatternMatcher {
+        private val label: Label
+
+        init {
+            this.label = Label.parseCanonical(rawPattern)
+        }
+
+        override fun matches(label: Label?): MatchResult {
+            if (this.label.equals(label)) {
+                return com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.INCLUDE
+            }
+            return com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.NOT_RELEVANT
+        }
+
+        override fun toString(): String {
+            return this.rawPattern
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (other is ExactMatcher) {
+                return this.rawPattern == other.rawPattern
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            return this.rawPattern.hashCode()
+        }
     }
 
-    @Override
-    public String toString() {
-      return String.format("-%s", this.inner);
+    /** Checks if the given label fails to match the pattern.  */
+    private class NegativeMatcher(private val inner: SinglePatternMatcher) : SinglePatternMatcher {
+        override fun matches(label: Label?): MatchResult {
+            return when (this.inner.matches(label)) {
+                com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.INCLUDE -> com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.EXCLUDE
+                com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.EXCLUDE, com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.NOT_RELEVANT -> com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.NOT_RELEVANT
+            }
+        }
+
+        override fun toString(): String {
+            return java.lang.String.format("-%s", this.inner)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (other is NegativeMatcher) {
+                return this.inner == other.inner
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            return 0x37 xor this.inner.hashCode()
+        }
     }
 
-    @Override
-    public boolean equals(Object other) {
-      if (other instanceof NegativeMatcher otherMatcher) {
-        return this.inner.equals(otherMatcher.inner);
-      }
-      return false;
+    private class WildcardMatcher(pattern: String) : SinglePatternMatcher {
+        private val packagePath: PathFragment
+
+        init {
+            // Strip off the leading "//" and the trailing "/..." and create the wildcard matcher.
+            this.packagePath = PathFragment.create(pattern.substring(2, pattern.lastIndexOf("...")))
+        }
+
+        override fun matches(label: Label): MatchResult {
+            if (label.getPackageFragment().startsWith(this.packagePath)) {
+                return com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.INCLUDE
+            }
+            return com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.MatchResult.NOT_RELEVANT
+        }
+
+        override fun toString(): String {
+            return java.lang.String.format("//%s/...", this.packagePath)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (other is WildcardMatcher) {
+                return this.packagePath == other.packagePath
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            return this.packagePath.hashCode()
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return 0x37 ^ this.inner.hashCode();
-    }
-  }
+    companion object {
+        @Throws(LabelSyntaxException::class)
+        fun create(patterns: com.google.common.collect.ImmutableList<String>): SimpleTargetPatternMatcher {
+            val singlePatternMatcherBuilder: com.google.common.collect.ImmutableList.Builder<SinglePatternMatcher?> =
+                com.google.common.collect.ImmutableList.builder<SinglePatternMatcher?>()
+            for (pattern in patterns) {
+                val matcher = createSinglePatternMatcher(pattern)
+                singlePatternMatcherBuilder.add(matcher)
+            }
+            return SimpleTargetPatternMatcher(singlePatternMatcherBuilder.build())
+        }
 
-  private static final class WildcardMatcher implements SinglePatternMatcher {
-    private final PathFragment packagePath;
+        @Throws(LabelSyntaxException::class)
+        private fun createSinglePatternMatcher(pattern: String): SinglePatternMatcher {
+            var pattern = pattern
+            if (pattern.startsWith("-")) {
+                // Strip off the leading '-' and create a matcher for what remains. This will technically
+                // handle a series of nested negative patterns (like `---//exact:target`), but isn't worth
+                // detecting and throwing an error.
+                pattern = pattern.substring(1)
+                val inner = createSinglePatternMatcher(pattern)
+                return NegativeMatcher(inner)
+            } else if (pattern.endsWith("/...")) {
+                return com.google.devtools.build.lib.collect.SimpleTargetPatternMatcher.WildcardMatcher(pattern)
+            }
 
-    private WildcardMatcher(String pattern) {
-      // Strip off the leading "//" and the trailing "/..." and create the wildcard matcher.
-      this.packagePath = PathFragment.create(pattern.substring(2, pattern.lastIndexOf("...")));
+            // Just match the pattern as an exact label.
+            return ExactMatcher(pattern)
+        }
     }
-
-    @Override
-    public MatchResult matches(Label label) {
-      if (label.getPackageFragment().startsWith(this.packagePath)) {
-        return MatchResult.INCLUDE;
-      }
-      return MatchResult.NOT_RELEVANT;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("//%s/...", this.packagePath);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      if (other instanceof WildcardMatcher otherMatcher) {
-        return this.packagePath.equals(otherMatcher.packagePath);
-      }
-      return false;
-    }
-
-    @Override
-    public int hashCode() {
-      return this.packagePath.hashCode();
-    }
-  }
 }

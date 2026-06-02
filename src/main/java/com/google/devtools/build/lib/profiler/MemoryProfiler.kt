@@ -11,228 +11,269 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler
 
-package com.google.devtools.build.lib.profiler;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Splitter;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.util.HeapOffsetHelper;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryUsage;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.bugreport.BugReporter
+import com.google.devtools.build.lib.profiler.MemoryProfiler
+import com.google.devtools.build.lib.profiler.MemoryProfiler.MemoryProfileStableHeapParameters
+import com.google.devtools.build.lib.util.HeapOffsetHelper
+import java.io.PrintStream
 
 /**
  * Blaze memory profiler.
- *
- * <p>At each call to {@code profile} performs garbage collection and stores heap and non-heap
+ * 
+ * 
+ * At each call to `profile` performs garbage collection and stores heap and non-heap
  * memory usage in an external file.
- *
- * <p><em>Heap memory</em> is the runtime data area from which memory for all class instances and
- * arrays is allocated. <em>Non-heap memory</em> includes the method area and memory required for
+ * 
+ * 
+ * *Heap memory* is the runtime data area from which memory for all class instances and
+ * arrays is allocated. *Non-heap memory* includes the method area and memory required for
  * the internal processing or optimization of the JVM. It stores per-class structures such as a
  * runtime constant pool, field and method data, and the code for methods and constructors. The Java
  * Native Interface (JNI) code or the native library of an application and the JVM implementation
- * allocate memory from the <em>native heap</em>.
- *
- * <p>The script in /devtools/blaze/scripts/blaze-memchart.sh can be used for post processing.
+ * allocate memory from the *native heap*.
+ * 
+ * 
+ * The script in /devtools/blaze/scripts/blaze-memchart.sh can be used for post processing.
  */
-public final class MemoryProfiler {
+class MemoryProfiler {
+    private var memoryProfile: PrintStream? = null
+    private var currentPhase: com.google.devtools.build.lib.profiler.ProfilePhase? = null
+    private var heapUsedMemoryAtFinish: Long = 0
+    private var memoryProfileStableHeapParameters: MemoryProfileStableHeapParameters? = null
+    private var internalJvmObjectPattern: java.util.regex.Pattern? = null
 
-  private static final MemoryProfiler INSTANCE = new MemoryProfiler();
-
-  public static MemoryProfiler instance() {
-    return INSTANCE;
-  }
-
-  private PrintStream memoryProfile;
-  private ProfilePhase currentPhase;
-  private long heapUsedMemoryAtFinish;
-  @Nullable private MemoryProfileStableHeapParameters memoryProfileStableHeapParameters;
-  private Pattern internalJvmObjectPattern;
-
-  public synchronized void setStableMemoryParameters(
-      MemoryProfileStableHeapParameters memoryProfileStableHeapParameters,
-      Pattern internalJvmObjectPattern) {
-    this.memoryProfileStableHeapParameters = memoryProfileStableHeapParameters;
-    this.internalJvmObjectPattern = internalJvmObjectPattern;
-  }
-
-  public synchronized void start(OutputStream out) {
-    this.memoryProfile = (out == null) ? null : new PrintStream(out);
-    this.currentPhase = ProfilePhase.INIT;
-    heapUsedMemoryAtFinish = 0;
-  }
-
-  public synchronized void stop() {
-    if (memoryProfile != null) {
-      memoryProfile.close();
-      memoryProfile = null;
+    @kotlin.jvm.Synchronized
+    fun setStableMemoryParameters(
+        memoryProfileStableHeapParameters: MemoryProfileStableHeapParameters?,
+        internalJvmObjectPattern: java.util.regex.Pattern?
+    ) {
+        this.memoryProfileStableHeapParameters = memoryProfileStableHeapParameters
+        this.internalJvmObjectPattern = internalJvmObjectPattern
     }
-    heapUsedMemoryAtFinish = 0;
-  }
 
-  public synchronized long getHeapUsedMemoryAtFinish() {
-    return heapUsedMemoryAtFinish;
-  }
-
-  public synchronized void markPhase(ProfilePhase nextPhase) throws InterruptedException {
-    if (memoryProfile != null) {
-      MemoryMXBean bean = ManagementFactory.getMemoryMXBean();
-      HeapAndNonHeap memoryUsages =
-          prepareBeanAndGetLocalMinUsage(
-              nextPhase, bean, (duration) -> Thread.sleep(duration.toMillis()));
-      String name = currentPhase.description;
-      MemoryUsage memoryUsage = memoryUsages.heap();
-      var usedMemory = memoryUsage.getUsed();
-      // TODO: b/406807983 - Remove the subtraction of FillerArray once we figure out an alternative
-      if (nextPhase == ProfilePhase.FINISH) {
-        usedMemory -=
-            HeapOffsetHelper.getSizeOfFillerArrayOnHeap(
-                internalJvmObjectPattern, BugReporter.defaultInstance());
-        heapUsedMemoryAtFinish = usedMemory;
-      }
-      memoryProfile.println(name + ":heap:init:" + memoryUsage.getInit());
-      memoryProfile.println(name + ":heap:used:" + usedMemory);
-      memoryProfile.println(name + ":heap:commited:" + memoryUsage.getCommitted());
-      memoryProfile.println(name + ":heap:max:" + memoryUsage.getMax());
-
-      memoryUsage = memoryUsages.nonHeap();
-      memoryProfile.println(name + ":non-heap:init:" + memoryUsage.getInit());
-      memoryProfile.println(name + ":non-heap:used:" + memoryUsage.getUsed());
-      memoryProfile.println(name + ":non-heap:commited:" + memoryUsage.getCommitted());
-      memoryProfile.println(name + ":non-heap:max:" + memoryUsage.getMax());
-      currentPhase = nextPhase;
+    @kotlin.jvm.Synchronized
+    fun start(out: java.io.OutputStream?) {
+        this.memoryProfile = if (out == null) null else PrintStream(out)
+        this.currentPhase = com.google.devtools.build.lib.profiler.ProfilePhase.INIT
+        heapUsedMemoryAtFinish = 0
     }
-  }
 
-  @VisibleForTesting
-  synchronized HeapAndNonHeap prepareBeanAndGetLocalMinUsage(
-      ProfilePhase nextPhase, MemoryMXBean bean, Sleeper sleeper) throws InterruptedException {
-    bean.gc();
-    MemoryUsage minHeapUsed = bean.getHeapMemoryUsage();
-    MemoryUsage minNonHeapUsed = bean.getNonHeapMemoryUsage();
-
-    if (nextPhase == ProfilePhase.FINISH && memoryProfileStableHeapParameters != null) {
-      for (int j = 0; j < memoryProfileStableHeapParameters.gcSpecs.size(); j++) {
-        Pair<Integer, Duration> spec = memoryProfileStableHeapParameters.gcSpecs.get(j);
-
-        int numTimesToDoGc = spec.first;
-        Duration timeToSleepBetweenGcs = spec.second;
-
-        for (int i = 0; i < numTimesToDoGc; i++) {
-          // We want to skip the first cycle for the first spec, since we ran a
-          // GC at the top of this function, but all the rest should get their
-          // proper runs
-          if (j == 0 && i == 0) {
-            continue;
-          }
-
-          sleeper.sleep(timeToSleepBetweenGcs);
-          bean.gc();
-          MemoryUsage currentHeapUsed = bean.getHeapMemoryUsage();
-          if (currentHeapUsed.getUsed() < minHeapUsed.getUsed()) {
-            minHeapUsed = currentHeapUsed;
-            minNonHeapUsed = bean.getNonHeapMemoryUsage();
-          }
+    @kotlin.jvm.Synchronized
+    fun stop() {
+        if (memoryProfile != null) {
+            memoryProfile.close()
+            memoryProfile = null
         }
-      }
-    }
-    return HeapAndNonHeap.create(minHeapUsed, minNonHeapUsed);
-  }
-
-  /**
-   * Parameters that control how {@code MemoryProfiler} tries to get a stable heap at the end of the
-   * build.
-   */
-  public static class MemoryProfileStableHeapParameters {
-    private final ArrayList<Pair<Integer, Duration>> gcSpecs;
-
-    private MemoryProfileStableHeapParameters(ArrayList<Pair<Integer, Duration>> gcSpecs) {
-      this.gcSpecs = gcSpecs;
+        heapUsedMemoryAtFinish = 0
     }
 
-    /** Converter for {@code MemoryProfileStableHeapParameters} option. */
-    public static class Converter
-        extends com.google.devtools.common.options.Converter.Contextless<
-            MemoryProfileStableHeapParameters> {
-      private static final Splitter SPLITTER = Splitter.on(',');
+    @kotlin.jvm.Synchronized
+    fun getHeapUsedMemoryAtFinish(): Long {
+        return heapUsedMemoryAtFinish
+    }
 
-      @Override
-      public MemoryProfileStableHeapParameters convert(String input)
-          throws OptionsParsingException {
-        List<String> values = SPLITTER.splitToList(input);
-
-        if (values.size() % 2 != 0) {
-          throw new OptionsParsingException(
-              "Expected even number of comma-separated integer values");
-        }
-
-        ArrayList<Pair<Integer, Duration>> gcSpecs = new ArrayList<>(values.size() / 2);
-
-        try {
-          for (int i = 0; i < values.size(); i += 2) {
-            int numTimesToDoGc = Integer.parseInt(values.get(i));
-            int numSecondsToSleepBetweenGcs = Integer.parseInt(values.get(i + 1));
-
-            if (numTimesToDoGc <= 0) {
-              throw new OptionsParsingException("Number of times to GC must be positive");
+    @kotlin.jvm.Synchronized
+    @Throws(java.lang.InterruptedException::class)
+    fun markPhase(nextPhase: com.google.devtools.build.lib.profiler.ProfilePhase) {
+        if (memoryProfile != null) {
+            val bean: java.lang.management.MemoryMXBean = java.lang.management.ManagementFactory.getMemoryMXBean()
+            val memoryUsages =
+                prepareBeanAndGetLocalMinUsage(
+                    nextPhase,
+                    bean,
+                    com.google.devtools.build.lib.profiler.MemoryProfiler.Sleeper { duration: java.time.Duration? ->
+                        java.lang.Thread.sleep(duration.toMillis())
+                    })
+            val name: String? = currentPhase.description
+            var memoryUsage: java.lang.management.MemoryUsage = memoryUsages.heap
+            var usedMemory: Long = memoryUsage.getUsed()
+            // TODO: b/406807983 - Remove the subtraction of FillerArray once we figure out an alternative
+            if (nextPhase == com.google.devtools.build.lib.profiler.ProfilePhase.FINISH) {
+                usedMemory -=
+                    HeapOffsetHelper.getSizeOfFillerArrayOnHeap(
+                        internalJvmObjectPattern, BugReporter.defaultInstance()
+                    )
+                heapUsedMemoryAtFinish = usedMemory
             }
-            if (numSecondsToSleepBetweenGcs < 0) {
-              throw new OptionsParsingException(
-                  "Number of seconds to sleep between GC's must be non-negative");
-            }
-            gcSpecs.add(Pair.of(numTimesToDoGc, Duration.ofSeconds(numSecondsToSleepBetweenGcs)));
-          }
+            memoryProfile.println(name + ":heap:init:" + memoryUsage.getInit())
+            memoryProfile.println(name + ":heap:used:" + usedMemory)
+            memoryProfile.println(name + ":heap:commited:" + memoryUsage.getCommitted())
+            memoryProfile.println(name + ":heap:max:" + memoryUsage.getMax())
 
-          return new MemoryProfileStableHeapParameters(gcSpecs);
-        } catch (NumberFormatException | NoSuchElementException nfe) {
-          throw new OptionsParsingException(
-              "Expected even number of comma-separated integer values, could not parse integer in"
-                  + " list",
-              nfe);
+            memoryUsage = memoryUsages.nonHeap
+            memoryProfile.println(name + ":non-heap:init:" + memoryUsage.getInit())
+            memoryProfile.println(name + ":non-heap:used:" + memoryUsage.getUsed())
+            memoryProfile.println(name + ":non-heap:commited:" + memoryUsage.getCommitted())
+            memoryProfile.println(name + ":non-heap:max:" + memoryUsage.getMax())
+            currentPhase = nextPhase
         }
-      }
-
-      @Override
-      public String getTypeDescription() {
-        return "integers, separated by a comma expected in pairs";
-      }
     }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this).add("gcSpecs", gcSpecs).toString();
-    }
-  }
+    @com.google.common.annotations.VisibleForTesting
+    @kotlin.jvm.Synchronized
+    @Throws(java.lang.InterruptedException::class)
+    fun prepareBeanAndGetLocalMinUsage(
+        nextPhase: com.google.devtools.build.lib.profiler.ProfilePhase?,
+        bean: java.lang.management.MemoryMXBean,
+        sleeper: Sleeper
+    ): HeapAndNonHeap {
+        bean.gc()
+        var minHeapUsed: java.lang.management.MemoryUsage = bean.getHeapMemoryUsage()
+        var minNonHeapUsed: java.lang.management.MemoryUsage = bean.getNonHeapMemoryUsage()
 
-  @VisibleForTesting
-  interface Sleeper {
-    void sleep(Duration duration) throws InterruptedException;
-  }
+        if (nextPhase == com.google.devtools.build.lib.profiler.ProfilePhase.FINISH && memoryProfileStableHeapParameters != null) {
+            for (j in memoryProfileStableHeapParameters.gcSpecs.indices) {
+                val spec: com.google.devtools.build.lib.util.Pair<Int?, java.time.Duration?> =
+                    memoryProfileStableHeapParameters.gcSpecs.get(j)
 
-  @VisibleForTesting
-  record HeapAndNonHeap(MemoryUsage heap, MemoryUsage nonHeap) {
-    HeapAndNonHeap {
-      requireNonNull(heap, "heap");
-      requireNonNull(nonHeap, "nonHeap");
+                val numTimesToDoGc: Int = spec.first
+                val timeToSleepBetweenGcs: java.time.Duration? = spec.second
+
+                for (i in 0..<numTimesToDoGc) {
+                    // We want to skip the first cycle for the first spec, since we ran a
+                    // GC at the top of this function, but all the rest should get their
+                    // proper runs
+                    if (j == 0 && i == 0) {
+                        continue
+                    }
+
+                    sleeper.sleep(timeToSleepBetweenGcs)
+                    bean.gc()
+                    val currentHeapUsed: java.lang.management.MemoryUsage = bean.getHeapMemoryUsage()
+                    if (currentHeapUsed.getUsed() < minHeapUsed.getUsed()) {
+                        minHeapUsed = currentHeapUsed
+                        minNonHeapUsed = bean.getNonHeapMemoryUsage()
+                    }
+                }
+            }
+        }
+        return HeapAndNonHeap.Companion.create(minHeapUsed, minNonHeapUsed)
     }
 
-    static HeapAndNonHeap create(MemoryUsage heap, MemoryUsage nonHeap) {
-      return new HeapAndNonHeap(heap, nonHeap);
+    /**
+     * Parameters that control how `MemoryProfiler` tries to get a stable heap at the end of the
+     * build.
+     */
+    class MemoryProfileStableHeapParameters private constructor(gcSpecs: java.util.ArrayList<com.google.devtools.build.lib.util.Pair<Int?, java.time.Duration?>>) {
+        private val gcSpecs: java.util.ArrayList<com.google.devtools.build.lib.util.Pair<Int?, java.time.Duration?>>
+
+        init {
+            this.gcSpecs = gcSpecs
+        }
+
+        /** Converter for `MemoryProfileStableHeapParameters` option.  */
+        class Converter
+
+            : com.google.devtools.common.options.Converter.Contextless<MemoryProfileStableHeapParameters?>() {
+            @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+            override fun convert(input: String): MemoryProfileStableHeapParameters {
+                val values: MutableList<String?> =
+                    com.google.devtools.build.lib.profiler.MemoryProfiler.MemoryProfileStableHeapParameters.Converter.Companion.SPLITTER.splitToList(
+                        input
+                    )
+
+                if (values.size() % 2 != 0) {
+                    throw com.google.devtools.common.options.OptionsParsingException(
+                        "Expected even number of comma-separated integer values"
+                    )
+                }
+
+                val gcSpecs: java.util.ArrayList<com.google.devtools.build.lib.util.Pair<Int?, java.time.Duration?>> =
+                    java.util.ArrayList<com.google.devtools.build.lib.util.Pair<Int?, java.time.Duration?>>(values.size() / 2)
+
+                try {
+                    var i = 0
+                    while (i < values.size()) {
+                        val numTimesToDoGc: Int = java.lang.Integer.parseInt(values.get(i))
+                        val numSecondsToSleepBetweenGcs: Int = java.lang.Integer.parseInt(values.get(i + 1))
+
+                        if (numTimesToDoGc <= 0) {
+                            throw com.google.devtools.common.options.OptionsParsingException("Number of times to GC must be positive")
+                        }
+                        if (numSecondsToSleepBetweenGcs < 0) {
+                            throw com.google.devtools.common.options.OptionsParsingException(
+                                "Number of seconds to sleep between GC's must be non-negative"
+                            )
+                        }
+                        gcSpecs.add(
+                            com.google.devtools.build.lib.util.Pair.of<Int?, java.time.Duration?>(
+                                numTimesToDoGc,
+                                java.time.Duration.ofSeconds(numSecondsToSleepBetweenGcs.toLong())
+                            )
+                        )
+                        i += 2
+                    }
+
+                    return MemoryProfileStableHeapParameters(gcSpecs)
+                } catch (nfe: java.lang.NumberFormatException) {
+                    throw com.google.devtools.common.options.OptionsParsingException(
+                        "Expected even number of comma-separated integer values, could not parse integer in"
+                                + " list",
+                        nfe
+                    )
+                } catch (nfe: java.util.NoSuchElementException) {
+                    throw com.google.devtools.common.options.OptionsParsingException(
+                        "Expected even number of comma-separated integer values, could not parse integer in"
+                                + " list",
+                        nfe
+                    )
+                }
+            }
+
+            override fun getTypeDescription(): String {
+                return "integers, separated by a comma expected in pairs"
+            }
+
+            companion object {
+                private val SPLITTER: com.google.common.base.Splitter = com.google.common.base.Splitter.on(',')
+            }
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this).add("gcSpecs", gcSpecs).toString()
+        }
     }
-  }
+
+    @com.google.common.annotations.VisibleForTesting
+    internal interface Sleeper {
+        @Throws(java.lang.InterruptedException::class)
+        fun sleep(duration: java.time.Duration?)
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    @kotlin.jvm.JvmRecord
+    internal data class HeapAndNonHeap(
+        heap: java.lang.management.MemoryUsage,
+        nonHeap: java.lang.management.MemoryUsage
+    ) {
+        val heap: java.lang.management.MemoryUsage
+        val nonHeap: java.lang.management.MemoryUsage
+
+        init {
+            this.nonHeap = nonHeap
+            this.heap = heap
+            java.util.Objects.requireNonNull<java.lang.management.MemoryUsage?>(heap, "heap")
+            java.util.Objects.requireNonNull<java.lang.management.MemoryUsage?>(nonHeap, "nonHeap")
+        }
+
+        companion object {
+            fun create(
+                heap: java.lang.management.MemoryUsage,
+                nonHeap: java.lang.management.MemoryUsage
+            ): HeapAndNonHeap {
+                return HeapAndNonHeap(heap, nonHeap)
+            }
+        }
+    }
+
+    companion object {
+        private val INSTANCE = MemoryProfiler()
+
+        @kotlin.jvm.JvmStatic
+        fun instance(): MemoryProfiler {
+            return INSTANCE
+        }
+    }
 }

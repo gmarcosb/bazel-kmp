@@ -11,97 +11,86 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.disk;
+package com.google.devtools.build.lib.remote.disk
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.devtools.build.lib.remote.disk.DiskCacheGarbageCollector.CollectionPolicy;
-import com.google.devtools.build.lib.remote.disk.DiskCacheGarbageCollector.CollectionStats;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.server.IdleTask;
-import com.google.devtools.build.lib.server.IdleTaskException;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import javax.annotation.Nullable;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.flogger.GoogleLogger
+import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.google.devtools.build.lib.remote.disk.DiskCacheGarbageCollector.CollectionPolicy
+import com.google.devtools.build.lib.remote.options.RemoteOptions
+import com.google.devtools.build.lib.server.IdleTask
+import com.google.devtools.build.lib.server.IdleTaskException
+import com.google.devtools.build.lib.vfs.Path
+import com.google.devtools.build.lib.vfs.PathFragment
+import java.io.IOException
+import java.time.Duration
+import java.util.*
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-/** An {@link IdleTask} to run a {@link DiskCacheGarbageCollector}. */
-public final class DiskCacheGarbageCollectorIdleTask implements IdleTask {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  private final Duration delay;
-  private final DiskCacheGarbageCollector gc;
-
-  private static final ExecutorService executorService =
-      Executors.newFixedThreadPool(
-          Math.max(4, Runtime.getRuntime().availableProcessors()),
-          new ThreadFactoryBuilder().setNameFormat("disk-cache-gc-%d").build());
-
-  private DiskCacheGarbageCollectorIdleTask(Duration delay, DiskCacheGarbageCollector gc) {
-    this.delay = delay;
-    this.gc = gc;
-  }
-
-  /**
-   * Creates a new {@link DiskCacheGarbageCollectorIdleTask} according to the options.
-   *
-   * @param remoteOptions the remote options
-   * @param diskCachePath the resolved disk cache path, or {@code null} if disabled
-   * @param workingDirectory the working directory
-   * @return the idle task, or null if garbage collection is disabled
-   */
-  @Nullable
-  public static DiskCacheGarbageCollectorIdleTask create(
-      RemoteOptions remoteOptions, @Nullable PathFragment diskCachePath, Path workingDirectory) {
-    if (diskCachePath == null || diskCachePath.isEmpty()) {
-      return null;
+/** An [IdleTask] to run a [DiskCacheGarbageCollector].  */
+class DiskCacheGarbageCollectorIdleTask private constructor(
+    private val delay: Duration?,
+    @get:VisibleForTesting val garbageCollector: DiskCacheGarbageCollector
+) : IdleTask {
+    override fun displayName(): String {
+        return "Disk cache garbage collector"
     }
-    Optional<Long> maxSizeBytes = Optional.empty();
-    if (remoteOptions.getDiskCacheGcMaxSize() > 0) {
-      maxSizeBytes = Optional.of(remoteOptions.getDiskCacheGcMaxSize());
-    }
-    Optional<Duration> maxAge = Optional.empty();
-    if (!remoteOptions.getDiskCacheGcMaxAge().isZero()) {
-      maxAge = Optional.of(remoteOptions.getDiskCacheGcMaxAge());
-    }
-    Duration delay = remoteOptions.getDiskCacheGcIdleDelay();
-    if (maxSizeBytes.isEmpty() && maxAge.isEmpty()) {
-      return null;
-    }
-    var policy = new CollectionPolicy(maxSizeBytes, maxAge);
-    var gc =
-        new DiskCacheGarbageCollector(
-            workingDirectory.getRelative(diskCachePath), executorService, policy);
-    return new DiskCacheGarbageCollectorIdleTask(delay, gc);
-  }
 
-  @Override
-  public String displayName() {
-    return "Disk cache garbage collector";
-  }
-
-  @VisibleForTesting
-  public DiskCacheGarbageCollector getGarbageCollector() {
-    return gc;
-  }
-
-  @Override
-  public Duration delay() {
-    return delay;
-  }
-
-  @Override
-  public void run() throws IdleTaskException, InterruptedException {
-    try {
-      CollectionStats stats = gc.run();
-      logger.atInfo().log("%s", stats.displayString());
-    } catch (IOException e) {
-      throw new IdleTaskException(e);
+    override fun delay(): Duration? {
+        return delay
     }
-  }
+
+    @Throws(IdleTaskException::class, InterruptedException::class)
+    override fun run() {
+        try {
+            val stats = garbageCollector.run()
+            logger.atInfo().log("%s", stats.displayString())
+        } catch (e: IOException) {
+            throw IdleTaskException(e)
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        private val executorService: ExecutorService = Executors.newFixedThreadPool(
+            Math.max(4, Runtime.getRuntime().availableProcessors()),
+            ThreadFactoryBuilder().setNameFormat("disk-cache-gc-%d").build()
+        )
+
+        /**
+         * Creates a new [DiskCacheGarbageCollectorIdleTask] according to the options.
+         * 
+         * @param remoteOptions the remote options
+         * @param diskCachePath the resolved disk cache path, or `null` if disabled
+         * @param workingDirectory the working directory
+         * @return the idle task, or null if garbage collection is disabled
+         */
+        fun create(
+            remoteOptions: RemoteOptions, diskCachePath: PathFragment?, workingDirectory: Path
+        ): DiskCacheGarbageCollectorIdleTask? {
+            if (diskCachePath == null || diskCachePath.isEmpty()) {
+                return null
+            }
+            var maxSizeBytes: Optional<Long?> = Optional.empty<Long?>()
+            if (remoteOptions.getDiskCacheGcMaxSize() > 0) {
+                maxSizeBytes = Optional.of<Long?>(remoteOptions.getDiskCacheGcMaxSize())
+            }
+            var maxAge: Optional<Duration?> = Optional.empty<Duration?>()
+            if (!remoteOptions.getDiskCacheGcMaxAge().isZero()) {
+                maxAge = Optional.of<Duration?>(remoteOptions.getDiskCacheGcMaxAge())
+            }
+            val delay = remoteOptions.getDiskCacheGcIdleDelay()
+            if (maxSizeBytes.isEmpty() && maxAge.isEmpty()) {
+                return null
+            }
+            val policy = CollectionPolicy(maxSizeBytes, maxAge)
+            val gc =
+                DiskCacheGarbageCollector(
+                    workingDirectory.getRelative(diskCachePath), executorService, policy
+                )
+            return DiskCacheGarbageCollectorIdleTask(delay, gc)
+        }
+    }
 }

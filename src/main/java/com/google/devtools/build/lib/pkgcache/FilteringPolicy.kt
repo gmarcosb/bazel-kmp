@@ -11,25 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.packages.Target;
-import java.io.Serializable;
+import com.google.devtools.build.lib.concurrent.ThreadSafety
 
 /**
  * A filtering policy defines how target patterns are matched. For instance, we may wish to select
  * only tests or no tests.
  */
-@FunctionalInterface
-public interface FilteringPolicy extends Serializable {
-
-  /**
-   * Returns true if this target should be retained.
-   *
-   * @param explicit true iff the label was specified explicitly, as opposed to being discovered by
-   *     a wildcard.
-   */
-  @ThreadSafety.ThreadSafe
-  boolean shouldRetain(Target target, boolean explicit);
+@java.lang.FunctionalInterface
+interface FilteringPolicy : java.io.Serializable {
+    /**
+     * Returns true if this target should be retained.
+     * 
+     * @param explicit true iff the label was specified explicitly, as opposed to being discovered by
+     * a wildcard.
+     */
+    @ThreadSafety.ThreadSafe
+    fun shouldRetain(target: com.google.devtools.build.lib.packages.Target?, explicit: Boolean): Boolean
 }

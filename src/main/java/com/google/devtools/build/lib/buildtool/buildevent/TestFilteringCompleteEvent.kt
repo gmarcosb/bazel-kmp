@@ -11,79 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool.buildevent
 
-package com.google.devtools.build.lib.buildtool.buildevent;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.test.TestProvider;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import java.util.Collection;
-import java.util.Map;
-import javax.annotation.concurrent.Immutable;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
+import javax.annotation.concurrent.Immutable
 
 /**
  * This event is fired after test filtering.
- *
- * <p>The test filtering phase always expands test_suite rules, so the set of active targets should
+ * 
+ * 
+ * The test filtering phase always expands test_suite rules, so the set of active targets should
  * never contain test_suites.
  */
 @Immutable
-public class TestFilteringCompleteEvent {
-  private final Collection<ConfiguredTarget> targets;
-  private final Collection<ConfiguredTarget> testTargets;
-  private final Collection<ConfiguredTarget> skippedTests;
-  private final Map<BuildConfigurationKey, BuildConfigurationValue> configurationMap;
+class TestFilteringCompleteEvent(
+    targets: MutableCollection<out ConfiguredTarget>,
+    testTargets: MutableCollection<out ConfiguredTarget>?,
+    targetsToSkip: MutableCollection<out ConfiguredTarget>,
+    configurationMap: MutableMap<BuildConfigurationKey?, BuildConfigurationValue?>
+) {
+    private val targets: MutableCollection<ConfiguredTarget?>
+    private val testTargets: MutableCollection<ConfiguredTarget?>?
+    private val skippedTests: MutableCollection<ConfiguredTarget?>
+    private val configurationMap: MutableMap<BuildConfigurationKey?, BuildConfigurationValue?>
 
-  /**
-   * Construct the event.
-   *
-   * @param targets The set of active targets that remain.
-   * @param testTargets The collection of tests to be run. May be null.
-   * @param targetsToSkip The collection of tests that are to be skipped.
-   * @param configurationMap A map from configuration keys of all targets to the configurations.
-   */
-  public TestFilteringCompleteEvent(
-      Collection<? extends ConfiguredTarget> targets,
-      Collection<? extends ConfiguredTarget> testTargets,
-      Collection<? extends ConfiguredTarget> targetsToSkip,
-      Map<BuildConfigurationKey, BuildConfigurationValue> configurationMap) {
-    this.targets = ImmutableList.copyOf(targets);
-    this.testTargets = testTargets == null ? null : ImmutableList.copyOf(testTargets);
-    this.skippedTests = ImmutableList.copyOf(targetsToSkip);
-    this.configurationMap = configurationMap;
-    if (testTargets == null) {
-      return;
+    /**
+     * Construct the event.
+     * 
+     * @param targets The set of active targets that remain.
+     * @param testTargets The collection of tests to be run. May be null.
+     * @param targetsToSkip The collection of tests that are to be skipped.
+     * @param configurationMap A map from configuration keys of all targets to the configurations.
+     */
+    init {
+        this.targets = ImmutableList.copyOf<ConfiguredTarget?>(targets)
+        this.testTargets = if (testTargets == null) null else ImmutableList.copyOf<ConfiguredTarget?>(testTargets)
+        this.skippedTests = ImmutableList.copyOf<ConfiguredTarget?>(targetsToSkip)
+        this.configurationMap = configurationMap
+        if (testTargets == null) {
+            return
+        }
+
+        for (testTarget in testTargets) {
+            Preconditions.checkState(testTarget.getProvider(TestProvider::class.java) != null)
+        }
     }
 
-    for (ConfiguredTarget testTarget : testTargets) {
-      Preconditions.checkState(testTarget.getProvider(TestProvider.class) != null);
+    /**
+     * @return The set of active targets remaining. This is a subset of
+     * the targets that passed analysis, after test_suite expansion.
+     */
+    fun getTargets(): MutableCollection<ConfiguredTarget?> {
+        return targets
     }
-  }
 
-  /**
-   * @return The set of active targets remaining. This is a subset of
-   *     the targets that passed analysis, after test_suite expansion.
-   */
-  public Collection<ConfiguredTarget> getTargets() {
-    return targets;
-  }
+    /**
+     * @return The set of test targets to be run. May be null.
+     */
+    fun getTestTargets(): MutableCollection<ConfiguredTarget?>? {
+        return testTargets
+    }
 
-  /**
-   * @return The set of test targets to be run. May be null.
-   */
-  public Collection<ConfiguredTarget> getTestTargets() {
-    return testTargets;
-  }
+    /** Returns the set of tests that should be skipped.  */
+    fun getSkippedTests(): MutableCollection<ConfiguredTarget?> {
+        return skippedTests
+    }
 
-  /** Returns the set of tests that should be skipped. */
-  public Collection<ConfiguredTarget> getSkippedTests() {
-    return skippedTests;
-  }
-
-  public BuildConfigurationValue getConfigurationForTarget(ConfiguredTarget target) {
-    return Preconditions.checkNotNull(configurationMap.get(target.getConfigurationKey()));
-  }
+    fun getConfigurationForTarget(target: ConfiguredTarget): BuildConfigurationValue? {
+        return Preconditions.checkNotNull<BuildConfigurationValue?>(configurationMap.get(target.getConfigurationKey()))
+    }
 }

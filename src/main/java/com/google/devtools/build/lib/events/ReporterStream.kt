@@ -11,47 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.events;
-
-import com.google.common.base.Preconditions;
-import java.io.OutputStream;
-import java.util.Arrays;
+package com.google.devtools.build.lib.events
 
 /**
  * An OutputStream that delegates all writes to an EventHandler.
  */
-public final class ReporterStream extends OutputStream {
-  private final EventHandler handler;
-  private final EventKind eventKind;
+class ReporterStream(
+    handler: com.google.devtools.build.lib.events.EventHandler?,
+    eventKind: com.google.devtools.build.lib.events.EventKind?
+) : java.io.OutputStream() {
+    private val handler: com.google.devtools.build.lib.events.EventHandler
+    private val eventKind: com.google.devtools.build.lib.events.EventKind
 
-  public ReporterStream(EventHandler handler, EventKind eventKind) {
-    this.handler = Preconditions.checkNotNull(handler);
-    this.eventKind = Preconditions.checkNotNull(eventKind);
-  }
+    init {
+        this.handler =
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.events.EventHandler>(handler)
+        this.eventKind =
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.events.EventKind>(eventKind)
+    }
 
-  @Override
-  public void close() {
-    // NOP.
-  }
+    override fun close() {
+        // NOP.
+    }
 
-  @Override
-  public void flush() {
-    // NOP.
-  }
+    override fun flush() {
+        // NOP.
+    }
 
-  @Override
-  public void write(int b) {
-    handler.handle(Event.of(eventKind, null, new byte[] { (byte) b }));
-  }
+    override fun write(b: Int) {
+        handler.handle(
+            com.google.devtools.build.lib.events.Event.Companion.of(
+                eventKind,
+                null,
+                byteArrayOf(b.toByte())
+            )
+        )
+    }
 
-  @Override
-  public void write(byte[] bytes) {
-    write(bytes, 0, bytes.length);
-  }
+    override fun write(bytes: ByteArray) {
+        write(bytes, 0, bytes.size)
+    }
 
-  @Override
-  public void write(byte[] bytes, int offset, int len) {
-    handler.handle(Event.of(eventKind, null, Arrays.copyOfRange(bytes, offset, offset + len)));
-  }
+    override fun write(bytes: ByteArray, offset: Int, len: Int) {
+        handler.handle(
+            com.google.devtools.build.lib.events.Event.Companion.of(
+                eventKind,
+                null,
+                java.util.Arrays.copyOfRange(bytes, offset, offset + len)
+            )
+        )
+    }
 }

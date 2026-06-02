@@ -12,26 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoValue;
-import com.ryanharter.auto.value.gson.GenerateTypeAdapter;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.ryanharter.auto.value.gson.GenerateTypeAdapter
 
 /**
- * An abridged version of a {@link Module}, with a reduced set of information available, used for
+ * An abridged version of a [Module], with a reduced set of information available, used for
  * module extension resolution.
  */
 @AutoValue
 @GenerateTypeAdapter
-public abstract class AbridgedModule {
-  public abstract String getName();
+abstract class AbridgedModule {
+    abstract val name: String?
 
-  public abstract Version getVersion();
+    abstract val version: com.google.devtools.build.lib.bazel.bzlmod.Version?
 
-  public abstract ModuleKey getKey();
+    abstract val key: ModuleKey?
 
-  public static AbridgedModule from(Module module) {
-    return new AutoValue_AbridgedModule(module.getName(), module.getVersion(), module.getKey());
-  }
+    companion object {
+        fun from(module: com.google.devtools.build.lib.bazel.bzlmod.Module): AbridgedModule {
+            return AutoValue_AbridgedModule(module.getName(), module.getVersion(), module.getKey())
+        }
+    }
 }

@@ -12,214 +12,219 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.bazel.repository;
+package com.google.devtools.build.lib.bazel.repository
 
-import static com.google.common.base.StandardSystemProperty.OS_NAME;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.bazel.bzlmod.GsonTypeAdapterUtil;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.rules.repository.RepoRecordedInput;
-import com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import java.io.IOException;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.StarlarkSemantics;
+/** Handles writing and reading of repo marker files.  */
+class DigestWriter private constructor(
+    directories: BlazeDirectories,
+    repositoryName: RepositoryName,
+    predeclaredInputHash: String?
+) {
+    private val directories: BlazeDirectories?
+    val predeclaredInputHash: String?
+    val markerPath: com.google.devtools.build.lib.vfs.Path
 
-/** Handles writing and reading of repo marker files. */
-public class DigestWriter {
-
-  // The marker file version is inject in the rule key digest so the rule key is always different
-  // when we decide to update the format.
-  private static final int MARKER_FILE_VERSION = 8;
-
-  private final BlazeDirectories directories;
-  final String predeclaredInputHash;
-  final Path markerPath;
-
-  private DigestWriter(
-      BlazeDirectories directories, RepositoryName repositoryName, String predeclaredInputHash) {
-    this.directories = directories;
-    this.predeclaredInputHash = predeclaredInputHash;
-    this.markerPath = getMarkerPath(directories, repositoryName);
-  }
-
-  /** Returns null if and only if a Skyframe restart is needed. */
-  @Nullable
-  public static DigestWriter create(
-      Environment env,
-      BlazeDirectories directories,
-      RepositoryName repositoryName,
-      RepoDefinition repoDefinition,
-      StarlarkSemantics starlarkSemantics)
-      throws InterruptedException {
-    String predeclaredInputHash =
-        computePredeclaredInputHash(env, repoDefinition, starlarkSemantics);
-    if (predeclaredInputHash == null) {
-      return null;
-    }
-    return new DigestWriter(directories, repositoryName, predeclaredInputHash);
-  }
-
-  void writeMarkerFile(List<RepoRecordedInput.WithValue> recordedInputValues)
-      throws RepositoryFunctionException {
-    StringBuilder builder = new StringBuilder();
-    builder.append(predeclaredInputHash).append('\n');
-    for (var recordedInputValue : recordedInputValues) {
-      builder.append(recordedInputValue).append('\n');
-    }
-    String content = builder.toString();
-    try {
-      FileSystemUtils.writeContent(markerPath, ISO_8859_1, content);
-    } catch (IOException e) {
-      throw new RepositoryFunctionException(e, Transience.TRANSIENT);
-    }
-  }
-
-  Optional<String> areRepositoryAndMarkerFileConsistent(Environment env)
-      throws InterruptedException, RepositoryFunctionException {
-    return areRepositoryAndMarkerFileConsistent(env, markerPath);
-  }
-
-  /**
-   * Checks if the state of the repo in the filesystem is consistent with its current definition.
-   * Returns {@link Optional#empty()} if they are consistent; otherwise, returns a description of
-   * why they are not.
-   *
-   * <p>This method treats a missing Skyframe dependency as if the repo is not up to date. The
-   * caller is responsible for checking {@code env.valuesMissing()}.
-   */
-  Optional<String> areRepositoryAndMarkerFileConsistent(Environment env, Path markerPath)
-      throws RepositoryFunctionException, InterruptedException {
-    if (!markerPath.exists()) {
-      return Optional.of("repo hasn't been fetched yet");
+    init {
+        this.directories = directories
+        this.predeclaredInputHash = predeclaredInputHash
+        this.markerPath = getMarkerPath(directories, repositoryName)
     }
 
-    try {
-      String content = FileSystemUtils.readContent(markerPath, ISO_8859_1);
-      Optional<ImmutableList<RepoRecordedInput.WithValue>> recordedInputValues =
-          readMarkerFile(content, Preconditions.checkNotNull(predeclaredInputHash));
-      if (recordedInputValues.isEmpty()) {
-        return Optional.of("Bazel version, flags, repo rule definition or attributes changed");
-      }
-      // Check inputs in batches to prevent Skyframe cycles caused by outdated dependencies.
-      for (ImmutableList<RepoRecordedInput.WithValue> batch :
-          RepoRecordedInput.WithValue.splitIntoBatches(recordedInputValues.get())) {
-        Optional<String> outdatedReason =
-            RepoRecordedInput.isAnyValueOutdated(env, directories, batch);
-        if (outdatedReason.isPresent()) {
-          return outdatedReason;
+    @Throws(RepositoryFunctionException::class)
+    fun writeMarkerFile(recordedInputValues: MutableList<WithValue?>) {
+        val builder: java.lang.StringBuilder = java.lang.StringBuilder()
+        builder.append(predeclaredInputHash).append('\n')
+        for (recordedInputValue in recordedInputValues) {
+            builder.append(recordedInputValue).append('\n')
         }
-      }
-      return Optional.empty();
-    } catch (IOException e) {
-      throw new RepositoryFunctionException(e, Transience.TRANSIENT);
-    }
-  }
-
-  /**
-   * Returns a list of recorded inputs with their values parsed from the given marker file if the
-   * predeclared input hash matches, or {@code Optional.empty()} if the hash doesn't match or any
-   * error occurs during parsing.
-   */
-  public static Optional<ImmutableList<RepoRecordedInput.WithValue>> readMarkerFile(
-      String content, String predeclaredInputHash) {
-    Iterable<String> lines = Splitter.on('\n').split(content);
-
-    var recordedInputValues = ImmutableList.<RepoRecordedInput.WithValue>builder();
-    boolean firstLineVerified = false;
-    for (String line : lines) {
-      if (line.isEmpty()) {
-        continue;
-      }
-      if (!firstLineVerified) {
-        if (!line.equals(predeclaredInputHash)) {
-          // Break early, need to reload anyway. This also detects marker file version changes
-          // so that unknown formats are not parsed.
-          return Optional.empty();
+        val content = builder.toString()
+        try {
+            com.google.devtools.build.lib.vfs.FileSystemUtils.writeContent(
+                markerPath,
+                java.nio.charset.StandardCharsets.ISO_8859_1,
+                content
+            )
+        } catch (e: IOException) {
+            throw RepositoryFunctionException(e, Transience.TRANSIENT)
         }
-        firstLineVerified = true;
-      } else {
-        var inputAndValue = RepoRecordedInput.WithValue.parse(line);
-        if (inputAndValue.isEmpty()) {
-          // On parse failure, just forget everything else and mark the whole input out of date.
-          return Optional.empty();
+    }
+
+    /**
+     * Checks if the state of the repo in the filesystem is consistent with its current definition.
+     * Returns [Optional.empty] if they are consistent; otherwise, returns a description of
+     * why they are not.
+     * 
+     * 
+     * This method treats a missing Skyframe dependency as if the repo is not up to date. The
+     * caller is responsible for checking `env.valuesMissing()`.
+     */
+    @kotlin.jvm.JvmOverloads
+    @Throws(RepositoryFunctionException::class, java.lang.InterruptedException::class)
+    fun areRepositoryAndMarkerFileConsistent(
+        env: SkyFunction.Environment?,
+        markerPath: com.google.devtools.build.lib.vfs.Path = this.markerPath
+    ): java.util.Optional<String?> {
+        if (!markerPath.exists()) {
+            return java.util.Optional.of<String?>("repo hasn't been fetched yet")
         }
-        recordedInputValues.add(inputAndValue.get());
-      }
-    }
-    if (!firstLineVerified) {
-      return Optional.empty();
-    }
-    return Optional.of(recordedInputValues.build());
-  }
 
-  @Nullable
-  static String computePredeclaredInputHash(
-      Environment env, RepoDefinition repoDefinition, StarlarkSemantics starlarkSemantics)
-      throws InterruptedException {
-    var environ =
-        RepoEnvironmentFunction.getEnvironmentView(env, repoDefinition.repoRule().environ());
-    if (environ == null) {
-      return null;
+        try {
+            val content: String = com.google.devtools.build.lib.vfs.FileSystemUtils.readContent(
+                markerPath,
+                java.nio.charset.StandardCharsets.ISO_8859_1
+            )
+            val recordedInputValues: java.util.Optional<com.google.common.collect.ImmutableList<WithValue?>?> =
+                readMarkerFile(
+                    content,
+                    com.google.common.base.Preconditions.checkNotNull<String?>(predeclaredInputHash)
+                )
+            if (recordedInputValues.isEmpty()) {
+                return java.util.Optional.of<String?>("Bazel version, flags, repo rule definition or attributes changed")
+            }
+            // Check inputs in batches to prevent Skyframe cycles caused by outdated dependencies.
+            for (batch in RepoRecordedInput.WithValue.splitIntoBatches(recordedInputValues.get())) {
+                val outdatedReason: java.util.Optional<String?> =
+                    RepoRecordedInput.isAnyValueOutdated(env, directories, batch)
+                if (outdatedReason.isPresent()) {
+                    return outdatedReason
+                }
+            }
+            return java.util.Optional.empty<String?>()
+        } catch (e: IOException) {
+            throw RepositoryFunctionException(e, Transience.TRANSIENT)
+        }
     }
-    var environInputs = RepoRecordedInput.EnvVar.wrap(environ);
-    var fp =
-        new Fingerprint()
-            .addInt(MARKER_FILE_VERSION)
-            .addBytes(BuildLanguageOptions.stableFingerprint(starlarkSemantics))
-            .addString(repoDefinition.repoRule().id().bzlFileLabel().toString())
-            .addString(repoDefinition.repoRule().id().ruleName())
-            .addBytes(repoDefinition.repoRule().transitiveBzlDigest())
-            .addString(repoDefinition.name())
-            .addString(
-                GsonTypeAdapterUtil.SINGLE_EXTENSION_USAGES_VALUE_GSON.toJson(
-                    repoDefinition.attrValues()))
-            // This info is accessible via rctx.os.{name,arch} and can also influence the
-            // result of a repo rule in subtle ways (e.g. behavior of host tools, line breaks,
-            // etc).
-            .addString(OS_NAME.value().toLowerCase(Locale.ROOT))
-            .addString(System.getProperty("os.arch").toLowerCase(Locale.ROOT));
-    fp.addInt(environInputs.size());
-    environInputs.forEach(
-        (key, value) -> fp.addString(key.toString()).addNullableString(value.orElse(null)));
-    fp.addInt(repoDefinition.repoRule().recordedRepoMappingEntries().cellSet().size());
-    repoDefinition
-        .repoRule()
-        .recordedRepoMappingEntries()
-        .cellSet()
-        .forEach(
-            entry -> {
-              fp.addString(entry.getRowKey().getName());
-              fp.addString(entry.getColumnKey());
-              fp.addString(entry.getValue().getName());
-            });
-    return fp.hexDigestAndReset();
-  }
 
-  private static Path getMarkerPath(BlazeDirectories directories, RepositoryName repo) {
-    return RepositoryUtils.getExternalRepositoryDirectory(directories)
-        .getChild(repo.getMarkerFileName());
-  }
+    companion object {
+        // The marker file version is inject in the rule key digest so the rule key is always different
+        // when we decide to update the format.
+        private const val MARKER_FILE_VERSION = 8
 
-  static void clearMarkerFile(BlazeDirectories directories, RepositoryName repo)
-      throws RepositoryFunctionException {
-    try {
-      getMarkerPath(directories, repo).delete();
-    } catch (IOException e) {
-      throw new RepositoryFunctionException(e, Transience.TRANSIENT);
+        /** Returns null if and only if a Skyframe restart is needed.  */
+        @Throws(java.lang.InterruptedException::class)
+        fun create(
+            env: SkyFunction.Environment,
+            directories: BlazeDirectories,
+            repositoryName: RepositoryName,
+            repoDefinition: RepoDefinition,
+            starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?
+        ): DigestWriter? {
+            val predeclaredInputHash =
+                computePredeclaredInputHash(env, repoDefinition, starlarkSemantics)
+            if (predeclaredInputHash == null) {
+                return null
+            }
+            return DigestWriter(directories, repositoryName, predeclaredInputHash)
+        }
+
+        /**
+         * Returns a list of recorded inputs with their values parsed from the given marker file if the
+         * predeclared input hash matches, or `Optional.empty()` if the hash doesn't match or any
+         * error occurs during parsing.
+         */
+        @kotlin.jvm.JvmStatic
+        fun readMarkerFile(
+            content: String, predeclaredInputHash: String?
+        ): java.util.Optional<com.google.common.collect.ImmutableList<WithValue?>?> {
+            val lines: Iterable<String> = com.google.common.base.Splitter.on('\n').split(content)
+
+            val recordedInputValues: com.google.common.collect.ImmutableList.Builder<WithValue?> =
+                com.google.common.collect.ImmutableList.builder<WithValue?>()
+            var firstLineVerified = false
+            for (line in lines) {
+                if (line.isEmpty()) {
+                    continue
+                }
+                if (!firstLineVerified) {
+                    if (line != predeclaredInputHash) {
+                        // Break early, need to reload anyway. This also detects marker file version changes
+                        // so that unknown formats are not parsed.
+                        return java.util.Optional.empty<com.google.common.collect.ImmutableList<WithValue?>?>()
+                    }
+                    firstLineVerified = true
+                } else {
+                    val inputAndValue: java.util.Optional<WithValue?> = RepoRecordedInput.WithValue.parse(line)
+                    if (inputAndValue.isEmpty()) {
+                        // On parse failure, just forget everything else and mark the whole input out of date.
+                        return java.util.Optional.empty<com.google.common.collect.ImmutableList<WithValue?>?>()
+                    }
+                    recordedInputValues.add(inputAndValue.get())
+                }
+            }
+            if (!firstLineVerified) {
+                return java.util.Optional.empty<com.google.common.collect.ImmutableList<WithValue?>?>()
+            }
+            return java.util.Optional.of<com.google.common.collect.ImmutableList<WithValue?>?>(recordedInputValues.build())
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        fun computePredeclaredInputHash(
+            env: SkyFunction.Environment,
+            repoDefinition: RepoDefinition,
+            starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?
+        ): String? {
+            val environ: com.google.common.collect.ImmutableSortedMap<String?, java.util.Optional<String?>?>? =
+                RepoEnvironmentFunction.getEnvironmentView(env, repoDefinition.repoRule.environ)
+            if (environ == null) {
+                return null
+            }
+            val environInputs: com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.rules.repository.RepoRecordedInput.EnvVar?, java.util.Optional<String?>?> =
+                RepoRecordedInput.EnvVar.wrap(environ)
+            val fp: Fingerprint =
+                Fingerprint()
+                    .addInt(MARKER_FILE_VERSION)
+                    .addBytes(BuildLanguageOptions.stableFingerprint(starlarkSemantics))
+                    .addString(repoDefinition.repoRule.id.bzlFileLabel().toString())
+                    .addString(repoDefinition.repoRule.id.ruleName())
+                    .addBytes(repoDefinition.repoRule.transitiveBzlDigest)
+                    .addString(repoDefinition.name)
+                    .addString(
+                        GsonTypeAdapterUtil.SINGLE_EXTENSION_USAGES_VALUE_GSON.toJson(
+                            repoDefinition.attrValues
+                        )
+                    ) // This info is accessible via rctx.os.{name,arch} and can also influence the
+                    // result of a repo rule in subtle ways (e.g. behavior of host tools, line breaks,
+                    // etc).
+                    .addString(com.google.common.base.StandardSystemProperty.OS_NAME.value().toLowerCase(Locale.ROOT))
+                    .addString(java.lang.System.getProperty("os.arch").toLowerCase(Locale.ROOT))
+            fp.addInt(environInputs.size())
+            environInputs.forEach(
+                java.util.function.BiConsumer { key: com.google.devtools.build.lib.rules.repository.RepoRecordedInput.EnvVar?, value: java.util.Optional<kotlin.String?>? ->
+                    fp.addString(
+                        key.toString()
+                    ).addNullableString(value.orElse(null))
+                })
+            fp.addInt(repoDefinition.repoRule.recordedRepoMappingEntries.cellSet().size())
+            repoDefinition
+                .repoRule
+                .recordedRepoMappingEntries
+                .cellSet()
+                .forEach(
+                    java.util.function.Consumer { entry: com.google.common.collect.Table.Cell<RepositoryName?, kotlin.String?, RepositoryName?>? ->
+                        fp.addString(entry.getRowKey().getName())
+                        fp.addString(entry.getColumnKey())
+                        fp.addString(entry.getValue().getName())
+                    })
+            return fp.hexDigestAndReset()
+        }
+
+        private fun getMarkerPath(
+            directories: BlazeDirectories,
+            repo: RepositoryName
+        ): com.google.devtools.build.lib.vfs.Path {
+            return RepositoryUtils.getExternalRepositoryDirectory(directories)
+                .getChild(repo.getMarkerFileName())
+        }
+
+        @Throws(RepositoryFunctionException::class)
+        fun clearMarkerFile(directories: BlazeDirectories, repo: RepositoryName) {
+            try {
+                getMarkerPath(directories, repo).delete()
+            } catch (e: IOException) {
+                throw RepositoryFunctionException(e, Transience.TRANSIENT)
+            }
+        }
     }
-  }
 }

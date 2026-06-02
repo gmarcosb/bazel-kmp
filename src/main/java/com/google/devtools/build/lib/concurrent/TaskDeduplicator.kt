@@ -11,185 +11,185 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-
-import com.google.common.util.concurrent.AbstractFuture;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.errorprone.annotations.CheckReturnValue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.function.IntUnaryOperator
 
 /**
  * Deduplicates concurrent tasks identified by unique keys. For any given key, only one task is
  * actively executed at a time.
- *
- * <p>Any futures returned by this class can be individually canceled without affecting other
+ * 
+ * 
+ * Any futures returned by this class can be individually canceled without affecting other
  * callers. The shared task is only canceled if all callers have canceled their futures and the task
  * is interrupted if and only if all callers requested interruption.
  */
-public final class TaskDeduplicator<K, V> {
-  private final ConcurrentMap<K, RefcountedFuture<V>> inFlightTasks = new ConcurrentHashMap<>();
+class TaskDeduplicator<K, V> {
+    private val inFlightTasks: ConcurrentMap<K?, RefcountedFuture<V?>> = ConcurrentHashMap<K?, RefcountedFuture<V?>>()
 
-  /**
-   * Returns a future representing either a new or already ongoing execution of the task.
-   *
-   * <p>The returned future must eventually be completed. The task is only canceled if the futures
-   * returned to all callers for the same key have been canceled.
-   *
-   * <p>taskSupplier may be called multiple times. It should be inexpensive and free of side
-   * effects.
-   */
-  @CheckReturnValue
-  public ListenableFuture<V> executeIfNew(K key, Supplier<ListenableFuture<V>> taskSupplier) {
-    while (true) {
-      var isNewHolder = new boolean[1];
-      var future =
-          inFlightTasks.computeIfAbsent(
-              key,
-              unusedKey -> {
-                isNewHolder[0] = true;
-                return RefcountedFuture.wrap(taskSupplier.get());
-              });
-      if (isNewHolder[0]) {
-        future.addListener(() -> inFlightTasks.remove(key, future), directExecutor());
-      } else {
-        // The shared future may have been canceled between the lookup and the call to retain().
-        if (!future.retain()) {
-          inFlightTasks.remove(key, future);
-          continue;
+    /**
+     * Returns a future representing either a new or already ongoing execution of the task.
+     * 
+     * 
+     * The returned future must eventually be completed. The task is only canceled if the futures
+     * returned to all callers for the same key have been canceled.
+     * 
+     * 
+     * taskSupplier may be called multiple times. It should be inexpensive and free of side
+     * effects.
+     */
+    @com.google.errorprone.annotations.CheckReturnValue
+    fun executeIfNew(
+        key: K?,
+        taskSupplier: java.util.function.Supplier<com.google.common.util.concurrent.ListenableFuture<V?>?>
+    ): com.google.common.util.concurrent.ListenableFuture<V?> {
+        while (true) {
+            val isNewHolder = BooleanArray(1)
+            val future: RefcountedFuture<V?> =
+                inFlightTasks.computeIfAbsent(
+                    key,
+                    java.util.function.Function { unusedKey: K? ->
+                        isNewHolder[0] = true
+                        RefcountedFuture.Companion.wrap<V?>(taskSupplier.get())
+                    })
+            if (isNewHolder[0]) {
+                future.addListener(
+                    java.lang.Runnable { inFlightTasks.remove(key, future) },
+                    com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                )
+            } else {
+                // The shared future may have been canceled between the lookup and the call to retain().
+                if (!future.retain()) {
+                    inFlightTasks.remove(key, future)
+                    continue
+                }
+            }
+            return IndividuallyCancelableFuture.Companion.wrap<V?>(future)
         }
-      }
-      return IndividuallyCancelableFuture.wrap(future);
-    }
-  }
-
-  /**
-   * Returns a future representing either a new or already ongoing execution of the task that is
-   * guaranteed to happen-after any executions started before the call of this method.
-   *
-   * <p>The returned future must eventually be completed. The task is only canceled if the futures
-   * returned to all callers for the same key have been canceled.
-   *
-   * <p>taskSupplier may be called multiple times. It should be inexpensive and free of side
-   * effects.
-   */
-  @CheckReturnValue
-  public ListenableFuture<V> executeUnconditionally(
-      K key, Supplier<ListenableFuture<V>> taskSupplier) {
-    inFlightTasks.remove(key);
-    return executeIfNew(key, taskSupplier);
-  }
-
-  /**
-   * Returns a future representing an already ongoing execution of the task or null if there is
-   * none.
-   *
-   * <p>The returned future must eventually be completed. The task is only canceled if the futures
-   * returned to all callers for the same key have been canceled.
-   */
-  @CheckReturnValue
-  @Nullable
-  public ListenableFuture<V> maybeJoinExecution(K key) {
-    var future = inFlightTasks.get(key);
-    if (future == null) {
-      return null;
-    }
-    if (!future.retain()) {
-      inFlightTasks.remove(key, future);
-      return null;
-    }
-    return IndividuallyCancelableFuture.wrap(future);
-  }
-
-  /**
-   * A future adapter that is canceled only when {@link #cancel} has been called one more time than
-   * {@link #retain}.
-   */
-  private static final class RefcountedFuture<V> extends AbstractFuture<V> implements Runnable {
-    private final ListenableFuture<V> delegate;
-    // Initialized to 1 in the constructor and incremented via retain(). Once it drops to 0, it
-    // can never return to 1 or higher (0 is a sticky state).
-    private final AtomicInteger refcount = new AtomicInteger(1);
-    private volatile boolean mayInterruptIfRunning = true;
-
-    static <V> RefcountedFuture<V> wrap(ListenableFuture<V> delegate) {
-      var wrappedFuture = new RefcountedFuture<>(delegate);
-      delegate.addListener(wrappedFuture, directExecutor());
-      return wrappedFuture;
     }
 
-    RefcountedFuture(ListenableFuture<V> delegate) {
-      this.delegate = delegate;
-      setFuture(delegate);
+    /**
+     * Returns a future representing either a new or already ongoing execution of the task that is
+     * guaranteed to happen-after any executions started before the call of this method.
+     * 
+     * 
+     * The returned future must eventually be completed. The task is only canceled if the futures
+     * returned to all callers for the same key have been canceled.
+     * 
+     * 
+     * taskSupplier may be called multiple times. It should be inexpensive and free of side
+     * effects.
+     */
+    @com.google.errorprone.annotations.CheckReturnValue
+    fun executeUnconditionally(
+        key: K?, taskSupplier: java.util.function.Supplier<com.google.common.util.concurrent.ListenableFuture<V?>?>
+    ): com.google.common.util.concurrent.ListenableFuture<V?> {
+        inFlightTasks.remove(key)
+        return executeIfNew(key, taskSupplier)
     }
 
-    @Override
-    public void run() {}
-
-    @Override
-    public boolean cancel(boolean mayInterruptIfRunning) {
-      if (!mayInterruptIfRunning) {
-        this.mayInterruptIfRunning = false;
-      }
-      if (refcount.updateAndGet(oldCount -> oldCount >= 1 ? oldCount - 1 : 0) == 0) {
-        return super.cancel(this.mayInterruptIfRunning);
-      }
-      return false;
+    /**
+     * Returns a future representing an already ongoing execution of the task or null if there is
+     * none.
+     * 
+     * 
+     * The returned future must eventually be completed. The task is only canceled if the futures
+     * returned to all callers for the same key have been canceled.
+     */
+    @com.google.errorprone.annotations.CheckReturnValue
+    fun maybeJoinExecution(key: K?): com.google.common.util.concurrent.ListenableFuture<V?>? {
+        val future: RefcountedFuture<V?>? = inFlightTasks.get(key)
+        if (future == null) {
+            return null
+        }
+        if (!future.retain()) {
+            inFlightTasks.remove(key, future)
+            return null
+        }
+        return IndividuallyCancelableFuture.Companion.wrap<V?>(future)
     }
 
-    @Nullable
-    @Override
-    protected String pendingToString() {
-      return "delegate=[%s (%d active uses)]".formatted(delegate, refcount.get());
+    /**
+     * A future adapter that is canceled only when [.cancel] has been called one more time than
+     * [.retain].
+     */
+    private class RefcountedFuture<V>(delegate: com.google.common.util.concurrent.ListenableFuture<V?>) :
+        com.google.common.util.concurrent.AbstractFuture<V?>(), java.lang.Runnable {
+        private val delegate: com.google.common.util.concurrent.ListenableFuture<V?>?
+
+        // Initialized to 1 in the constructor and incremented via retain(). Once it drops to 0, it
+        // can never return to 1 or higher (0 is a sticky state).
+        private val refcount: AtomicInteger = AtomicInteger(1)
+
+        @kotlin.concurrent.Volatile
+        private var mayInterruptIfRunning = true
+
+        init {
+            this.delegate = delegate
+            setFuture(delegate)
+        }
+
+        override fun run() {}
+
+        override fun cancel(mayInterruptIfRunning: Boolean): Boolean {
+            if (!mayInterruptIfRunning) {
+                this.mayInterruptIfRunning = false
+            }
+            if (refcount.updateAndGet(IntUnaryOperator { oldCount: Int -> if (oldCount >= 1) oldCount - 1 else 0 }) == 0) {
+                return super.cancel(this.mayInterruptIfRunning)
+            }
+            return false
+        }
+
+        override fun pendingToString(): String? {
+            return "delegate=[%s (%d active uses)]".formatted(delegate, refcount.get())
+        }
+
+        /** Retains the future, returning true if successful.  */
+        fun retain(): Boolean {
+            return refcount.updateAndGet(IntUnaryOperator { oldCount: Int -> if (oldCount >= 1) oldCount + 1 else 0 }) != 0
+        }
+
+        companion object {
+            fun <V> wrap(delegate: com.google.common.util.concurrent.ListenableFuture<V?>): RefcountedFuture<V?> {
+                val wrappedFuture = RefcountedFuture<V?>(delegate)
+                delegate.addListener(wrappedFuture, com.google.common.util.concurrent.MoreExecutors.directExecutor())
+                return wrappedFuture
+            }
+        }
     }
 
-    /** Retains the future, returning true if successful. */
-    boolean retain() {
-      return refcount.updateAndGet(oldCount -> oldCount >= 1 ? oldCount + 1 : 0) != 0;
-    }
-  }
+    /**
+     * A future adapter that forwards cancellation requests to its delegate but cancels itself even if
+     * the delegate doesn't.
+     */
+    private class IndividuallyCancelableFuture<V>(private val delegate: RefcountedFuture<V?>) :
+        com.google.common.util.concurrent.AbstractFuture<V?>(), java.lang.Runnable {
+        override fun run() {
+            setFuture(delegate)
+        }
 
-  /**
-   * A future adapter that forwards cancellation requests to its delegate but cancels itself even if
-   * the delegate doesn't.
-   */
-  private static final class IndividuallyCancelableFuture<V> extends AbstractFuture<V>
-      implements Runnable {
-    private final RefcountedFuture<V> delegate;
+        override fun cancel(mayInterruptIfRunning: Boolean): Boolean {
+            val didCancel: Boolean = super.cancel(mayInterruptIfRunning)
+            if (didCancel) {
+                delegate.cancel(mayInterruptIfRunning)
+            }
+            return didCancel
+        }
 
-    static <V> ListenableFuture<V> wrap(RefcountedFuture<V> delegate) {
-      var wrappedFuture = new IndividuallyCancelableFuture<>(delegate);
-      delegate.addListener(wrappedFuture, directExecutor());
-      return wrappedFuture;
-    }
+        override fun pendingToString(): String? {
+            return "delegate=[%s]".formatted(delegate)
+        }
 
-    IndividuallyCancelableFuture(RefcountedFuture<V> delegate) {
-      this.delegate = delegate;
+        companion object {
+            fun <V> wrap(delegate: RefcountedFuture<V?>): com.google.common.util.concurrent.ListenableFuture<V?> {
+                val wrappedFuture = IndividuallyCancelableFuture<V?>(delegate)
+                delegate.addListener(wrappedFuture, com.google.common.util.concurrent.MoreExecutors.directExecutor())
+                return wrappedFuture
+            }
+        }
     }
-
-    @Override
-    public void run() {
-      setFuture(delegate);
-    }
-
-    @Override
-    public boolean cancel(boolean mayInterruptIfRunning) {
-      var didCancel = super.cancel(mayInterruptIfRunning);
-      if (didCancel) {
-        delegate.cancel(mayInterruptIfRunning);
-      }
-      return didCancel;
-    }
-
-    @Nullable
-    @Override
-    protected String pendingToString() {
-      return "delegate=[%s]".formatted(delegate);
-    }
-  }
 }

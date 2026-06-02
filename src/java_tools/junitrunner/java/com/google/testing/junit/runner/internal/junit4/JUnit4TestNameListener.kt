@@ -11,41 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.internal.junit4
 
-package com.google.testing.junit.runner.internal.junit4;
-
-import com.google.testing.junit.runner.util.TestNameProvider;
-import org.junit.runner.Description;
-import org.junit.runner.notification.RunListener;
+import com.google.testing.junit.runner.util.TestNameProvider
+import org.junit.runner.Description
 
 /**
  * A listener to get the name of a JUnit4 test.
  */
-public class JUnit4TestNameListener extends RunListener {
-  private final ThreadLocal<Description> runningTest = new ThreadLocal<>();
-  private final SettableCurrentRunningTest currentRunningTest;
+class JUnit4TestNameListener(private val currentRunningTest: SettableCurrentRunningTest) : RunListener() {
+    private val runningTest = ThreadLocal<Description?>()
 
-  public JUnit4TestNameListener(SettableCurrentRunningTest currentRunningTest) {
-    this.currentRunningTest = currentRunningTest;
-  }
+    @Throws(Exception::class)
+    override fun testRunStarted(description: Description?) {
+        currentRunningTest.setGlobalTestNameProvider(object : TestNameProvider() {
+            public override fun get(): Description? {
+                return runningTest.get()
+            }
+        })
+    }
 
-  @Override
-  public void testRunStarted(Description description) throws Exception {
-    currentRunningTest.setGlobalTestNameProvider(new TestNameProvider() {
-      @Override
-      public Description get() {
-        return runningTest.get();
-      }
-    });
-  }
+    @Throws(Exception::class)
+    override fun testStarted(description: Description?) {
+        runningTest.set(description)
+    }
 
-  @Override
-  public void testStarted(Description description) throws Exception {
-    runningTest.set(description);
-  }
-
-  @Override
-  public void testFinished(Description description) throws Exception {
-    runningTest.set(null);
-  }
+    @Throws(Exception::class)
+    override fun testFinished(description: Description?) {
+        runningTest.set(null)
+    }
 }

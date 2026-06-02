@@ -11,19 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.platform;
+package com.google.devtools.build.lib.analysis.platform
 
-import com.google.devtools.build.lib.cmdline.Label;
+/** This file holds hardcoded constants used by the platforms system.  */
+object PlatformConstants {
+    @kotlin.jvm.JvmField
+    val INTERNAL_PLATFORM: com.google.devtools.build.lib.cmdline.Label? =
+        com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked("@bazel_tools//tools:internal_platform")
 
-/** This file holds hardcoded constants used by the platforms system. */
-public final class PlatformConstants {
-
-  private PlatformConstants() {}
-
-  public static final Label INTERNAL_PLATFORM =
-      Label.parseCanonicalUnchecked("@bazel_tools//tools:internal_platform");
-
-  // The label of the toolchain type to add to the default "test" exec group.
-  public static final Label DEFAULT_TEST_TOOLCHAIN_TYPE =
-      Label.parseCanonicalUnchecked("@bazel_tools//tools/test:default_test_toolchain_type");
+    // The label of the toolchain type to add to the default "test" exec group.
+    @kotlin.jvm.JvmField
+    val DEFAULT_TEST_TOOLCHAIN_TYPE: com.google.devtools.build.lib.cmdline.Label? =
+        com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked("@bazel_tools//tools/test:default_test_toolchain_type")
 }

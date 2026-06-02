@@ -79,7 +79,7 @@ final class StarlarkBuildSettingsDetailsFunction implements SkyFunction {
     for (Label hostFlag : key.hostFlags()) {
       Label flag =
           Label.createUnvalidated(
-              hostFlag.getPackageIdentifier(), hostFlag.getName().replaceFirst("host_", ""));
+              hostFlag.getPackageIdentifier(), hostFlag.name.replaceFirst("host_", ""));
 
       try {
         ImmutableMap<PackageIdentifier, PackageValue> buildSettingPackage =
@@ -321,7 +321,7 @@ final class StarlarkBuildSettingsDetailsFunction implements SkyFunction {
           buildSettingPackage, "Reading build setting for which we don't have a package");
       Target buildSettingTarget;
       try {
-        buildSettingTarget = buildSettingPackage.getTarget(allegedBuildSetting.getName());
+        buildSettingTarget = buildSettingPackage.getTarget(allegedBuildSetting.name);
       } catch (NoSuchTargetException e) {
         throw new TransitionException(e);
       }
@@ -410,7 +410,7 @@ final class StarlarkBuildSettingsDetailsFunction implements SkyFunction {
     Preconditions.checkNotNull(
         buildSettingPackage, "Reading build setting for which we don't have a package");
     Target target;
-    target = buildSettingPackage.getTarget(setting.getName());
+    target = buildSettingPackage.getTarget(setting.name);
     return target;
   }
 

@@ -262,9 +262,9 @@ public class GcChurningDetectorTest {
     ArgumentCaptor<Crash> crashArgument = ArgumentCaptor.forClass(Crash.class);
     verify(mockBugReporter).handleCrash(crashArgument.capture(), any());
     Crash crash = crashArgument.getValue();
-    Throwable oom = crash.getThrowable();
+    Throwable oom = crash.throwable;
     assertThat(oom).isInstanceOf(OutOfMemoryError.class);
-    assertThat(crash.getDetailedExitCode().getFailureDetail().getCrash().getOomCauseCategory())
+    assertThat(crash.detailedExitCode.getFailureDetail().getCrash().getOomCauseCategory())
         .isEqualTo(OomCauseCategory.GC_CHURNING);
   }
 

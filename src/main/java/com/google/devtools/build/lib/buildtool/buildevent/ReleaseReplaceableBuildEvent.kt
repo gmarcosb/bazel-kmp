@@ -11,22 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
 /**
- * Posts a pending {@link ReplaceableBuildEvent} immediately. It no longer waits for either the
+ * Posts a pending [ReplaceableBuildEvent] immediately. It no longer waits for either the
  * build to end or a non-replaceable version to replace it.
  */
-public final class ReleaseReplaceableBuildEvent {
-  private final BuildEventId eventId;
+class ReleaseReplaceableBuildEvent(eventId: BuildEventId?) {
+    private val eventId: BuildEventId?
 
-  public ReleaseReplaceableBuildEvent(BuildEventId eventId) {
-    this.eventId = eventId;
-  }
+    init {
+        this.eventId = eventId
+    }
 
-  public BuildEventId getEventId() {
-    return eventId;
-  }
+    fun getEventId(): BuildEventId? {
+        return eventId
+    }
 }

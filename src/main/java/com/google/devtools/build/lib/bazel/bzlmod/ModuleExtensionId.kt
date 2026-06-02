@@ -12,83 +12,102 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
-import static com.google.common.collect.Comparators.emptiesFirst;
-import static java.util.Comparator.comparing;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Splitter;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
-
-/** A unique identifier for a {@link ModuleExtension}. */
+/** A unique identifier for a [ModuleExtension].  */
 @AutoCodec
-public record ModuleExtensionId(
-    Label bzlFileLabel, String extensionName, Optional<IsolationKey> isolationKey) {
-  public ModuleExtensionId {
-    requireNonNull(bzlFileLabel, "bzlFileLabel");
-    requireNonNull(extensionName, "extensionName");
-    requireNonNull(isolationKey, "isolationKey");
-  }
+class ModuleExtensionId(
+    bzlFileLabel: com.google.devtools.build.lib.cmdline.Label?,
+    extensionName: String?,
+    isolationKey: java.util.Optional<IsolationKey?>?
+) {
+    /**
+     * A unique identifier for a single isolated usage of a fixed module extension.
+     * 
+     * @param module The module which contains this isolated usage of a module extension.
+     * @param usageExportedName The exported name of the first extension proxy for this usage.
+     */
+    @AutoCodec
+    internal class IsolationKey(module: ModuleKey?, val usageExportedName: String?) {
+        override fun toString(): String {
+            return this.module.toString() + "+" + this.usageExportedName
+        }
 
-  public static final Comparator<ModuleExtensionId> LEXICOGRAPHIC_COMPARATOR =
-      comparing(ModuleExtensionId::bzlFileLabel)
-          .thenComparing(ModuleExtensionId::extensionName)
-          .thenComparing(
-              ModuleExtensionId::isolationKey, emptiesFirst(IsolationKey.LEXICOGRAPHIC_COMPARATOR));
+        val module: ModuleKey?
 
-  /**
-   * A unique identifier for a single isolated usage of a fixed module extension.
-   *
-   * @param module The module which contains this isolated usage of a module extension.
-   * @param usageExportedName The exported name of the first extension proxy for this usage.
-   */
-  @AutoCodec
-  record IsolationKey(ModuleKey module, String usageExportedName) {
-    IsolationKey {
-      requireNonNull(module, "module");
-      requireNonNull(usageExportedName, "usageExportedName");
+        init {
+            this.module = module
+            java.util.Objects.requireNonNull<ModuleKey?>(module, "module")
+            java.util.Objects.requireNonNull<String?>(usageExportedName, "usageExportedName")
+        }
+
+        companion object {
+            val LEXICOGRAPHIC_COMPARATOR: java.util.Comparator<IsolationKey?> =
+                java.util.Comparator.comparing<IsolationKey?, ModuleKey?>(
+                    IsolationKey::module,
+                    ModuleKey.Companion.LEXICOGRAPHIC_COMPARATOR
+                )
+                    .thenComparing<String?>(IsolationKey::usageExportedName)
+
+            fun create(module: ModuleKey?, usageExportedName: String?): IsolationKey {
+                return IsolationKey(module, usageExportedName)
+            }
+
+            @Throws(com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException::class)
+            fun fromString(s: String): IsolationKey {
+                val isolationKeyParts: MutableList<String?> = com.google.common.base.Splitter.on("+").splitToList(s)
+                return create(
+                    ModuleKey.Companion.fromString(isolationKeyParts.get(0)), isolationKeyParts.get(1)
+                )
+            }
+        }
     }
 
-    static final Comparator<IsolationKey> LEXICOGRAPHIC_COMPARATOR =
-        comparing(IsolationKey::module, ModuleKey.LEXICOGRAPHIC_COMPARATOR)
-            .thenComparing(IsolationKey::usageExportedName);
+    val isInnate: Boolean
+        get() = this.extensionName.contains(" ")
 
-    public static IsolationKey create(ModuleKey module, String usageExportedName) {
-      return new IsolationKey(module, usageExportedName);
+    override fun toString(): String {
+        val isolationKeyPart: String =
+            this.isolationKey.map<String>(java.util.function.Function { key: IsolationKey? -> "%" + key }).orElse("")
+        return java.lang.String.format(
+            "%s%%%s%s",
+            this.bzlFileLabel.getUnambiguousCanonicalForm(), this.extensionName, isolationKeyPart
+        )
     }
 
-    @Override
-    public String toString() {
-      return module() + "+" + usageExportedName();
+    val bzlFileLabel: com.google.devtools.build.lib.cmdline.Label?
+    val extensionName: String?
+    val isolationKey: java.util.Optional<IsolationKey?>?
+
+    init {
+        this.isolationKey = isolationKey
+        this.extensionName = extensionName
+        this.bzlFileLabel = bzlFileLabel
+        java.util.Objects.requireNonNull<com.google.devtools.build.lib.cmdline.Label?>(bzlFileLabel, "bzlFileLabel")
+        java.util.Objects.requireNonNull<String?>(extensionName, "extensionName")
+        java.util.Objects.requireNonNull<java.util.Optional<IsolationKey?>?>(isolationKey, "isolationKey")
     }
 
-    public static IsolationKey fromString(String s) throws Version.ParseException {
-      List<String> isolationKeyParts = Splitter.on("+").splitToList(s);
-      return ModuleExtensionId.IsolationKey.create(
-          ModuleKey.fromString(isolationKeyParts.get(0)), isolationKeyParts.get(1));
+    companion object {
+        val LEXICOGRAPHIC_COMPARATOR: java.util.Comparator<ModuleExtensionId?>? =
+            java.util.Comparator.comparing<ModuleExtensionId?, com.google.devtools.build.lib.cmdline.Label?>(
+                ModuleExtensionId::bzlFileLabel
+            )
+                .thenComparing<String?>(ModuleExtensionId::extensionName)
+                .thenComparing<java.util.Optional<IsolationKey?>?>(
+                    ModuleExtensionId::isolationKey,
+                    com.google.common.collect.Comparators.emptiesFirst<IsolationKey?>(IsolationKey.Companion.LEXICOGRAPHIC_COMPARATOR)
+                )
+
+        fun create(
+            bzlFileLabel: com.google.devtools.build.lib.cmdline.Label?,
+            extensionName: String?,
+            isolationKey: java.util.Optional<IsolationKey?>?
+        ): ModuleExtensionId {
+            return ModuleExtensionId(bzlFileLabel, extensionName, isolationKey)
+        }
     }
-  }
-
-  public static ModuleExtensionId create(
-      Label bzlFileLabel, String extensionName, Optional<IsolationKey> isolationKey) {
-    return new ModuleExtensionId(bzlFileLabel, extensionName, isolationKey);
-  }
-
-  public boolean isInnate() {
-    return extensionName().contains(" ");
-  }
-
-  @Override
-  public String toString() {
-    String isolationKeyPart = isolationKey().map(key -> "%" + key).orElse("");
-    return String.format(
-        "%s%%%s%s",
-        bzlFileLabel().getUnambiguousCanonicalForm(), extensionName(), isolationKeyPart);
-  }
 }

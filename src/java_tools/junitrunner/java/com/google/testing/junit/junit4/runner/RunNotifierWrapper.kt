@@ -11,91 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.junit4.runner
 
-package com.google.testing.junit.junit4.runner;
-
-import org.junit.runner.Description;
-import org.junit.runner.Result;
-import org.junit.runner.notification.Failure;
-import org.junit.runner.notification.RunListener;
-import org.junit.runner.notification.RunNotifier;
-import org.junit.runner.notification.StoppedByUserException;
+import org.junit.runner.Description
+import org.junit.runner.Result
+import org.junit.runner.notification.Failure
+import org.junit.runner.notification.RunListener
+import org.junit.runner.notification.RunNotifier
+import org.junit.runner.notification.StoppedByUserException
 
 /**
- * A {@link RunNotifier} that delegates all its operations to another {@code RunNotifier}.
+ * A [RunNotifier] that delegates all its operations to another `RunNotifier`.
  * This class is meant to be overridden to modify some behaviors.
  */
-public abstract class RunNotifierWrapper extends RunNotifier {
-  private final RunNotifier delegate;
+abstract class RunNotifierWrapper
+/**
+ * Creates a new instance.
+ * 
+ * @param delegate notifier to delegate to
+ */(
+    /**
+     * @return the delegate
+     */
+    protected val delegate: RunNotifier
+) : RunNotifier() {
+    override fun addFirstListener(listener: RunListener?) {
+        delegate.addFirstListener(listener)
+    }
 
-  /**
-   * Creates a new instance.
-   *
-   * @param delegate notifier to delegate to
-   */
-  public RunNotifierWrapper(RunNotifier delegate) {
-    this.delegate = delegate;
-  }
+    override fun addListener(listener: RunListener?) {
+        delegate.addListener(listener)
+    }
 
-  /**
-   * @return the delegate
-   */
-  protected final RunNotifier getDelegate() {
-    return delegate;
-  }
+    override fun removeListener(listener: RunListener?) {
+        delegate.removeListener(listener)
+    }
 
-  @Override
-  public void addFirstListener(RunListener listener) {
-    delegate.addFirstListener(listener);
-  }
+    override fun fireTestRunStarted(description: Description?) {
+        delegate.fireTestRunStarted(description)
+    }
 
-  @Override
-  public void addListener(RunListener listener) {
-    delegate.addListener(listener);
-  }
+    @Throws(StoppedByUserException::class)
+    override fun fireTestStarted(description: Description?) {
+        delegate.fireTestStarted(description)
+    }
 
-  @Override
-  public void removeListener(RunListener listener) {
-    delegate.removeListener(listener);
-  }
+    override fun fireTestIgnored(description: Description?) {
+        delegate.fireTestIgnored(description)
+    }
 
-  @Override
-  public void fireTestRunStarted(Description description) {
-    delegate.fireTestRunStarted(description);
-  }
-  
-  @Override
-  public void fireTestStarted(Description description) throws StoppedByUserException {
-    delegate.fireTestStarted(description);
-  }
-  
-  @Override
-  public void fireTestIgnored(Description description) {
-    delegate.fireTestIgnored(description);
-  }
+    override fun fireTestAssumptionFailed(failure: Failure?) {
+        delegate.fireTestAssumptionFailed(failure)
+    }
 
-  @Override
-  public void fireTestAssumptionFailed(Failure failure) {
-    delegate.fireTestAssumptionFailed(failure);
-  }
+    override fun fireTestFailure(failure: Failure?) {
+        delegate.fireTestFailure(failure)
+    }
 
-  @Override
-  public void fireTestFailure(Failure failure) {
-    delegate.fireTestFailure(failure);
-  }
+    override fun fireTestFinished(description: Description?) {
+        delegate.fireTestFinished(description)
+    }
 
-  @Override
-  public void fireTestFinished(Description description) {
-    delegate.fireTestFinished(description);
-  }
+    override fun fireTestRunFinished(result: Result?) {
+        delegate.fireTestRunFinished(result)
+    }
 
-  @Override
-  public void fireTestRunFinished(Result result) {
-    delegate.fireTestRunFinished(result);
-  }
-
-  @Override
-  public void pleaseStop() {
-    delegate.pleaseStop();
-  }
+    override fun pleaseStop() {
+        delegate.pleaseStop()
+    }
 }

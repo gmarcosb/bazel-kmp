@@ -11,85 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.includescanning;
+package com.google.devtools.build.lib.includescanning
 
-import com.google.devtools.build.lib.util.ResourceConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
+import com.google.devtools.build.lib.util.ResourceConverter
+import com.google.devtools.common.options.*
 
-/** Command options specific to include scanning. */
+/** Command options specific to include scanning.  */
 @OptionsClass
-public abstract class IncludeScanningOptions extends OptionsBase {
+abstract class IncludeScanningOptions : OptionsBase() {
+    /**
+     * Converter for scanning parallelism threads: Takes {@value #FLAG_SYNTAX} 0 disables scanning
+     * parallelism.
+     */
+    class ParallelismConverter :
+        ResourceConverter.IntegerConverter( /* auto= */HOST_CPUS_SUPPLIER,  /* minValue= */0,  /* maxValue= */
+            Integer.MAX_VALUE
+        )
 
-  /**
-   * Converter for scanning parallelism threads: Takes {@value #FLAG_SYNTAX} 0 disables scanning
-   * parallelism.
-   */
-  public static class ParallelismConverter extends ResourceConverter.IntegerConverter {
-    public ParallelismConverter() throws OptionsParsingException {
-      super(/* auto= */ HOST_CPUS_SUPPLIER, /* minValue= */ 0, /* maxValue= */ Integer.MAX_VALUE);
-    }
-  }
+    @get:Option(
+        name = "experimental_inmemory_dotincludes_files",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION, OptionEffectTag.EXECUTION, OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
+        ],
+        defaultValue = "false",
+        help = ("If enabled, searching for '#include' lines in generated header files will not "
+                + "touch local disk. This makes include scanning of C++ files less disk-intensive.")
+    )
+    abstract val inMemoryIncludesFiles: Boolean
 
-  @Option(
-      name = "experimental_inmemory_dotincludes_files",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {
-        OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
-        OptionEffectTag.EXECUTION,
-        OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
-      },
-      defaultValue = "false",
-      help =
-          "If enabled, searching for '#include' lines in generated header files will not "
-              + "touch local disk. This makes include scanning of C++ files less disk-intensive.")
-  public abstract boolean getInMemoryIncludesFiles();
+    @get:Option(
+        name = "experimental_remote_include_extraction_size_threshold",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION, OptionEffectTag.EXECUTION, OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
+        ],
+        defaultValue = "1000000",
+        help = "Run remotable C++ include extraction remotely if the file size in bytes exceeds this."
+    )
+    abstract val experimentalRemoteExtractionThreshold: Int
 
-  @Option(
-      name = "experimental_remote_include_extraction_size_threshold",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {
-        OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
-        OptionEffectTag.EXECUTION,
-        OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
-      },
-      defaultValue = "1000000",
-      help =
-          "Run remotable C++ include extraction remotely if the file size in bytes exceeds this.")
-  public abstract int getExperimentalRemoteExtractionThreshold();
+    @get:Option(
+        name = "experimental_include_scanning_parallelism",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION, OptionEffectTag.EXECUTION, OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
+        ],
+        defaultValue = "80",
+        converter = ParallelismConverter::class,
+        help = ("Configures the size of the thread pool used for include scanning. Takes "
+                + ResourceConverter.FLAG_SYNTAX
+                + ". 0 means to disable parallelism and to just rely on the build graph parallelism "
+                + "for concurrency. "
+                + " \"auto\" means to use a reasonable value derived from the machine's hardware"
+                + " profile (e.g. the number of processors).")
+    )
+    abstract val includeScanningParallelism: Int
 
-  @Option(
-      name = "experimental_include_scanning_parallelism",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {
-        OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
-        OptionEffectTag.EXECUTION,
-        OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
-      },
-      defaultValue = "80",
-      converter = ParallelismConverter.class,
-      help =
-          "Configures the size of the thread pool used for include scanning. Takes "
-              + ResourceConverter.FLAG_SYNTAX
-              + ". 0 means to disable parallelism and to just rely on the build graph parallelism "
-              + "for concurrency. "
-              + " \"auto\" means to use a reasonable value derived from the machine's hardware"
-              + " profile (e.g. the number of processors).")
-  public abstract int getIncludeScanningParallelism();
-
-  @Option(
-      name = "experimental_reuse_include_scanning_threads",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {
-        OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
-        OptionEffectTag.EXECUTION,
-        OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
-      },
-      defaultValue = "false",
-      help = "If enabled core threads of include scanner pool will not die during execution.")
-  public abstract boolean getExperimentalReuseIncludeScanningThreads();
+    @get:Option(
+        name = "experimental_reuse_include_scanning_threads",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION, OptionEffectTag.EXECUTION, OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS
+        ],
+        defaultValue = "false",
+        help = "If enabled core threads of include scanner pool will not die during execution."
+    )
+    abstract val experimentalReuseIncludeScanningThreads: Boolean
 }

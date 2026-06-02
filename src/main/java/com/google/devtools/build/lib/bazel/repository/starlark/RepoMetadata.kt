@@ -11,31 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.starlark
 
-package com.google.devtools.build.lib.bazel.repository.starlark;
+import com.google.devtools.build.docgen.annot.DocCategory
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.eval.Dict
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.StarlarkValue;
-
-/** The Starlark object returned from a {@code repository_rule}'s implementation function. */
+/** The Starlark object returned from a `repository_rule`'s implementation function.  */
 @StarlarkBuiltin(
-    name = "repo_metadata",
-    category = DocCategory.BUILTIN,
-    doc =
-        """
+    name = "repo_metadata", category = DocCategory.BUILTIN, doc = """
         See <a href="repository_ctx#repo_metadata"><code>repository_ctx.repo_metadata</code></a>.
-        """)
-public record RepoMetadata(
-    Reproducibility reproducible, Dict<String, Object> attrsForReproducibility)
-    implements StarlarkValue {
-  public static final RepoMetadata NONREPRODUCIBLE =
-      new RepoMetadata(Reproducibility.NO, Dict.empty());
+        
+        """.trimIndent()
+)
+@kotlin.jvm.JvmRecord
+data class RepoMetadata(val reproducible: Reproducibility?, val attrsForReproducibility: Dict<String?, Any?>?) :
+    StarlarkValue {
+    /** Whether the fetched contents of a repo are reproducible, hence cacheable.  */
+    enum class Reproducibility {
+        YES,
+        NO
+    }
 
-  /** Whether the fetched contents of a repo are reproducible, hence cacheable. */
-  public enum Reproducibility {
-    YES,
-    NO
-  }
+    companion object {
+        val NONREPRODUCIBLE: RepoMetadata = RepoMetadata(Reproducibility.NO, Dict.empty<String?, Any?>())
+    }
 }

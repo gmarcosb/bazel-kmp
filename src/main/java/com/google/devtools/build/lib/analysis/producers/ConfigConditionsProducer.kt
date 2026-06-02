@@ -11,202 +11,192 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.InconsistentNullConfigException;
-import com.google.devtools.build.lib.analysis.TransitiveDependencyState;
-import com.google.devtools.build.lib.analysis.config.ConfigConditions;
-import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.packages.RawAttributeMapper;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.DetailedExitCode.DetailedExitCodeComparator;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.InconsistentNullConfigException
 
-/** Computes the targets that key the configurable attributes used by this rule. */
-final class ConfigConditionsProducer
-    implements StateMachine, ConfiguredTargetAndDataProducer.ResultSink {
-  interface ResultSink {
-    void acceptConfigConditions(ConfigConditions configConditions);
+/** Computes the targets that key the configurable attributes used by this rule.  */
+internal class ConfigConditionsProducer
+    (
+    target: com.google.devtools.build.lib.packages.Target,
+    targetLabel: com.google.devtools.build.lib.cmdline.Label?,
+    buildConfigurationKey: BuildConfigurationKey?,
+    targetPlatformInfo: com.google.devtools.build.lib.analysis.platform.PlatformInfo?,
+    transitiveState: TransitiveDependencyState?,
+    sink: ResultSink,
+    runAfter: StateMachine?
+) : StateMachine, com.google.devtools.build.lib.analysis.producers.ConfiguredTargetAndDataProducer.ResultSink {
+    internal interface ResultSink {
+        fun acceptConfigConditions(configConditions: ConfigConditions?)
 
-    void acceptConfigConditionsError(ConfiguredValueCreationException error);
-  }
-
-  // -------------------- Input --------------------
-  private final Label targetLabel;
-  private final Target target;
-  private final BuildConfigurationKey buildConfigurationKey;
-  @Nullable private final PlatformInfo targetPlatformInfo;
-  private final TransitiveDependencyState transitiveState;
-
-  // -------------------- Output --------------------
-  private final ResultSink sink;
-
-  // -------------------- Sequencing --------------------
-  private final StateMachine runAfter;
-
-  // -------------------- Internal State --------------------
-  @Nullable // Null if there are no config labels.
-  private final List<Label> configLabels;
-  @Nullable // Null if there are no config labels.
-  private final ConfiguredTargetAndData[] prerequisites;
-  @Nullable // Null if there are no dependency errors.
-  private DetailedExitCode mostImportantExitCode;
-
-  ConfigConditionsProducer(
-      Target target,
-      Label targetLabel,
-      BuildConfigurationKey buildConfigurationKey,
-      @Nullable PlatformInfo targetPlatformInfo,
-      TransitiveDependencyState transitiveState,
-      ResultSink sink,
-      StateMachine runAfter) {
-    this.targetLabel = targetLabel;
-    this.target = target;
-    this.buildConfigurationKey = buildConfigurationKey;
-    this.targetPlatformInfo = targetPlatformInfo;
-    this.transitiveState = transitiveState;
-    this.sink = sink;
-    this.runAfter = runAfter;
-
-    this.configLabels = computeConfigLabels(target);
-    this.prerequisites =
-        configLabels == null ? null : new ConfiguredTargetAndData[configLabels.size()];
-  }
-
-  @Override
-  public StateMachine step(Tasks tasks) {
-    if (configLabels == null) {
-      sink.acceptConfigConditions(ConfigConditions.EMPTY);
-      return runAfter;
+        fun acceptConfigConditionsError(error: ConfiguredValueCreationException?)
     }
 
-    // Collect the actual deps without a configuration transition (since by definition config
-    // conditions evaluate over the current target's configuration). If the dependency is
-    // (erroneously) something that needs the null configuration, its analysis will be
-    // short-circuited. That error will be reported later.
-    for (int i = 0; i < configLabels.size(); ++i) {
-      tasks.enqueue(
-          new ConfiguredTargetAndDataProducer(
-              ConfiguredTargetKey.builder()
-                  .setLabel(configLabels.get(i))
-                  .setConfigurationKey(buildConfigurationKey)
-                  .build(),
-              /* transitionKeys= */ ImmutableList.of(),
-              transitiveState,
-              (ConfiguredTargetAndDataProducer.ResultSink) this,
-              i,
-              /* baseTargetPrerequisitesSupplier= */ null));
-    }
-    return this::constructConfigConditions;
-  }
+    // -------------------- Input --------------------
+    private val targetLabel: com.google.devtools.build.lib.cmdline.Label?
+    private val target: com.google.devtools.build.lib.packages.Target?
+    private val buildConfigurationKey: BuildConfigurationKey?
+    private val targetPlatformInfo: com.google.devtools.build.lib.analysis.platform.PlatformInfo?
+    private val transitiveState: TransitiveDependencyState?
 
-  @Override
-  public void acceptConfiguredTargetAndData(ConfiguredTargetAndData value, int index) {
-    prerequisites[index] = value;
-  }
+    // -------------------- Output --------------------
+    private val sink: ResultSink
 
-  @Override
-  public void acceptConfiguredTargetAndDataError(ConfiguredValueCreationException error) {
-    emitErrorIfMostImportant(error.getDetailedExitCode());
-  }
+    // -------------------- Sequencing --------------------
+    private val runAfter: StateMachine?
 
-  @Override
-  public void acceptConfiguredTargetAndDataError(NoSuchThingException error) {
-    emitErrorIfMostImportant(error.getDetailedExitCode());
-  }
+    // -------------------- Internal State --------------------
+    // Null if there are no config labels.
+    private val configLabels: MutableList<com.google.devtools.build.lib.cmdline.Label?>?
 
-  @Override
-  public void acceptConfiguredTargetAndDataError(InconsistentNullConfigException error) {
-    // A config label was evaluated with a null configuration. This should never happen as
-    // ConfigConditions are only present if the parent is a Rule, then always evaluated with the
-    // parent configuration.
-    throw new IllegalArgumentException(
-        "ConfigCondition dependency should never be evaluated with a null configuration.", error);
-  }
+    // Null if there are no config labels.
+    private val prerequisites: Array<ConfiguredTargetAndData?>?
 
-  private StateMachine constructConfigConditions(Tasks tasks) {
-    if (mostImportantExitCode != null) {
-      return runAfter; // There was a previous error.
+    // Null if there are no dependency errors.
+    private var mostImportantExitCode: DetailedExitCode? = null
+
+    init {
+        this.targetLabel = targetLabel
+        this.target = target
+        this.buildConfigurationKey = buildConfigurationKey
+        this.targetPlatformInfo = targetPlatformInfo
+        this.transitiveState = transitiveState
+        this.sink = sink
+        this.runAfter = runAfter
+
+        this.configLabels = computeConfigLabels(target)
+        this.prerequisites =
+            if (configLabels == null) null else arrayOfNulls<ConfiguredTargetAndData>(configLabels.size)
     }
 
-    var asConfiguredTargets = new ImmutableMap.Builder<Label, ConfiguredTargetAndData>();
-    var asConfigConditions = new ImmutableMap.Builder<Label, ConfigMatchingProvider>();
-    for (int i = 0; i < configLabels.size(); ++i) {
-      var label = configLabels.get(i);
-      var prerequisite = prerequisites[i];
-      asConfiguredTargets.put(label, prerequisite);
-      try {
-        asConfigConditions.put(
-            label, ConfigConditions.fromConfiguredTarget(prerequisite, targetPlatformInfo));
-      } catch (ConfigConditions.InvalidConditionException e) {
-        String message =
-            String.format(
-                    "%s is not a valid select() condition for %s.\n",
-                    prerequisite.getTargetLabel(), targetLabel)
-                + String.format(
-                    "To inspect the select(), run: bazel query --output=build %s.\n", targetLabel)
-                + "For more help, see https://bazel.build/reference/be/functions#select.\n\n";
-        sink.acceptConfigConditionsError(new ConfiguredValueCreationException(target, message));
-        return runAfter;
-      }
-    }
-    sink.acceptConfigConditions(
-        ConfigConditions.create(
-            asConfiguredTargets.buildOrThrow(), asConfigConditions.buildOrThrow()));
-    return runAfter;
-  }
+    override fun step(tasks: StateMachine.Tasks): StateMachine? {
+        if (configLabels == null) {
+            sink.acceptConfigConditions(ConfigConditions.EMPTY)
+            return runAfter
+        }
 
-  /**
-   * Computes the config labels belonging to the given target.
-   *
-   * @return null if there were no config labels, implying a {@link ConfigConditions#EMPTY} result.
-   */
-  @Nullable
-  private static List<Label> computeConfigLabels(Target target) {
-    Rule rule = target.getAssociatedRule();
-    if (rule == null) {
-      return null;
+        // Collect the actual deps without a configuration transition (since by definition config
+        // conditions evaluate over the current target's configuration). If the dependency is
+        // (erroneously) something that needs the null configuration, its analysis will be
+        // short-circuited. That error will be reported later.
+        for (i in configLabels.indices) {
+            tasks.enqueue(
+                ConfiguredTargetAndDataProducer(
+                    ConfiguredTargetKey.builder()
+                        .setLabel(configLabels.get(i))
+                        .setConfigurationKey(buildConfigurationKey)
+                        .build(),  /* transitionKeys= */
+                    com.google.common.collect.ImmutableList.of<String?>(),
+                    transitiveState,
+                    this as com.google.devtools.build.lib.analysis.producers.ConfiguredTargetAndDataProducer.ResultSink,
+                    i,  /* baseTargetPrerequisitesSupplier= */
+                    null
+                )
+            )
+        }
+        return StateMachine { tasks: StateMachine.Tasks? -> this.constructConfigConditions(tasks) }
     }
 
-    var attrs = RawAttributeMapper.of(rule);
-    if (!attrs.has(RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE)) {
-      return null;
+    override fun acceptConfiguredTargetAndData(value: ConfiguredTargetAndData?, index: Int) {
+        prerequisites!![index] = value
     }
 
-    // Collects the labels of the configured targets we need to resolve.
-    List<Label> configLabels =
-        attrs.get(RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE, BuildType.LABEL_LIST);
-    if (configLabels.isEmpty()) {
-      return null;
+    override fun acceptConfiguredTargetAndDataError(error: ConfiguredValueCreationException) {
+        emitErrorIfMostImportant(error.getDetailedExitCode())
     }
-    return configLabels;
-  }
 
-  private void emitErrorIfMostImportant(@Nullable DetailedExitCode newExitCode) {
-    mostImportantExitCode =
-        DetailedExitCodeComparator.chooseMoreImportantWithFirstIfTie(
-            newExitCode, mostImportantExitCode);
-    if (newExitCode.equals(mostImportantExitCode)) {
-      sink.acceptConfigConditionsError(
-          // The precise error is reported by the dependency that failed to load.
-          // TODO(gregce): beautify this error: https://github.com/bazelbuild/bazel/issues/11984.
-          new ConfiguredValueCreationException(
-              target, "errors encountered resolving select() keys for " + targetLabel));
+    override fun acceptConfiguredTargetAndDataError(error: NoSuchThingException) {
+        emitErrorIfMostImportant(error.getDetailedExitCode())
     }
-  }
+
+    override fun acceptConfiguredTargetAndDataError(error: InconsistentNullConfigException?) {
+        // A config label was evaluated with a null configuration. This should never happen as
+        // ConfigConditions are only present if the parent is a Rule, then always evaluated with the
+        // parent configuration.
+        throw java.lang.IllegalArgumentException(
+            "ConfigCondition dependency should never be evaluated with a null configuration.", error
+        )
+    }
+
+    private fun constructConfigConditions(tasks: StateMachine.Tasks?): StateMachine? {
+        if (mostImportantExitCode != null) {
+            return runAfter // There was a previous error.
+        }
+
+        val asConfiguredTargets: com.google.common.collect.ImmutableMap.Builder<com.google.devtools.build.lib.cmdline.Label?, ConfiguredTargetAndData?> =
+            com.google.common.collect.ImmutableMap.Builder<com.google.devtools.build.lib.cmdline.Label?, ConfiguredTargetAndData?>()
+        val asConfigConditions: com.google.common.collect.ImmutableMap.Builder<com.google.devtools.build.lib.cmdline.Label?, ConfigMatchingProvider?> =
+            com.google.common.collect.ImmutableMap.Builder<com.google.devtools.build.lib.cmdline.Label?, ConfigMatchingProvider?>()
+        for (i in configLabels.indices) {
+            val label: com.google.devtools.build.lib.cmdline.Label? = configLabels!!.get(i)
+            val prerequisite: ConfiguredTargetAndData? = prerequisites!![i]
+            asConfiguredTargets.put(label, prerequisite)
+            try {
+                asConfigConditions.put(
+                    label, ConfigConditions.fromConfiguredTarget(prerequisite, targetPlatformInfo)
+                )
+            } catch (e: ConfigConditions.InvalidConditionException) {
+                val message =
+                    (String.format(
+                        "%s is not a valid select() condition for %s.\n",
+                        prerequisite.getTargetLabel(), targetLabel
+                    ) + String.format(
+                        "To inspect the select(), run: bazel query --output=build %s.\n", targetLabel
+                    ) + "For more help, see https://bazel.build/reference/be/functions#select.\n\n")
+                sink.acceptConfigConditionsError(ConfiguredValueCreationException(target, message))
+                return runAfter
+            }
+        }
+        sink.acceptConfigConditions(
+            ConfigConditions.create(
+                asConfiguredTargets.buildOrThrow(), asConfigConditions.buildOrThrow()
+            )
+        )
+        return runAfter
+    }
+
+    private fun emitErrorIfMostImportant(newExitCode: DetailedExitCode?) {
+        mostImportantExitCode =
+            DetailedExitCodeComparator.chooseMoreImportantWithFirstIfTie(
+                newExitCode, mostImportantExitCode
+            )
+        if (newExitCode == mostImportantExitCode) {
+            sink.acceptConfigConditionsError( // The precise error is reported by the dependency that failed to load.
+                // TODO(gregce): beautify this error: https://github.com/bazelbuild/bazel/issues/11984.
+                ConfiguredValueCreationException(
+                    target, "errors encountered resolving select() keys for " + targetLabel
+                )
+            )
+        }
+    }
+
+    companion object {
+        /**
+         * Computes the config labels belonging to the given target.
+         * 
+         * @return null if there were no config labels, implying a [ConfigConditions.EMPTY] result.
+         */
+        private fun computeConfigLabels(target: com.google.devtools.build.lib.packages.Target): MutableList<com.google.devtools.build.lib.cmdline.Label?>? {
+            val rule: com.google.devtools.build.lib.packages.Rule? = target.getAssociatedRule()
+            if (rule == null) {
+                return null
+            }
+
+            val attrs: RawAttributeMapper = RawAttributeMapper.of(rule)
+            if (!attrs.has(RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE)) {
+                return null
+            }
+
+            // Collects the labels of the configured targets we need to resolve.
+            val configLabels: MutableList<com.google.devtools.build.lib.cmdline.Label?>? =
+                attrs.get<MutableList<com.google.devtools.build.lib.cmdline.Label?>?>(
+                    RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE,
+                    BuildType.LABEL_LIST
+                )
+            if (configLabels!!.isEmpty()) {
+                return null
+            }
+            return configLabels
+        }
+    }
 }

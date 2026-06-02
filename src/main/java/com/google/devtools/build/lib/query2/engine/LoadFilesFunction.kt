@@ -11,70 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TransitiveLoadFilesHelper;
-import java.util.List;
-import java.util.Set;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Sets
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A loadfiles(x) query expression, which computes the set of .bzl files
  * for each target in set x.  The result is unordered.  This
  * operator is typically used for determining what files or packages to check
  * out.
- *
+ * 
  * <pre>expr ::= LOADFILES '(' expr ')'</pre>
  */
-public class LoadFilesFunction implements QueryEnvironment.QueryFunction {
-  LoadFilesFunction() {}
+class LoadFilesFunction internal constructor() : QueryFunction {
+    val name: String
+        get() = "loadfiles"
 
-  @Override
-  public String getName() {
-    return "loadfiles";
-  }
-
-  @Override
-  public <T> QueryTaskFuture<Void> eval(
-      QueryEnvironment<T> env,
-      QueryExpressionContext<T> context,
-      QueryExpression expression,
-      List<QueryEnvironment.Argument> args,
-      Callback<T> callback) {
-    Set<PackageIdentifier> seenPackages = Sets.newConcurrentHashSet();
-    Set<Label> seenBzlLabels = Sets.newConcurrentHashSet();
-    Uniquifier<T> uniquifier = env.createUniquifier();
-    TransitiveLoadFilesHelper<T> helper;
-    try {
-      helper = env.getTransitiveLoadFilesHelper();
-    } catch (QueryException e) {
-      return env.immediateFailedFuture(e);
+    override fun <T> eval(
+        env: QueryEnvironment<T?>,
+        context: QueryExpressionContext<T?>?,
+        expression: QueryExpression?,
+        args: MutableList<QueryEnvironment.Argument?>,
+        callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>? {
+        val seenPackages: MutableSet<PackageIdentifier?> = Sets.newConcurrentHashSet<PackageIdentifier?>()
+        val seenBzlLabels: MutableSet<Label?> = Sets.newConcurrentHashSet<Label?>()
+        val uniquifier = env.createUniquifier()
+        val helper: TransitiveLoadFilesHelper<T?>?
+        try {
+            helper = env.getTransitiveLoadFilesHelper()
+        } catch (e: QueryException) {
+            return env.immediateFailedFuture<Void?>(e)
+        }
+        return env.eval(
+            args.get(0)!!.getExpression(),
+            context,
+            Callback { partialResult: Iterable<T?>? ->
+                env.transitiveLoadFiles(
+                    partialResult,  /* alsoAddBuildFiles= */
+                    false,
+                    seenPackages,
+                    seenBzlLabels,
+                    uniquifier,
+                    helper,
+                    callback
+                )
+            })
     }
-    return env.eval(
-        args.get(0).getExpression(),
-        context,
-        partialResult ->
-            env.transitiveLoadFiles(
-                partialResult,
-                /* alsoAddBuildFiles= */ false,
-                seenPackages,
-                seenBzlLabels,
-                uniquifier,
-                helper,
-                callback));
-  }
 
-  @Override
-  public int getMandatoryArguments() {
-    return 1;
-  }
+    val mandatoryArguments: Int
+        get() = 1
 
-  @Override
-  public List<QueryEnvironment.ArgumentType> getArgumentTypes() {
-    return ImmutableList.of(QueryEnvironment.ArgumentType.EXPRESSION);
-  }
+    val argumentTypes: MutableList<QueryEnvironment.ArgumentType?>
+        get() = ImmutableList.of<QueryEnvironment.ArgumentType?>(
+            QueryEnvironment.ArgumentType.EXPRESSION
+        )
 }

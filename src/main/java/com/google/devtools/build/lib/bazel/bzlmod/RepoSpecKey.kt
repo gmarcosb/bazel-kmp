@@ -12,45 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.InterimModule
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-
-/** The key for {@link RepoSpecFunction}. */
+/** The key for [RepoSpecFunction].  */
 @AutoCodec
-record RepoSpecKey(ModuleKey moduleKey, String registryUrl) implements SkyKey {
-  RepoSpecKey {
-    requireNonNull(moduleKey, "moduleKey");
-    requireNonNull(registryUrl, "registryUrl");
-  }
+internal class RepoSpecKey(moduleKey: ModuleKey?, val registryUrl: String?) : SkyKey {
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.REPO_SPEC
+    }
 
-  private static final SkyKeyInterner<RepoSpecKey> interner = SkyKey.newInterner();
+    override fun getSkyKeyInterner(): SkyKeyInterner<RepoSpecKey?> {
+        return interner
+    }
 
-  static RepoSpecKey of(InterimModule module) {
-    Preconditions.checkNotNull(
-        module.getRegistry(), "module must not have a non-registry override");
-    return create(module.getKey(), module.getRegistry().getUrl());
-  }
+    val moduleKey: ModuleKey?
 
-  @AutoCodec.Instantiator
-  static RepoSpecKey create(ModuleKey moduleKey, String registryUrl) {
-    return interner.intern(new RepoSpecKey(moduleKey, registryUrl));
-  }
+    init {
+        this.moduleKey = moduleKey
+        java.util.Objects.requireNonNull<ModuleKey?>(moduleKey, "moduleKey")
+        java.util.Objects.requireNonNull<String?>(registryUrl, "registryUrl")
+    }
 
-  @Override
-  public SkyFunctionName functionName() {
-    return SkyFunctions.REPO_SPEC;
-  }
+    companion object {
+        private val interner: SkyKeyInterner<RepoSpecKey?> = SkyKey.newInterner<RepoSpecKey?>()
 
-  @Override
-  public SkyKeyInterner<RepoSpecKey> getSkyKeyInterner() {
-    return interner;
-  }
+        fun of(module: InterimModule): RepoSpecKey? {
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.bazel.bzlmod.Registry?>(
+                module.getRegistry(), "module must not have a non-registry override"
+            )
+            return create(module.getKey(), module.getRegistry().getUrl())
+        }
+
+        @AutoCodec.Instantiator
+        fun create(moduleKey: ModuleKey?, registryUrl: String?): RepoSpecKey? {
+            return interner.intern(RepoSpecKey(moduleKey, registryUrl))
+        }
+    }
 }

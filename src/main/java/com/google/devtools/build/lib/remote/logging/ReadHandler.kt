@@ -11,35 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
+import com.google.bytestream.ByteStreamProto.ReadRequest
 
-import com.google.bytestream.ByteStreamProto.ReadRequest;
-import com.google.bytestream.ByteStreamProto.ReadResponse;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.ReadDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
+/** LoggingHandler for [google.bytestream.Read] gRPC call.  */
+class ReadHandler : LoggingHandler<ReadRequest?, ReadResponse?> {
+    private val builder: ReadDetails.Builder = ReadDetails.newBuilder()
+    private var numReads: Long = 0
+    private var bytesRead: Long = 0
 
-/** LoggingHandler for {@link google.bytestream.Read} gRPC call. */
-public class ReadHandler implements LoggingHandler<ReadRequest, ReadResponse> {
-  private final ReadDetails.Builder builder = ReadDetails.newBuilder();
-  private long numReads = 0;
-  private long bytesRead = 0;
+    override fun handleReq(message: ReadRequest?) {
+        builder.setRequest(message)
+    }
 
-  @Override
-  public void handleReq(ReadRequest message) {
-    builder.setRequest(message);
-  }
+    override fun handleResp(message: ReadResponse) {
+        numReads++
+        bytesRead += message.getData().size()
+    }
 
-  @Override
-  public void handleResp(ReadResponse message) {
-    numReads++;
-    bytesRead += message.getData().size();
-  }
-
-  @Override
-  public RpcCallDetails getDetails() {
-    builder.setNumReads(numReads);
-    builder.setBytesRead(bytesRead);
-    return RpcCallDetails.newBuilder().setRead(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        builder.setNumReads(numReads)
+        builder.setBytesRead(bytesRead)
+        return RpcCallDetails.newBuilder().setRead(builder).build()
+    }
 }

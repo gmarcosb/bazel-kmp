@@ -11,12 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.common;
+package com.google.devtools.build.lib.query2.common
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.skyframe.SkyKey
 
-/** {@link SkyKey} denoting the scope of a query. */
-public interface UniverseSkyKey extends SkyKey {
-  ImmutableList<String> getPatterns();
+/** [SkyKey] denoting the scope of a query.  */
+interface UniverseSkyKey : SkyKey {
+    @kotlin.jvm.JvmField
+    val patterns: com.google.common.collect.ImmutableList<String?>?
 }

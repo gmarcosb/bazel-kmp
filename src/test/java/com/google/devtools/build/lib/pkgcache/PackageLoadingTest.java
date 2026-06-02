@@ -254,7 +254,7 @@ public class PackageLoadingTest extends FoundationTestCase {
     }
     createPkg1();
     InputFile buildFile = getPackage("pkg1").getBuildFile();
-    assertThat(buildFile.getLabel().getName()).isEqualTo("BUILD");
+    assertThat(buildFile.getLabel().name).isEqualTo("BUILD");
     assertThat(
             getPackageManager().getBuildFile(reporter, PackageIdentifier.createInMainRepo("pkg1")))
         .isSameInstanceAs(buildFile);

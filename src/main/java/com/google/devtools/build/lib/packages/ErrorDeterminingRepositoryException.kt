@@ -11,17 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.packages.NoSuchThingException
 
-/** Exception indicating an attempt to access a repository which is not found or does not exist. */
-public class ErrorDeterminingRepositoryException extends NoSuchThingException {
+/** Exception indicating an attempt to access a repository which is not found or does not exist.  */
+class ErrorDeterminingRepositoryException : NoSuchThingException {
+    constructor(message: String?) : super(message)
 
-  public ErrorDeterminingRepositoryException(String message) {
-    super(message);
-  }
-
-  public ErrorDeterminingRepositoryException(String message, Throwable cause) {
-    super(message, cause);
-  }
+    constructor(message: String?, cause: Throwable?) : super(message, cause)
 }

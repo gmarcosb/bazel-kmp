@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import java.util.Objects;
+import com.google.devtools.build.lib.bazel.bzlmod.ArchiveRepoSpecBuilder
+import com.google.devtools.build.lib.bazel.bzlmod.GitRepoSpecBuilder
+import com.google.devtools.build.lib.bazel.bzlmod.LocalPathRepoSpecs
+import com.google.devtools.build.lib.bazel.bzlmod.RepoRuleId
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
  * An override specifying that the module should not be retrieved from a registry or participate in
@@ -26,30 +28,43 @@ import java.util.Objects;
  * module file in the root of the module.
  */
 @AutoCodec
-public record NonRegistryOverride(RepoSpec repoSpec) implements ModuleOverride {
-  // Starlark rules loaded from bazel_tools that may define Bazel module repositories with
-  // non-registry overrides and thus must be loaded without relying on any other modules or the main
-  // repo mapping.
-  public static final ImmutableSet<RepoRuleId> BOOTSTRAP_REPO_RULES =
-      ImmutableSet.of(
-          ArchiveRepoSpecBuilder.HTTP_ARCHIVE,
-          GitRepoSpecBuilder.GIT_REPOSITORY,
-          LocalPathRepoSpecs.LOCAL_REPOSITORY);
+class NonRegistryOverride(repoSpec: RepoSpec?) : com.google.devtools.build.lib.bazel.bzlmod.ModuleOverride {
+    public override fun repoSpec(): RepoSpec {
+        return java.util.Objects.requireNonNull<RepoSpec>(
+            repoSpec,
+            "The bazel_tools override should never be inspected"
+        )
+    }
 
-  /**
-   * A special "sentinel" override for the {@code bazel_tools} repo, which is hardcoded to come from
-   * the {@code embedded_tools} directory bundled with Bazel. It has a null repo spec, which is not
-   * normally allowed.
-   *
-   * <p>Note that this override is never actually inspected, so it can contain an arbitrary repo
-   * spec. In {@code RepositoryDelegatorFunction}, the logic to fetch {@code bazel_tools} exits
-   * before reading the repo spec.
-   */
-  // TODO: wyv@ - refactor so that the builtin modules don't need a repo spec.
-  public static final NonRegistryOverride BAZEL_TOOLS_OVERRIDE = new NonRegistryOverride(null);
+    val repoSpec: RepoSpec?
 
-  @Override
-  public RepoSpec repoSpec() {
-    return Objects.requireNonNull(repoSpec, "The bazel_tools override should never be inspected");
-  }
+    init {
+        this.repoSpec = repoSpec
+    }
+
+    companion object {
+        // Starlark rules loaded from bazel_tools that may define Bazel module repositories with
+        // non-registry overrides and thus must be loaded without relying on any other modules or the main
+        // repo mapping.
+        @kotlin.jvm.JvmField
+        val BOOTSTRAP_REPO_RULES: com.google.common.collect.ImmutableSet<RepoRuleId?> =
+            com.google.common.collect.ImmutableSet.of<RepoRuleId?>(
+                ArchiveRepoSpecBuilder.Companion.HTTP_ARCHIVE,
+                GitRepoSpecBuilder.Companion.GIT_REPOSITORY,
+                LocalPathRepoSpecs.LOCAL_REPOSITORY
+            )
+
+        /**
+         * A special "sentinel" override for the `bazel_tools` repo, which is hardcoded to come from
+         * the `embedded_tools` directory bundled with Bazel. It has a null repo spec, which is not
+         * normally allowed.
+         * 
+         * 
+         * Note that this override is never actually inspected, so it can contain an arbitrary repo
+         * spec. In `RepositoryDelegatorFunction`, the logic to fetch `bazel_tools` exits
+         * before reading the repo spec.
+         */
+        // TODO: wyv@ - refactor so that the builtin modules don't need a repo spec.
+        val BAZEL_TOOLS_OVERRIDE: NonRegistryOverride = NonRegistryOverride(null)
+    }
 }

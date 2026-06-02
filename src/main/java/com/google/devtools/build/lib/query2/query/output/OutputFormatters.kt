@@ -11,61 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query.output
 
-package com.google.devtools.build.lib.query2.query.output;
+import com.google.common.base.Predicates
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Streams
+import java.util.stream.Collectors
 
-import static java.util.stream.Collectors.joining;
+/** Encapsulates available [OutputFormatter]s and selection logic.  */
+object OutputFormatters {
+    @kotlin.jvm.JvmStatic
+    val defaultFormatters: ImmutableList<OutputFormatter?>
+        /** Returns all available [OutputFormatter]s.  */
+        get() = ImmutableList.of<OutputFormatter?>(
+            LabelOutputFormatter(false),
+            LabelOutputFormatter(true),
+            BuildOutputFormatter(),
+            MinrankOutputFormatter(),
+            MaxrankOutputFormatter(),
+            PackageOutputFormatter(),
+            LocationOutputFormatter(),
+            GraphOutputFormatter(),
+            XmlOutputFormatter(),
+            ProtoOutputFormatter(),
+            StreamedJSONProtoOutputFormatter(),
+            StreamedProtoOutputFormatter()
+        )
 
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Streams;
-import javax.annotation.Nullable;
-
-/** Encapsulates available {@link OutputFormatter}s and selection logic. */
-public class OutputFormatters {
-
-  private OutputFormatters() {}
-
-  /** Returns all available {@link OutputFormatter}s. */
-  public static ImmutableList<OutputFormatter> getDefaultFormatters() {
-    return ImmutableList.of(
-        new LabelOutputFormatter(false),
-        new LabelOutputFormatter(true),
-        new BuildOutputFormatter(),
-        new MinrankOutputFormatter(),
-        new MaxrankOutputFormatter(),
-        new PackageOutputFormatter(),
-        new LocationOutputFormatter(),
-        new GraphOutputFormatter(),
-        new XmlOutputFormatter(),
-        new ProtoOutputFormatter(),
-        new StreamedJSONProtoOutputFormatter(),
-        new StreamedProtoOutputFormatter());
-  }
-
-  /** Returns the names of all {@link OutputFormatter}s in the input. */
-  public static String formatterNames(Iterable<OutputFormatter> formatters) {
-    return Streams.stream(formatters).map(OutputFormatter::getName).collect(joining(", "));
-  }
-
-  /** Returns the name of all streaming {@link OutputFormatter}s in the input. */
-  public static String streamingFormatterNames(Iterable<OutputFormatter> formatters) {
-    return Streams.stream(formatters)
-        .filter(Predicates.instanceOf(StreamedFormatter.class))
-        .map(OutputFormatter::getName)
-        .collect(joining(", "));
-  }
-
-  /** Returns the {@link OutputFormatter} for the specified type. */
-  @Nullable
-  public static OutputFormatter getFormatter(Iterable<OutputFormatter> formatters, String type) {
-    for (OutputFormatter formatter : formatters) {
-      if (formatter.getName().equals(type)) {
-        return formatter;
-      }
+    /** Returns the names of all [OutputFormatter]s in the input.  */
+    fun formatterNames(formatters: Iterable<OutputFormatter?>): String? {
+        return Streams.stream<OutputFormatter?>(formatters).map<String?> { obj: OutputFormatter? -> obj!!.getName() }
+            .collect(Collectors.joining(", "))
     }
 
-    return null;
-  }
+    /** Returns the name of all streaming [OutputFormatter]s in the input.  */
+    fun streamingFormatterNames(formatters: Iterable<OutputFormatter?>): String? {
+        return Streams.stream<OutputFormatter?>(formatters)
+            .filter(Predicates.instanceOf<OutputFormatter?>(StreamedFormatter::class.java))
+            .map<String?> { obj: OutputFormatter? -> obj!!.getName() }
+            .collect(Collectors.joining(", "))
+    }
 
+    /** Returns the [OutputFormatter] for the specified type.  */
+    fun getFormatter(formatters: Iterable<OutputFormatter>, type: String?): OutputFormatter? {
+        for (formatter in formatters) {
+            if (formatter.getName() == type) {
+                return formatter
+            }
+        }
+
+        return null
+    }
 }

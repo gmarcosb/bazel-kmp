@@ -12,72 +12,83 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesValue
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.cmdline.RepositoryName
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.skyframe.SkyValue
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-
-/** The value for {@link ModuleExtensionRepoMappingEntriesFunction}. */
+/** The value for [ModuleExtensionRepoMappingEntriesFunction].  */
 @AutoCodec
-public record ModuleExtensionRepoMappingEntriesValue(
-    ImmutableMap<String, RepositoryName> entries, ModuleKey moduleKey) implements SkyValue {
-  public ModuleExtensionRepoMappingEntriesValue {
-    requireNonNull(entries, "entries");
-    requireNonNull(moduleKey, "moduleKey");
-  }
+class ModuleExtensionRepoMappingEntriesValue(
+    entries: com.google.common.collect.ImmutableMap<String?, RepositoryName?>?,
+    moduleKey: ModuleKey?
+) : SkyValue {
+    /**
+     * The [com.google.devtools.build.skyframe.SkyKey] of a [ ].
+     */
+    @AutoCodec
+    class Key protected constructor(arg: ModuleExtensionId?) : AbstractSkyKey<ModuleExtensionId?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES
+        }
 
-  @AutoCodec.Instantiator
-  public static ModuleExtensionRepoMappingEntriesValue create(
-      ImmutableMap<String, RepositoryName> entries, ModuleKey moduleKey) {
-    return new ModuleExtensionRepoMappingEntriesValue(entries, moduleKey);
-  }
+        override fun getSkyKeyInterner(): SkyKeyInterner<Key?> {
+            return com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesValue.Key.Companion.interner
+        }
 
-  public static ModuleExtensionRepoMappingEntriesValue.Key key(ModuleExtensionId id) {
-    return ModuleExtensionRepoMappingEntriesValue.Key.create(id);
-  }
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
 
-  /**
-   * The {@link com.google.devtools.build.skyframe.SkyKey} of a {@link
-   * ModuleExtensionRepoMappingEntriesValue}.
-   */
-  @AutoCodec
-  public static class Key extends AbstractSkyKey<ModuleExtensionId> {
+            private fun create(arg: ModuleExtensionId?): Key? {
+                return com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesValue.Key(arg)
+                )
+            }
 
-    private static final SkyKeyInterner<ModuleExtensionRepoMappingEntriesValue.Key> interner =
-        SkyKey.newInterner();
-
-    protected Key(ModuleExtensionId arg) {
-      super(arg);
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key? {
+                return com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
 
-    private static ModuleExtensionRepoMappingEntriesValue.Key create(ModuleExtensionId arg) {
-      return interner.intern(new ModuleExtensionRepoMappingEntriesValue.Key(arg));
+    val entries: com.google.common.collect.ImmutableMap<String?, RepositoryName?>?
+    val moduleKey: ModuleKey?
+
+    init {
+        this.moduleKey = moduleKey
+        this.entries = entries
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, RepositoryName?>?>(
+            entries,
+            "entries"
+        )
+        ModuleKey > java.util.Objects.requireNonNull<ModuleKey?>(moduleKey, "moduleKey")
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
-    }
+    companion object {
+        @AutoCodec.Instantiator
+        fun create(
+            entries: com.google.common.collect.ImmutableMap<String?, RepositoryName?>?, moduleKey: ModuleKey?
+        ): ModuleExtensionRepoMappingEntriesValue {
+            return ModuleExtensionRepoMappingEntriesValue(entries, moduleKey)
+        }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES;
+        fun key(id: ModuleExtensionId?): Key? {
+            return com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesValue.Key.Companion.create(
+                id
+            )
+        }
     }
-
-    @Override
-    public SkyKeyInterner<ModuleExtensionRepoMappingEntriesValue.Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
 }

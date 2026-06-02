@@ -83,7 +83,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
   public AbstractSandboxSpawnRunner(CommandEnvironment cmdEnv) {
     this.sandboxOptions = cmdEnv.getOptions().getOptions(SandboxOptions.class);
     this.verboseFailures =
-        cmdEnv.getOptions().getOptions(ExecutionOptions.class).getVerboseFailures();
+            cmdEnv.getOptions().getOptions(ExecutionOptions.class).verboseFailures;
     this.inaccessiblePaths =
         sandboxOptions.getInaccessiblePaths(cmdEnv.getRuntime().getFileSystem());
     this.binTools = cmdEnv.getBlazeWorkspace().getBinTools();
@@ -97,7 +97,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
   public final SpawnResult exec(Spawn spawn, SpawnExecutionContext context)
       throws ExecException, InterruptedException {
     ActionExecutionMetadata owner = spawn.getResourceOwner();
-    context.report(SpawnSchedulingEvent.create(getName()));
+    context.report(SpawnSchedulingEvent.create(name));
 
     try {
       try (SilentCloseable c = Profiler.instance().profile("context.prefetchInputs")) {
@@ -111,7 +111,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
               context.speculating()
                   ? ResourcePriority.DYNAMIC_STANDALONE
                   : ResourcePriority.LOCAL)) {
-        context.report(SpawnExecutingEvent.create(getName()));
+        context.report(SpawnExecutingEvent.create(name));
         SandboxedSpawn sandbox = prepareSpawn(spawn, context);
         return runSpawn(spawn, sandbox, context);
       }
@@ -159,7 +159,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
       context.lockOutputFiles(
           result.exitCode(),
           result.failureDetail() != null ? result.failureDetail().getMessage() : "",
-          context.getFileOutErr());
+              context.fileOutErr);
       try (SilentCloseable c = Profiler.instance().profile("sandbox.copyOutputs")) {
         // We copy the outputs even when the command failed.
         sandbox.copyOutputs(execRoot);
@@ -201,8 +201,8 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
 
     SpawnResult.Builder spawnResultBuilder = getSpawnResultBuilder(context);
 
-    FileOutErr outErr = context.getFileOutErr();
-    Duration timeout = context.getTimeout();
+    FileOutErr outErr = context.fileOutErr;
+    Duration timeout = context.timeout;
 
     SubprocessBuilder subprocessBuilder = new SubprocessBuilder(clientEnv);
     subprocessBuilder.setWorkingDirectory(sandbox.getSandboxExecRoot().getPathFile());
@@ -444,7 +444,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
 
   @Override
   public void cleanupSandboxBase(Path sandboxBase, TreeDeleter treeDeleter) throws IOException {
-    Path root = sandboxBase.getChild(getName());
+    Path root = sandboxBase.getChild(name);
     if (root.exists()) {
       for (Path child : root.getDirectoryEntries()) {
         treeDeleter.deleteTree(child);

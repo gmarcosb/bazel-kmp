@@ -273,9 +273,9 @@ public final class ConcurrentFifoTest {
 
     // Verifies that append adds a wrapper to the task.
     var wrappedTask = (ElementWithSkippedAppends) queue.getQueueForTesting()[0];
-    assertThat(wrappedTask.element()).isEqualTo(task0);
+    assertThat(wrappedTask.element).isEqualTo(task0);
     // Verifies that the skip count is 1.
-    assertThat(wrappedTask.skippedAppendCount()).isEqualTo(1);
+    assertThat(wrappedTask.skippedAppendCount).isEqualTo(1);
 
     // Verifies that append in fact skips to the next index and appends there.
     assertThat(queue.getQueueForTesting()[1]).isEqualTo(task1);
@@ -292,8 +292,8 @@ public final class ConcurrentFifoTest {
 
     // Verifies that the skip count has been incremented to 2.
     wrappedTask = (ElementWithSkippedAppends) queue.getQueueForTesting()[0];
-    assertThat(wrappedTask.element()).isEqualTo(task0);
-    assertThat(wrappedTask.skippedAppendCount()).isEqualTo(2);
+    assertThat(wrappedTask.element).isEqualTo(task0);
+    assertThat(wrappedTask.skippedAppendCount).isEqualTo(2);
     // Verifies that the append actually skipped to the next index.
     assertThat(queue.getQueueForTesting()[1]).isEqualTo(task2);
 
@@ -302,9 +302,9 @@ public final class ConcurrentFifoTest {
     // Take skips to the task in the next position when it observes the wrapper.
     assertThat(queue.take()).isEqualTo(task2);
     wrappedTask = (ElementWithSkippedAppends) queue.getQueueForTesting()[0];
-    assertThat(wrappedTask.element()).isEqualTo(task0);
+    assertThat(wrappedTask.element).isEqualTo(task0);
     // Take decrements the skip counter.
-    assertThat(wrappedTask.skippedAppendCount()).isEqualTo(1);
+    assertThat(wrappedTask.skippedAppendCount).isEqualTo(1);
     // Verifies that it took the task in the next position out of the queue.
     assertThat(queue.getQueueForTesting()[1]).isNull();
 

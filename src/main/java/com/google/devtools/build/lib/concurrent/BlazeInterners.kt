@@ -11,54 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.base.MoreObjects.firstNonNull;
+import java.util.concurrent.ConcurrentHashMap
 
-import com.google.common.collect.Interner;
-import com.google.common.collect.Interners;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+/** Wrapper around [Interners], with Blaze-specific predetermined concurrency levels.  */
+object BlazeInterners {
+    private val DEFAULT_CONCURRENCY_LEVEL: Int = java.lang.Runtime.getRuntime().availableProcessors()
+    private val CONCURRENCY_LEVEL: Int
 
-/** Wrapper around {@link Interners}, with Blaze-specific predetermined concurrency levels. */
-public class BlazeInterners {
-  private static final int DEFAULT_CONCURRENCY_LEVEL = Runtime.getRuntime().availableProcessors();
-  private static final int CONCURRENCY_LEVEL;
-
-  static {
-    String val = System.getenv("BLAZE_INTERNER_CONCURRENCY_LEVEL");
-    CONCURRENCY_LEVEL = (val == null) ? DEFAULT_CONCURRENCY_LEVEL : Integer.parseInt(val);
-  }
-
-  public static int concurrencyLevel() {
-    return CONCURRENCY_LEVEL;
-  }
-
-  /**
-   * Creates an interner which retains a weak reference to each instance it has interned.
-   *
-   * <p>It is preferred to use {@code SkyKey#SkyKeyInterner} instead for interning {@code SkyKey}
-   * types.
-   */
-  public static <T> Interner<T> newWeakInterner() {
-    return Interners.newBuilder().concurrencyLevel(CONCURRENCY_LEVEL).weak().build();
-  }
-
-  public static <T> Interner<T> newStrongInterner() {
-    return new StrongInterner<>();
-  }
-
-  /**
-   * Interner based on {@link ConcurrentHashMap}, which offers faster lookups than Guava's strong
-   * interner.
-   */
-  private static final class StrongInterner<T> implements Interner<T> {
-    private final Map<T, T> map = new ConcurrentHashMap<>(CONCURRENCY_LEVEL);
-
-    @Override
-    public T intern(T sample) {
-      T existing = map.putIfAbsent(sample, sample);
-      return firstNonNull(existing, sample);
+    init {
+        val `val`: String? = java.lang.System.getenv("BLAZE_INTERNER_CONCURRENCY_LEVEL")
+        com.google.devtools.build.lib.concurrent.BlazeInterners.CONCURRENCY_LEVEL =
+            if (`val` == null) com.google.devtools.build.lib.concurrent.BlazeInterners.DEFAULT_CONCURRENCY_LEVEL else java.lang.Integer.parseInt(
+                `val`
+            )
     }
-  }
+
+    @kotlin.jvm.JvmStatic
+    fun concurrencyLevel(): Int {
+        return com.google.devtools.build.lib.concurrent.BlazeInterners.CONCURRENCY_LEVEL
+    }
+
+    /**
+     * Creates an interner which retains a weak reference to each instance it has interned.
+     * 
+     * 
+     * It is preferred to use `SkyKey#SkyKeyInterner` instead for interning `SkyKey`
+     * types.
+     */
+    @kotlin.jvm.JvmStatic
+    fun <T> newWeakInterner(): com.google.common.collect.Interner<T?> {
+        return com.google.common.collect.Interners.newBuilder()
+            .concurrencyLevel(com.google.devtools.build.lib.concurrent.BlazeInterners.CONCURRENCY_LEVEL).weak()
+            .build<T?>()
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun <T> newStrongInterner(): com.google.common.collect.Interner<T?> {
+        return com.google.devtools.build.lib.concurrent.BlazeInterners.StrongInterner<T?>()
+    }
+
+    /**
+     * Interner based on [ConcurrentHashMap], which offers faster lookups than Guava's strong
+     * interner.
+     */
+    private class StrongInterner<T> : com.google.common.collect.Interner<T?> {
+        private val map: MutableMap<T?, T?> =
+            ConcurrentHashMap<T?, T?>(com.google.devtools.build.lib.concurrent.BlazeInterners.CONCURRENCY_LEVEL)
+
+        override fun intern(sample: T?): T? {
+            val existing: T? = map.putIfAbsent(sample, sample)
+            return com.google.common.base.MoreObjects.firstNonNull<T?>(existing, sample)
+        }
+    }
 }

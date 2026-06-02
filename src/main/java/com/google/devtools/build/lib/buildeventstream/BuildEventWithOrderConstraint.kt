@@ -11,20 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import java.util.Collection;
-
-/** Interface for {@link BuildEvent}s with order constraints. */
-public interface BuildEventWithOrderConstraint extends BuildEvent {
-  /**
-   * Specify events that need to come first.
-   *
-   * <p>Specify events by their {@link BuildEventId} that need to be posted on the build event
-   * stream before this event. In doing so, the event promises that the events to be waited for are
-   * already generated, so that the event does not have to be buffered for an extended time.
-   */
-  Collection<BuildEventId> postedAfter();
+/** Interface for [BuildEvent]s with order constraints.  */
+interface BuildEventWithOrderConstraint : BuildEvent {
+    /**
+     * Specify events that need to come first.
+     * 
+     * 
+     * Specify events by their [BuildEventId] that need to be posted on the build event
+     * stream before this event. In doing so, the event promises that the events to be waited for are
+     * already generated, so that the event does not have to be buffered for an extended time.
+     */
+    fun postedAfter(): MutableCollection<BuildEventId?>?
 }

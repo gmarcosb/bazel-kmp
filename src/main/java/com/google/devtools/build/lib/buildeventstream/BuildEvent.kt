@@ -11,176 +11,168 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
-
-import static com.google.devtools.build.lib.actions.FileArtifactValue.RUNFILES_TREE_MARKER;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.util.HashCodes;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.Collection;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.FileArtifactValue.RUNFILES_TREE_MARKER
 
 /**
  * Interface for objects that can be posted on the public event stream.
- *
- * <p>Objects posted on the build-event stream will implement this interface. This allows
+ * 
+ * 
+ * Objects posted on the build-event stream will implement this interface. This allows
  * pass-through of events, as well as proper chaining of events.
  */
-public interface BuildEvent extends ChainableEvent, ExtendedEventHandler.Postable {
+interface BuildEvent : ChainableEvent, com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    /**
+     * A local file that is referenced by the build event. These can be uploaded to a separate backend
+     * storage.
+     * 
+     * 
+     * Despite the name, it is possible that a `LocalFile` is already stored remotely. If
+     * [.artifactMetadata] [FileArtifactValue.isRemote], the upload may be skipped.
+     */
+    class LocalFile(
+        path: com.google.devtools.build.lib.vfs.Path?,
+        type: LocalFileType?,
+        compression: LocalFileCompression?,
+        artifactMetadata: FileArtifactValue?
+    ) {
+        /**
+         * The type of the local file. This is used by uploaders to determine how long to store the
+         * associated files for.
+         */
+        enum class LocalFileType {
+            OUTPUT_FILE,
+            OUTPUT_DIRECTORY,
+            OUTPUT_SYMLINK,
+            SUCCESSFUL_TEST_OUTPUT,
+            FAILED_TEST_OUTPUT,
+            COVERAGE_OUTPUT,
+            QUERY_OUTPUT,
+            STDOUT,
+            STDERR,
+            LOG,
+            PERFORMANCE_LOG;
 
-  /**
-   * A local file that is referenced by the build event. These can be uploaded to a separate backend
-   * storage.
-   *
-   * <p>Despite the name, it is possible that a {@code LocalFile} is already stored remotely. If
-   * {@link #artifactMetadata} {@link FileArtifactValue#isRemote}, the upload may be skipped.
-   */
-  final class LocalFile {
+            val isOutput: Boolean
+                /** Returns whether the LocalFile is a declared action output.  */
+                get() = this == LocalFileType.OUTPUT_FILE || this == LocalFileType.OUTPUT_DIRECTORY || this == LocalFileType.OUTPUT_SYMLINK
+
+            companion object {
+                /**
+                 * Returns the [LocalFileType] implied by a [FileArtifactValue], or the associated
+                 * [Artifact] if metadata is not available.
+                 */
+                fun forArtifact(
+                    artifact: Artifact, metadata: FileArtifactValue?
+                ): LocalFileType {
+                    if (metadata != null) {
+                        if (metadata.equals(RUNFILES_TREE_MARKER)) {
+                            // TODO(tjgq): Remove RUNFILES_TREE_MARKER in favor of RunfilesProxyArtifactValue,
+                            // which would make this special case unnecessary.
+                            return LocalFileType.OUTPUT_DIRECTORY
+                        }
+                        return when (metadata.getType()) {
+                            DIRECTORY -> LocalFileType.OUTPUT_DIRECTORY
+                            SYMLINK -> LocalFileType.OUTPUT_SYMLINK
+                            else -> LocalFileType.OUTPUT_FILE
+                        }
+                    }
+                    if (artifact.isDirectory()) {
+                        return LocalFileType.OUTPUT_DIRECTORY
+                    } else if (artifact.isSymlink()) {
+                        return LocalFileType.OUTPUT_SYMLINK
+                    }
+                    return LocalFileType.OUTPUT_FILE
+                }
+            }
+        }
+
+        /** Indicates the type of compression the local file should have.  */
+        enum class LocalFileCompression {
+            NONE,
+            GZIP,
+        }
+
+        @kotlin.jvm.JvmField
+        val path: com.google.devtools.build.lib.vfs.Path
+        @kotlin.jvm.JvmField
+        val type: LocalFileType
+        val compression: LocalFileCompression
+        val artifactMetadata: FileArtifactValue?
+
+        constructor(
+            path: com.google.devtools.build.lib.vfs.Path?,
+            type: LocalFileType?,
+            artifactMetadata: FileArtifactValue?
+        ) : this(path, type, LocalFileCompression.NONE, artifactMetadata)
+
+        init {
+            this.path = com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.Path>(path)
+            this.type = com.google.common.base.Preconditions.checkNotNull<LocalFileType>(type)
+            this.compression = com.google.common.base.Preconditions.checkNotNull<LocalFileCompression>(compression)
+            this.artifactMetadata = artifactMetadata
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is LocalFile) {
+                return false
+            }
+            return path == o.path
+                    && type == o.type && compression == o.compression && com.google.common.base.Objects.equal(
+                artifactMetadata,
+                o.artifactMetadata
+            )
+        }
+
+        override fun hashCode(): Int {
+            return HashCodes.hashObjects(path, type, compression, artifactMetadata)
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("path", path)
+                .add("type", type)
+                .add("compression", compression)
+                .add("artifactMetadata", artifactMetadata)
+                .toString()
+        }
+    }
 
     /**
-     * The type of the local file. This is used by uploaders to determine how long to store the
-     * associated files for.
+     * Returns a list of files that are referenced in the protobuf representation returned by [ ][.asStreamProto].
+     * 
+     * 
+     * This method is different from `EventReportingArtifacts#reportedArtifacts()` in that it
+     * only returns files directly referenced in the protobuf returned by [ ][.asStreamProto].
+     * 
+     * 
+     * Note the consistency requirement - you must not attempt to pass Path objects to the [ ] unless you have returned a corresponding [LocalFile] object here.
      */
-    public enum LocalFileType {
-      OUTPUT_FILE,
-      OUTPUT_DIRECTORY,
-      OUTPUT_SYMLINK,
-      SUCCESSFUL_TEST_OUTPUT,
-      FAILED_TEST_OUTPUT,
-      COVERAGE_OUTPUT,
-      QUERY_OUTPUT,
-      STDOUT,
-      STDERR,
-      LOG,
-      PERFORMANCE_LOG;
-
-      /** Returns whether the LocalFile is a declared action output. */
-      public boolean isOutput() {
-        return this == OUTPUT_FILE || this == OUTPUT_DIRECTORY || this == OUTPUT_SYMLINK;
-      }
-
-      /**
-       * Returns the {@link LocalFileType} implied by a {@link FileArtifactValue}, or the associated
-       * {@link Artifact} if metadata is not available.
-       */
-      public static LocalFileType forArtifact(
-          Artifact artifact, @Nullable FileArtifactValue metadata) {
-        if (metadata != null) {
-          if (metadata.equals(RUNFILES_TREE_MARKER)) {
-            // TODO(tjgq): Remove RUNFILES_TREE_MARKER in favor of RunfilesProxyArtifactValue,
-            // which would make this special case unnecessary.
-            return LocalFileType.OUTPUT_DIRECTORY;
-          }
-          return switch (metadata.getType()) {
-            case DIRECTORY -> LocalFileType.OUTPUT_DIRECTORY;
-            case SYMLINK -> LocalFileType.OUTPUT_SYMLINK;
-            default -> LocalFileType.OUTPUT_FILE;
-          };
-        }
-        if (artifact.isDirectory()) {
-          return LocalFileType.OUTPUT_DIRECTORY;
-        } else if (artifact.isSymlink()) {
-          return LocalFileType.OUTPUT_SYMLINK;
-        }
-        return LocalFileType.OUTPUT_FILE;
-      }
+    fun referencedLocalFiles(): MutableCollection<LocalFile?>? {
+        return com.google.common.collect.ImmutableList.of<LocalFile?>()
     }
 
-    /** Indicates the type of compression the local file should have. */
-    public enum LocalFileCompression {
-      NONE,
-      GZIP,
+    /**
+     * Returns a collection of URI futures corresponding to in-flight file uploads.
+     * 
+     * 
+     * The files here are considered "remote" in that they may not correspond to on-disk files.
+     */
+    fun remoteUploads(): MutableCollection<com.google.common.util.concurrent.ListenableFuture<String?>?>? {
+        return com.google.common.collect.ImmutableList.of<com.google.common.util.concurrent.ListenableFuture<String?>?>()
     }
 
-    public final Path path;
-    public final LocalFileType type;
-    public final LocalFileCompression compression;
-    @Nullable public final FileArtifactValue artifactMetadata;
-
-    public LocalFile(Path path, LocalFileType type, @Nullable FileArtifactValue artifactMetadata) {
-      this(path, type, LocalFileCompression.NONE, artifactMetadata);
-    }
-
-    public LocalFile(
-        Path path,
-        LocalFileType type,
-        LocalFileCompression compression,
-        @Nullable FileArtifactValue artifactMetadata) {
-      this.path = Preconditions.checkNotNull(path);
-      this.type = Preconditions.checkNotNull(type);
-      this.compression = Preconditions.checkNotNull(compression);
-      this.artifactMetadata = artifactMetadata;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof LocalFile that)) {
-        return false;
-      }
-      return path.equals(that.path)
-          && type == that.type
-          && compression == that.compression
-          && Objects.equal(artifactMetadata, that.artifactMetadata);
-    }
-
-    @Override
-    public int hashCode() {
-      return HashCodes.hashObjects(path, type, compression, artifactMetadata);
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("path", path)
-          .add("type", type)
-          .add("compression", compression)
-          .add("artifactMetadata", artifactMetadata)
-          .toString();
-    }
-  }
-
-  /**
-   * Returns a list of files that are referenced in the protobuf representation returned by {@link
-   * #asStreamProto(BuildEventContext)}.
-   *
-   * <p>This method is different from {@code EventReportingArtifacts#reportedArtifacts()} in that it
-   * only returns files directly referenced in the protobuf returned by {@link
-   * #asStreamProto(BuildEventContext)}.
-   *
-   * <p>Note the consistency requirement - you must not attempt to pass Path objects to the {@link
-   * PathConverter} unless you have returned a corresponding {@link LocalFile} object here.
-   */
-  default Collection<LocalFile> referencedLocalFiles() {
-    return ImmutableList.of();
-  }
-
-  /**
-   * Returns a collection of URI futures corresponding to in-flight file uploads.
-   *
-   * <p>The files here are considered "remote" in that they may not correspond to on-disk files.
-   */
-  default Collection<ListenableFuture<String>> remoteUploads() {
-    return ImmutableList.of();
-  }
-
-  /**
-   * Provide a binary representation of the event.
-   *
-   * <p>Provide a presentation of the event according to the specified binary format, as appropriate
-   * protocol buffer.
-   */
-  BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext context)
-      throws InterruptedException;
+    /**
+     * Provide a binary representation of the event.
+     * 
+     * 
+     * Provide a presentation of the event according to the specified binary format, as appropriate
+     * protocol buffer.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun asStreamProto(context: BuildEventContext?): BuildEvent?
 }

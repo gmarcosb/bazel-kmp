@@ -798,7 +798,7 @@ final class AspectFunction implements SkyFunction {
       StarlarkAspectClass starlarkAspectClass, BzlLoadValue bzlLoadValue)
       throws AspectCreationException {
     Label extensionLabel = starlarkAspectClass.getExtensionLabel();
-    String starlarkValueName = starlarkAspectClass.getExportedName();
+    String starlarkValueName = starlarkAspectClass.exportedName;
     Object starlarkValue = bzlLoadValue.getModule().getGlobal(starlarkValueName);
     if (!(starlarkValue instanceof StarlarkDefinedAspect)) {
       throw new AspectCreationException(
@@ -846,7 +846,7 @@ final class AspectFunction implements SkyFunction {
     // TODO: b/370558813 - Use AutoExecGroupsMode for aspects, as well.
     ImmutableMap<String, Attribute> aspectAttributes = aspectDefinition.getAttributes();
     if (aspectAttributes.containsKey("$use_auto_exec_groups")) {
-      return (boolean) aspectAttributes.get("$use_auto_exec_groups").getDefaultValueUnchecked();
+      return (boolean) aspectAttributes.get("$use_auto_exec_groups").defaultValueUnchecked;
     }
     return configuration.useAutoExecGroups();
   }

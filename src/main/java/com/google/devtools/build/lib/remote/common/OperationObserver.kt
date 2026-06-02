@@ -11,16 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import com.google.longrunning.Operation;
-import java.io.IOException;
+import com.google.longrunning.Operation
 
-/** Receives {@link Operation} updates from an stream of messages. */
-public interface OperationObserver {
-  /** Receives a value from the stream. */
-  void onNext(Operation o) throws IOException;
+/** Receives [Operation] updates from an stream of messages.  */
+interface OperationObserver {
+    /** Receives a value from the stream.  */
+    @Throws(IOException::class)
+    fun onNext(o: Operation?)
 
-  /** A no-op implementation */
-  OperationObserver NO_OP = o -> {};
+    companion object {
+        /** A no-op implementation  */
+        val NO_OP: OperationObserver = OperationObserver { o: Operation? -> }
+    }
 }

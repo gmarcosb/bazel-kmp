@@ -11,462 +11,485 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import static com.google.devtools.build.lib.analysis.AspectResolutionHelpers.computeAttributeAspects;
-import static com.google.devtools.build.lib.analysis.AspectResolutionHelpers.computePropagatingAspects;
-import static com.google.devtools.build.lib.analysis.AspectResolutionHelpers.computeToolchainsAspects;
-import static com.google.devtools.build.lib.analysis.producers.DependencyError.isSecondErrorMoreImportant;
-import static java.util.Arrays.asList;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.analysis.DependencyKind;
-import com.google.devtools.build.lib.analysis.config.DependencyEvaluationException;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionCollector;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.ImmutableSortedKeyListMultimap;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.MaterializingDefault;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Type.LabelClass;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.util.OrderedSetMultimap;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Map;
-import java.util.TreeMap;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.analysis.AspectResolutionHelpers.computeAttributeAspects
 
 /**
  * Computes the full multimap of prerequisite values from a multimap of labels.
- *
- * <p>This class creates a child {@link DependencyProducer} for each ({@link DependencyKind}, {@link
- * Label}) multimap entry and collects the results. It outputs a multimap with the same entries,
- * replacing {@link Label} values with the corresponding computed {@link ConfiguredTargetAndData}
+ * 
+ * 
+ * This class creates a child [DependencyProducer] for each ([DependencyKind], [ ]) multimap entry and collects the results. It outputs a multimap with the same entries,
+ * replacing [Label] values with the corresponding computed [ConfiguredTargetAndData]
  * dependency values.
  */
-public final class DependencyMapProducer implements StateMachine, DependencyProducer.ResultSink {
-  /** Receiver for output of {@link DependencyMapProducer}. */
-  public interface ResultSink extends TransitionCollector {
-    void acceptDependencyMap(OrderedSetMultimap<DependencyKind, ConfiguredTargetAndData> value);
+class DependencyMapProducer(
+    parameters: PrerequisiteParameters,
+    dependencyLabels: OrderedSetMultimap<DependencyKind, com.google.devtools.build.lib.cmdline.Label?>,
+    sink: ResultSink
+) : StateMachine, com.google.devtools.build.lib.analysis.producers.DependencyProducer.ResultSink {
+    /** Receiver for output of [DependencyMapProducer].  */
+    interface ResultSink : TransitionCollector {
+        fun acceptDependencyMap(value: OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>?)
 
-    void acceptMaterializerTargets(
-        OrderedSetMultimap<DependencyKind, ConfiguredTargetAndData> value);
+        fun acceptMaterializerTargets(
+            value: OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>?
+        )
 
-    void acceptDependencyMapError(DependencyError error);
+        fun acceptDependencyMapError(error: DependencyError?)
 
-    void acceptDependencyMapError(MissingEdgeError error);
-  }
-
-  // -------------------- Input --------------------
-  private final PrerequisiteParameters parameters;
-  private final OrderedSetMultimap<DependencyKind, Label> dependencyLabels;
-
-  // -------------------- Output --------------------
-  private final ResultSink sink;
-
-  // -------------------- Internal State --------------------
-  /**
-   * This buffer receives results from child {@link DependencyProducer}s.
-   *
-   * <p>The indices break down the result by the following.
-   *
-   * <ol>
-   *   <li>The entries of {@link #dependencyLabels}.
-   *   <li>The configurations for that entry (more than one if there is a split transition).
-   * </ol>
-   *
-   * <p>It would not be straightforward to replace this with a {@link OrderedSetMultimap} because
-   * the child {@link DependencyProducer}s complete in an arbitrary order and the ordering of {@link
-   * #dependencyLabels} must be preserved. Additionally, this is a fairly hot codepath and the
-   * additional overhead of maps would consume significant resources.
-   */
-  private final ConfiguredTargetAndData[][] results;
-
-  private OrderedSetMultimap<DependencyKind, ConfiguredTargetAndData> materializerTargets;
-
-  private ImmutableMultimap<Aspect, String> computedAttributeAspects;
-  private ImmutableMultimap<Aspect, Label> computedToolchainsAspects;
-
-  private DependencyError lastError;
-
-  public DependencyMapProducer(
-      PrerequisiteParameters parameters,
-      OrderedSetMultimap<DependencyKind, Label> dependencyLabels,
-      ResultSink sink) {
-    this.parameters = parameters;
-    this.dependencyLabels = dependencyLabels;
-    this.sink = sink;
-    this.results = new ConfiguredTargetAndData[dependencyLabels.size()][];
-    this.computedAttributeAspects = null;
-    this.computedToolchainsAspects = null;
-  }
-
-  private static boolean isForDependencyResolution(DependencyKind dependencyKind) {
-    if (dependencyKind.getAttribute() == null) {
-      return false;
+        fun acceptDependencyMapError(error: MissingEdgeError?)
     }
 
-    return dependencyKind.getAttribute().isForDependencyResolution();
-  }
+    // -------------------- Input --------------------
+    private val parameters: PrerequisiteParameters
+    private val dependencyLabels: OrderedSetMultimap<DependencyKind, com.google.devtools.build.lib.cmdline.Label?>
 
-  private ImmutableMap<String, Object> computePrerequisitesForMaterializer(
-      Rule rule, ImmutableSortedKeyListMultimap<String, ConfiguredTargetAndData> dependencyMap) {
-    Map<String, Object> result = new TreeMap<>();
+    // -------------------- Output --------------------
+    private val sink: ResultSink
 
-    for (Attribute attribute : rule.getAttributes()) {
-      if (attribute.getType().getLabelClass() != LabelClass.DEPENDENCY
-          || !attribute.isForDependencyResolution()) {
-        continue;
-      }
+    // -------------------- Internal State --------------------
+    /**
+     * This buffer receives results from child [DependencyProducer]s.
+     * 
+     * 
+     * The indices break down the result by the following.
+     * 
+     * 
+     *  1. The entries of [.dependencyLabels].
+     *  1. The configurations for that entry (more than one if there is a split transition).
+     * 
+     * 
+     * 
+     * It would not be straightforward to replace this with a [OrderedSetMultimap] because
+     * the child [DependencyProducer]s complete in an arbitrary order and the ordering of [ ][.dependencyLabels] must be preserved. Additionally, this is a fairly hot codepath and the
+     * additional overhead of maps would consume significant resources.
+     */
+    private val results: Array<Array<ConfiguredTargetAndData?>?>
 
-      result.put(
-          attribute.getName(),
-          Lists.transform(
-              dependencyMap.get(attribute.getName()),
-              ConfiguredTargetAndData::getConfiguredTarget));
+    private var materializerTargets: OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>? = null
+
+    private var computedAttributeAspects: com.google.common.collect.ImmutableMultimap<Aspect?, String?>?
+    private var computedToolchainsAspects: com.google.common.collect.ImmutableMultimap<Aspect?, com.google.devtools.build.lib.cmdline.Label?>?
+
+    private var lastError: DependencyError? = null
+
+    init {
+        this.parameters = parameters
+        this.dependencyLabels = dependencyLabels
+        this.sink = sink
+        this.results = arrayOfNulls<Array<ConfiguredTargetAndData?>>(dependencyLabels.size())
+        this.computedAttributeAspects = null
+        this.computedToolchainsAspects = null
     }
 
-    return ImmutableMap.copyOf(result);
-  }
+    private fun computePrerequisitesForMaterializer(
+        rule: com.google.devtools.build.lib.packages.Rule,
+        dependencyMap: ImmutableSortedKeyListMultimap<String?, ConfiguredTargetAndData?>
+    ): com.google.common.collect.ImmutableMap<String?, Any?> {
+        val result: MutableMap<String?, Any?> = TreeMap<String?, Any?>()
 
-  /** An exception thrown if a materializer cannot be evaluated. */
-  public static class MaterializerException extends Exception {
-
-    private MaterializerException(String message, Exception cause) {
-      super(message, cause);
-    }
-
-    /** This one says "on attribute" because attribute materializers are "on attributes". */
-    public static MaterializerException materializerAttributeException(
-        Attribute attribute, Label label, String message, Exception cause) {
-      return new MaterializerException(
-          String.format(
-              "Error while evaluating materializer on attribute '%s' of target '%s': %s",
-              attribute.getPublicName(), label, message),
-          cause);
-    }
-
-    /** This one says "in attribute" because materializer targets are "in attributes". */
-    public static MaterializerException materializerRuleException(
-        Attribute attribute, Label label, String message, Exception cause) {
-      return new MaterializerException(
-          String.format(
-              "Error while evaluating materializer target in attribute '%s' of target '%s': %s",
-              attribute.getPublicName(), label, message),
-          cause);
-    }
-  }
-
-  @Nullable
-  private ImmutableList<Label> getMaterializationResultMaybe(DependencyKind kind)
-      throws InterruptedException {
-    if (kind.getAttribute() == null) {
-      return null;
-    }
-
-    if (!kind.getAttribute().isMaterializing()) {
-      return null;
-    }
-
-    // By this point, we know the attribute is a materializingDefault. Compute the attributes
-    // available to it...
-    ImmutableSortedKeyListMultimap<String, ConfiguredTargetAndData> attrs = createMaterializerMap();
-    ImmutableMap<String, Object> prerequisitesForMaterializer =
-        computePrerequisitesForMaterializer(parameters.associatedRule(), attrs);
-
-    // ...then invoke the function,
-    MaterializingDefault<?, ?> materializingDefault = kind.getAttribute().getMaterializer();
-    Object materializerResult;
-    try {
-      materializerResult =
-          materializingDefault.resolve(
-              parameters.associatedRule(),
-              parameters.attributeMap(),
-              prerequisitesForMaterializer,
-              parameters.eventHandler());
-    } catch (EvalException e) {
-      parameters.eventHandler().handle(Event.error(parameters.location(), e.getMessageWithStack()));
-      acceptDependencyError(
-          DependencyError.of(
-              MaterializerException.materializerAttributeException(
-                  kind.getAttribute(), parameters.label(), e.getMessage(), e)));
-      return null;
-    }
-
-    // ...then return its return value as the value of the attribute.
-    if (kind.getAttribute().getType() == BuildType.LABEL) {
-      return materializerResult == null
-          ? ImmutableList.of()
-          : ImmutableList.of(BuildType.LABEL.cast(materializerResult));
-    } else if (kind.getAttribute().getType() == BuildType.LABEL_LIST) {
-      return ImmutableList.copyOf(BuildType.LABEL_LIST.cast(materializerResult));
-    } else {
-      throw new IllegalStateException("bad value returned from materializingDefault");
-    }
-  }
-
-  private class MaterializedDependencySink implements DependencyProducer.ResultSink {
-    private int remaining;
-    private final int resultsIndex;
-    // The outer array is for the individual labels the materializer returns, the inner array is for
-    // the different configurations in case the attribute has a split transition
-    private final ConfiguredTargetAndData[][] materializationResults;
-
-    private MaterializedDependencySink(int resultsIndex, int labelCount) {
-      this.resultsIndex = resultsIndex;
-      this.remaining = labelCount;
-      this.materializationResults = new ConfiguredTargetAndData[labelCount][];
-    }
-
-    @Override
-    public void acceptTransition(
-        DependencyKind kind, Label label, ConfigurationTransition transition) {
-      DependencyMapProducer.this.acceptTransition(kind, label, transition);
-    }
-
-    @Override
-    public void acceptDependencyValues(int index, ConfiguredTargetAndData[] values) {
-      materializationResults[index] = values;
-      if (--remaining > 0) {
-        // More dependencies to come
-        return;
-      }
-
-      // "results" is an array of arrays: for each (dependency kind, label) pair, it contains an
-      // array with a dependency for each configuration in a split transition. Materializers abuse
-      // this mechanism by putting all configured targets returned by a materializer into the second
-      // array because it cannot be known how many of them there are before "results" is created.
-      // This means that if a materializer has a split configuration, we need to do a level of
-      // flattening here.
-      results[resultsIndex] =
-          Arrays.stream(materializationResults)
-              .flatMap(Arrays::stream)
-              .toArray(ConfiguredTargetAndData[]::new);
-    }
-
-    @Override
-    public void acceptMaterializerTarget(
-        DependencyKind dependencyKind, ConfiguredTargetAndData target) {
-      DependencyMapProducer.this.acceptMaterializerTarget(dependencyKind, target);
-    }
-
-    @Override
-    public void acceptDependencyError(DependencyError error) {
-      DependencyMapProducer.this.acceptDependencyError(error);
-    }
-
-    @Override
-    public void acceptDependencyError(MissingEdgeError error) {
-      DependencyMapProducer.this.acceptDependencyError(error);
-    }
-  }
-
-  private StateMachine attributeResolutionStep(
-      Tasks tasks, boolean forMaterializers, StateMachine next) throws InterruptedException {
-    int index = 0;
-    for (Map.Entry<DependencyKind, Collection<Label>> entry : dependencyLabels.asMap().entrySet()) {
-      var kind = entry.getKey();
-      boolean forDependencyResolution = isForDependencyResolution(kind);
-      boolean skip = forMaterializers != forDependencyResolution;
-
-      // Only call materializer when materialization results are ready
-      ImmutableList<Label> materializationResults =
-          forMaterializers ? null : getMaterializationResultMaybe(kind);
-
-      // The list of aspects is evaluated here to be done once per attribute, rather than once per
-      // dependency.
-      ImmutableList<Aspect> aspects =
-          skip
-              ? null
-              : computePropagatingAspects(
-                  kind,
-                  parameters.aspects(),
-                  this.computedAttributeAspects,
-                  this.computedToolchainsAspects,
-                  parameters.associatedRule(),
-                  parameters.baseTargetToolchainContexts());
-      for (var label : entry.getValue()) {
-        int currentIndex = index++;
-        if (skip) {
-          continue;
-        }
-
-        if (materializationResults != null) {
-          // DependencyResolver should have left this as null
-          Preconditions.checkState(label == null);
-
-          if (materializationResults.isEmpty()) {
-            results[currentIndex] = new ConfiguredTargetAndData[] {};
-          } else {
-            MaterializedDependencySink sink =
-                new MaterializedDependencySink(currentIndex, materializationResults.size());
-            for (int i = 0; i < materializationResults.size(); i++) {
-              tasks.enqueue(
-                  new DependencyProducer(
-                      parameters,
-                      kind,
-                      materializationResults.get(i),
-                      aspects,
-                      sink,
-                      /* originatingMaterializerTarget= */ null,
-                      i));
+        for (attribute in rule.getAttributes()) {
+            if (attribute.getType().getLabelClass() != LabelClass.DEPENDENCY
+                || !attribute.isForDependencyResolution()
+            ) {
+                continue
             }
-          }
-        } else if (label != null) {
-          tasks.enqueue(
-              new DependencyProducer(
-                  parameters,
-                  kind,
-                  label,
-                  aspects,
-                  (DependencyProducer.ResultSink) this,
-                  /* originatingMaterializerTarget= */ null,
-                  currentIndex));
+
+            result.put(
+                attribute.getName(),
+                com.google.common.collect.Lists.transform<ConfiguredTargetAndData?, ConfiguredTarget?>(
+                    dependencyMap.get(attribute.getName()),
+                    com.google.common.base.Function { obj: ConfiguredTargetAndData? -> obj.getConfiguredTarget() })
+            )
         }
-      }
+
+        return com.google.common.collect.ImmutableMap.copyOf<String?, Any?>(result)
     }
 
-    return next;
-  }
+    /** An exception thrown if a materializer cannot be evaluated.  */
+    class MaterializerException private constructor(message: String?, cause: java.lang.Exception?) :
+        java.lang.Exception(message, cause) {
+        companion object {
+            /** This one says "on attribute" because attribute materializers are "on attributes".  */
+            fun materializerAttributeException(
+                attribute: com.google.devtools.build.lib.packages.Attribute,
+                label: com.google.devtools.build.lib.cmdline.Label?,
+                message: String?,
+                cause: java.lang.Exception?
+            ): MaterializerException {
+                return MaterializerException(
+                    String.format(
+                        "Error while evaluating materializer on attribute '%s' of target '%s': %s",
+                        attribute.getPublicName(), label, message
+                    ),
+                    cause
+                )
+            }
 
-  @Override
-  public StateMachine step(Tasks tasks) throws InterruptedException {
-    try {
-      computeAspectPropagationEdges();
-    } catch (EvalException e) {
-      parameters.eventHandler().handle(Event.error(parameters.location(), e.getMessageWithStack()));
-      acceptDependencyError(
-          DependencyError.of(new DependencyEvaluationException(e, parameters.location())));
-      return DONE;
-    }
-    return attributeResolutionStep(tasks, true, this::evaluateMaterializersIfNeeded);
-  }
-
-  private StateMachine evaluateMaterializersIfNeeded(Tasks tasks) throws InterruptedException {
-    return attributeResolutionStep(tasks, false, this::buildAndEmitResult);
-  }
-
-  /** Computes the aspects' propagation attribute names and toolchain types. */
-  private void computeAspectPropagationEdges() throws InterruptedException, EvalException {
-    if (parameters.aspects().isEmpty()) {
-      return;
-    }
-
-    this.computedAttributeAspects =
-        computeAttributeAspects(
-            parameters.aspects(),
-            parameters.target(),
-            parameters.attributeMap(),
-            this.dependencyLabels,
-            parameters.eventHandler());
-    this.computedToolchainsAspects =
-        computeToolchainsAspects(
-            parameters.aspects(),
-            parameters.target(),
-            parameters.attributeMap(),
-            this.dependencyLabels,
-            parameters.eventHandler());
-  }
-
-  @Override
-  public void acceptDependencyValues(int index, ConfiguredTargetAndData[] values) {
-    results[index] = values;
-  }
-
-  @Override
-  public void acceptMaterializerTarget(
-      DependencyKind dependencyKind, ConfiguredTargetAndData target) {
-
-    // Lazily allocate since materializers should be relatively rare.
-    if (materializerTargets == null) {
-      materializerTargets = new OrderedSetMultimap<>();
-    }
-    materializerTargets.put(dependencyKind, target);
-  }
-
-  @Override
-  public void acceptDependencyError(DependencyError error) {
-    emitErrorIfMostImportant(error);
-  }
-
-  @Override
-  public void acceptDependencyError(MissingEdgeError error) {
-    sink.acceptDependencyMapError(error);
-  }
-
-  @Override
-  public void acceptTransition(
-      DependencyKind kind, Label label, ConfigurationTransition transition) {
-    sink.acceptTransition(kind, label, transition);
-  }
-
-  @SuppressWarnings("MultimapKeys")
-  private ImmutableSortedKeyListMultimap<String, ConfiguredTargetAndData> createMaterializerMap() {
-    var result = ImmutableSortedKeyListMultimap.<String, ConfiguredTargetAndData>builder();
-    int i = 0;
-    // It's correct to call .keys() here: it's called once for every entry in the map (not just for
-    // every key), which is what's needed to keep in sync with the array in 'results'.
-    for (DependencyKind kind : dependencyLabels.keys()) {
-      ConfiguredTargetAndData[] deps = results[i++];
-      if (deps == null) {
-        continue;
-      }
-
-      Attribute attribute = kind.getAttribute();
-      if (attribute == null) {
-        continue;
-      }
-
-      // An empty `result` means the entry is skipped due to a missing exec group.
-      if (deps.length > 0) {
-        result.putAll(attribute.getName(), asList(deps));
-      }
+            /** This one says "in attribute" because materializer targets are "in attributes".  */
+            fun materializerRuleException(
+                attribute: com.google.devtools.build.lib.packages.Attribute,
+                label: com.google.devtools.build.lib.cmdline.Label?,
+                message: String?,
+                cause: java.lang.Exception?
+            ): MaterializerException {
+                return MaterializerException(
+                    String.format(
+                        "Error while evaluating materializer target in attribute '%s' of target '%s': %s",
+                        attribute.getPublicName(), label, message
+                    ),
+                    cause
+                )
+            }
+        }
     }
 
-    return result.build();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun getMaterializationResultMaybe(kind: DependencyKind): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.cmdline.Label?>? {
+        if (kind.getAttribute() == null) {
+            return null
+        }
 
-  @SuppressWarnings("MultimapKeys")
-  private StateMachine buildAndEmitResult(Tasks tasks) {
-    if (lastError != null || parameters.transitiveState().hasRootCause()) {
-      return DONE; // There was an error.
+        if (!kind.getAttribute().isMaterializing()) {
+            return null
+        }
+
+        // By this point, we know the attribute is a materializingDefault. Compute the attributes
+        // available to it...
+        val attrs: ImmutableSortedKeyListMultimap<String?, ConfiguredTargetAndData?> = createMaterializerMap()
+        val prerequisitesForMaterializer: com.google.common.collect.ImmutableMap<String?, Any?> =
+            computePrerequisitesForMaterializer(parameters.associatedRule(), attrs)
+
+        // ...then invoke the function,
+        val materializingDefault: MaterializingDefault<*, *> = kind.getAttribute().getMaterializer()
+        val materializerResult: Any?
+        try {
+            materializerResult =
+                materializingDefault.resolve(
+                    parameters.associatedRule(),
+                    parameters.attributeMap(),
+                    prerequisitesForMaterializer,
+                    parameters.eventHandler()
+                )
+        } catch (e: net.starlark.java.eval.EvalException) {
+            parameters.eventHandler().handle(
+                com.google.devtools.build.lib.events.Event.error(
+                    parameters.location(),
+                    e.getMessageWithStack()
+                )
+            )
+            acceptDependencyError(
+                DependencyError.Companion.of(
+                    MaterializerException.Companion.materializerAttributeException(
+                        kind.getAttribute(), parameters.label(), e.message, e
+                    )
+                )
+            )
+            return null
+        }
+
+        // ...then return its return value as the value of the attribute.
+        if (kind.getAttribute().getType() === BuildType.LABEL) {
+            return if (materializerResult == null)
+                com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.cmdline.Label?>()
+            else
+                com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.cmdline.Label?>(
+                    BuildType.LABEL.cast(
+                        materializerResult
+                    )
+                )
+        } else if (kind.getAttribute().getType() === BuildType.LABEL_LIST) {
+            return com.google.common.collect.ImmutableList.copyOf<com.google.devtools.build.lib.cmdline.Label?>(
+                BuildType.LABEL_LIST.cast(materializerResult)
+            )
+        } else {
+            throw java.lang.IllegalStateException("bad value returned from materializingDefault")
+        }
     }
 
-    var output = new OrderedSetMultimap<DependencyKind, ConfiguredTargetAndData>();
-    int i = 0;
-    // It's correct to call .keys() here: it's called once for every entry in the map (not just for
-    // every key), which is what's needed to keep in sync with the array in 'results'.
-    for (DependencyKind kind : dependencyLabels.keys()) {
-      ConfiguredTargetAndData[] result = results[i++];
-      if (result == null) {
-        return DONE; // There was an error.
-      }
-      // An empty `result` means the entry is skipped due to a missing exec group.
-      if (result.length > 0) {
-        output.putAll(kind, asList(result));
-      }
+    private inner class MaterializedDependencySink(private val resultsIndex: Int, private var remaining: Int) :
+        com.google.devtools.build.lib.analysis.producers.DependencyProducer.ResultSink {
+        // The outer array is for the individual labels the materializer returns, the inner array is for
+        // the different configurations in case the attribute has a split transition
+        private val materializationResults: Array<Array<ConfiguredTargetAndData?>?>
+
+        init {
+            this.materializationResults = arrayOfNulls<Array<ConfiguredTargetAndData?>>(remaining)
+        }
+
+        public override fun acceptTransition(
+            kind: DependencyKind?,
+            label: com.google.devtools.build.lib.cmdline.Label?,
+            transition: ConfigurationTransition?
+        ) {
+            this@DependencyMapProducer.acceptTransition(kind, label, transition)
+        }
+
+        override fun acceptDependencyValues(index: Int, values: Array<ConfiguredTargetAndData?>?) {
+            materializationResults[index] = values
+            if (--remaining > 0) {
+                // More dependencies to come
+                return
+            }
+
+            // "results" is an array of arrays: for each (dependency kind, label) pair, it contains an
+            // array with a dependency for each configuration in a split transition. Materializers abuse
+            // this mechanism by putting all configured targets returned by a materializer into the second
+            // array because it cannot be known how many of them there are before "results" is created.
+            // This means that if a materializer has a split configuration, we need to do a level of
+            // flattening here.
+            results[resultsIndex] =
+                java.util.Arrays.stream<Array<ConfiguredTargetAndData?>?>(materializationResults)
+                    .flatMap<ConfiguredTargetAndData?> { array: Array<ConfiguredTargetAndData?>? ->
+                        java.util.Arrays.stream(
+                            array
+                        )
+                    }
+                    .toArray<ConfiguredTargetAndData?> { _Dummy_.__Array__() }
+        }
+
+        override fun acceptMaterializerTarget(
+            dependencyKind: DependencyKind?, target: ConfiguredTargetAndData?
+        ) {
+            this@DependencyMapProducer.acceptMaterializerTarget(dependencyKind, target)
+        }
+
+        override fun acceptDependencyError(error: DependencyError) {
+            this@DependencyMapProducer.acceptDependencyError(error)
+        }
+
+        override fun acceptDependencyError(error: MissingEdgeError?) {
+            this@DependencyMapProducer.acceptDependencyError(error)
+        }
     }
 
-    sink.acceptDependencyMap(output);
-    sink.acceptMaterializerTargets(materializerTargets);
-    return DONE;
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun attributeResolutionStep(
+        tasks: StateMachine.Tasks, forMaterializers: Boolean, next: StateMachine
+    ): StateMachine {
+        var index = 0
+        for (entry in dependencyLabels.asMap().entries) {
+            val kind: DependencyKind = entry.key
+            val forDependencyResolution = isForDependencyResolution(kind)
+            val skip = forMaterializers != forDependencyResolution
 
-  private void emitErrorIfMostImportant(DependencyError error) {
-    if (lastError == null || isSecondErrorMoreImportant(lastError, error)) {
-      lastError = error;
-      sink.acceptDependencyMapError(error);
+            // Only call materializer when materialization results are ready
+            val materializationResults: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.cmdline.Label?>? =
+                if (forMaterializers) null else getMaterializationResultMaybe(kind)
+
+            // The list of aspects is evaluated here to be done once per attribute, rather than once per
+            // dependency.
+            val aspects: com.google.common.collect.ImmutableList<Aspect?>? =
+                if (skip)
+                    null
+                else
+                    computePropagatingAspects(
+                        kind,
+                        parameters.aspects(),
+                        this.computedAttributeAspects,
+                        this.computedToolchainsAspects,
+                        parameters.associatedRule(),
+                        parameters.baseTargetToolchainContexts()
+                    )
+            for (label in entry.value) {
+                val currentIndex = index++
+                if (skip) {
+                    continue
+                }
+
+                if (materializationResults != null) {
+                    // DependencyResolver should have left this as null
+                    com.google.common.base.Preconditions.checkState(label == null)
+
+                    if (materializationResults.isEmpty()) {
+                        results[currentIndex] = arrayOf<ConfiguredTargetAndData?>()
+                    } else {
+                        val sink =
+                            MaterializedDependencySink(currentIndex, materializationResults.size)
+                        for (i in materializationResults.indices) {
+                            tasks.enqueue(
+                                DependencyProducer(
+                                    parameters,
+                                    kind,
+                                    materializationResults.get(i),
+                                    aspects,
+                                    sink,  /* originatingMaterializerTarget= */
+                                    null,
+                                    i
+                                )
+                            )
+                        }
+                    }
+                } else if (label != null) {
+                    tasks.enqueue(
+                        DependencyProducer(
+                            parameters,
+                            kind,
+                            label,
+                            aspects,
+                            this as com.google.devtools.build.lib.analysis.producers.DependencyProducer.ResultSink,  /* originatingMaterializerTarget= */
+                            null,
+                            currentIndex
+                        )
+                    )
+                }
+            }
+        }
+
+        return next
     }
-  }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun step(tasks: StateMachine.Tasks): StateMachine {
+        try {
+            computeAspectPropagationEdges()
+        } catch (e: net.starlark.java.eval.EvalException) {
+            parameters.eventHandler().handle(
+                com.google.devtools.build.lib.events.Event.error(
+                    parameters.location(),
+                    e.getMessageWithStack()
+                )
+            )
+            acceptDependencyError(
+                DependencyError.Companion.of(DependencyEvaluationException(e, parameters.location()))
+            )
+            return StateMachine.DONE
+        }
+        return attributeResolutionStep(
+            tasks,
+            true,
+            StateMachine { tasks: StateMachine.Tasks? -> this.evaluateMaterializersIfNeeded(tasks) })
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun evaluateMaterializersIfNeeded(tasks: StateMachine.Tasks): StateMachine {
+        return attributeResolutionStep(
+            tasks,
+            false,
+            StateMachine { tasks: StateMachine.Tasks? -> this.buildAndEmitResult(tasks) })
+    }
+
+    /** Computes the aspects' propagation attribute names and toolchain types.  */
+    @Throws(java.lang.InterruptedException::class, net.starlark.java.eval.EvalException::class)
+    private fun computeAspectPropagationEdges() {
+        if (parameters.aspects().isEmpty()) {
+            return
+        }
+
+        this.computedAttributeAspects =
+            computeAttributeAspects(
+                parameters.aspects(),
+                parameters.target(),
+                parameters.attributeMap(),
+                this.dependencyLabels,
+                parameters.eventHandler()
+            )
+        this.computedToolchainsAspects =
+            computeToolchainsAspects(
+                parameters.aspects(),
+                parameters.target(),
+                parameters.attributeMap(),
+                this.dependencyLabels,
+                parameters.eventHandler()
+            )
+    }
+
+    override fun acceptDependencyValues(index: Int, values: Array<ConfiguredTargetAndData?>?) {
+        results[index] = values
+    }
+
+    override fun acceptMaterializerTarget(
+        dependencyKind: DependencyKind?, target: ConfiguredTargetAndData?
+    ) {
+        // Lazily allocate since materializers should be relatively rare.
+
+        if (materializerTargets == null) {
+            materializerTargets = OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>()
+        }
+        materializerTargets.put(dependencyKind, target)
+    }
+
+    override fun acceptDependencyError(error: DependencyError) {
+        emitErrorIfMostImportant(error)
+    }
+
+    override fun acceptDependencyError(error: MissingEdgeError?) {
+        sink.acceptDependencyMapError(error)
+    }
+
+    public override fun acceptTransition(
+        kind: DependencyKind?, label: com.google.devtools.build.lib.cmdline.Label?, transition: ConfigurationTransition?
+    ) {
+        sink.acceptTransition(kind, label, transition)
+    }
+
+    private fun createMaterializerMap(): ImmutableSortedKeyListMultimap<String?, ConfiguredTargetAndData?> {
+        val result: com.google.devtools.build.lib.collect.ImmutableSortedKeyListMultimap.Builder<String?, ConfiguredTargetAndData?> =
+            ImmutableSortedKeyListMultimap.builder<String?, ConfiguredTargetAndData?>()
+        var i = 0
+        // It's correct to call .keys() here: it's called once for every entry in the map (not just for
+        // every key), which is what's needed to keep in sync with the array in 'results'.
+        for (kind in dependencyLabels.keys()) {
+            val deps: Array<ConfiguredTargetAndData?>? = results[i++]
+            if (deps == null) {
+                continue
+            }
+
+            val attribute: com.google.devtools.build.lib.packages.Attribute? = kind.getAttribute()
+            if (attribute == null) {
+                continue
+            }
+
+            // An empty `result` means the entry is skipped due to a missing exec group.
+            if (deps.size > 0) {
+                result.putAll(attribute.getName(), java.util.Arrays.asList<ConfiguredTargetAndData?>(*deps))
+            }
+        }
+
+        return result.build()
+    }
+
+    private fun buildAndEmitResult(tasks: StateMachine.Tasks?): StateMachine {
+        if (lastError != null || parameters.transitiveState().hasRootCause()) {
+            return StateMachine.DONE // There was an error.
+        }
+
+        val output: OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?> =
+            OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>()
+        var i = 0
+        // It's correct to call .keys() here: it's called once for every entry in the map (not just for
+        // every key), which is what's needed to keep in sync with the array in 'results'.
+        for (kind in dependencyLabels.keys()) {
+            val result: Array<ConfiguredTargetAndData?>? = results[i++]
+            if (result == null) {
+                return StateMachine.DONE // There was an error.
+            }
+            // An empty `result` means the entry is skipped due to a missing exec group.
+            if (result.size > 0) {
+                output.putAll(kind, java.util.Arrays.asList<ConfiguredTargetAndData?>(*result))
+            }
+        }
+
+        sink.acceptDependencyMap(output)
+        sink.acceptMaterializerTargets(materializerTargets)
+        return StateMachine.DONE
+    }
+
+    private fun emitErrorIfMostImportant(error: DependencyError) {
+        if (lastError == null || DependencyError.Companion.isSecondErrorMoreImportant(lastError, error)) {
+            lastError = error
+            sink.acceptDependencyMapError(error)
+        }
+    }
+
+    companion object {
+        private fun isForDependencyResolution(dependencyKind: DependencyKind): Boolean {
+            if (dependencyKind.getAttribute() == null) {
+                return false
+            }
+
+            return dependencyKind.getAttribute().isForDependencyResolution()
+        }
+    }
 }

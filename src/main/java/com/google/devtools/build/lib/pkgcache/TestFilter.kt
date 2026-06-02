@@ -11,152 +11,149 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.packages.TestSize;
-import com.google.devtools.build.lib.packages.TestTimeout;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.packages.TargetUtils
+import com.google.devtools.build.lib.packages.TestSize
+import com.google.devtools.build.lib.packages.TestTimeout
+import com.google.devtools.build.lib.pkgcache.LoadingOptions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import java.util.HashSet
 
 /**
- * Predicate that implements test filtering using the command-line options in {@link
- * LoadingOptions}. Implements {@link #hashCode} and {@link #equals} so it can be used as a Skyframe
+ * Predicate that implements test filtering using the command-line options in [ ]. Implements [.hashCode] and [.equals] so it can be used as a Skyframe
  * key.
  */
 @AutoCodec
-public final class TestFilter implements com.google.common.base.Predicate<Target> {
-  private static final Predicate<Target> ALWAYS_TRUE = (t) -> true;
+class TestFilter @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization internal constructor(
+    testSizeFilterSet: com.google.common.collect.ImmutableSet<TestSize?>,
+    testTimeoutFilterSet: com.google.common.collect.ImmutableSet<TestTimeout?>,
+    testTagFilterList: com.google.common.collect.ImmutableList<String?>,
+    testLangFilterList: com.google.common.collect.ImmutableList<String>
+) : com.google.common.base.Predicate<com.google.devtools.build.lib.packages.Target?> {
+    private val testSizeFilterSet: com.google.common.collect.ImmutableSet<TestSize?>
+    private val testTimeoutFilterSet: com.google.common.collect.ImmutableSet<TestTimeout?>
+    private val testTagFilterList: com.google.common.collect.ImmutableList<String?>
+    private val testLangFilterList: com.google.common.collect.ImmutableList<String>
+    private val impl: java.util.function.Predicate<com.google.devtools.build.lib.packages.Target?>
 
-  /** Convert the options into a test filter. */
-  public static TestFilter forOptions(LoadingOptions options) {
-    return new TestFilter(
-        ImmutableSet.copyOf(options.getTestSizeFilterSet()),
-        ImmutableSet.copyOf(options.getTestTimeoutFilterSet()),
-        ImmutableList.copyOf(options.getTestTagFilterList()),
-        ImmutableList.copyOf(options.getTestLangFilterList()));
-  }
-
-  private final ImmutableSet<TestSize> testSizeFilterSet;
-  private final ImmutableSet<TestTimeout> testTimeoutFilterSet;
-  private final ImmutableList<String> testTagFilterList;
-  private final ImmutableList<String> testLangFilterList;
-  private final Predicate<Target> impl;
-
-  @VisibleForSerialization
-  TestFilter(
-      ImmutableSet<TestSize> testSizeFilterSet,
-      ImmutableSet<TestTimeout> testTimeoutFilterSet,
-      ImmutableList<String> testTagFilterList,
-      ImmutableList<String> testLangFilterList) {
-    this.testSizeFilterSet = testSizeFilterSet;
-    this.testTimeoutFilterSet = testTimeoutFilterSet;
-    this.testTagFilterList = testTagFilterList;
-    this.testLangFilterList = testLangFilterList;
-    Predicate<Target> testFilter = ALWAYS_TRUE;
-    if (!testSizeFilterSet.isEmpty()) {
-      testFilter = testFilter.and(testSizeFilter(testSizeFilterSet));
-    }
-    if (!testTimeoutFilterSet.isEmpty()) {
-      testFilter = testFilter.and(testTimeoutFilter(testTimeoutFilterSet));
-    }
-    if (!testTagFilterList.isEmpty()) {
-      testFilter = testFilter.and(TargetUtils.tagFilter(testTagFilterList));
-    }
-    if (!testLangFilterList.isEmpty()) {
-      testFilter = testFilter.and(testLangFilter(testLangFilterList));
-    }
-    impl = testFilter;
-  }
-
-  @Override
-  public boolean apply(@Nullable Target input) {
-    return impl.test(input);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(testSizeFilterSet, testTimeoutFilterSet, testTagFilterList,
-        testLangFilterList);
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (o == this) {
-      return true;
-    }
-    if (!(o instanceof TestFilter f)) {
-      return false;
-    }
-    return f.testSizeFilterSet.equals(testSizeFilterSet)
-        && f.testTimeoutFilterSet.equals(testTimeoutFilterSet)
-        && f.testTagFilterList.equals(testTagFilterList)
-        && f.testLangFilterList.equals(testLangFilterList);
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("testSizeFilterSet", testSizeFilterSet)
-        .add("testTimeoutFilterSet", testTimeoutFilterSet)
-        .add("testTagFilterList", testTagFilterList)
-        .add("testLangFilterList", testLangFilterList)
-        .toString();
-  }
-
-  /**
-   * Returns a predicate to be used for test size filtering, i.e., that only accepts tests of the
-   * given size.
-   */
-  @VisibleForTesting
-  public static Predicate<Target> testSizeFilter(final Set<TestSize> allowedSizes) {
-    return target ->
-        target instanceof Rule && allowedSizes.contains(TestSize.getTestSize((Rule) target));
-  }
-
-  /**
-   * Returns a predicate to be used for test timeout filtering, i.e., that only accepts tests of the
-   * given timeout.
-   */
-  @VisibleForTesting
-  public static Predicate<Target> testTimeoutFilter(final Set<TestTimeout> allowedTimeouts) {
-    return target ->
-        target instanceof Rule rule && allowedTimeouts.contains(TestTimeout.getTestTimeout(rule));
-  }
-
-  /**
-   * Returns a predicate to be used for test language filtering, i.e., that only accepts tests of
-   * the specified languages.
-   */
-  private static Predicate<Target> testLangFilter(List<String> langFilterList) {
-    final Set<String> requiredLangs = new HashSet<>();
-    final Set<String> excludedLangs = new HashSet<>();
-
-    for (String lang : langFilterList) {
-      if (lang.startsWith("-")) {
-        lang = lang.substring(1);
-        excludedLangs.add(lang);
-      } else {
-        requiredLangs.add(lang);
-      }
+    init {
+        this.testSizeFilterSet = testSizeFilterSet
+        this.testTimeoutFilterSet = testTimeoutFilterSet
+        this.testTagFilterList = testTagFilterList
+        this.testLangFilterList = testLangFilterList
+        var testFilter: java.util.function.Predicate<com.google.devtools.build.lib.packages.Target?> = ALWAYS_TRUE
+        if (!testSizeFilterSet.isEmpty()) {
+            testFilter = testFilter.and(testSizeFilter(testSizeFilterSet))
+        }
+        if (!testTimeoutFilterSet.isEmpty()) {
+            testFilter = testFilter.and(testTimeoutFilter(testTimeoutFilterSet))
+        }
+        if (!testTagFilterList.isEmpty()) {
+            testFilter = testFilter.and(TargetUtils.tagFilter(testTagFilterList))
+        }
+        if (!testLangFilterList.isEmpty()) {
+            testFilter = testFilter.and(testLangFilter(testLangFilterList))
+        }
+        impl = testFilter
     }
 
-    return rule -> {
-      String ruleLang = TargetUtils.getRuleLanguage(rule);
-      return (requiredLangs.isEmpty() || requiredLangs.contains(ruleLang))
-          && !excludedLangs.contains(ruleLang);
-    };
-  }
+    override fun apply(input: com.google.devtools.build.lib.packages.Target?): Boolean {
+        return impl.test(input)
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(
+            testSizeFilterSet, testTimeoutFilterSet, testTagFilterList,
+            testLangFilterList
+        )
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (o === this) {
+            return true
+        }
+        if (o !is TestFilter) {
+            return false
+        }
+        return o.testSizeFilterSet == testSizeFilterSet
+                && o.testTimeoutFilterSet == testTimeoutFilterSet
+                && o.testTagFilterList == testTagFilterList
+                && o.testLangFilterList == testLangFilterList
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("testSizeFilterSet", testSizeFilterSet)
+            .add("testTimeoutFilterSet", testTimeoutFilterSet)
+            .add("testTagFilterList", testTagFilterList)
+            .add("testLangFilterList", testLangFilterList)
+            .toString()
+    }
+
+    companion object {
+        private val ALWAYS_TRUE: java.util.function.Predicate<com.google.devtools.build.lib.packages.Target?> =
+            java.util.function.Predicate { t: com.google.devtools.build.lib.packages.Target? -> true }
+
+        /** Convert the options into a test filter.  */
+        fun forOptions(options: LoadingOptions): TestFilter {
+            return TestFilter(
+                com.google.common.collect.ImmutableSet.copyOf<TestSize?>(options.getTestSizeFilterSet()),
+                com.google.common.collect.ImmutableSet.copyOf<TestTimeout?>(options.getTestTimeoutFilterSet()),
+                com.google.common.collect.ImmutableList.copyOf<String?>(options.getTestTagFilterList()),
+                com.google.common.collect.ImmutableList.copyOf<String?>(options.getTestLangFilterList())
+            )
+        }
+
+        /**
+         * Returns a predicate to be used for test size filtering, i.e., that only accepts tests of the
+         * given size.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun testSizeFilter(allowedSizes: MutableSet<TestSize?>): java.util.function.Predicate<com.google.devtools.build.lib.packages.Target?> {
+            return java.util.function.Predicate { target: com.google.devtools.build.lib.packages.Target? ->
+                target is com.google.devtools.build.lib.packages.Rule && allowedSizes.contains(
+                    TestSize.Companion.getTestSize(target as com.google.devtools.build.lib.packages.Rule)
+                )
+            }
+        }
+
+        /**
+         * Returns a predicate to be used for test timeout filtering, i.e., that only accepts tests of the
+         * given timeout.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun testTimeoutFilter(allowedTimeouts: MutableSet<TestTimeout?>): java.util.function.Predicate<com.google.devtools.build.lib.packages.Target?> {
+            return java.util.function.Predicate { target: com.google.devtools.build.lib.packages.Target? ->
+                target is com.google.devtools.build.lib.packages.Rule && allowedTimeouts.contains(
+                    TestTimeout.Companion.getTestTimeout(target)
+                )
+            }
+        }
+
+        /**
+         * Returns a predicate to be used for test language filtering, i.e., that only accepts tests of
+         * the specified languages.
+         */
+        private fun testLangFilter(langFilterList: MutableList<String>): java.util.function.Predicate<com.google.devtools.build.lib.packages.Target?> {
+            val requiredLangs: MutableSet<String?> = HashSet<String?>()
+            val excludedLangs: MutableSet<String?> = HashSet<String?>()
+
+            for (lang in langFilterList) {
+                var lang = lang
+                if (lang.startsWith("-")) {
+                    lang = lang.substring(1)
+                    excludedLangs.add(lang)
+                } else {
+                    requiredLangs.add(lang)
+                }
+            }
+
+            return java.util.function.Predicate { rule: com.google.devtools.build.lib.packages.Target? ->
+                val ruleLang: String = TargetUtils.getRuleLanguage(rule)
+                (requiredLangs.isEmpty() || requiredLangs.contains(ruleLang))
+                        && !excludedLangs.contains(ruleLang)
+            }
+        }
+    }
 }

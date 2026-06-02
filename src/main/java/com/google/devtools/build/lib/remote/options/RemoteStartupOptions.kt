@@ -11,32 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.options
 
-package com.google.devtools.build.lib.remote.options;
-
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import com.google.devtools.common.options.*
 
 /**
- * Additional startup options provided by the {@link
- * com.google.devtools.build.lib.remote.RemoteModule}.
+ * Additional startup options provided by the [ ].
  */
 @OptionsClass
-public abstract class RemoteStartupOptions extends OptionsBase {
-  @Option(
-      name = "experimental_remote_repo_contents_cache",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.REMOTE,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          """
+abstract class RemoteStartupOptions : OptionsBase() {
+    @get:Option(
+        name = "experimental_remote_repo_contents_cache",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.REMOTE,
+        effectTags = [OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = """
           If enabled, the remote cache will be used to store the results of reproducible repository
           rules. If a repository rule needs to be evaluated and its result is already in the remote
           cache, the contents of the repository will be kept in an in-memory file system and are
           only downloaded when needed, either by Bazel itself or an action that runs locally.
-          """)
-  public abstract boolean getUseRemoteRepoContentsCache();
+          
+          """.trimIndent()
+    )
+    abstract val useRemoteRepoContentsCache: Boolean
 }

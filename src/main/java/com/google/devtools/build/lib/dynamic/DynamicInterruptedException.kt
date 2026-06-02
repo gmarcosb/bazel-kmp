@@ -11,12 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.dynamic
 
-package com.google.devtools.build.lib.dynamic;
-
-/** Signals that execution was interrupted by the dynamic scheduler. */
-public class DynamicInterruptedException extends InterruptedException {
-  DynamicInterruptedException(String message) {
-    super(message);
-  }
-}
+/** Signals that execution was interrupted by the dynamic scheduler.  */
+class DynamicInterruptedException internal constructor(message: String?) : InterruptedException(message)

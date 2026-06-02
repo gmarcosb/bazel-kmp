@@ -11,106 +11,109 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.includescanning;
+package com.google.devtools.build.lib.includescanning
 
-import com.google.devtools.build.lib.actions.EnvironmentalExecException;
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.includescanning.IncludeParser.Hints;
-import com.google.devtools.build.lib.packages.BuildFileNotFoundException;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.IncludeScanning;
-import com.google.devtools.build.lib.server.FailureDetails.IncludeScanning.Code;
-import com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.EnvironmentalExecException
+import java.lang.String
 
 /**
- * Creates a {@link IncludeParser.HintsRules} object. Done in Skyframe to track dependence on
+ * Creates a [IncludeParser.HintsRules] object. Done in Skyframe to track dependence on
  * INCLUDE_HINTS file.
  */
-public class IncludeHintsFunction implements SkyFunction {
-  // TODO(b/111722810): the action cache is not sensitive to changes in the INCLUDE_HINTS file, so
-  //  even though Skyframe handles changes, we may still not re-execute an affected action.
-  @SerializationConstant
-  public static final SkyKey INCLUDE_HINTS_KEY =
-      (SkyKey) () -> IncludeScanningSkyFunctions.INCLUDE_HINTS;
+class IncludeHintsFunction(hintsFile: PathFragment) : SkyFunction {
+    private val hintsFile: PathFragment
 
-  private final PathFragment hintsFile;
-
-  public IncludeHintsFunction(PathFragment hintsFile) {
-    this.hintsFile = hintsFile;
-  }
-
-  @Nullable
-  @Override
-  public IncludeParser.HintsRules compute(SkyKey skyKey, Environment env)
-      throws IncludeHintsFunctionException, InterruptedException {
-    Root hintsPackageRoot;
-    try {
-      ContainingPackageLookupValue hintsLookupValue =
-          (ContainingPackageLookupValue) env.getValueOrThrow(ContainingPackageLookupValue.key(
-              PackageIdentifier.createInMainRepo(hintsFile.getParentDirectory())),
-              IOException.class, BuildFileNotFoundException.class);
-      if (env.valuesMissing()) {
-        return null;
-      }
-      if (!hintsLookupValue.hasContainingPackage()) {
-        String reasonForNoContainingPackage = hintsLookupValue.getReasonForNoContainingPackage();
-        String message =
-            String.format(
-                "INCLUDE_HINTS file %s was not in a package%s",
-                hintsFile,
-                reasonForNoContainingPackage != null ? ": " + reasonForNoContainingPackage : "");
-        throw new IncludeHintsFunctionException(
-            new EnvironmentalExecException(
-                createFailureDetail(message, Code.INCLUDE_HINTS_FILE_NOT_IN_PACKAGE)));
-      }
-      hintsPackageRoot = hintsLookupValue.getContainingPackageRoot();
-      env.getValueOrThrow(FileValue.key(RootedPath.toRootedPath(hintsPackageRoot, hintsFile)),
-          IOException.class);
-    } catch (IOException | BuildFileNotFoundException e) {
-      throw new IncludeHintsFunctionException(
-          new EnvironmentalExecException(
-              e,
-              createFailureDetail(
-                  "could not read INCLUDE_HINTS file", Code.INCLUDE_HINTS_READ_FAILURE)));
+    init {
+        this.hintsFile = hintsFile
     }
-    if (env.valuesMissing()) {
-      return null;
-    }
-    try {
-      return Hints.getRules(hintsPackageRoot.getRelative(hintsFile));
-    } catch (IOException e) {
-      throw new IncludeHintsFunctionException(
-          new EnvironmentalExecException(
-              e,
-              createFailureDetail(
-                  "could not read INCLUDE_HINTS file", Code.INCLUDE_HINTS_READ_FAILURE)));
-    }
-  }
 
-  private static FailureDetail createFailureDetail(String message, Code detailedCode) {
-    return FailureDetail.newBuilder()
-        .setMessage(message)
-        .setIncludeScanning(IncludeScanning.newBuilder().setCode(detailedCode))
-        .build();
-  }
-
-  /**
-   * Used to declare the exception type that can be wrapped in the exception thrown by
-   * {@link IncludeHintsFunction#compute}.
-   */
-  private static final class IncludeHintsFunctionException extends SkyFunctionException {
-    IncludeHintsFunctionException(EnvironmentalExecException e) {
-      super(e, Transience.PERSISTENT);
+    @Throws(IncludeHintsFunctionException::class, InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: SkyFunction.Environment): HintsRules? {
+        val hintsPackageRoot: Root
+        try {
+            val hintsLookupValue: ContainingPackageLookupValue? =
+                env.getValueOrThrow<IOException?, BuildFileNotFoundException?>(
+                    ContainingPackageLookupValue.key(
+                        PackageIdentifier.createInMainRepo(hintsFile.getParentDirectory())
+                    ),
+                    IOException::class.java, BuildFileNotFoundException::class.java
+                ) as ContainingPackageLookupValue?
+            if (env.valuesMissing()) {
+                return null
+            }
+            if (!hintsLookupValue.hasContainingPackage()) {
+                val reasonForNoContainingPackage: String? = hintsLookupValue.getReasonForNoContainingPackage()
+                val message =
+                    String.format(
+                        "INCLUDE_HINTS file %s was not in a package%s",
+                        hintsFile,
+                        if (reasonForNoContainingPackage != null) ": " + reasonForNoContainingPackage else ""
+                    )
+                throw IncludeHintsFunctionException(
+                    EnvironmentalExecException(
+                        createFailureDetail(message, Code.INCLUDE_HINTS_FILE_NOT_IN_PACKAGE)
+                    )
+                )
+            }
+            hintsPackageRoot = hintsLookupValue.getContainingPackageRoot()
+            env.getValueOrThrow<E?>(
+                FileValue.key(RootedPath.toRootedPath(hintsPackageRoot, hintsFile)),
+                IOException::class.java
+            )
+        } catch (e: IOException) {
+            throw IncludeHintsFunctionException(
+                EnvironmentalExecException(
+                    e,
+                    createFailureDetail(
+                        "could not read INCLUDE_HINTS file", Code.INCLUDE_HINTS_READ_FAILURE
+                    )
+                )
+            )
+        } catch (e: BuildFileNotFoundException) {
+            throw IncludeHintsFunctionException(
+                EnvironmentalExecException(
+                    e,
+                    createFailureDetail(
+                        "could not read INCLUDE_HINTS file", Code.INCLUDE_HINTS_READ_FAILURE
+                    )
+                )
+            )
+        }
+        if (env.valuesMissing()) {
+            return null
+        }
+        try {
+            return Hints.Companion.getRules(hintsPackageRoot.getRelative(hintsFile))
+        } catch (e: IOException) {
+            throw IncludeHintsFunctionException(
+                EnvironmentalExecException(
+                    e,
+                    createFailureDetail(
+                        "could not read INCLUDE_HINTS file", Code.INCLUDE_HINTS_READ_FAILURE
+                    )
+                )
+            )
+        }
     }
-  }
+
+    /**
+     * Used to declare the exception type that can be wrapped in the exception thrown by
+     * [IncludeHintsFunction.compute].
+     */
+    private class IncludeHintsFunctionException(e: EnvironmentalExecException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
+
+    companion object {
+        // TODO(b/111722810): the action cache is not sensitive to changes in the INCLUDE_HINTS file, so
+        //  even though Skyframe handles changes, we may still not re-execute an affected action.
+        @SerializationConstant
+        val INCLUDE_HINTS_KEY: SkyKey = SkyKey { IncludeScanningSkyFunctions.INCLUDE_HINTS } as SkyKey
+
+        private fun createFailureDetail(message: kotlin.String?, detailedCode: Code?): FailureDetail {
+            return FailureDetail.newBuilder()
+                .setMessage(message)
+                .setIncludeScanning(IncludeScanning.newBuilder().setCode(detailedCode))
+                .build()
+        }
+    }
 }

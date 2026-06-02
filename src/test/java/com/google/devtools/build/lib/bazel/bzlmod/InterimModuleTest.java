@@ -36,7 +36,7 @@ public class InterimModuleTest {
                 .build()
                 .withDepsTransformed(
                     key ->
-                        createModuleKey(key.name() + "_new", key.version().getNormalized() + ".1")))
+                        createModuleKey(key.name + "_new", key.version().getNormalized() + ".1")))
         .isEqualTo(
             InterimModuleBuilder.create("", "")
                 .addDep("dep_foo", createModuleKey("foo_new", "1.0.1"))

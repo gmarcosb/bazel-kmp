@@ -11,26 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel;
+package com.google.devtools.build.lib.bazel
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.BlazeService;
+import com.google.devtools.build.lib.platform.PlatformNativeDepsServiceImpl
+import com.google.devtools.build.lib.profiler.SystemNetworkStatsServiceImpl
+import com.google.devtools.build.lib.profiler.TraceProfilerServiceImpl
+import com.google.devtools.build.lib.server.GrpcCommandServerServiceImpl
+import com.google.devtools.build.lib.skyframe.FsEventsNativeDepsServiceImpl
+import com.google.devtools.build.lib.starlarkprofiler.CpuProfilerServiceImpl
+import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl
+import com.google.devtools.build.lib.unix.ProcessUtilsServiceImpl
+import com.google.devtools.build.lib.util.ServerLogPathServiceImpl
 
-/** Services that are used in Bazel */
-@SuppressWarnings("UnnecessarilyFullyQualified") // Class names fully qualified for clarity.
-public final class BazelServices {
-
-  public static final ImmutableList<BlazeService> BAZEL_SERVICES =
-      ImmutableList.of(
-          new com.google.devtools.build.lib.skyframe.FsEventsNativeDepsServiceImpl(),
-          new com.google.devtools.build.lib.platform.PlatformNativeDepsServiceImpl(),
-          new com.google.devtools.build.lib.profiler.SystemNetworkStatsServiceImpl(),
-          new com.google.devtools.build.lib.profiler.TraceProfilerServiceImpl(),
-          new com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl(),
-          new com.google.devtools.build.lib.unix.ProcessUtilsServiceImpl(),
-          new com.google.devtools.build.lib.server.GrpcCommandServerServiceImpl(),
-          new com.google.devtools.build.lib.starlarkprofiler.CpuProfilerServiceImpl(),
-          new com.google.devtools.build.lib.util.ServerLogPathServiceImpl());
-
-  private BazelServices() {}
+/** Services that are used in Bazel  */
+// Class names fully qualified for clarity.
+object BazelServices {
+    @kotlin.jvm.JvmField
+    val BAZEL_SERVICES: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.runtime.BlazeService?> =
+        com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.runtime.BlazeService?>(
+            FsEventsNativeDepsServiceImpl(),
+            PlatformNativeDepsServiceImpl(),
+            SystemNetworkStatsServiceImpl(),
+            TraceProfilerServiceImpl(),
+            NativePosixFilesServiceImpl(),
+            ProcessUtilsServiceImpl(),
+            GrpcCommandServerServiceImpl(),
+            CpuProfilerServiceImpl(),
+            ServerLogPathServiceImpl()
+        )
 }

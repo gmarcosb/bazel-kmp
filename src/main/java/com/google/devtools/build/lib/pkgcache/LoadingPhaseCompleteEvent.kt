@@ -11,61 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * This event is fired after the loading phase is complete.
  */
-public final class LoadingPhaseCompleteEvent implements ExtendedEventHandler.Postable {
-  private final ImmutableSet<Label> labels;
-  private final ImmutableSet<Label> filteredLabels;
-  private final RepositoryMapping mainRepositoryMapping;
+class LoadingPhaseCompleteEvent(
+    labels: com.google.common.collect.ImmutableSet<Label?>?,
+    filteredLabels: com.google.common.collect.ImmutableSet<Label?>?,
+    mainRepositoryMapping: RepositoryMapping?
+) : Postable {
+    private val labels: com.google.common.collect.ImmutableSet<Label?>
+    private val filteredLabels: com.google.common.collect.ImmutableSet<Label?>
+    private val mainRepositoryMapping: RepositoryMapping
 
-  /**
-   * Construct the event.
-   *
-   * @param labels the set of active targets that remain
-   * @param filteredLabels the set of filtered targets
-   */
-  public LoadingPhaseCompleteEvent(
-      ImmutableSet<Label> labels,
-      ImmutableSet<Label> filteredLabels,
-      RepositoryMapping mainRepositoryMapping) {
-    this.labels = Preconditions.checkNotNull(labels);
-    this.filteredLabels = Preconditions.checkNotNull(filteredLabels);
-    this.mainRepositoryMapping = Preconditions.checkNotNull(mainRepositoryMapping);
-  }
+    /**
+     * Construct the event.
+     * 
+     * @param labels the set of active targets that remain
+     * @param filteredLabels the set of filtered targets
+     */
+    init {
+        this.labels =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSet<Label?>>(labels)
+        this.filteredLabels =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSet<Label?>>(
+                filteredLabels
+            )
+        this.mainRepositoryMapping =
+            com.google.common.base.Preconditions.checkNotNull<RepositoryMapping>(mainRepositoryMapping)
+    }
 
-  /**
-   * @return The set of active target labels remaining, which is a subset of the
-   *         targets we attempted to load.
-   */
-  public ImmutableSet<Label> getLabels() {
-    return labels;
-  }
+    /**
+     * @return The set of active target labels remaining, which is a subset of the
+     * targets we attempted to load.
+     */
+    fun getLabels(): com.google.common.collect.ImmutableSet<Label?> {
+        return labels
+    }
 
-  /**
-   * @return The set of filtered targets.
-   */
-  public ImmutableSet<Label> getFilteredLabels() {
-    return filteredLabels;
-  }
+    /**
+     * @return The set of filtered targets.
+     */
+    fun getFilteredLabels(): com.google.common.collect.ImmutableSet<Label?> {
+        return filteredLabels
+    }
 
-  /**
-   * @return The repository mapping of the main repository.
-   */
-  public RepositoryMapping getMainRepositoryMapping() {
-    return mainRepositoryMapping;
-  }
+    /**
+     * @return The repository mapping of the main repository.
+     */
+    fun getMainRepositoryMapping(): RepositoryMapping {
+        return mainRepositoryMapping
+    }
 
-  @Override
-  public boolean storeForReplay() {
-    return true;
-  }
+    public override fun storeForReplay(): Boolean {
+        return true
+    }
 }

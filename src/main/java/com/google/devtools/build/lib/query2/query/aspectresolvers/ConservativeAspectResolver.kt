@@ -11,58 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.query.aspectresolvers;
+package com.google.devtools.build.lib.query2.query.aspectresolvers
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.AspectDefinition;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.DependencyFilter;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import java.util.LinkedHashMap;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableMultimap
+import com.google.common.collect.ImmutableSetMultimap
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * An aspect resolver that overestimates the required aspect dependencies.
- *
- * <p>Does not need to load any packages other than the one containing the target being processed.
+ * 
+ * 
+ * Does not need to load any packages other than the one containing the target being processed.
  */
-public class ConservativeAspectResolver implements AspectResolver {
-  @Override
-  public ImmutableMap<Aspect, ImmutableMultimap<Attribute, Label>> computeAspectDependencies(
-      Target target, DependencyFilter dependencyFilter) {
-    if (!(target instanceof Rule rule)) {
-      return ImmutableMap.of();
-    }
-    if (!rule.hasAspects()) {
-      return ImmutableMap.of();
-    }
-
-    LinkedHashMap<Aspect, ImmutableMultimap<Attribute, Label>> results = new LinkedHashMap<>();
-
-    for (Attribute attribute : rule.getAttributes()) {
-      for (Aspect aspect : attribute.getAspects(rule)) {
-        ImmutableSetMultimap.Builder<Attribute, Label> attributeLabelsBuilder =
-            ImmutableSetMultimap.builder();
-        AspectDefinition.forEachLabelDepFromAllAttributesOfAspect(
-            aspect, dependencyFilter, attributeLabelsBuilder::put);
-        ImmutableSetMultimap<Attribute, Label> attributeLabels = attributeLabelsBuilder.build();
-        if (!attributeLabels.isEmpty()) {
-          results.put(aspect, attributeLabels);
+class ConservativeAspectResolver : AspectResolver {
+    override fun computeAspectDependencies(
+        target: Target?, dependencyFilter: DependencyFilter?
+    ): ImmutableMap<Aspect?, ImmutableMultimap<Attribute?, Label?>?> {
+        if (target !is Rule) {
+            return ImmutableMap.of<Aspect?, ImmutableMultimap<Attribute?, Label?>?>()
         }
-      }
+        if (!target.hasAspects()) {
+            return ImmutableMap.of<Aspect?, ImmutableMultimap<Attribute?, Label?>?>()
+        }
+
+        val results: LinkedHashMap<Aspect?, ImmutableMultimap<Attribute?, Label?>?> =
+            LinkedHashMap<Aspect?, ImmutableMultimap<Attribute?, Label?>?>()
+
+        for (attribute in target.getAttributes()) {
+            for (aspect in attribute.getAspects(target)) {
+                val attributeLabelsBuilder: ImmutableSetMultimap.Builder<Attribute?, Label?> =
+                    ImmutableSetMultimap.builder<Attribute?, Label?>()
+                AspectDefinition.forEachLabelDepFromAllAttributesOfAspect(
+                    aspect, dependencyFilter, attributeLabelsBuilder::put
+                )
+                val attributeLabels: ImmutableSetMultimap<Attribute?, Label?> = attributeLabelsBuilder.build()
+                if (!attributeLabels.isEmpty()) {
+                    results.put(aspect, attributeLabels)
+                }
+            }
+        }
+
+        return ImmutableMap.copyOf<Aspect?, ImmutableMultimap<Attribute?, Label?>?>(results)
     }
 
-    return ImmutableMap.copyOf(results);
-  }
-
-  @Override
-  public ImmutableList<Label> computeBuildFileDependencies(Target buildFile) {
-    // We do a conservative estimate precisely so that we don't depend on any other BUILD files.
-    return buildFile.getPackageDeclarations().getOrComputeTransitivelyLoadedStarlarkFiles();
-  }
+    override fun computeBuildFileDependencies(buildFile: Target): ImmutableList<Label?> {
+        // We do a conservative estimate precisely so that we don't depend on any other BUILD files.
+        return buildFile.getPackageDeclarations().getOrComputeTransitivelyLoadedStarlarkFiles()
+    }
 }

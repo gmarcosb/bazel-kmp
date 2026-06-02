@@ -11,120 +11,93 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.compat;
+package com.google.devtools.build.lib.query2.compat
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.License;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackagePiece;
-import com.google.devtools.build.lib.packages.Packageoid;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleVisibility;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetData;
-import java.util.Objects;
-import net.starlark.java.syntax.Location;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.cmdline.Label
+import java.util.*
 
 /**
  * A fake Target - Use only so that "blaze query" can report Load files as Targets.
  */
-public class FakeLoadTarget implements Target {
+class FakeLoadTarget(label: Label?, packageoidOfBuildFile: Packageoid) : Target {
+    private val label: Label
+    private val pkg: Packageoid
 
-  private final Label label;
-  private final Packageoid pkg;
-
-  /**
-   * @param packageoidOfBuildFile the {@link Packageoid} owning the package's BUILD file: in other
-   *     words, either a monolithic {@link Package} (under eager symbolic macro expansion), or a
-   *     {@link PackagePiece.ForBuildFile} (under lazy symbolic macro expansion).
-   */
-  public FakeLoadTarget(Label label, Packageoid packageoidOfBuildFile) {
-    this.label = Preconditions.checkNotNull(label);
-    Preconditions.checkNotNull(packageoidOfBuildFile);
-    Preconditions.checkArgument(
-        (packageoidOfBuildFile instanceof Package pkg && pkg.getBuildFile().getPackageoid() == pkg)
-            || packageoidOfBuildFile instanceof PackagePiece.ForBuildFile,
-        "%s must be either a monolithic package or a top-level package piece",
-        packageoidOfBuildFile);
-    this.pkg = packageoidOfBuildFile;
-  }
-
-  @Override
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public Packageoid getPackageoid() {
-    return pkg;
-  }
-
-  @Override
-  public Package.Metadata getPackageMetadata() {
-    return pkg.getMetadata();
-  }
-
-  @Override
-  public Package.Declarations getPackageDeclarations() {
-    return pkg.getDeclarations();
-  }
-
-  @Override
-  public String getTargetKind() {
-    return targetKind();
-  }
-
-  @Override
-  public Rule getAssociatedRule() {
-    return null;
-  }
-
-  @Override
-  public License getLicense() {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public Location getLocation() {
-    return getPackageMetadata().getBuildFileLocation();
-  }
-
-  @Override
-  public RuleVisibility getRawVisibility() {
-    return RuleVisibility.PUBLIC;
-  }
-
-  @Override
-  public boolean isConfigurable() {
-    return true;
-  }
-
-  @Override
-  public String toString() {
-    return label.toString();
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(label, pkg);
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (!(obj instanceof FakeLoadTarget other)) {
-      return false;
+    /**
+     * @param packageoidOfBuildFile the [Packageoid] owning the package's BUILD file: in other
+     * words, either a monolithic [Package] (under eager symbolic macro expansion), or a
+     * [PackagePiece.ForBuildFile] (under lazy symbolic macro expansion).
+     */
+    init {
+        this.label = Preconditions.checkNotNull<Label>(label)
+        Preconditions.checkNotNull<Any?>(packageoidOfBuildFile)
+        Preconditions.checkArgument(
+            (packageoidOfBuildFile is Package && packageoidOfBuildFile.getBuildFile()
+                .getPackageoid() === packageoidOfBuildFile)
+                    || packageoidOfBuildFile is ForBuildFile,
+            "%s must be either a monolithic package or a top-level package piece",
+            packageoidOfBuildFile
+        )
+        this.pkg = packageoidOfBuildFile
     }
-    return label.equals(other.label) && pkg.equals(other.pkg);
-  }
 
-  /** Returns the target kind for all fake sub-include targets. */
-  public static String targetKind() {
-    return "source file";
-  }
+    public override fun getLabel(): Label {
+        return label
+    }
 
-  @Override
-  public TargetData reduceForSerialization() {
-    throw new UnsupportedOperationException();
-  }
+    val packageoid: Packageoid
+        get() = pkg
+
+    val packageMetadata: Package.Metadata
+        get() = pkg.getMetadata()
+
+    val packageDeclarations: Package.Declarations
+        get() = pkg.getDeclarations()
+
+    val targetKind: String
+        get() = targetKind()
+
+    val associatedRule: Rule?
+        get() = null
+
+    val license: License?
+        get() {
+            throw UnsupportedOperationException()
+        }
+
+    val location: Location
+        get() = this.packageMetadata.getBuildFileLocation()
+
+    val rawVisibility: RuleVisibility
+        get() = RuleVisibility.PUBLIC
+
+    val isConfigurable: Boolean
+        get() = true
+
+    override fun toString(): String {
+        return label.toString()
+    }
+
+    override fun hashCode(): Int {
+        return Objects.hash(label, pkg)
+    }
+
+    override fun equals(obj: Any?): Boolean {
+        if (obj !is FakeLoadTarget) {
+            return false
+        }
+        return label.equals(obj.label) && pkg.equals(obj.pkg)
+    }
+
+    public override fun reduceForSerialization(): TargetData? {
+        throw UnsupportedOperationException()
+    }
+
+    companion object {
+        /** Returns the target kind for all fake sub-include targets.  */
+        fun targetKind(): String {
+            return "source file"
+        }
+    }
 }

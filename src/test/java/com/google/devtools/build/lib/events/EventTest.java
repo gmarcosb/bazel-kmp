@@ -227,12 +227,12 @@ public class EventTest {
     assertThat(eventWithProcessOutput.getProcessOutput()).isNotNull();
 
     assertThat(eventWithProcessOutput.getStdOut()).isEqualTo(stdout);
-    assertThat(eventWithProcessOutput.getProcessOutput().getStdOut()).isEqualTo(stdout);
-    assertThat(eventWithProcessOutput.getProcessOutput().getStdOutSize()).isEqualTo(stdout.length);
+    assertThat(eventWithProcessOutput.getProcessOutput().stdOut).isEqualTo(stdout);
+    assertThat(eventWithProcessOutput.getProcessOutput().stdOutSize).isEqualTo(stdout.length);
 
     assertThat(eventWithProcessOutput.getStdErr()).isEqualTo(stderr);
-    assertThat(eventWithProcessOutput.getProcessOutput().getStdErr()).isEqualTo(stderr);
-    assertThat(eventWithProcessOutput.getProcessOutput().getStdErrSize()).isEqualTo(stderr.length);
+    assertThat(eventWithProcessOutput.getProcessOutput().stdErr).isEqualTo(stderr);
+    assertThat(eventWithProcessOutput.getProcessOutput().stdErrSize).isEqualTo(stderr.length);
   }
 
   @Test

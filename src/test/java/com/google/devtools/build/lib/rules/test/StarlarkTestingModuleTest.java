@@ -90,7 +90,7 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
         """);
 
     ConfiguredTarget starlarkTarget = getConfiguredTarget("//examples/apple_starlark:my_target");
-    RunEnvironmentInfo provider = starlarkTarget.get(RunEnvironmentInfo.PROVIDER);
+    RunEnvironmentInfo provider = starlarkTarget.get(RunEnvironmentInfo.provider);
 
     assertThat(provider.getEnvironment().get("XCODE_VERSION_OVERRIDE")).isEqualTo("7.3.1");
   }
@@ -130,7 +130,7 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
 
     ConfiguredTarget starlarkTarget = getConfiguredTarget("//examples/apple_starlark:my_target");
     RunEnvironmentInfo provider =
-        (RunEnvironmentInfo) starlarkTarget.get(RunEnvironmentInfo.PROVIDER.getKey());
+        (RunEnvironmentInfo) starlarkTarget.get(RunEnvironmentInfo.provider.getKey());
 
     assertThat(provider.getEnvironment()).containsEntry("XCODE_VERSION_OVERRIDE", "7.3.1");
     assertThat(provider.getInheritedEnvironment()).contains("DEVELOPER_DIR");

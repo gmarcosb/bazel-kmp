@@ -11,26 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.skyframe.DetailedException
+import com.google.devtools.build.lib.util.DetailedExitCode
 
 /**
  * An exception indicating that there was a problem during the loading phase for one or more targets
  * in such a way that the build cannot proceed (for example because keep_going is disabled).
  */
-public class LoadingFailedException extends Exception implements DetailedException {
+class LoadingFailedException(message: String?, detailedExitCode: DetailedExitCode?) : java.lang.Exception(message),
+    DetailedException {
+    private val detailedExitCode: DetailedExitCode?
 
-  private final DetailedExitCode detailedExitCode;
+    init {
+        this.detailedExitCode = detailedExitCode
+    }
 
-  public LoadingFailedException(String message, DetailedExitCode detailedExitCode) {
-    super(message);
-    this.detailedExitCode = detailedExitCode;
-  }
-
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    override fun getDetailedExitCode(): DetailedExitCode? {
+        return detailedExitCode
+    }
 }

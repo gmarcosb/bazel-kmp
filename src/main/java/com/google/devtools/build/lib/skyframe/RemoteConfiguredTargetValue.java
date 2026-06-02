@@ -180,7 +180,7 @@ public sealed class RemoteConfiguredTargetValue
 
       Target target;
       try {
-        target = pkg.getTarget(label.getName());
+        target = pkg.getTarget(label.name);
       } catch (NoSuchTargetException e) {
         throw new IllegalStateException(
             "The target associated with " + configuredTarget + " was unexpectedly missing", e);

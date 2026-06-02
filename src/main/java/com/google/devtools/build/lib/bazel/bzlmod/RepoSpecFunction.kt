@@ -12,76 +12,66 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.server.FailureDetails
 
 /**
- * A simple SkyFunction that computes a {@link RepoSpec} for the given {@link InterimModule} by
- * fetching required information from its {@link Registry}.
+ * A simple SkyFunction that computes a [RepoSpec] for the given [InterimModule] by
+ * fetching required information from its [Registry].
  */
-public class RepoSpecFunction implements SkyFunction {
-  @Nullable private DownloadManager downloadManager;
+class RepoSpecFunction : SkyFunction {
+    private var downloadManager: DownloadManager? = null
 
-  @Override
-  @Nullable
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws InterruptedException, RepoSpecException {
-    RepoSpecKey key = (RepoSpecKey) skyKey.argument();
+    @Throws(java.lang.InterruptedException::class, RepoSpecException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val key: RepoSpecKey = skyKey.argument() as RepoSpecKey
 
-    Registry registry = (Registry) env.getValue(RegistryKey.create(key.registryUrl()));
-    if (registry == null) {
-      return null;
+        val registry: com.google.devtools.build.lib.bazel.bzlmod.Registry? =
+            env.getValue(com.google.devtools.build.lib.bazel.bzlmod.RegistryKey.Companion.create(key.registryUrl)) as com.google.devtools.build.lib.bazel.bzlmod.Registry?
+        if (registry == null) {
+            return null
+        }
+        val moduleFileValue: ModuleFileValue? =
+            env.getValue(ModuleFileValue.Companion.key(key.moduleKey)) as ModuleFileValue?
+        if (moduleFileValue == null) {
+            return null
+        }
+
+        val downloadEvents: com.google.devtools.build.lib.events.StoredEventHandler =
+            com.google.devtools.build.lib.events.StoredEventHandler()
+        val repoSpec: RepoSpec?
+        try {
+            com.google.devtools.build.lib.profiler.Profiler.instance()
+                .profile(
+                    com.google.devtools.build.lib.profiler.ProfilerTask.BZLMOD,
+                    java.util.function.Supplier { "compute repo spec: " + key.moduleKey }).use { c ->
+                    repoSpec =
+                        registry.getRepoSpec(
+                            key.moduleKey,
+                            moduleFileValue.registryFileHashes(),
+                            downloadEvents,
+                            this.downloadManager
+                        )
+                }
+        } catch (e: IOException) {
+            throw RepoSpecException(
+                withCauseAndMessage(
+                    FailureDetails.ExternalDeps.Code.ERROR_ACCESSING_REGISTRY,
+                    e,
+                    "Unable to get module repo spec for %s from registry",
+                    key.moduleKey
+                )
+            )
+        }
+        return RepoSpecValue.Companion.create(
+            repoSpec, RegistryFileDownloadEvent.Companion.collectToMap(downloadEvents.getPosts())
+        )
     }
-    ModuleFileValue moduleFileValue =
-        (ModuleFileValue) env.getValue(ModuleFileValue.key(key.moduleKey()));
-    if (moduleFileValue == null) {
-      return null;
+
+    fun setDownloadManager(downloadManager: DownloadManager?) {
+        this.downloadManager = downloadManager
     }
 
-    StoredEventHandler downloadEvents = new StoredEventHandler();
-    RepoSpec repoSpec;
-    try (SilentCloseable c =
-        Profiler.instance()
-            .profile(ProfilerTask.BZLMOD, () -> "compute repo spec: " + key.moduleKey())) {
-      repoSpec =
-          registry.getRepoSpec(
-              key.moduleKey(),
-              moduleFileValue.registryFileHashes(),
-              downloadEvents,
-              this.downloadManager);
-    } catch (IOException e) {
-      throw new RepoSpecException(
-          ExternalDepsException.withCauseAndMessage(
-              FailureDetails.ExternalDeps.Code.ERROR_ACCESSING_REGISTRY,
-              e,
-              "Unable to get module repo spec for %s from registry",
-              key.moduleKey()));
-    }
-    return RepoSpecValue.create(
-        repoSpec, RegistryFileDownloadEvent.collectToMap(downloadEvents.getPosts()));
-  }
-
-  public void setDownloadManager(DownloadManager downloadManager) {
-    this.downloadManager = downloadManager;
-  }
-
-  static final class RepoSpecException extends SkyFunctionException {
-
-    RepoSpecException(ExternalDepsException cause) {
-      super(cause, Transience.TRANSIENT);
-    }
-  }
+    internal class RepoSpecException(cause: ExternalDepsException?) : SkyFunctionException(cause, Transience.TRANSIENT)
 }

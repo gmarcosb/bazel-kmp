@@ -11,26 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.grpc;
+package com.google.devtools.build.lib.remote.grpc
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import io.reactivex.rxjava3.core.Single;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
 /**
- * A {@link ConnectionFactory} represents a resource factory for connection creation. It may create
- * connections by itself, wrap a {@link ConnectionFactory}, or apply connection pooling on top of a
- * {@link ConnectionFactory}.
- *
- * <p>A {@link ConnectionFactory} uses deferred initialization and should initiate connection
+ * A [ConnectionFactory] represents a resource factory for connection creation. It may create
+ * connections by itself, wrap a [ConnectionFactory], or apply connection pooling on top of a
+ * [ConnectionFactory].
+ * 
+ * 
+ * A [ConnectionFactory] uses deferred initialization and should initiate connection
  * resource allocation after subscription.
- *
- * <p>Connection creation must be cancellable. Canceling connection creation must release (“close”)
+ * 
+ * 
+ * Connection creation must be cancellable. Canceling connection creation must release (“close”)
  * the connection and all associated resources.
- *
- * <p>Implementations must be thread-safe.
+ * 
+ * 
+ * Implementations must be thread-safe.
  */
 @ThreadSafe
-public interface ConnectionFactory {
-  /** Creates a new {@link Connection}. */
-  Single<? extends Connection> create();
+interface ConnectionFactory {
+    /** Creates a new [Connection].  */
+    fun create(): Single<out Connection?>?
 }

@@ -96,7 +96,7 @@ public final class EvalMacroFunction implements SkyFunction {
       macroInstanceValue =
           (MacroInstanceValue)
               env.getValueOrThrow(
-                  new MacroInstanceValue.Key(key.getParentIdentifier(), key.getInstanceName()),
+                  new MacroInstanceValue.Key(key.parentIdentifier, key.instanceName),
                   NoSuchPackageException.class,
                   NoSuchPackagePieceException.class,
                   NoSuchMacroInstanceException.class);
@@ -117,7 +117,7 @@ public final class EvalMacroFunction implements SkyFunction {
     // Non-null iff the macro is a finalizer and finalizer dependencies were computed without error.
     @Nullable ImmutableMap<String, Rule> existingRulesMapForFinalizer = null;
 
-    if (macroInstance.getMacroClass().isFinalizer()) {
+    if (macroInstance.getMacroClass().isFinalizer) {
       try {
         nonFinalizerPackagePiecesValue =
             (NonFinalizerPackagePiecesValue)
@@ -151,7 +151,7 @@ public final class EvalMacroFunction implements SkyFunction {
             packageDeclarationsValue.metadata(),
             packageDeclarationsValue.declarations(),
             macroInstance,
-            key.getParentIdentifier(),
+                key.parentIdentifier,
             packageDeclarationsValue.starlarkSemantics(),
             packageDeclarationsValue.mainRepositoryMapping(),
             cpuBoundSemaphore.get(),
@@ -351,7 +351,7 @@ public final class EvalMacroFunction implements SkyFunction {
               // Already expanded.
               continue;
             }
-            if (expandFinalizers || !childMacroInstance.getMacroClass().isFinalizer()) {
+            if (expandFinalizers || !childMacroInstance.getMacroClass().isFinalizer) {
               childKeys.add(childKey);
             }
           }

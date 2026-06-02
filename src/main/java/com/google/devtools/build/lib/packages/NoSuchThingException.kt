@@ -11,64 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
-import com.google.common.base.Strings;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.PackageLoading;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import javax.annotation.Nullable;
+/** Exception indicating an attempt to access something which is not found or does not exist.  */
+open class NoSuchThingException : java.lang.Exception, DetailedException {
+    // TODO(b/138456686): Remove Nullable and add Precondition#checkNotNull in constructor when all
+    //  subclasses are instantiated with DetailedExitCode.
+    private val detailedExitCode: DetailedExitCode?
 
-/** Exception indicating an attempt to access something which is not found or does not exist. */
-public class NoSuchThingException extends Exception implements DetailedException {
+    constructor(message: String?) : super(message) {
+        this.detailedExitCode = null
+    }
 
-  // TODO(b/138456686): Remove Nullable and add Precondition#checkNotNull in constructor when all
-  //  subclasses are instantiated with DetailedExitCode.
-  @Nullable private final DetailedExitCode detailedExitCode;
+    internal constructor(message: String?, cause: Throwable?) : super(message, cause) {
+        this.detailedExitCode = null
+    }
 
-  public NoSuchThingException(String message) {
-    super(message);
-    this.detailedExitCode = null;
-  }
+    internal constructor(message: String?, detailedExitCode: DetailedExitCode?) : super(message) {
+        this.detailedExitCode = detailedExitCode
+    }
 
-  NoSuchThingException(String message, Throwable cause) {
-    super(message, cause);
-    this.detailedExitCode = null;
-  }
+    internal constructor(message: String?, cause: Throwable?, detailedExitCode: DetailedExitCode?) : super(
+        message,
+        cause
+    ) {
+        this.detailedExitCode = detailedExitCode
+    }
 
-  NoSuchThingException(String message, DetailedExitCode detailedExitCode) {
-    super(message);
-    this.detailedExitCode = detailedExitCode;
-  }
+    /**
+     * Returns the detail exit code if it exists. If it does not exist, then return the default
+     * detailed exit code.
+     */
+    override fun getDetailedExitCode(): DetailedExitCode? {
+        return if (detailedExitCode != null) detailedExitCode else defaultDetailedExitCode()
+    }
 
-  NoSuchThingException(String message, Throwable cause, DetailedExitCode detailedExitCode) {
-    super(message, cause);
-    this.detailedExitCode = detailedExitCode;
-  }
+    /** Returns the detailed exit code but does not check if it is null.  */
+    fun getUncheckedDetailedExitCode(): DetailedExitCode? {
+        return detailedExitCode
+    }
 
-  /**
-   * Returns the detail exit code if it exists. If it does not exist, then return the default
-   * detailed exit code.
-   */
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode != null ? detailedExitCode : defaultDetailedExitCode();
-  }
-
-  /** Returns the detailed exit code but does not check if it is null. */
-  @Nullable
-  DetailedExitCode getUncheckedDetailedExitCode() {
-    return detailedExitCode;
-  }
-
-  private DetailedExitCode defaultDetailedExitCode() {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(Strings.nullToEmpty(getMessage()))
-            .setPackageLoading(
-                PackageLoading.newBuilder().setCode(PackageLoading.Code.NO_SUCH_THING).build())
-            .build());
-  }
+    private fun defaultDetailedExitCode(): DetailedExitCode {
+        return DetailedExitCode.of(
+            FailureDetail.newBuilder()
+                .setMessage(com.google.common.base.Strings.nullToEmpty(getMessage()))
+                .setPackageLoading(
+                    PackageLoading.newBuilder().setCode(PackageLoading.Code.NO_SUCH_THING).build()
+                )
+                .build()
+        )
+    }
 }

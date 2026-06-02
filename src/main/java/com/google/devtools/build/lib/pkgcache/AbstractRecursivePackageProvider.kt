@@ -11,34 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Target;
+import com.google.devtools.build.lib.cmdline.Label
 
-/** Partial implementation of RecursivePackageProvider to provide some common methods. */
-public abstract class AbstractRecursivePackageProvider implements RecursivePackageProvider {
+/** Partial implementation of RecursivePackageProvider to provide some common methods.  */
+abstract class AbstractRecursivePackageProvider protected constructor() : RecursivePackageProvider {
+    @Throws(NoSuchPackageException::class, NoSuchTargetException::class, java.lang.InterruptedException::class)
+    override fun getTarget(
+        eventHandler: ExtendedEventHandler?,
+        label: Label
+    ): com.google.devtools.build.lib.packages.Target? {
+        // TODO(https://github.com/bazelbuild/bazel/issues/23852): don't expand the full package if lazy
+        // macro expansion is enabled.
+        return getPackage(eventHandler, label.getPackageIdentifier()).getTarget(label.name)
+    }
 
-  protected AbstractRecursivePackageProvider() {
-  }
-
-  @Override
-  public Target getTarget(ExtendedEventHandler eventHandler, Label label)
-      throws NoSuchPackageException, NoSuchTargetException, InterruptedException {
-    // TODO(https://github.com/bazelbuild/bazel/issues/23852): don't expand the full package if lazy
-    // macro expansion is enabled.
-    return getPackage(eventHandler, label.getPackageIdentifier()).getTarget(label.getName());
-  }
-
-  /**
-   * Indicates that a missing dependency is needed before target parsing can proceed. Currently
-   * used only in skyframe to notify the framework of missing dependencies. Caught by the compute
-   * method in {@link com.google.devtools.build.lib.skyframe.TargetPatternFunction}, which then
-   * returns null in accordance with the skyframe missing dependency policy.
-   */
-  public static class MissingDepException extends RuntimeException {
-  }
+    /**
+     * Indicates that a missing dependency is needed before target parsing can proceed. Currently
+     * used only in skyframe to notify the framework of missing dependencies. Caught by the compute
+     * method in [com.google.devtools.build.lib.skyframe.TargetPatternFunction], which then
+     * returns null in accordance with the skyframe missing dependency policy.
+     */
+    class MissingDepException : java.lang.RuntimeException()
 }

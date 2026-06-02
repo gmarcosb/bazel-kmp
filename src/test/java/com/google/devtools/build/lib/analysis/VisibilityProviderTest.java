@@ -54,7 +54,7 @@ public final class VisibilityProviderTest extends BuildViewTestCase {
    * PackageGroupContents#packageStrings} (formatted with the double slash).
    */
   private static List<String> getVisibilityStrings(VisibilityProvider provider) {
-    return provider.getVisibility().toList().stream()
+    return provider.visibility.toList().stream()
         .flatMap(pgc -> pgc.packageStrings(/* includeDoubleSlash= */ true).stream())
         .collect(toImmutableList());
   }
@@ -107,29 +107,29 @@ public final class VisibilityProviderTest extends BuildViewTestCase {
     // The declaration location //pkg is not appended to visibility, but the visibility check will
     // treat it as if it were there. Same below.
     assertThat(getVisibilityStrings(ruleTargetVisibility)).containsExactly("//client");
-    assertThat(ruleTargetVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(ruleTargetVisibility.isCreatedInSymbolicMacro).isFalse();
 
     VisibilityProvider pkgGroupVisibility = getVisibility("//pkg:pkg_group");
     assertThat(getVisibilityStrings(pkgGroupVisibility)).containsExactly("public");
-    assertThat(pkgGroupVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(pkgGroupVisibility.isCreatedInSymbolicMacro).isFalse();
 
     VisibilityProvider explicitInputVisibility = getVisibility("//pkg:explicit_input.txt");
     assertThat(getVisibilityStrings(explicitInputVisibility)).containsExactly("public");
-    assertThat(explicitInputVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(explicitInputVisibility.isCreatedInSymbolicMacro).isFalse();
 
     VisibilityProvider explicitInputWithVisVisibility =
         getVisibility("//pkg:explicit_input_with_vis.txt");
     assertThat(getVisibilityStrings(explicitInputWithVisVisibility)).containsExactly("//client");
-    assertThat(explicitInputWithVisVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(explicitInputWithVisVisibility.isCreatedInSymbolicMacro).isFalse();
 
     VisibilityProvider implicitInputVisibility = getVisibility("//pkg:implicit_input.cc");
     // Private (not public, not default_visibility), due to --incompatible_no_implicit_file_export.
     assertThat(getVisibilityStrings(implicitInputVisibility)).isEmpty();
-    assertThat(implicitInputVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(implicitInputVisibility.isCreatedInSymbolicMacro).isFalse();
 
     VisibilityProvider outputVisibility = getVisibility("//pkg:rule_target.bin");
     assertThat(getVisibilityStrings(outputVisibility)).containsExactly("//client");
-    assertThat(outputVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(outputVisibility.isCreatedInSymbolicMacro).isFalse();
   }
 
   @Test
@@ -172,27 +172,27 @@ public final class VisibilityProviderTest extends BuildViewTestCase {
     // The declaration location //lib comes from the visibility attribute (after it has been
     // processed in RuleFactory). Same below.
     assertThat(getVisibilityStrings(ruleTargetVisibility)).containsExactly("//client", "//lib");
-    assertThat(ruleTargetVisibility.isCreatedInSymbolicMacro()).isTrue();
+    assertThat(ruleTargetVisibility.isCreatedInSymbolicMacro).isTrue();
 
     VisibilityProvider pkgGroupVisibility = getVisibility("//pkg:foo_pkg_group");
     assertThat(getVisibilityStrings(pkgGroupVisibility)).containsExactly("public");
     // This is actually incorrect, but we don't care because package groups are always public.
     // (Storing the correct value would require a bool, so we don't bother.)
-    assertThat(pkgGroupVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(pkgGroupVisibility.isCreatedInSymbolicMacro).isFalse();
 
     VisibilityProvider explicitInputVisibility = getVisibility("//pkg:foo_explicit_input.txt");
     assertThat(getVisibilityStrings(explicitInputVisibility)).containsExactly("public");
-    assertThat(explicitInputVisibility.isCreatedInSymbolicMacro()).isTrue();
+    assertThat(explicitInputVisibility.isCreatedInSymbolicMacro).isTrue();
 
     VisibilityProvider explicitInputWithVisVisibility =
         getVisibility("//pkg:foo_explicit_input_with_vis.txt");
     assertThat(getVisibilityStrings(explicitInputWithVisVisibility))
         .containsExactly("//client", "//lib");
-    assertThat(explicitInputWithVisVisibility.isCreatedInSymbolicMacro()).isTrue();
+    assertThat(explicitInputWithVisVisibility.isCreatedInSymbolicMacro).isTrue();
 
     VisibilityProvider outputVisibility = getVisibility("//pkg:foo_rule_target.bin");
     assertThat(getVisibilityStrings(outputVisibility)).containsExactly("//client", "//lib");
-    assertThat(outputVisibility.isCreatedInSymbolicMacro()).isTrue();
+    assertThat(outputVisibility.isCreatedInSymbolicMacro).isTrue();
   }
 
   @Test
@@ -240,11 +240,11 @@ public final class VisibilityProviderTest extends BuildViewTestCase {
 
     VisibilityProvider buildFileAliasVisibility = getVisibility("//pkg:alias");
     assertThat(getVisibilityStrings(buildFileAliasVisibility)).containsExactly("//alias_client");
-    assertThat(buildFileAliasVisibility.isCreatedInSymbolicMacro()).isFalse();
+    assertThat(buildFileAliasVisibility.isCreatedInSymbolicMacro).isFalse();
 
     VisibilityProvider macroAliasVisibility = getVisibility("//pkg:foo_alias");
     assertThat(getVisibilityStrings(macroAliasVisibility))
         .containsExactly("//alias_client", "//pkg");
-    assertThat(macroAliasVisibility.isCreatedInSymbolicMacro()).isTrue();
+    assertThat(macroAliasVisibility.isCreatedInSymbolicMacro).isTrue();
   }
 }

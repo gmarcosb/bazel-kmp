@@ -11,57 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.devtools.build.lib.packages.DependencyFilter.AttributeInfoProvider;
-import com.google.devtools.build.lib.packages.Type.LabelClass;
-import java.util.function.BiPredicate;
+import com.google.devtools.build.lib.packages.DependencyFilter.AttributeInfoProvider
+import com.google.devtools.build.lib.packages.Type.LabelClass
 
 /**
  * A predicate that returns true if a dependency attribute should be included in the result of
- * {@code blaze query}. Used to implement {@code --[no]implicit_deps}, {@code --[no]host_deps}, etc.
+ * `blaze query`. Used to implement `--[no]implicit_deps`, `--[no]host_deps`, etc.
  */
-public interface DependencyFilter extends BiPredicate<AttributeInfoProvider, Attribute> {
+interface DependencyFilter :
+    java.util.function.BiPredicate<AttributeInfoProvider?, com.google.devtools.build.lib.packages.Attribute?> {
+    override fun and(
+        other: java.util.function.BiPredicate<in AttributeInfoProvider?, in com.google.devtools.build.lib.packages.Attribute?>?
+    ): DependencyFilter {
+        return DependencyFilter { t: java.util.function.BiPredicate<in AttributeInfoProvider?, in com.google.devtools.build.lib.packages.Attribute?>? ->
+            super.and(
+                other
+            ).test(t)
+        }
+    }
 
-  /** Dependency predicate that includes all dependencies. */
-  DependencyFilter ALL_DEPS = (infoProvider, attribute) -> true;
+    /** Interface to provide information about attributes to dependency filters.  */
+    interface AttributeInfoProvider {
+        /**
+         * Returns true iff the value of the specified attribute is explicitly set in
+         * the BUILD file (as opposed to its default value). This also returns true if
+         * the value from the BUILD file is the same as the default value.
+         */
+        fun isAttributeValueExplicitlySpecified(attribute: com.google.devtools.build.lib.packages.Attribute?): Boolean
+    }
 
-  /** Dependency predicate that excludes non-target dependencies. */
-  DependencyFilter ONLY_TARGET_DEPS = (infoProvider, attribute) -> !attribute.isToolDependency();
+    companion object {
+        /** Dependency predicate that includes all dependencies.  */
+        @kotlin.jvm.JvmField
+        val ALL_DEPS: DependencyFilter =
+            DependencyFilter { infoProvider: AttributeInfoProvider?, attribute: com.google.devtools.build.lib.packages.Attribute? -> true }
 
-  /** Dependency predicate that excludes implicit dependencies. */
-  DependencyFilter NO_IMPLICIT_DEPS = AttributeInfoProvider::isAttributeValueExplicitlySpecified;
+        /** Dependency predicate that excludes non-target dependencies.  */
+        @kotlin.jvm.JvmField
+        val ONLY_TARGET_DEPS: DependencyFilter =
+            DependencyFilter { infoProvider: AttributeInfoProvider?, attribute: com.google.devtools.build.lib.packages.Attribute? -> !attribute.isToolDependency() }
 
-  /**
-   * Dependency predicate that excludes those edges that are not present in the loading phase target
-   * dependency graph.
-   */
-  DependencyFilter NO_NODEP_ATTRIBUTES =
-      (infoProvider, attribute) ->
-          attribute.getType().getLabelClass() != LabelClass.NONDEP_REFERENCE;
+        /** Dependency predicate that excludes implicit dependencies.  */
+        @kotlin.jvm.JvmField
+        val NO_IMPLICIT_DEPS: DependencyFilter =
+            DependencyFilter { obj: java.util.function.BiPredicate<in AttributeInfoProvider?, in com.google.devtools.build.lib.packages.Attribute?>? -> obj.isAttributeValueExplicitlySpecified() }
 
-  /**
-   * Dependency predicate that excludes those edges that are not present in the loading phase target
-   * dependency graph but *does* include edges from the `visibility` attribute.
-   */
-  DependencyFilter NO_NODEP_ATTRIBUTES_EXCEPT_VISIBILITY =
-      (infoProvider, attribute) ->
-          NO_NODEP_ATTRIBUTES.test(infoProvider, attribute)
-              || attribute.getName().equals("visibility");
+        /**
+         * Dependency predicate that excludes those edges that are not present in the loading phase target
+         * dependency graph.
+         */
+        @kotlin.jvm.JvmField
+        val NO_NODEP_ATTRIBUTES: DependencyFilter =
+            DependencyFilter { infoProvider: AttributeInfoProvider?, attribute: com.google.devtools.build.lib.packages.Attribute? ->
+                attribute.getType().getLabelClass() != LabelClass.NONDEP_REFERENCE
+            }
 
-  @Override
-  default DependencyFilter and(
-      BiPredicate<? super AttributeInfoProvider, ? super Attribute> other) {
-    return BiPredicate.super.and(other)::test;
-  }
-
-  /** Interface to provide information about attributes to dependency filters. */
-  interface AttributeInfoProvider {
-    /**
-     * Returns true iff the value of the specified attribute is explicitly set in
-     * the BUILD file (as opposed to its default value). This also returns true if
-     * the value from the BUILD file is the same as the default value.
-     */
-    boolean isAttributeValueExplicitlySpecified(Attribute attribute);
-  }
+        /**
+         * Dependency predicate that excludes those edges that are not present in the loading phase target
+         * dependency graph but *does* include edges from the `visibility` attribute.
+         */
+        @kotlin.jvm.JvmField
+        val NO_NODEP_ATTRIBUTES_EXCEPT_VISIBILITY: DependencyFilter =
+            DependencyFilter { infoProvider: AttributeInfoProvider?, attribute: com.google.devtools.build.lib.packages.Attribute? ->
+                NO_NODEP_ATTRIBUTES.test(infoProvider, attribute)
+                        || attribute.getName() == "visibility"
+            }
+    }
 }

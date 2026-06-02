@@ -11,60 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import build.bazel.remote.execution.v2.ExecuteResponse;
-import com.google.rpc.Status;
-import io.grpc.Status.Code;
-import io.grpc.StatusRuntimeException;
-import io.grpc.protobuf.StatusProto;
-import javax.annotation.Nullable;
+import build.bazel.remote.execution.v2.ExecuteResponse
 
 /**
  * Exception to signal that a remote execution has failed with a certain status received from the
  * server, and other details, such as the action result and the server logs. The exception may be
  * retriable or not, depending on the status/details.
  */
-public class ExecutionStatusException extends StatusRuntimeException {
-  private final Status status;
-  private final ExecuteResponse response;
+class ExecutionStatusException internal constructor(
+    e: StatusRuntimeException,
+    original: Status,
+    response: ExecuteResponse?
+) : StatusRuntimeException(e.getStatus(), e.getTrailers()) {
+    private val status: Status
+    private val response: ExecuteResponse?
 
-  ExecutionStatusException(
-      StatusRuntimeException e, Status original, @Nullable ExecuteResponse response) {
-    super(e.getStatus(), e.getTrailers());
-    this.status = original;
-    this.response = response;
-  }
-
-  public ExecutionStatusException(Status status, @Nullable ExecuteResponse response) {
-    this(StatusProto.toStatusRuntimeException(convertStatus(status, response)), status, response);
-  }
-
-  private static Status convertStatus(Status status, @Nullable ExecuteResponse response) {
-    Status.Builder result = status.toBuilder();
-    if (isExecutionTimeout(status, response)) {
-      // Hack: convert to non-retriable exception on timeouts.
-      result.setCode(Code.FAILED_PRECONDITION.value());
+    init {
+        this.status = original
+        this.response = response
     }
-    return result.build();
-  }
 
-  private static boolean isExecutionTimeout(Status status, @Nullable ExecuteResponse response) {
-    return response != null
-        && response.getStatus().equals(status)
-        && status.getCode() == Code.DEADLINE_EXCEEDED.value();
-  }
+    constructor(status: Status, response: ExecuteResponse?) : this(
+        StatusProto.toStatusRuntimeException(
+            convertStatus(
+                status,
+                response
+            )
+        ), status, response
+    )
 
-  public boolean isExecutionTimeout() {
-    return isExecutionTimeout(status, response);
-  }
+    val isExecutionTimeout: Boolean
+        get() = isExecutionTimeout(status, response)
 
-  @Nullable
-  public ExecuteResponse getResponse() {
-    return response;
-  }
+    fun getResponse(): ExecuteResponse? {
+        return response
+    }
 
-  public Status getOriginalStatus() {
-    return status;
-  }
+    val originalStatus: Status
+        get() = status
+
+    companion object {
+        private fun convertStatus(status: Status, response: ExecuteResponse?): Status {
+            val result: Status.Builder = status.toBuilder()
+            if (isExecutionTimeout(status, response)) {
+                // Hack: convert to non-retriable exception on timeouts.
+                result.setCode(io.grpc.Status.Code.FAILED_PRECONDITION.value())
+            }
+            return result.build()
+        }
+
+        private fun isExecutionTimeout(status: Status, response: ExecuteResponse?): Boolean {
+            return response != null && response.getStatus().equals(status)
+                    && status.getCode() === io.grpc.Status.Code.DEADLINE_EXCEEDED.value()
+        }
+    }
 }

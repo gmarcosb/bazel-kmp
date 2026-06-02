@@ -11,501 +11,446 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.devtools.build.lib.packages.BuildType.DORMANT_LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.DORMANT_LABEL_LIST;
-import static com.google.devtools.build.lib.packages.BuildType.GENQUERY_SCOPE_TYPE;
-import static com.google.devtools.build.lib.packages.BuildType.GENQUERY_SCOPE_TYPE_LIST;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_DICT_UNARY;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_KEYED_STRING_DICT;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST_DICT;
-import static com.google.devtools.build.lib.packages.BuildType.LICENSE;
-import static com.google.devtools.build.lib.packages.BuildType.NODEP_LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.NODEP_LABEL_LIST;
-import static com.google.devtools.build.lib.packages.BuildType.OUTPUT;
-import static com.google.devtools.build.lib.packages.BuildType.OUTPUT_LIST;
-import static com.google.devtools.build.lib.packages.BuildType.TRISTATE;
-import static com.google.devtools.build.lib.packages.Type.BOOLEAN;
-import static com.google.devtools.build.lib.packages.Type.INTEGER;
-import static com.google.devtools.build.lib.packages.Type.STRING;
-import static com.google.devtools.build.lib.packages.Type.STRING_NO_INTERN;
-import static com.google.devtools.build.lib.packages.Types.INTEGER_LIST;
-import static com.google.devtools.build.lib.packages.Types.STRING_DICT;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST_DICT;
-import static com.google.devtools.build.lib.packages.Types.STRING_SET;
-import static com.google.devtools.build.lib.util.StringEncoding.internalToUnicode;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.BuildType.Selector;
-import com.google.devtools.build.lib.packages.BuildType.SelectorList;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.Attribute.Discriminator;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.Attribute.SelectorEntry;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.Attribute.Tristate;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.LabelDictUnaryEntry;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.LabelKeyedStringDictEntry;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.StringDictEntry;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.StringListDictEntry;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.StarlarkInt;
+/** Common utilities for serializing [Attribute]s as protocol buffers.  */
+object AttributeFormatter {
+    private val depTypes: com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.packages.Type<*>?> =
+        com.google.common.collect.ImmutableSet.of<com.google.devtools.build.lib.packages.Type<*>?>(
+            com.google.devtools.build.lib.packages.Type.Companion.STRING,
+            com.google.devtools.build.lib.packages.Type.Companion.STRING_NO_INTERN,
+            BuildType.LABEL,
+            BuildType.OUTPUT,
+            com.google.devtools.build.lib.packages.Types.STRING_LIST,
+            BuildType.LABEL_LIST,
+            BuildType.LABEL_DICT_UNARY,
+            BuildType.LABEL_KEYED_STRING_DICT,
+            BuildType.OUTPUT_LIST
+        )
 
-/** Common utilities for serializing {@link Attribute}s as protocol buffers. */
-public class AttributeFormatter {
+    private val noDepTypes: com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.packages.Type<*>?> =
+        com.google.common.collect.ImmutableSet.of<com.google.devtools.build.lib.packages.Type<*>?>(
+            BuildType.NODEP_LABEL_LIST,
+            BuildType.NODEP_LABEL
+        )
 
-  private static final ImmutableSet<Type<?>> depTypes =
-      ImmutableSet.of(
-          STRING,
-          STRING_NO_INTERN,
-          LABEL,
-          OUTPUT,
-          STRING_LIST,
-          LABEL_LIST,
-          LABEL_DICT_UNARY,
-          LABEL_KEYED_STRING_DICT,
-          OUTPUT_LIST);
-
-  private static final ImmutableSet<Type<?>> noDepTypes =
-      ImmutableSet.of(NODEP_LABEL_LIST, NODEP_LABEL);
-
-  private AttributeFormatter() {}
-
-  /**
-   * Convert attribute value to proto representation.
-   *
-   * <p>If {@code value} is null, only the {@code name}, {@code explicitlySpecified}, {@code nodep}
-   * (if applicable), and {@code type} fields will be included in the proto message.
-   *
-   * <p>If {@param encodeBooleanAndTriStateAsIntegerAndString} is true then boolean and tristate
-   * values are also encoded as integers and strings.
-   */
-  public static Build.Attribute getAttributeProto(
-      Attribute attr,
-      @Nullable Object value,
-      boolean explicitlySpecified,
-      boolean encodeBooleanAndTriStateAsIntegerAndString) {
-    return getAttributeProto(
-        attr.getName(),
-        attr.getType(),
-        value,
-        explicitlySpecified,
-        encodeBooleanAndTriStateAsIntegerAndString,
-        /* sourceAspect= */ null,
-        /* includeAttributeSourceAspects */ false,
-        LabelPrinter.legacy());
-  }
-
-  public static Build.Attribute getAttributeProto(
-      Attribute attr,
-      @Nullable Object value,
-      boolean explicitlySpecified,
-      boolean encodeBooleanAndTriStateAsIntegerAndString,
-      @Nullable Aspect sourceAspect,
-      boolean includeAttributeSourceAspects,
-      LabelPrinter labelPrinter) {
-    return getAttributeProto(
-        attr.getName(),
-        attr.getType(),
-        value,
-        explicitlySpecified,
-        encodeBooleanAndTriStateAsIntegerAndString,
-        sourceAspect,
-        includeAttributeSourceAspects,
-        labelPrinter);
-  }
-
-  private static Build.Attribute getAttributeProto(
-      String name,
-      Type<?> type,
-      @Nullable Object value,
-      boolean explicitlySpecified,
-      boolean encodeBooleanAndTriStateAsIntegerAndString,
-      @Nullable Aspect sourceAspect,
-      boolean includeAttributeSourceAspects,
-      LabelPrinter labelPrinter) {
-    Build.Attribute.Builder attrPb = Build.Attribute.newBuilder();
-    attrPb.setName(internalToUnicode(name));
-    attrPb.setExplicitlySpecified(explicitlySpecified);
-    maybeSetNoDep(type, attrPb);
-
-    if (value instanceof SelectorList<?>) {
-      attrPb.setType(Discriminator.SELECTOR_LIST);
-      writeSelectorListToBuilder(attrPb, type, (SelectorList<?>) value, labelPrinter);
-    } else {
-      attrPb.setType(ProtoUtils.getDiscriminatorFromType(type));
-      if (value != null) {
-        AttributeBuilderAdapter adapter =
-            new AttributeBuilderAdapter(attrPb, encodeBooleanAndTriStateAsIntegerAndString);
-        writeAttributeValueToBuilder(adapter, type, value, labelPrinter);
-      }
+    /**
+     * Convert attribute value to proto representation.
+     * 
+     * 
+     * If `value` is null, only the `name`, `explicitlySpecified`, `nodep`
+     * (if applicable), and `type` fields will be included in the proto message.
+     * 
+     * 
+     * If {@param encodeBooleanAndTriStateAsIntegerAndString} is true then boolean and tristate
+     * values are also encoded as integers and strings.
+     */
+    fun getAttributeProto(
+        attr: com.google.devtools.build.lib.packages.Attribute,
+        value: Any?,
+        explicitlySpecified: Boolean,
+        encodeBooleanAndTriStateAsIntegerAndString: Boolean
+    ): Build.Attribute {
+        return getAttributeProto(
+            attr.getName(),
+            attr.getType(),
+            value,
+            explicitlySpecified,
+            encodeBooleanAndTriStateAsIntegerAndString,  /* sourceAspect= */
+            null,  /* includeAttributeSourceAspects */
+            false,
+            LabelPrinter.Companion.legacy()
+        )
     }
 
-    if (includeAttributeSourceAspects) {
-      attrPb.setSourceAspectName(
-          sourceAspect != null ? internalToUnicode(sourceAspect.getAspectClass().getName()) : "");
+    fun getAttributeProto(
+        attr: com.google.devtools.build.lib.packages.Attribute,
+        value: Any?,
+        explicitlySpecified: Boolean,
+        encodeBooleanAndTriStateAsIntegerAndString: Boolean,
+        sourceAspect: Aspect?,
+        includeAttributeSourceAspects: Boolean,
+        labelPrinter: LabelPrinter
+    ): Build.Attribute {
+        return getAttributeProto(
+            attr.getName(),
+            attr.getType(),
+            value,
+            explicitlySpecified,
+            encodeBooleanAndTriStateAsIntegerAndString,
+            sourceAspect,
+            includeAttributeSourceAspects,
+            labelPrinter
+        )
     }
 
-    return attrPb.build();
-  }
+    private fun getAttributeProto(
+        name: String?,
+        type: com.google.devtools.build.lib.packages.Type<*>?,
+        value: Any?,
+        explicitlySpecified: Boolean,
+        encodeBooleanAndTriStateAsIntegerAndString: Boolean,
+        sourceAspect: Aspect?,
+        includeAttributeSourceAspects: Boolean,
+        labelPrinter: LabelPrinter
+    ): Build.Attribute {
+        val attrPb: Build.Attribute.Builder = Build.Attribute.newBuilder()
+        attrPb.setName(StringEncoding.internalToUnicode(name))
+        attrPb.setExplicitlySpecified(explicitlySpecified)
+        maybeSetNoDep(type, attrPb)
 
-  private static void maybeSetNoDep(Type<?> type, Build.Attribute.Builder attrPb) {
-    if (depTypes.contains(type)) {
-      attrPb.setNodep(false);
-    } else if (noDepTypes.contains(type)) {
-      attrPb.setNodep(true);
-    }
-  }
-
-  private static void writeSelectorListToBuilder(
-      Build.Attribute.Builder attrPb,
-      Type<?> type,
-      SelectorList<?> selectorList,
-      LabelPrinter labelPrinter) {
-    Build.Attribute.SelectorList.Builder selectorListBuilder =
-        Build.Attribute.SelectorList.newBuilder();
-    selectorListBuilder.setType(ProtoUtils.getDiscriminatorFromType(type));
-    for (Selector<?> selector : selectorList.getSelectors()) {
-      Build.Attribute.Selector.Builder selectorBuilder =
-          Build.Attribute.Selector.newBuilder()
-              .setNoMatchError(internalToUnicode(selector.getNoMatchError()))
-              .setHasDefaultValue(selector.hasDefault());
-
-      // Note that the order of entries returned by selector.getEntries is stable. The map's
-      // entries' order is preserved from the fact that Starlark dictionary entry order is stable
-      // (it's determined by insertion order).
-      selector.forEach(
-          (condition, conditionValue) -> {
-            SelectorEntry.Builder selectorEntryBuilder =
-                SelectorEntry.newBuilder()
-                    .setLabel(internalToUnicode(labelPrinter.toString(condition)))
-                    .setIsDefaultValue(!selector.isValueSet(condition));
-
-            if (conditionValue != null) {
-              writeAttributeValueToBuilder(
-                  new SelectorEntryBuilderAdapter(selectorEntryBuilder),
-                  type,
-                  conditionValue,
-                  labelPrinter);
+        if (value is BuildType.SelectorList<*>) {
+            attrPb.setType(Discriminator.SELECTOR_LIST)
+            writeSelectorListToBuilder(attrPb, type, value as BuildType.SelectorList<*>, labelPrinter)
+        } else {
+            attrPb.setType(ProtoUtils.getDiscriminatorFromType(type))
+            if (value != null) {
+                val adapter =
+                    AttributeBuilderAdapter(attrPb, encodeBooleanAndTriStateAsIntegerAndString)
+                writeAttributeValueToBuilder(adapter, type, value, labelPrinter)
             }
-            selectorBuilder.addEntries(selectorEntryBuilder);
-          });
-      selectorListBuilder.addElements(selectorBuilder);
-    }
-    attrPb.setSelectorList(selectorListBuilder);
-  }
-
-  /**
-   * Set the appropriate type and value. Since string and string list store values for multiple
-   * types, use the toString() method on the objects instead of casting them.
-   */
-  @SuppressWarnings("unchecked")
-  private static void writeAttributeValueToBuilder(
-      AttributeValueBuilderAdapter builder, Type<?> type, Object value, LabelPrinter labelPrinter) {
-    if (type == INTEGER) {
-      builder.setIntValue(((StarlarkInt) value).toIntUnchecked());
-    } else if (type == STRING || type == STRING_NO_INTERN) {
-      builder.setStringValue(internalToUnicode(value.toString()));
-    } else if (type == LABEL
-        || type == NODEP_LABEL
-        || type == OUTPUT
-        || type == GENQUERY_SCOPE_TYPE
-        || type == DORMANT_LABEL) {
-      builder.setStringValue(internalToUnicode(labelPrinter.toString((Label) value)));
-    } else if (type == STRING_LIST || type == STRING_SET) {
-      for (Object entry : (Collection<?>) value) {
-        builder.addStringListValue(internalToUnicode(entry.toString()));
-      }
-    } else if (type == LABEL_LIST
-        || type == NODEP_LABEL_LIST
-        || type == OUTPUT_LIST
-        || type == GENQUERY_SCOPE_TYPE_LIST
-        || type == DORMANT_LABEL_LIST) {
-      for (Label entry : (Collection<Label>) value) {
-        builder.addStringListValue(internalToUnicode(labelPrinter.toString(entry)));
-      }
-    } else if (type == INTEGER_LIST) {
-      for (Object elem : (Collection<?>) value) {
-        builder.addIntListValue(((StarlarkInt) elem).toIntUnchecked());
-      }
-    } else if (type == BOOLEAN) {
-      builder.setBooleanValue((Boolean) value);
-    } else if (type == TRISTATE) {
-      builder.setTristateValue(triStateToProto((TriState) value));
-    } else if (type == LICENSE) {
-      License license = (License) value;
-      Build.License.Builder licensePb = Build.License.newBuilder();
-      for (License.LicenseType licenseType : license.getLicenseTypes()) {
-        licensePb.addLicenseType(internalToUnicode(licenseType.toString()));
-      }
-      for (Label exception : license.getExceptions()) {
-        licensePb.addException(internalToUnicode(exception.toString()));
-      }
-      builder.setLicense(licensePb);
-    } else if (type == STRING_DICT) {
-      Map<String, String> dict = (Map<String, String>) value;
-      for (Map.Entry<String, String> keyValueList : dict.entrySet()) {
-        StringDictEntry.Builder entry =
-            StringDictEntry.newBuilder()
-                .setKey(internalToUnicode(keyValueList.getKey()))
-                .setValue(internalToUnicode(keyValueList.getValue()));
-        builder.addStringDictValue(entry);
-      }
-    } else if (type == STRING_LIST_DICT || type == LABEL_LIST_DICT) {
-      Map<String, List<Object>> dict = (Map<String, List<Object>>) value;
-      for (Map.Entry<String, List<Object>> dictEntry : dict.entrySet()) {
-        StringListDictEntry.Builder entry =
-            StringListDictEntry.newBuilder().setKey(internalToUnicode(dictEntry.getKey()));
-        for (Object dictEntryValue : dictEntry.getValue()) {
-          entry.addValue(internalToUnicode(dictEntryValue.toString()));
         }
-        builder.addStringListDictValue(entry);
-      }
-    } else if (type == LABEL_DICT_UNARY) {
-      Map<String, Label> dict = (Map<String, Label>) value;
-      for (Map.Entry<String, Label> dictEntry : dict.entrySet()) {
-        LabelDictUnaryEntry.Builder entry =
-            LabelDictUnaryEntry.newBuilder()
-                .setKey(internalToUnicode(dictEntry.getKey()))
-                .setValue(internalToUnicode(labelPrinter.toString(dictEntry.getValue())));
-        builder.addLabelDictUnaryValue(entry);
-      }
-    } else if (type == LABEL_KEYED_STRING_DICT) {
-      Map<Label, String> dict = (Map<Label, String>) value;
-      for (Map.Entry<Label, String> dictEntry : dict.entrySet()) {
-        LabelKeyedStringDictEntry.Builder entry =
-            LabelKeyedStringDictEntry.newBuilder()
-                .setKey(internalToUnicode(labelPrinter.toString(dictEntry.getKey())))
-                .setValue(internalToUnicode(dictEntry.getValue()));
-        builder.addLabelKeyedStringDictValue(entry);
-      }
-    } else {
-      throw new AssertionError("Unknown type: " + type);
-    }
-  }
 
-  private static Tristate triStateToProto(TriState value) {
-    return switch (value) {
-      case AUTO -> Tristate.AUTO;
-      case NO -> Tristate.NO;
-      case YES -> Tristate.YES;
-    };
-  }
-
-  /**
-   * An adapter used by {@link #writeAttributeValueToBuilder} in order to reuse the same code for
-   * writing to both {@link Build.Attribute.Builder} and {@link SelectorEntry.Builder} objects.
-   */
-  private interface AttributeValueBuilderAdapter {
-
-    void addStringListValue(String s);
-
-    void addLabelDictUnaryValue(LabelDictUnaryEntry.Builder builder);
-
-    void addLabelKeyedStringDictValue(LabelKeyedStringDictEntry.Builder builder);
-
-    void addIntListValue(int i);
-
-    void addStringDictValue(StringDictEntry.Builder builder);
-
-    void addStringListDictValue(StringListDictEntry.Builder builder);
-
-    void setBooleanValue(boolean b);
-
-    void setIntValue(int i);
-
-    void setLicense(Build.License.Builder builder);
-
-    void setStringValue(String s);
-
-    void setTristateValue(Tristate tristate);
-  }
-
-  /**
-   * An {@link AttributeValueBuilderAdapter} which writes to a {@link Build.Attribute.Builder}.
-   *
-   * <p>If {@param encodeBooleanAndTriStateAsIntegerAndString} is {@code true}, then {@link Boolean}
-   * and {@link TriState} attribute values also write to the integer and string fields. This offers
-   * backwards compatibility to clients that expect attribute values of those types.
-   */
-  private static class AttributeBuilderAdapter implements AttributeValueBuilderAdapter {
-    private final boolean encodeBooleanAndTriStateAsIntegerAndString;
-    private final Build.Attribute.Builder attributeBuilder;
-
-    private AttributeBuilderAdapter(
-        Build.Attribute.Builder attributeBuilder,
-        boolean encodeBooleanAndTriStateAsIntegerAndString) {
-      this.attributeBuilder = Preconditions.checkNotNull(attributeBuilder);
-      this.encodeBooleanAndTriStateAsIntegerAndString = encodeBooleanAndTriStateAsIntegerAndString;
-    }
-
-    @Override
-    public void addStringListValue(String s) {
-      attributeBuilder.addStringListValue(s);
-    }
-
-    @Override
-    public void addLabelDictUnaryValue(LabelDictUnaryEntry.Builder builder) {
-      attributeBuilder.addLabelDictUnaryValue(builder);
-    }
-
-    @Override
-    public void addLabelKeyedStringDictValue(LabelKeyedStringDictEntry.Builder builder) {
-      attributeBuilder.addLabelKeyedStringDictValue(builder);
-    }
-
-    @Override
-    public void addIntListValue(int i) {
-      attributeBuilder.addIntListValue(i);
-    }
-
-    @Override
-    public void addStringDictValue(StringDictEntry.Builder builder) {
-      attributeBuilder.addStringDictValue(builder);
-    }
-
-    @Override
-    public void addStringListDictValue(StringListDictEntry.Builder builder) {
-      attributeBuilder.addStringListDictValue(builder);
-    }
-
-    @Override
-    public void setBooleanValue(boolean b) {
-      if (b) {
-        attributeBuilder.setBooleanValue(true);
-        if (encodeBooleanAndTriStateAsIntegerAndString) {
-          attributeBuilder.setStringValue("true");
-          attributeBuilder.setIntValue(1);
+        if (includeAttributeSourceAspects) {
+            attrPb.setSourceAspectName(
+                if (sourceAspect != null) StringEncoding.internalToUnicode(
+                    sourceAspect.getAspectClass().getName()
+                ) else ""
+            )
         }
-      } else {
-        attributeBuilder.setBooleanValue(false);
-        if (encodeBooleanAndTriStateAsIntegerAndString) {
-          attributeBuilder.setStringValue("false");
-          attributeBuilder.setIntValue(0);
+
+        return attrPb.build()
+    }
+
+    private fun maybeSetNoDep(type: com.google.devtools.build.lib.packages.Type<*>?, attrPb: Build.Attribute.Builder) {
+        if (depTypes.contains(type)) {
+            attrPb.setNodep(false)
+        } else if (noDepTypes.contains(type)) {
+            attrPb.setNodep(true)
         }
-      }
     }
 
-    @Override
-    public void setIntValue(int i) {
-      attributeBuilder.setIntValue(i);
-    }
+    private fun writeSelectorListToBuilder(
+        attrPb: Build.Attribute.Builder,
+        type: com.google.devtools.build.lib.packages.Type<*>?,
+        selectorList: BuildType.SelectorList<*>,
+        labelPrinter: LabelPrinter
+    ) {
+        val selectorListBuilder: Build.Attribute.SelectorList.Builder =
+            Build.Attribute.SelectorList.newBuilder()
+        selectorListBuilder.setType(ProtoUtils.getDiscriminatorFromType(type))
+        for (selector in selectorList.getSelectors()) {
+            val selectorBuilder: Build.Attribute.Selector.Builder =
+                Build.Attribute.Selector.newBuilder()
+                    .setNoMatchError(StringEncoding.internalToUnicode(selector.getNoMatchError()))
+                    .setHasDefaultValue(selector.hasDefault())
 
-    @Override
-    public void setLicense(Build.License.Builder builder) {
-      attributeBuilder.setLicense(builder);
-    }
-
-    @Override
-    public void setStringValue(String s) {
-      attributeBuilder.setStringValue(s);
-    }
-
-    @Override
-    public void setTristateValue(Tristate tristate) {
-      switch (tristate) {
-        case AUTO -> {
-          attributeBuilder.setTristateValue(Tristate.AUTO);
-          if (encodeBooleanAndTriStateAsIntegerAndString) {
-            attributeBuilder.setIntValue(-1);
-            attributeBuilder.setStringValue("auto");
-          }
+            // Note that the order of entries returned by selector.getEntries is stable. The map's
+            // entries' order is preserved from the fact that Starlark dictionary entry order is stable
+            // (it's determined by insertion order).
+            selector.forEach { condition: Label?, conditionValue: Any? ->
+                val selectorEntryBuilder: SelectorEntry.Builder? =
+                    SelectorEntry.newBuilder()
+                        .setLabel(StringEncoding.internalToUnicode(labelPrinter.toString(condition)))
+                        .setIsDefaultValue(!selector.isValueSet(condition))
+                if (conditionValue != null) {
+                    writeAttributeValueToBuilder(
+                        SelectorEntryBuilderAdapter(selectorEntryBuilder),
+                        type,
+                        conditionValue,
+                        labelPrinter
+                    )
+                }
+                selectorBuilder.addEntries(selectorEntryBuilder)
+            }
+            selectorListBuilder.addElements(selectorBuilder)
         }
-        case NO -> {
-          attributeBuilder.setTristateValue(Tristate.NO);
-          if (encodeBooleanAndTriStateAsIntegerAndString) {
-            attributeBuilder.setIntValue(0);
-            attributeBuilder.setStringValue("no");
-          }
+        attrPb.setSelectorList(selectorListBuilder)
+    }
+
+    /**
+     * Set the appropriate type and value. Since string and string list store values for multiple
+     * types, use the toString() method on the objects instead of casting them.
+     */
+    private fun writeAttributeValueToBuilder(
+        builder: AttributeValueBuilderAdapter,
+        type: com.google.devtools.build.lib.packages.Type<*>?,
+        value: Any,
+        labelPrinter: LabelPrinter
+    ) {
+        if (type === com.google.devtools.build.lib.packages.Type.Companion.INTEGER) {
+            builder.setIntValue((value as net.starlark.java.eval.StarlarkInt).toIntUnchecked())
+        } else if (type === com.google.devtools.build.lib.packages.Type.Companion.STRING || type === com.google.devtools.build.lib.packages.Type.Companion.STRING_NO_INTERN) {
+            builder.setStringValue(StringEncoding.internalToUnicode(value.toString()))
+        } else if (type === BuildType.LABEL || type === BuildType.NODEP_LABEL || type === BuildType.OUTPUT || type === BuildType.GENQUERY_SCOPE_TYPE || type === BuildType.DORMANT_LABEL) {
+            builder.setStringValue(StringEncoding.internalToUnicode(labelPrinter.toString(value as Label?)))
+        } else if (type === com.google.devtools.build.lib.packages.Types.STRING_LIST || type === com.google.devtools.build.lib.packages.Types.STRING_SET) {
+            for (entry in (value as kotlin.collections.MutableCollection<*>?)!!) {
+                builder.addStringListValue(StringEncoding.internalToUnicode(entry.toString()))
+            }
+        } else if (type === BuildType.LABEL_LIST || type === BuildType.NODEP_LABEL_LIST || type === BuildType.OUTPUT_LIST || type === BuildType.GENQUERY_SCOPE_TYPE_LIST || type === BuildType.DORMANT_LABEL_LIST) {
+            for (entry in (value as kotlin.collections.MutableCollection<Label?>?)!!) {
+                builder.addStringListValue(StringEncoding.internalToUnicode(labelPrinter.toString(entry)))
+            }
+        } else if (type === com.google.devtools.build.lib.packages.Types.INTEGER_LIST) {
+            for (elem in (value as kotlin.collections.MutableCollection<*>?)!!) {
+                builder.addIntListValue((elem as net.starlark.java.eval.StarlarkInt).toIntUnchecked())
+            }
+        } else if (type === com.google.devtools.build.lib.packages.Type.Companion.BOOLEAN) {
+            builder.setBooleanValue((value as Boolean?)!!)
+        } else if (type === BuildType.TRISTATE) {
+            builder.setTristateValue(triStateToProto(value as com.google.devtools.build.lib.packages.TriState?))
+        } else if (type === BuildType.LICENSE) {
+            val license: License = value as License
+            val licensePb: Build.License.Builder = Build.License.newBuilder()
+            for (licenseType in license.getLicenseTypes()) {
+                licensePb.addLicenseType(StringEncoding.internalToUnicode(licenseType.toString()))
+            }
+            for (exception in license.getExceptions()) {
+                licensePb.addException(StringEncoding.internalToUnicode(exception.toString()))
+            }
+            builder.setLicense(licensePb)
+        } else if (type === com.google.devtools.build.lib.packages.Types.STRING_DICT) {
+            val dict = value as MutableMap<String?, String?>
+            for (keyValueList in dict.entrySet()) {
+                val entry: StringDictEntry.Builder? =
+                    StringDictEntry.newBuilder()
+                        .setKey(StringEncoding.internalToUnicode(keyValueList.getKey()))
+                        .setValue(StringEncoding.internalToUnicode(keyValueList.getValue()))
+                builder.addStringDictValue(entry)
+            }
+        } else if (type === com.google.devtools.build.lib.packages.Types.STRING_LIST_DICT || type === BuildType.LABEL_LIST_DICT) {
+            val dict = value as MutableMap<String?, MutableList<Any?>?>
+            for (dictEntry in dict.entrySet()) {
+                val entry: StringListDictEntry.Builder =
+                    StringListDictEntry.newBuilder().setKey(StringEncoding.internalToUnicode(dictEntry.getKey()))
+                for (dictEntryValue in dictEntry.getValue()) {
+                    entry.addValue(StringEncoding.internalToUnicode(dictEntryValue.toString()))
+                }
+                builder.addStringListDictValue(entry)
+            }
+        } else if (type === BuildType.LABEL_DICT_UNARY) {
+            val dict: MutableMap<String?, Label?> = value as MutableMap<String?, Label?>
+            for (dictEntry in dict.entrySet()) {
+                val entry: LabelDictUnaryEntry.Builder? =
+                    LabelDictUnaryEntry.newBuilder()
+                        .setKey(StringEncoding.internalToUnicode(dictEntry.getKey()))
+                        .setValue(StringEncoding.internalToUnicode(labelPrinter.toString(dictEntry.getValue())))
+                builder.addLabelDictUnaryValue(entry)
+            }
+        } else if (type === BuildType.LABEL_KEYED_STRING_DICT) {
+            val dict: MutableMap<Label?, String?> = value as MutableMap<Label?, String?>
+            for (dictEntry in dict.entrySet()) {
+                val entry: LabelKeyedStringDictEntry.Builder? =
+                    LabelKeyedStringDictEntry.newBuilder()
+                        .setKey(StringEncoding.internalToUnicode(labelPrinter.toString(dictEntry.getKey())))
+                        .setValue(StringEncoding.internalToUnicode(dictEntry.getValue()))
+                builder.addLabelKeyedStringDictValue(entry)
+            }
+        } else {
+            throw java.lang.AssertionError("Unknown type: " + type)
         }
-        case YES -> {
-          attributeBuilder.setTristateValue(Tristate.YES);
-          if (encodeBooleanAndTriStateAsIntegerAndString) {
-            attributeBuilder.setIntValue(1);
-            attributeBuilder.setStringValue("yes");
-          }
+    }
+
+    private fun triStateToProto(value: com.google.devtools.build.lib.packages.TriState): Tristate? {
+        return when (value) {
+            com.google.devtools.build.lib.packages.TriState.AUTO -> Tristate.AUTO
+            com.google.devtools.build.lib.packages.TriState.NO -> Tristate.NO
+            com.google.devtools.build.lib.packages.TriState.YES -> Tristate.YES
         }
-      }
-    }
-  }
-
-  /**
-   * An {@link AttributeValueBuilderAdapter} which writes to a {@link SelectorEntry.Builder}.
-   *
-   * <p>Note that there is no {@code encodeBooleanAndTriStateAsIntegerAndString} parameter needed
-   * here. This is because the clients that expect those alternate encodings of boolean and tristate
-   * attribute values do not support {@link SelectorList} values. When providing output to those
-   * clients, we compute the set of possible attribute values (expanding {@link SelectorList}
-   * values, evaluating computed defaults, and flattening collections of collections; see {@link
-   * com.google.devtools.build.lib.packages.AggregatingAttributeMapper#visitAttribute}).
-   */
-  private static class SelectorEntryBuilderAdapter implements AttributeValueBuilderAdapter {
-    private final SelectorEntry.Builder selectorEntryBuilder;
-
-    private SelectorEntryBuilderAdapter(SelectorEntry.Builder selectorEntryBuilder) {
-      this.selectorEntryBuilder = Preconditions.checkNotNull(selectorEntryBuilder);
     }
 
-    @Override
-    public void addStringListValue(String s) {
-      selectorEntryBuilder.addStringListValue(s);
+    /**
+     * An adapter used by [.writeAttributeValueToBuilder] in order to reuse the same code for
+     * writing to both [Build.Attribute.Builder] and [SelectorEntry.Builder] objects.
+     */
+    private interface AttributeValueBuilderAdapter {
+        fun addStringListValue(s: String?)
+
+        fun addLabelDictUnaryValue(builder: LabelDictUnaryEntry.Builder?)
+
+        fun addLabelKeyedStringDictValue(builder: LabelKeyedStringDictEntry.Builder?)
+
+        fun addIntListValue(i: Int)
+
+        fun addStringDictValue(builder: StringDictEntry.Builder?)
+
+        fun addStringListDictValue(builder: StringListDictEntry.Builder?)
+
+        fun setBooleanValue(b: Boolean)
+
+        fun setIntValue(i: Int)
+
+        fun setLicense(builder: Build.License.Builder?)
+
+        fun setStringValue(s: String?)
+
+        fun setTristateValue(tristate: Tristate?)
     }
 
-    @Override
-    public void addLabelDictUnaryValue(LabelDictUnaryEntry.Builder builder) {
-      selectorEntryBuilder.addLabelDictUnaryValue(builder);
+    /**
+     * An [AttributeValueBuilderAdapter] which writes to a [Build.Attribute.Builder].
+     * 
+     * 
+     * If {@param encodeBooleanAndTriStateAsIntegerAndString} is `true`, then [Boolean]
+     * and [TriState] attribute values also write to the integer and string fields. This offers
+     * backwards compatibility to clients that expect attribute values of those types.
+     */
+    private class AttributeBuilderAdapter(
+        attributeBuilder: Build.Attribute.Builder?,
+        private val encodeBooleanAndTriStateAsIntegerAndString: Boolean
+    ) : AttributeValueBuilderAdapter {
+        private val attributeBuilder: Build.Attribute.Builder
+
+        init {
+            this.attributeBuilder =
+                com.google.common.base.Preconditions.checkNotNull<Build.Attribute.Builder>(attributeBuilder)
+        }
+
+        override fun addStringListValue(s: String?) {
+            attributeBuilder.addStringListValue(s)
+        }
+
+        override fun addLabelDictUnaryValue(builder: LabelDictUnaryEntry.Builder?) {
+            attributeBuilder.addLabelDictUnaryValue(builder)
+        }
+
+        override fun addLabelKeyedStringDictValue(builder: LabelKeyedStringDictEntry.Builder?) {
+            attributeBuilder.addLabelKeyedStringDictValue(builder)
+        }
+
+        override fun addIntListValue(i: Int) {
+            attributeBuilder.addIntListValue(i)
+        }
+
+        override fun addStringDictValue(builder: StringDictEntry.Builder?) {
+            attributeBuilder.addStringDictValue(builder)
+        }
+
+        override fun addStringListDictValue(builder: StringListDictEntry.Builder?) {
+            attributeBuilder.addStringListDictValue(builder)
+        }
+
+        override fun setBooleanValue(b: Boolean) {
+            if (b) {
+                attributeBuilder.setBooleanValue(true)
+                if (encodeBooleanAndTriStateAsIntegerAndString) {
+                    attributeBuilder.setStringValue("true")
+                    attributeBuilder.setIntValue(1)
+                }
+            } else {
+                attributeBuilder.setBooleanValue(false)
+                if (encodeBooleanAndTriStateAsIntegerAndString) {
+                    attributeBuilder.setStringValue("false")
+                    attributeBuilder.setIntValue(0)
+                }
+            }
+        }
+
+        override fun setIntValue(i: Int) {
+            attributeBuilder.setIntValue(i)
+        }
+
+        override fun setLicense(builder: Build.License.Builder?) {
+            attributeBuilder.setLicense(builder)
+        }
+
+        override fun setStringValue(s: String?) {
+            attributeBuilder.setStringValue(s)
+        }
+
+        override fun setTristateValue(tristate: Tristate) {
+            when (tristate) {
+                AUTO -> {
+                    attributeBuilder.setTristateValue(Tristate.AUTO)
+                    if (encodeBooleanAndTriStateAsIntegerAndString) {
+                        attributeBuilder.setIntValue(-1)
+                        attributeBuilder.setStringValue("auto")
+                    }
+                }
+
+                NO -> {
+                    attributeBuilder.setTristateValue(Tristate.NO)
+                    if (encodeBooleanAndTriStateAsIntegerAndString) {
+                        attributeBuilder.setIntValue(0)
+                        attributeBuilder.setStringValue("no")
+                    }
+                }
+
+                YES -> {
+                    attributeBuilder.setTristateValue(Tristate.YES)
+                    if (encodeBooleanAndTriStateAsIntegerAndString) {
+                        attributeBuilder.setIntValue(1)
+                        attributeBuilder.setStringValue("yes")
+                    }
+                }
+            }
+        }
     }
 
-    @Override
-    public void addLabelKeyedStringDictValue(LabelKeyedStringDictEntry.Builder builder) {
-      selectorEntryBuilder.addLabelKeyedStringDictValue(builder);
-    }
+    /**
+     * An [AttributeValueBuilderAdapter] which writes to a [SelectorEntry.Builder].
+     * 
+     * 
+     * Note that there is no `encodeBooleanAndTriStateAsIntegerAndString` parameter needed
+     * here. This is because the clients that expect those alternate encodings of boolean and tristate
+     * attribute values do not support [SelectorList] values. When providing output to those
+     * clients, we compute the set of possible attribute values (expanding [SelectorList]
+     * values, evaluating computed defaults, and flattening collections of collections; see [ ][com.google.devtools.build.lib.packages.AggregatingAttributeMapper.visitAttribute]).
+     */
+    private class SelectorEntryBuilderAdapter(selectorEntryBuilder: SelectorEntry.Builder?) :
+        AttributeValueBuilderAdapter {
+        private val selectorEntryBuilder: SelectorEntry.Builder
 
-    @Override
-    public void addIntListValue(int i) {
-      selectorEntryBuilder.addIntListValue(i);
-    }
+        init {
+            this.selectorEntryBuilder =
+                com.google.common.base.Preconditions.checkNotNull<SelectorEntry.Builder>(selectorEntryBuilder)
+        }
 
-    @Override
-    public void addStringDictValue(StringDictEntry.Builder builder) {
-      selectorEntryBuilder.addStringDictValue(builder);
-    }
+        override fun addStringListValue(s: String?) {
+            selectorEntryBuilder.addStringListValue(s)
+        }
 
-    @Override
-    public void addStringListDictValue(StringListDictEntry.Builder builder) {
-      selectorEntryBuilder.addStringListDictValue(builder);
-    }
+        override fun addLabelDictUnaryValue(builder: LabelDictUnaryEntry.Builder?) {
+            selectorEntryBuilder.addLabelDictUnaryValue(builder)
+        }
 
-    @Override
-    public void setBooleanValue(boolean b) {
-      selectorEntryBuilder.setBooleanValue(b);
-    }
+        override fun addLabelKeyedStringDictValue(builder: LabelKeyedStringDictEntry.Builder?) {
+            selectorEntryBuilder.addLabelKeyedStringDictValue(builder)
+        }
 
-    @Override
-    public void setIntValue(int i) {
-      selectorEntryBuilder.setIntValue(i);
-    }
+        override fun addIntListValue(i: Int) {
+            selectorEntryBuilder.addIntListValue(i)
+        }
 
-    @Override
-    public void setLicense(Build.License.Builder builder) {
-      selectorEntryBuilder.setLicense(builder);
-    }
+        override fun addStringDictValue(builder: StringDictEntry.Builder?) {
+            selectorEntryBuilder.addStringDictValue(builder)
+        }
 
-    @Override
-    public void setStringValue(String s) {
-      selectorEntryBuilder.setStringValue(s);
-    }
+        override fun addStringListDictValue(builder: StringListDictEntry.Builder?) {
+            selectorEntryBuilder.addStringListDictValue(builder)
+        }
 
-    @Override
-    public void setTristateValue(Tristate tristate) {
-      selectorEntryBuilder.setTristateValue(tristate);
+        override fun setBooleanValue(b: Boolean) {
+            selectorEntryBuilder.setBooleanValue(b)
+        }
+
+        override fun setIntValue(i: Int) {
+            selectorEntryBuilder.setIntValue(i)
+        }
+
+        override fun setLicense(builder: Build.License.Builder?) {
+            selectorEntryBuilder.setLicense(builder)
+        }
+
+        override fun setStringValue(s: String?) {
+            selectorEntryBuilder.setStringValue(s)
+        }
+
+        override fun setTristateValue(tristate: Tristate?) {
+            selectorEntryBuilder.setTristateValue(tristate)
+        }
     }
-  }
 }

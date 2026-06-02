@@ -11,26 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query.output
 
-package com.google.devtools.build.lib.query2.query.output;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.hash.HashFunction;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment;
-import com.google.devtools.build.lib.query2.common.CommonQueryOptions;
-import com.google.devtools.build.lib.query2.engine.AggregatingQueryExpressionVisitor.ContainsFunctionQueryExpressionVisitor;
-import com.google.devtools.build.lib.query2.engine.OutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.SynchronizedDelegatingOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.ThreadSafeOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.query.aspectresolvers.AspectResolver;
-import com.google.devtools.build.lib.server.FailureDetails.Query;
-import java.io.IOException;
-import java.io.OutputStream;
+import com.google.common.collect.ImmutableList
+import com.google.common.hash.HashFunction
+import com.google.devtools.build.lib.packages.LabelPrinter
+import com.google.devtools.build.lib.query2.engine.QueryException
+import java.io.OutputStream
 
 /**
  * An output formatter that prints the labels of the targets, preceded by
@@ -38,65 +25,63 @@ import java.io.OutputStream;
  * location of the generating rule is given; for input files, the location of
  * line 1 is given.
  */
-class LocationOutputFormatter extends AbstractUnorderedFormatter {
+internal class LocationOutputFormatter : AbstractUnorderedFormatter() {
+    private var relativeLocations = false
 
-  private boolean relativeLocations;
-
-  @Override
-  public String getName() {
-    return "location";
-  }
-
-  @Override
-  public void setOptions(
-      CommonQueryOptions options, AspectResolver aspectResolver, HashFunction hashFunction) {
-    super.setOptions(options, aspectResolver, hashFunction);
-    this.relativeLocations = options.getRelativeLocations();
-  }
-
-  @Override
-  public void verifyCompatible(QueryEnvironment<?> env, QueryExpression expr)
-      throws QueryException {
-    if (!(env instanceof AbstractBlazeQueryEnvironment)) {
-      return;
+    override fun getName(): String {
+        return "location"
     }
 
-    ContainsFunctionQueryExpressionVisitor noteBuildFilesAndLoadLilesVisitor =
-        new ContainsFunctionQueryExpressionVisitor(ImmutableList.of("loadfiles", "buildfiles"));
-
-    if (expr.accept(noteBuildFilesAndLoadLilesVisitor)) {
-      throw new QueryException(
-          "Query expressions involving 'buildfiles' or 'loadfiles' cannot be used with "
-              + "--output=location",
-          Query.Code.BUILDFILES_AND_LOADFILES_CANNOT_USE_OUTPUT_LOCATION_ERROR);
+    override fun setOptions(
+        options: CommonQueryOptions, aspectResolver: AspectResolver?, hashFunction: HashFunction?
+    ) {
+        super.setOptions(options, aspectResolver, hashFunction)
+        this.relativeLocations = options.getRelativeLocations()
     }
-  }
 
-  @Override
-  public OutputFormatterCallback<Target> createPostFactoStreamCallback(
-      OutputStream out, final QueryOptions options, LabelPrinter labelPrinter) {
-    return new TextOutputFormatterCallback<>(out) {
-
-      @Override
-      public void processOutput(Iterable<Target> partialResult) throws IOException {
-        final String lineTerm = options.getLineTerminator();
-        for (Target target : partialResult) {
-          writer
-              .append(FormatUtils.getLocation(target, relativeLocations))
-              .append(": ")
-              .append(getKind(options, target))
-              .append(" ")
-              .append(labelPrinter.toString(target.getLabel()))
-              .append(lineTerm);
+    @Throws(QueryException::class)
+    override fun verifyCompatible(env: QueryEnvironment<*>?, expr: QueryExpression) {
+        if (env !is AbstractBlazeQueryEnvironment<*>) {
+            return
         }
-      }
-    };
-  }
 
-  @Override
-  public ThreadSafeOutputFormatterCallback<Target> createStreamCallback(
-      OutputStream out, QueryOptions options, QueryEnvironment<?> env) {
-    return new SynchronizedDelegatingOutputFormatterCallback<>(
-        createPostFactoStreamCallback(out, options, env.getLabelPrinter()));
-  }
+        val noteBuildFilesAndLoadLilesVisitor: ContainsFunctionQueryExpressionVisitor =
+            ContainsFunctionQueryExpressionVisitor(ImmutableList.of<String?>("loadfiles", "buildfiles"))
+
+        if (expr.accept<Boolean?>(noteBuildFilesAndLoadLilesVisitor)) {
+            throw QueryException(
+                "Query expressions involving 'buildfiles' or 'loadfiles' cannot be used with "
+                        + "--output=location",
+                Query.Code.BUILDFILES_AND_LOADFILES_CANNOT_USE_OUTPUT_LOCATION_ERROR
+            )
+        }
+    }
+
+    override fun createPostFactoStreamCallback(
+        out: OutputStream?, options: QueryOptions, labelPrinter: LabelPrinter
+    ): OutputFormatterCallback<Target?> {
+        return object : TextOutputFormatterCallback<Target?>(out) {
+            @Throws(IOException::class)
+            override fun processOutput(partialResult: Iterable<Target>) {
+                val lineTerm = options.getLineTerminator()
+                for (target in partialResult) {
+                    writer
+                        .append(FormatUtils.getLocation(target, relativeLocations))
+                        .append(": ")
+                        .append(AbstractUnorderedFormatter.Companion.getKind(options, target))
+                        .append(" ")
+                        .append(labelPrinter.toString(target.getLabel()))
+                        .append(lineTerm)
+                }
+            }
+        }
+    }
+
+    override fun createStreamCallback(
+        out: OutputStream?, options: QueryOptions, env: QueryEnvironment<*>
+    ): ThreadSafeOutputFormatterCallback<Target?> {
+        return SynchronizedDelegatingOutputFormatterCallback<Target?>(
+            createPostFactoStreamCallback(out, options, env.getLabelPrinter())
+        )
+    }
 }

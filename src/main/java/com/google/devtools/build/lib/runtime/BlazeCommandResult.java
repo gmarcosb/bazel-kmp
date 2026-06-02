@@ -109,7 +109,7 @@ public final class BlazeCommandResult {
   }
 
   static BlazeCommandResult createShutdown(Crash crash) {
-    return new BlazeCommandResult(crash.getDetailedExitCode(), null, true);
+    return new BlazeCommandResult(crash.detailedExitCode, null, true);
   }
 
   public static BlazeCommandResult success() {

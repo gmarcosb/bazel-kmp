@@ -11,70 +11,80 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import static com.google.common.base.Preconditions.checkState;
-
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.common.collect.Sets;
-import java.util.Set;
+import com.github.benmanes.caffeine.cache.Caffeine
 
 /**
  * Provides the effective class for the provider. The effective class is inferred as the sole class
- * in the provider's inheritance hierarchy that implements {@link TransitiveInfoProvider} directly.
+ * in the provider's inheritance hierarchy that implements [TransitiveInfoProvider] directly.
  * This allows for simple subclasses such as those created by AutoValue, but will fail if there's
- * any ambiguity as to which implementor of the {@link TransitiveInfoProvider} is intended. If the
+ * any ambiguity as to which implementor of the [TransitiveInfoProvider] is intended. If the
  * provider implements multiple TransitiveInfoProvider interfaces, prefer the explicit put builder
  * methods.
  */
-final class TransitiveInfoProviderEffectiveClassHelper {
+internal object TransitiveInfoProviderEffectiveClassHelper {
+    private val effectiveProviderClassCache: com.github.benmanes.caffeine.cache.LoadingCache<java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?, java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?> =
+        Caffeine.newBuilder()
+            .build<java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?, java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?>(
+                com.github.benmanes.caffeine.cache.CacheLoader { obj: java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>? -> TransitiveInfoProviderEffectiveClassHelper.findEffectiveProviderClass() })
 
-  private TransitiveInfoProviderEffectiveClassHelper() {}
-
-  private static final LoadingCache<
-          Class<? extends TransitiveInfoProvider>, Class<? extends TransitiveInfoProvider>>
-      effectiveProviderClassCache =
-          Caffeine.newBuilder()
-              .build(TransitiveInfoProviderEffectiveClassHelper::findEffectiveProviderClass);
-
-  private static Class<? extends TransitiveInfoProvider> findEffectiveProviderClass(
-      Class<? extends TransitiveInfoProvider> providerClass) {
-    Set<Class<? extends TransitiveInfoProvider>> result = getDirectImplementations(providerClass);
-    checkState(
-        result.size() == 1,
-        "Effective provider class for %s is ambiguous (%s), specify explicitly.",
-        providerClass,
-        result);
-    return result.iterator().next();
-  }
-
-  private static Set<Class<? extends TransitiveInfoProvider>> getDirectImplementations(
-      Class<? extends TransitiveInfoProvider> providerClass) {
-    Set<Class<? extends TransitiveInfoProvider>> result = Sets.newLinkedHashSetWithExpectedSize(1);
-    for (Class<?> clazz : providerClass.getInterfaces()) {
-      if (TransitiveInfoProvider.class.equals(clazz)) {
-        result.add(providerClass);
-      } else if (TransitiveInfoProvider.class.isAssignableFrom(clazz)) {
-        result.addAll(getDirectImplementations(clazz.asSubclass(TransitiveInfoProvider.class)));
-      }
+    private fun findEffectiveProviderClass(
+        providerClass: java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>
+    ): java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>? {
+        val result: MutableSet<java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?> =
+            getDirectImplementations(providerClass)
+        com.google.common.base.Preconditions.checkState(
+            result.size == 1,
+            "Effective provider class for %s is ambiguous (%s), specify explicitly.",
+            providerClass,
+            result
+        )
+        return result.iterator().next()
     }
 
-    Class<?> superclass = providerClass.getSuperclass();
-    if (superclass != null && TransitiveInfoProvider.class.isAssignableFrom(superclass)) {
-      result.addAll(getDirectImplementations(superclass.asSubclass(TransitiveInfoProvider.class)));
+    private fun getDirectImplementations(
+        providerClass: java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>
+    ): MutableSet<java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?> {
+        val result: MutableSet<java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?> =
+            com.google.common.collect.Sets.newLinkedHashSetWithExpectedSize<java.lang.Class<out com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>?>(
+                1
+            )
+        for (clazz in providerClass.getInterfaces()) {
+            if (com.google.devtools.build.lib.analysis.TransitiveInfoProvider::class.java == clazz) {
+                result.add(providerClass)
+            } else if (com.google.devtools.build.lib.analysis.TransitiveInfoProvider::class.java.isAssignableFrom(clazz)) {
+                result.addAll(
+                    getDirectImplementations(
+                        clazz.asSubclass<com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>(
+                            com.google.devtools.build.lib.analysis.TransitiveInfoProvider::class.java
+                        )
+                    )
+                )
+            }
+        }
+
+        val superclass: java.lang.Class<*>? = providerClass.getSuperclass()
+        if (superclass != null && com.google.devtools.build.lib.analysis.TransitiveInfoProvider::class.java.isAssignableFrom(
+                superclass
+            )
+        ) {
+            result.addAll(
+                getDirectImplementations(
+                    superclass.asSubclass<com.google.devtools.build.lib.analysis.TransitiveInfoProvider?>(
+                        com.google.devtools.build.lib.analysis.TransitiveInfoProvider::class.java
+                    )
+                )
+            )
+        }
+        return result
     }
-    return result;
-  }
 
-  @SuppressWarnings("unchecked")
-  static <T extends TransitiveInfoProvider> Class<T> get(T provider) {
-    return get((Class<T>) provider.getClass());
-  }
+    fun <T : com.google.devtools.build.lib.analysis.TransitiveInfoProvider?> get(provider: T?): java.lang.Class<T?>? {
+        return TransitiveInfoProviderEffectiveClassHelper.get<T?>(provider.javaClass as java.lang.Class<T?>)
+    }
 
-  @SuppressWarnings("unchecked")
-  static <T extends TransitiveInfoProvider> Class<T> get(Class<T> providerClass) {
-    return (Class<T>) effectiveProviderClassCache.get(providerClass);
-  }
+    fun <T : com.google.devtools.build.lib.analysis.TransitiveInfoProvider?> get(providerClass: java.lang.Class<T?>?): java.lang.Class<T?>? {
+        return effectiveProviderClassCache.get(providerClass) as java.lang.Class<T?>?
+    }
 }

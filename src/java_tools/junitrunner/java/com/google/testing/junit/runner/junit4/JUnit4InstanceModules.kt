@@ -11,11 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.junit4
 
-package com.google.testing.junit.runner.junit4;
-
-import java.util.Arrays;
-import java.util.List;
+import java.util.*
 
 /**
  * Utility classes which hold state or are, for testing purposes, implemented with non-static
@@ -23,26 +21,23 @@ import java.util.List;
  * component builder, but still be obvious in module includes and component declarations.
  * These are Dagger legacy modules.
  */
-public final class JUnit4InstanceModules {
-
-  /**
-   * A module which supplies a JUnit4Config object, which can be overridden at test-time.
-   */
-  public static final class Config {
-    private final List<String> args;
-
+class JUnit4InstanceModules private constructor() {
     /**
-     * Creates a module that can provide a {@link JUnit4Config} from supplied command-line
-     * arguments
+     * A module which supplies a JUnit4Config object, which can be overridden at test-time.
      */
-    public Config(String... args) {
-      this.args = Arrays.asList(args);
-    }
+    class Config(vararg args: String?) {
+        private val args: MutableList<String?>
 
-    JUnit4Options options() {
-      return JUnit4Options.parse(System.getenv(), args);
-    }
-  }
+        /**
+         * Creates a module that can provide a [JUnit4Config] from supplied command-line
+         * arguments
+         */
+        init {
+            this.args = Arrays.asList<String?>(*args)
+        }
 
-  private JUnit4InstanceModules() {}
+        fun options(): JUnit4Options {
+            return JUnit4Options.Companion.parse(System.getenv(), args)
+        }
+    }
 }

@@ -11,58 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.constraints
 
-package com.google.devtools.build.lib.analysis.constraints;
+import com.google.devtools.build.lib.analysis.constraints.EnvironmentCollection
+import com.google.devtools.build.lib.analysis.constraints.SupportedEnvironmentsProvider
+import com.google.devtools.build.lib.analysis.constraints.SupportedEnvironmentsProvider.RemovedEnvironmentCulprit
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.Map;
+/** Standard [SupportedEnvironmentsProvider] implementation.  */
+class SupportedEnvironments private constructor(
+    staticEnvironments: EnvironmentCollection?,
+    refinedEnvironments: EnvironmentCollection?,
+    removedEnvironmentCulprits: com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.cmdline.Label?, RemovedEnvironmentCulprit?>
+) : SupportedEnvironmentsProvider {
+    private val staticEnvironments: EnvironmentCollection?
+    private val refinedEnvironments: EnvironmentCollection?
+    private val removedEnvironmentCulprits: com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.cmdline.Label?, RemovedEnvironmentCulprit?>
 
-/** Standard {@link SupportedEnvironmentsProvider} implementation. */
-public final class SupportedEnvironments implements SupportedEnvironmentsProvider {
-
-  static final SupportedEnvironments EMPTY =
-      new SupportedEnvironments(
-          EnvironmentCollection.EMPTY, EnvironmentCollection.EMPTY, ImmutableMap.of());
-
-  public static SupportedEnvironments create(
-      EnvironmentCollection staticEnvironments,
-      EnvironmentCollection refinedEnvironments,
-      Map<Label, RemovedEnvironmentCulprit> removedEnvironmentCulprits) {
-    if (staticEnvironments.isEmpty()
-        && refinedEnvironments.isEmpty()
-        && removedEnvironmentCulprits.isEmpty()) {
-      return EMPTY;
+    init {
+        this.staticEnvironments = staticEnvironments
+        this.refinedEnvironments = refinedEnvironments
+        this.removedEnvironmentCulprits = removedEnvironmentCulprits
     }
-    return new SupportedEnvironments(
-        staticEnvironments, refinedEnvironments, ImmutableMap.copyOf(removedEnvironmentCulprits));
-  }
 
-  private final EnvironmentCollection staticEnvironments;
-  private final EnvironmentCollection refinedEnvironments;
-  private final ImmutableMap<Label, RemovedEnvironmentCulprit> removedEnvironmentCulprits;
+    override fun getStaticEnvironments(): EnvironmentCollection? {
+        return staticEnvironments
+    }
 
-  private SupportedEnvironments(
-      EnvironmentCollection staticEnvironments,
-      EnvironmentCollection refinedEnvironments,
-      ImmutableMap<Label, RemovedEnvironmentCulprit> removedEnvironmentCulprits) {
-    this.staticEnvironments = staticEnvironments;
-    this.refinedEnvironments = refinedEnvironments;
-    this.removedEnvironmentCulprits = removedEnvironmentCulprits;
-  }
+    override fun getRefinedEnvironments(): EnvironmentCollection? {
+        return refinedEnvironments
+    }
 
-  @Override
-  public EnvironmentCollection getStaticEnvironments() {
-    return staticEnvironments;
-  }
+    override fun getRemovedEnvironmentCulprit(environment: com.google.devtools.build.lib.cmdline.Label?): RemovedEnvironmentCulprit? {
+        return removedEnvironmentCulprits.get(environment)
+    }
 
-  @Override
-  public EnvironmentCollection getRefinedEnvironments() {
-    return refinedEnvironments;
-  }
+    companion object {
+        val EMPTY: SupportedEnvironments = SupportedEnvironments(
+            EnvironmentCollection.Companion.EMPTY,
+            EnvironmentCollection.Companion.EMPTY,
+            com.google.common.collect.ImmutableMap.of<com.google.devtools.build.lib.cmdline.Label?, RemovedEnvironmentCulprit?>()
+        )
 
-  @Override
-  public RemovedEnvironmentCulprit getRemovedEnvironmentCulprit(Label environment) {
-    return removedEnvironmentCulprits.get(environment);
-  }
+        fun create(
+            staticEnvironments: EnvironmentCollection,
+            refinedEnvironments: EnvironmentCollection,
+            removedEnvironmentCulprits: MutableMap<com.google.devtools.build.lib.cmdline.Label?, RemovedEnvironmentCulprit?>
+        ): SupportedEnvironments? {
+            if (staticEnvironments.isEmpty()
+                && refinedEnvironments.isEmpty()
+                && removedEnvironmentCulprits.isEmpty()
+            ) {
+                return EMPTY
+            }
+            return SupportedEnvironments(
+                staticEnvironments,
+                refinedEnvironments,
+                com.google.common.collect.ImmutableMap.copyOf<com.google.devtools.build.lib.cmdline.Label?, RemovedEnvironmentCulprit?>(
+                    removedEnvironmentCulprits
+                )
+            )
+        }
+    }
 }

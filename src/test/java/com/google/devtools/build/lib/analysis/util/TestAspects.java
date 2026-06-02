@@ -457,7 +457,7 @@ public class TestAspects {
         return ConfiguredAspect.builder(ruleContext)
             .addStarlarkDeclaredProvider(
                 StarlarkInfo.create(
-                    PROVIDER, ImmutableMap.of("label", dep.getLabel().getCanonicalForm())))
+                    PROVIDER, ImmutableMap.of("label", dep.label.getCanonicalForm())))
             .build();
       } catch (EvalException e) {
         throw new IllegalStateException(e);
@@ -771,7 +771,7 @@ public class TestAspects {
       information.append("$dep:[");
       for (TransitiveInfoCollection dep : deps) {
         information.append(" ");
-        information.append(dep.getLabel());
+        information.append(dep.label);
       }
       information.append("]");
       return new ConfiguredAspect.Builder(ruleContext)

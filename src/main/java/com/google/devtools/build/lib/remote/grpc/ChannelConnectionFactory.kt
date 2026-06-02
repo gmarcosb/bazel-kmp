@@ -11,60 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.grpc;
+package com.google.devtools.build.lib.remote.grpc
 
-import static java.util.concurrent.TimeUnit.SECONDS;
+import io.grpc.CallOptions
+import io.grpc.ClientCall
+import io.grpc.ManagedChannel
+import io.grpc.MethodDescriptor
+import io.reactivex.rxjava3.core.Single
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
-import io.grpc.CallOptions;
-import io.grpc.ClientCall;
-import io.grpc.ManagedChannel;
-import io.grpc.MethodDescriptor;
-import io.reactivex.rxjava3.core.Single;
-import java.io.IOException;
+/** A [ConnectionFactory] which creates [ChannelConnection].  */
+interface ChannelConnectionFactory : ConnectionFactory {
+    override fun create(): Single<out ChannelConnection?>?
 
-/** A {@link ConnectionFactory} which creates {@link ChannelConnection}. */
-public interface ChannelConnectionFactory extends ConnectionFactory {
-  @Override
-  Single<? extends ChannelConnection> create();
+    /** Returns the max concurrency supported by the underlying [ManagedChannel].  */
+    fun maxConcurrency(): Int
 
-  /** Returns the max concurrency supported by the underlying {@link ManagedChannel}. */
-  int maxConcurrency();
-
-  /** A {@link Connection} which wraps around {@link ManagedChannel}. */
-  class ChannelConnection implements Connection {
-    private final ManagedChannel channel;
-
-    public ChannelConnection(ManagedChannel channel) {
-      this.channel = channel;
-    }
-
-    @Override
-    public <ReqT, RespT> ClientCall<ReqT, RespT> call(
-        MethodDescriptor<ReqT, RespT> method, CallOptions options) {
-      return channel.newCall(method, options);
-    }
-
-    @Override
-    public void close() throws IOException {
-      // Clear interrupted status to prevent failure to await, indicated with #13512
-      boolean wasInterrupted = Thread.interrupted();
-      // There is a bug (b/183340374) in gRPC that client doesn't try to close connections with
-      // shutdown() if the channel received GO_AWAY frames. Using shutdownNow() here as a
-      // workaround.
-      try {
-        channel.shutdownNow();
-        channel.awaitTermination(Integer.MAX_VALUE, SECONDS);
-      } catch (InterruptedException e) {
-        throw new IOException(e.getMessage(), e);
-      } finally {
-        if (wasInterrupted) {
-          Thread.currentThread().interrupt();
+    /** A [Connection] which wraps around [ManagedChannel].  */
+    class ChannelConnection(val channel: ManagedChannel) : Connection {
+        override fun <ReqT, RespT> call(
+            method: MethodDescriptor<ReqT?, RespT?>?, options: CallOptions?
+        ): ClientCall<ReqT?, RespT?>? {
+            return channel.newCall<ReqT?, RespT?>(method, options)
         }
-      }
-    }
 
-    public ManagedChannel getChannel() {
-      return channel;
+        @Throws(IOException::class)
+        override fun close() {
+            // Clear interrupted status to prevent failure to await, indicated with #13512
+            val wasInterrupted = Thread.interrupted()
+            // There is a bug (b/183340374) in gRPC that client doesn't try to close connections with
+            // shutdown() if the channel received GO_AWAY frames. Using shutdownNow() here as a
+            // workaround.
+            try {
+                channel.shutdownNow()
+                channel.awaitTermination(Integer.MAX_VALUE.toLong(), TimeUnit.SECONDS)
+            } catch (e: InterruptedException) {
+                throw IOException(e.getMessage(), e)
+            } finally {
+                if (wasInterrupted) {
+                    Thread.currentThread().interrupt()
+                }
+            }
+        }
     }
-  }
 }

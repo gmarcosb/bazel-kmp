@@ -11,82 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.common.flogger.GoogleLogger
+import com.google.devtools.build.lib.platform.PlatformNativeDepsService
+import com.google.devtools.build.lib.platform.SystemMemoryPressureEvent
+import com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor
+import java.util.function.IntConsumer
 
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.events.Reporter;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+/** A singleton that is the java side interface for dealing with memory pressure events.  */
+class SystemMemoryPressureMonitor private constructor() {
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var reporter: com.google.devtools.build.lib.events.Reporter? = null
 
-/** A singleton that is the java side interface for dealing with memory pressure events. */
-public final class SystemMemoryPressureMonitor {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+    private var service: PlatformNativeDepsService? = null
 
-  private static final SystemMemoryPressureMonitor singleton = new SystemMemoryPressureMonitor();
-
-  @GuardedBy("this")
-  @Nullable
-  private Reporter reporter;
-
-  private PlatformNativeDepsService service;
-
-  public static SystemMemoryPressureMonitor getInstance() {
-    return singleton;
-  }
-
-  private SystemMemoryPressureMonitor() {}
-
-  public void registerJniService(PlatformNativeDepsService service) {
-    this.service = service;
-    service.registerMemoryPressureJni(this::memoryPressureCallback);
-  }
-
-  /** The possible memory pressure levels. */
-  public enum Level {
-    NORMAL("Normal"),
-    WARNING("Warning"),
-    CRITICAL("Critical");
-
-    private final String logString;
-
-    Level(String logString) {
-      this.logString = logString;
+    fun registerJniService(service: PlatformNativeDepsService) {
+        this.service = service
+        service.registerMemoryPressureJni(IntConsumer { value: Int -> this.memoryPressureCallback(value) })
     }
 
-    public String logString() {
-      return logString;
+    /** The possible memory pressure levels.  */
+    enum class Level(logString: String) {
+        NORMAL("Normal"),
+        WARNING("Warning"),
+        CRITICAL("Critical");
+
+        private val logString: String?
+
+        init {
+            this.logString = logString
+        }
+
+        fun logString(): String? {
+            return logString
+        }
+
+        companion object {
+            /** These constants are mapped to enum in third_party/bazel/src/main/native/unix_jni.h.  */
+            fun fromInt(number: Int): Level {
+                return when (number) {
+                    0 -> com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level.NORMAL
+                    1 -> com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level.WARNING
+                    2 -> com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level.CRITICAL
+                    else -> throw java.lang.IllegalStateException("Unknown memory pressure level: " + number)
+                }
+            }
+        }
     }
 
-    /** These constants are mapped to enum in third_party/bazel/src/main/native/unix_jni.h. */
-    static Level fromInt(int number) {
-      return switch (number) {
-        case 0 -> NORMAL;
-        case 1 -> WARNING;
-        case 2 -> CRITICAL;
-        default -> throw new IllegalStateException("Unknown memory pressure level: " + number);
-      };
+    /** Return current memory pressure  */
+    fun level(): Level {
+        return com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level.Companion.fromInt(service.systemMemoryPressure())
     }
-  };
 
-  /** Return current memory pressure */
-  public Level level() {
-    return Level.fromInt(service.systemMemoryPressure());
-  }
-
-  public synchronized void setReporter(@Nullable Reporter reporter) {
-    this.reporter = reporter;
-    int pressure = service.systemMemoryPressure();
-    if (Level.fromInt(pressure) != Level.NORMAL) {
-      memoryPressureCallback(pressure);
+    @kotlin.jvm.Synchronized
+    fun setReporter(reporter: com.google.devtools.build.lib.events.Reporter?) {
+        this.reporter = reporter
+        val pressure: Int = service.systemMemoryPressure()
+        if (com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level.Companion.fromInt(pressure) != com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level.NORMAL) {
+            memoryPressureCallback(pressure)
+        }
     }
-  }
 
-  synchronized void memoryPressureCallback(int value) {
-    SystemMemoryPressureEvent event = new SystemMemoryPressureEvent(Level.fromInt(value));
-    if (reporter != null) {
-      reporter.post(event);
+    @kotlin.jvm.Synchronized
+    fun memoryPressureCallback(value: Int) {
+        val event: SystemMemoryPressureEvent = SystemMemoryPressureEvent(
+            com.google.devtools.build.lib.platform.SystemMemoryPressureMonitor.Level.Companion.fromInt(value)
+        )
+        if (reporter != null) {
+            reporter.post(event)
+        }
+        logger.atInfo().log("%s", event.logString())
     }
-    logger.atInfo().log("%s", event.logString());
-  }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        @kotlin.jvm.JvmField
+        private val singleton = SystemMemoryPressureMonitor()
+
+        fun getInstance(): SystemMemoryPressureMonitor {
+            return singleton
+        }
+    }
 }

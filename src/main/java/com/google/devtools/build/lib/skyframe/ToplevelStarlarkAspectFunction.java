@@ -178,7 +178,7 @@ final class ToplevelStarlarkAspectFunction implements SkyFunction {
       throws DependencyException {
     Package pkg = packageValue.getPackage();
     try {
-      return pkg.getTarget(targetLabel.getName());
+      return pkg.getTarget(targetLabel.name);
     } catch (NoSuchTargetException e) {
       throw new DependencyException(e);
     }

@@ -201,7 +201,7 @@ class NodeEntryVisitor {
 
   @VisibleForTesting
   CountDownLatch getExceptionLatchForTestingOnly() {
-    return quiescingExecutor.getExceptionLatchForTestingOnly();
+    return quiescingExecutor.exceptionLatchForTestingOnly;
   }
 
   private void enqueuePartialReevaluation(SkyKey key, @Nullable SkyKey signalingDep) {

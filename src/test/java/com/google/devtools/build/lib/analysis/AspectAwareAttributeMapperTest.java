@@ -70,7 +70,7 @@ public class AspectAwareAttributeMapperTest extends BuildViewTestCase {
     Attribute aspectAttr = new Attribute.Builder<Label>("fromaspect", BuildType.LABEL)
         .allowedFileTypes(FileTypeSet.ANY_FILE)
         .build();
-    aspectAttributes = ImmutableMap.<String, Attribute>of(aspectAttr.getName(), aspectAttr);
+    aspectAttributes = ImmutableMap.<String, Attribute>of(aspectAttr.name, aspectAttr);
     mapper =
         new AspectAwareAttributeMapper(
             ConfiguredAttributeMapper.of(

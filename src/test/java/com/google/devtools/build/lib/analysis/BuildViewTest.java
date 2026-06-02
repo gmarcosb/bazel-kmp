@@ -466,7 +466,7 @@ public class BuildViewTest extends BuildViewTestBase {
         analysisFailureCauses.get(0) instanceof AnalysisFailedCause
             ? analysisFailureCauses.get(0)
             : analysisFailureCauses.get(1);
-    assertThat(missingPackageCause.getLabel())
+    assertThat(missingPackageCause.label)
         .isEqualTo(Label.parseCanonical("//nopackage:missing"));
     assertContainsEvent("missing value for mandatory attribute 'outs'");
     assertContainsEvent("no such package 'nopackage'");

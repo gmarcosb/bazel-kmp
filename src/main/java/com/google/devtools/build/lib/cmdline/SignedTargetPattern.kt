@@ -11,34 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.cmdline
 
-package com.google.devtools.build.lib.cmdline;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.cmdline.TargetParsingException
+import com.google.devtools.build.lib.cmdline.TargetPattern
 
-import com.google.auto.value.AutoValue;
-
-/** A {@link TargetPattern} with a potential minus sign in front of it, signifying exclusion. */
+/** A [TargetPattern] with a potential minus sign in front of it, signifying exclusion.  */
 @AutoValue
-public abstract class SignedTargetPattern {
-  public abstract TargetPattern pattern();
+abstract class SignedTargetPattern {
+    abstract fun pattern(): TargetPattern?
 
-  public abstract Sign sign();
+    abstract fun sign(): Sign?
 
-  public static SignedTargetPattern create(TargetPattern pattern, Sign sign) {
-    return new AutoValue_SignedTargetPattern(pattern, sign);
-  }
-
-  /** Whether this target pattern begins with a minus sign (NEGATIVE) or not (POSITIVE). */
-  public enum Sign {
-    POSITIVE,
-    NEGATIVE
-  }
-
-  public static SignedTargetPattern parse(String pattern, TargetPattern.Parser parser)
-      throws TargetParsingException {
-    if (pattern.startsWith("-")) {
-      return create(parser.parse(pattern.substring(1)), SignedTargetPattern.Sign.NEGATIVE);
-    } else {
-      return create(parser.parse(pattern), SignedTargetPattern.Sign.POSITIVE);
+    /** Whether this target pattern begins with a minus sign (NEGATIVE) or not (POSITIVE).  */
+    enum class Sign {
+        POSITIVE,
+        NEGATIVE
     }
-  }
+
+    companion object {
+        fun create(pattern: TargetPattern?, sign: Sign?): SignedTargetPattern {
+            return AutoValue_SignedTargetPattern(pattern, sign)
+        }
+
+        @Throws(TargetParsingException::class)
+        fun parse(
+            pattern: String,
+            parser: com.google.devtools.build.lib.cmdline.TargetPattern.Parser
+        ): SignedTargetPattern {
+            if (pattern.startsWith("-")) {
+                return create(parser.parse(pattern.substring(1)), Sign.NEGATIVE)
+            } else {
+                return create(parser.parse(pattern), Sign.POSITIVE)
+            }
+        }
+    }
 }

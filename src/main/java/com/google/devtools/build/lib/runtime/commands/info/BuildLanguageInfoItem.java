@@ -123,7 +123,7 @@ public final class BuildLanguageInfoItem extends InfoItem {
       for (Attribute attr : sortedAttributeDefinitions) {
         Type<?> t = attr.getType();
         AttributeDefinition.Builder attrPb = AttributeDefinition.newBuilder();
-        attrPb.setName(attr.getName());
+        attrPb.setName(attr.name);
         attrPb.setType(ProtoUtils.getDiscriminatorFromType(t));
         attrPb.setMandatory(attr.isMandatory());
         attrPb.setAllowEmpty(!attr.isNonEmpty());
@@ -131,7 +131,7 @@ public final class BuildLanguageInfoItem extends InfoItem {
         attrPb.setConfigurable(attr.isConfigurable());
 
         // Encode default value, if simple.
-        Object v = attr.getDefaultValueUnchecked();
+        Object v = attr.defaultValueUnchecked;
         if (!(v == null
             || v instanceof Attribute.ComputedDefault
             || v instanceof StarlarkComputedDefaultTemplate
@@ -161,7 +161,7 @@ public final class BuildLanguageInfoItem extends InfoItem {
       for (Map.Entry<?, ?> entry : ((Map<?, ?>) v).entrySet()) {
         b.addDictBuilder()
             .setKey(entry.getKey().toString())
-            .setValue(convertAttrValue(dictType.getValueType(), entry.getValue()));
+            .setValue(convertAttrValue(dictType.valueType, entry.getValue()));
       }
     } else if (v instanceof List) {
       for (Object elem : (List<?>) v) {

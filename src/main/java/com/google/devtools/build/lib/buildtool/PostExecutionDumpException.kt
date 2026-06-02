@@ -11,16 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-/** For exceptions that arise from a post-execution dump of debug of performance data. */
-public class PostExecutionDumpException extends Exception {
+/** For exceptions that arise from a post-execution dump of debug of performance data.  */
+class PostExecutionDumpException : java.lang.Exception {
+    internal constructor(cause: Throwable?) : super(cause)
 
-  PostExecutionDumpException(Throwable cause) {
-    super(cause);
-  }
-
-  PostExecutionDumpException(String message, Throwable cause) {
-    super(message, cause);
-  }
+    internal constructor(message: String?, cause: Throwable?) : super(message, cause)
 }

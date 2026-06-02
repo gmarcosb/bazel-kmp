@@ -518,7 +518,7 @@ public class BlazeCommandDispatcher implements CommandDispatcher {
 
         boolean newStatsSummary =
             options.getOptions(ExecutionOptions.class) != null
-                && options.getOptions(ExecutionOptions.class).getStatsSummary();
+                && options.getOptions(ExecutionOptions.class).statsSummary;
         UiEventHandler handler =
             createEventHandler(outErr, eventHandlerOptions, quiet, env, newStatsSummary);
         env.setUiEventHandler(handler);
@@ -705,8 +705,7 @@ public class BlazeCommandDispatcher implements CommandDispatcher {
       boolean includeResidueInRunBepEvent =
           env.getOptions().getOptions(BuildEventProtocolOptions.class) != null
               && env.getOptions()
-                  .getOptions(BuildEventProtocolOptions.class)
-                  .getIncludeResidueInRunBepEvent();
+                  .getOptions(BuildEventProtocolOptions.class).includeResidueInRunBepEvent;
       // Log the command line now that the modules have all had a change to register their listeners
       // to the event bus, and the flags have been re-parsed.
       CommandLineEvent originalCommandLineEvent =
@@ -779,7 +778,7 @@ public class BlazeCommandDispatcher implements CommandDispatcher {
       if (newResult.getExitCode().equals(ExitCode.REMOTE_CACHE_EVICTED)) {
         var executionOptions =
             Preconditions.checkNotNull(options.getOptions(ExecutionOptions.class));
-        if (attemptedCommandIds.size() < executionOptions.getRemoteRetryOnTransientCacheError()) {
+        if (attemptedCommandIds.size() < executionOptions.remoteRetryOnTransientCacheError) {
           throw new RemoteCacheTransientErrorException(env.getBuildRequestId(), env.getCommandId());
         }
       }
@@ -800,7 +799,7 @@ public class BlazeCommandDispatcher implements CommandDispatcher {
         // emitted or BlazeModule#completeCommand() is called. So we still need to try to stop the
         // profiler here.
         Profiler.instance().stop();
-        if (profilerStartedEvent.getProfile() instanceof LocalInstrumentationOutput profile) {
+        if (profilerStartedEvent.profile instanceof LocalInstrumentationOutput profile) {
           profile.makeConvenienceLink();
         }
       } catch (IOException e) {

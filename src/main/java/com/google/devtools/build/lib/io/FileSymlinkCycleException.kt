@@ -11,50 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.io;
+package com.google.devtools.build.lib.io
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.vfs.RootedPath;
+import com.google.devtools.build.lib.io.FileSymlinkException
+import com.google.devtools.build.lib.vfs.RootedPath
 
-/** Exception indicating that a cycle was found in the filesystem. */
-@VisibleForTesting
-public class FileSymlinkCycleException extends FileSymlinkException {
-  private final ImmutableList<RootedPath> pathToCycle;
-  private final ImmutableList<RootedPath> cycle;
+/** Exception indicating that a cycle was found in the filesystem.  */
+@com.google.common.annotations.VisibleForTesting
+class FileSymlinkCycleException @com.google.common.annotations.VisibleForTesting constructor(
+    pathToCycle: com.google.common.collect.ImmutableList<RootedPath?>?,
+    cycle: com.google.common.collect.ImmutableList<RootedPath?>
+) : FileSymlinkException("Symlink cycle") {
+    private val pathToCycle: com.google.common.collect.ImmutableList<RootedPath?>?
+    private val cycle: com.google.common.collect.ImmutableList<RootedPath?>
 
-  @VisibleForTesting
-  public FileSymlinkCycleException(
-      ImmutableList<RootedPath> pathToCycle, ImmutableList<RootedPath> cycle) {
-    // The cycle itself has already been reported by FileSymlinkCycleUniquenessValue, but we still
-    // want to have a readable #getMessage.
-    super("Symlink cycle");
-    this.pathToCycle = pathToCycle;
-    this.cycle = cycle;
-  }
+    init {
+        // The cycle itself has already been reported by FileSymlinkCycleUniquenessValue, but we still
+        // want to have a readable #getMessage.
+        this.pathToCycle = pathToCycle
+        this.cycle = cycle
+    }
 
-  /**
-   * The symlink path to the symlink cycle. For example, suppose 'a' -> 'b' -> 'c' -> 'd' -> 'c'.
-   * The path to the cycle is 'a', 'b'.
-   */
-  @VisibleForTesting
-  public ImmutableList<RootedPath> getPathToCycle() {
-    return pathToCycle;
-  }
+    /**
+     * The symlink path to the symlink cycle. For example, suppose 'a' -> 'b' -> 'c' -> 'd' -> 'c'.
+     * The path to the cycle is 'a', 'b'.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    fun getPathToCycle(): com.google.common.collect.ImmutableList<RootedPath?>? {
+        return pathToCycle
+    }
 
-  /**
-   * The symlink cycle. For example, suppose 'a' -> 'b' -> 'c' -> 'd' -> 'c'. The cycle is 'c', 'd'.
-   */
-  @VisibleForTesting
-  public ImmutableList<RootedPath> getCycle() {
-    return cycle;
-  }
+    /**
+     * The symlink cycle. For example, suppose 'a' -> 'b' -> 'c' -> 'd' -> 'c'. The cycle is 'c', 'd'.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    fun getCycle(): com.google.common.collect.ImmutableList<RootedPath?> {
+        return cycle
+    }
 
-  @Override
-  public String getUserFriendlyMessage() {
-    return "Symlink cycle: "
-        + Joiner.on("- > ").join(Iterables.transform(cycle, RootedPath::asPath));
-  }
+    val userFriendlyMessage: String
+        get() = ("Symlink cycle: "
+                + com.google.common.base.Joiner.on("- > ").join(
+            com.google.common.collect.Iterables.transform<RootedPath?, com.google.devtools.build.lib.vfs.Path?>(
+                cycle,
+                com.google.common.base.Function { obj: RootedPath? -> obj.asPath() })
+        ))
 }

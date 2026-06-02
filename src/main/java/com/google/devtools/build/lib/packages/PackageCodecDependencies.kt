@@ -11,25 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.packages.PackageSerializerInterface
 
-/** Dependencies of {@link Package} serialization. */
-public interface PackageCodecDependencies {
+/** Dependencies of [Package] serialization.  */
+interface PackageCodecDependencies {
+    fun getPackageSerializer(): PackageSerializerInterface?
 
-  PackageSerializerInterface getPackageSerializer();
+    /** Simplest implementation of PackageCodecDependencies.  */
+    class SimplePackageCodecDependencies(packageSerializer: PackageSerializerInterface?) : PackageCodecDependencies {
+        private val packageSerializer: PackageSerializerInterface?
 
-  /** Simplest implementation of PackageCodecDependencies. */
-  class SimplePackageCodecDependencies implements PackageCodecDependencies {
-    private final PackageSerializerInterface packageSerializer;
+        init {
+            this.packageSerializer = packageSerializer
+        }
 
-    public SimplePackageCodecDependencies(PackageSerializerInterface packageSerializer) {
-      this.packageSerializer = packageSerializer;
+        override fun getPackageSerializer(): PackageSerializerInterface? {
+            return packageSerializer
+        }
     }
-
-    @Override
-    public PackageSerializerInterface getPackageSerializer() {
-      return packageSerializer;
-    }
-  }
 }

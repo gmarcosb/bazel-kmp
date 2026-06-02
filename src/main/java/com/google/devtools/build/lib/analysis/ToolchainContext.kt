@@ -11,28 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.toolchains.ToolchainContextKey;
+import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement
 
-/** Represents the data needed for a specific target's use of toolchains and platforms. */
-public interface ToolchainContext {
-  /** Returns the key that identifies this context. */
-  ToolchainContextKey key();
+/** Represents the data needed for a specific target's use of toolchains and platforms.  */
+interface ToolchainContext {
+    /** Returns the key that identifies this context.  */
+    fun key(): ToolchainContextKey?
 
-  /** Returns the selected execution platform that these toolchains use. */
-  PlatformInfo executionPlatform();
+    /** Returns the selected execution platform that these toolchains use.  */
+    fun executionPlatform(): PlatformInfo?
 
-  /** Returns the target platform that these toolchains generate output for. */
-  PlatformInfo targetPlatform();
+    /** Returns the target platform that these toolchains generate output for.  */
+    fun targetPlatform(): PlatformInfo?
 
-  /** Returns the toolchain types that were requested. */
-  ImmutableSet<ToolchainTypeRequirement> toolchainTypes();
+    /** Returns the toolchain types that were requested.  */
+    fun toolchainTypes(): com.google.common.collect.ImmutableSet<ToolchainTypeRequirement?>?
 
-  /** Returns the labels of the specific toolchains being used. */
-  ImmutableSet<Label> resolvedToolchainLabels();
+    /** Returns the labels of the specific toolchains being used.  */
+    fun resolvedToolchainLabels(): com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.cmdline.Label?>?
 }

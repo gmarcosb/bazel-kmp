@@ -289,10 +289,10 @@ public class MobileInstallCommand implements BlazeCommand {
     // Collect relevant test options.
     TestOptions testOptions = options.getOptions(TestOptions.class);
     // Default value of testFilter is null.
-    if (!Strings.isNullOrEmpty(testOptions.getTestFilter())) {
-      cmdLine.add("--test_filter=" + testOptions.getTestFilter());
+    if (!Strings.isNullOrEmpty(testOptions.testFilter)) {
+      cmdLine.add("--test_filter=" + testOptions.testFilter);
     }
-    for (String arg : testOptions.getTestArguments()) {
+    for (String arg : testOptions.testArguments) {
       if (!arg.isEmpty()) {
         cmdLine.add("--test_arg=" + arg);
       }

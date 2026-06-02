@@ -11,31 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.authandtls.credentialhelper;
-
-import com.github.benmanes.caffeine.cache.Ticker;
-import com.google.devtools.build.lib.clock.Clock;
-import java.time.Duration;
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
 /**
  * WallTicker is a Ticker which reports wall time since the unix epoch.
- *
- * <p>We use this instead of com.github.benmanes.caffeine.cache.Ticker.SystemTicker because the
+ * 
+ * 
+ * We use this instead of com.github.benmanes.caffeine.cache.Ticker.SystemTicker because the
  * latter uses monotonic time (which doesn't increment the time source while the system is asleep)
  * with an unspecified reference point (which is unhelpful when computing the cache duration for
  * credentials whose expiry is a fixed point in time, not a fixed duration).
  */
-final class WallTicker implements Ticker {
-  private final Clock clock;
+internal class WallTicker(clock: com.google.devtools.build.lib.clock.Clock) :
+    com.github.benmanes.caffeine.cache.Ticker {
+    private val clock: com.google.devtools.build.lib.clock.Clock
 
-  WallTicker(Clock clock) {
-    this.clock = clock;
-  }
+    init {
+        this.clock = clock
+    }
 
-  @Override
-  public long read() {
-    // Documented to return a value in nanoseconds.
-    return Duration.ofMillis(clock.currentTimeMillis()).toNanos();
-  }
+    override fun read(): Long {
+        // Documented to return a value in nanoseconds.
+        return java.time.Duration.ofMillis(clock.currentTimeMillis()).toNanos()
+    }
 }

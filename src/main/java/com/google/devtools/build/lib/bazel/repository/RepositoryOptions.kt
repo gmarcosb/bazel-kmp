@@ -11,114 +11,104 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository
 
-package com.google.devtools.build.lib.bazel.repository;
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.BazelCompatibilityMode
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.CheckDirectDepsMode
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode
+import com.google.devtools.build.lib.cmdline.LabelSyntaxException
+import com.google.devtools.build.lib.cmdline.RepositoryName
+import com.google.devtools.build.lib.util.OptionsUtils
+import com.google.devtools.build.lib.vfs.PathFragment
 
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.util.OptionsUtils;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.Converters.DurationConverter;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import net.starlark.java.eval.EvalException;
-
-/** Command-line options for repositories. */
-@OptionsClass
-public abstract class RepositoryOptions extends OptionsBase {
-
-  @Option(
-      name = "repository_cache",
-      oldName = "experimental_repository_cache",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = OptionsUtils.PathFragmentConverter.class,
-      help =
-          """
+/** Command-line options for repositories.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class RepositoryOptions : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "repository_cache",
+        oldName = "experimental_repository_cache",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = OptionsUtils.PathFragmentConverter::class,
+        help = """
           Specifies the cache location of the downloaded values obtained
           during the fetching of external repositories. An empty string
           as argument requests the cache to be disabled,
           otherwise the default of `{--output_user_root}/cache/repos/v1` is used.
-          """)
-  public abstract PathFragment getRepositoryCache();
+          
+          """.trimIndent()
+    )
+    abstract val repositoryCache: PathFragment?
 
-  @Option(
-      name = "repo_contents_cache",
-      oldName = "repository_contents_cache",
-      oldNameWarning = false,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = OptionsUtils.PathFragmentConverter.class,
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "repo_contents_cache",
+        oldName = "repository_contents_cache",
+        oldNameWarning = false,
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = OptionsUtils.PathFragmentConverter::class,
+        help = """
           Specifies the location of the repo contents cache, which contains fetched repo
           directories shareable across workspaces. An empty string as argument requests the repo
           contents cache to be disabled, otherwise the default of `{--repository_cache}/contents`
           is used. Note that this means setting `--repository_cache=` would by default disable the
           repo contents cache as well, unless `--repo_contents_cache={some_path}` is also set.
-          """)
-  public abstract PathFragment getRepoContentsCache();
+          
+          """.trimIndent()
+    )
+    abstract val repoContentsCache: PathFragment?
 
-  @Option(
-      name = "repo_contents_cache_gc_max_age",
-      defaultValue = "14d",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = DurationConverter.class,
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "repo_contents_cache_gc_max_age",
+        defaultValue = "14d",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        help = """
           Specifies the amount of time an entry in the repo contents cache can stay unused before
           it's garbage collected. If set to zero, only duplicate entries will be garbage collected.
-          """)
-  public abstract Duration getRepoContentsCacheGcMaxAge();
+          
+          """.trimIndent()
+    )
+    abstract val repoContentsCacheGcMaxAge: java.time.Duration?
 
-  @Option(
-      name = "repo_contents_cache_gc_idle_delay",
-      defaultValue = "5m",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = DurationConverter.class,
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "repo_contents_cache_gc_idle_delay",
+        defaultValue = "5m",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        help = """
           Specifies the amount of time the server must remain idle before garbage collection happens
           to the repo contents cache.
-          """)
-  public abstract Duration getRepoContentsCacheGcIdleDelay();
+          
+          """.trimIndent()
+    )
+    abstract val repoContentsCacheGcIdleDelay: java.time.Duration?
 
-  @Option(
-      name = "registry",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      help =
-          "Specifies the registries to use to locate Bazel module dependencies. The order is"
-              + " important: modules will be looked up in earlier registries first, and only fall"
-              + " back to later registries when they're missing from the earlier ones.")
-  public abstract List<String> getRegistries();
+    @get:com.google.devtools.common.options.Option(
+        name = "registry",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+        help = ("Specifies the registries to use to locate Bazel module dependencies. The order is"
+                + " important: modules will be looked up in earlier registries first, and only fall"
+                + " back to later registries when they're missing from the earlier ones.")
+    )
+    abstract val registries: MutableList<String?>?
 
-  @Option(
-      name = "module_mirrors",
-      defaultValue = "null",
-      converter = Converters.StringToStringListConverter.class,
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "module_mirrors",
+        defaultValue = "null",
+        converter = com.google.devtools.common.options.Converters.StringToStringListConverter::class,
+        allowMultiple = true,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = """
           Specifies URLs under which the source URLs of Bazel modules can be found, in addition
           to and taking precedence over any registry-provided mirror URLs. This flag can be
           specified per-registry using the syntax
@@ -130,17 +120,18 @@ public abstract class RepositoryOptions extends OptionsBase {
           registries. Later uses of this flag override earlier ones with the same (or no) registry.
           The default set of mirrors may change over time, but all downloads from mirrors are
           verified by hashes stored in the registry (and thus pinned by the lockfile).
-          """)
-  public abstract List<Map.Entry<String, List<String>>> getModuleMirrors();
+          
+          """.trimIndent()
+    )
+    abstract val moduleMirrors: MutableList<MutableMap.MutableEntry<String?, MutableList<String?>?>?>?
 
-  @Option(
-      name = "allow_yanked_versions",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "allow_yanked_versions",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = """
           Specified the module versions in the form of
           `{module1}@{version1},module2@{version2}` that will be allowed in the resolved
           dependency graph even if they are declared yanked in the registry where they come
@@ -150,66 +141,68 @@ public abstract class RepositoryOptions extends OptionsBase {
           disable this check by using the keyword `all` (not recommended).
 
           [`NonRegistryOverride`]: https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/bazel/bzlmod/NonRegistryOverride.java
-          """)
-  public abstract List<String> getAllowedYankedVersions();
+          
+          """.trimIndent()
+    )
+    abstract val allowedYankedVersions: MutableList<String?>?
 
-  @Option(
-      name = "experimental_repository_cache_hardlinks",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help =
-          "If set, the repository cache will hardlink the file in case of a"
-              + " cache hit, rather than copying. This is intended to save disk space.")
-  public abstract boolean getUseHardlinks();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_repository_cache_hardlinks",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = ("If set, the repository cache will hardlink the file in case of a"
+                + " cache hit, rather than copying. This is intended to save disk space.")
+    )
+    abstract val useHardlinks: Boolean
 
-  @Option(
-      name = "repository_disable_download",
-      oldName = "experimental_repository_disable_download",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "repository_disable_download",
+        oldName = "experimental_repository_disable_download",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = """
           If set, downloading using `ctx.download{,_and_extract}` is not allowed during repository
           fetching. Note that network access is not completely disabled; ctx.execute could
           still run an arbitrary executable that accesses the Internet.
-          """)
-  public abstract boolean getDisableDownload();
+          
+          """.trimIndent()
+    )
+    abstract val disableDownload: Boolean
 
-  @Option(
-      name = "experimental_repository_downloader_retries",
-      defaultValue = "5",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help =
-          "The maximum number of attempts to retry a download error. If set to 0, retries are"
-              + " disabled.")
-  public abstract int getRepositoryDownloaderRetries();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_repository_downloader_retries",
+        defaultValue = "5",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.EXPERIMENTAL],
+        help = ("The maximum number of attempts to retry a download error. If set to 0, retries are"
+                + " disabled.")
+    )
+    abstract val repositoryDownloaderRetries: Int
 
-  @Option(
-      name = "distdir",
-      oldName = "experimental_distdir",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = OptionsUtils.PathFragmentConverter.class,
-      help =
-          "Additional places to search for archives before accessing the network "
-              + "to download them.")
-  public abstract List<PathFragment> getExperimentalDistdir();
+    @get:com.google.devtools.common.options.Option(
+        name = "distdir",
+        oldName = "experimental_distdir",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = OptionsUtils.PathFragmentConverter::class,
+        help = ("Additional places to search for archives before accessing the network "
+                + "to download them.")
+    )
+    abstract val experimentalDistdir: MutableList<PathFragment>?
 
-  @Option(
-      name = "override_repository",
-      defaultValue = "null",
-      allowMultiple = true,
-      converter = RepositoryOverrideConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "override_repository",
+        defaultValue = "null",
+        allowMultiple = true,
+        converter = RepositoryOverrideConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Override a repository with a local path in the form of `{repository name}={path}`,
           where the repository name can be either a canonical name or an apparent name from the
           point of view of the main repository.
@@ -222,18 +215,19 @@ public abstract class RepositoryOptions extends OptionsBase {
           relative path, it is relative to the current working directory. If the given path starts
           with `%workspace%`, it is relative to the workspace root, which is the output of `bazel
           info workspace`. If the given path is empty, then remove any previous overrides.
-          """)
-  public abstract List<RepositoryOverride> getRepositoryOverrides();
+          
+          """.trimIndent()
+    )
+    abstract val repositoryOverrides: MutableList<RepositoryOverride?>?
 
-  @Option(
-      name = "inject_repository",
-      defaultValue = "null",
-      allowMultiple = true,
-      converter = RepositoryInjectionConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "inject_repository",
+        defaultValue = "null",
+        allowMultiple = true,
+        converter = RepositoryInjectionConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Adds a new repository with a local path in the form of `{repository name}={path}`. This
           only takes effect with `--enable_bzlmod` and is equivalent to adding a
           corresponding `local_repository` to the root module's `MODULE.bazel` file via
@@ -242,50 +236,52 @@ public abstract class RepositoryOptions extends OptionsBase {
           directory. If the given path starts with `%workspace%`, it is relative to the
           workspace root, which is the output of `bazel info workspace`. If the given path
           is empty, then remove any previous injections.
-          """)
-  public abstract List<RepositoryInjection> getRepositoryInjections();
+          
+          """.trimIndent()
+    )
+    abstract val repositoryInjections: MutableList<RepositoryInjection?>?
 
-  @Option(
-      name = "override_module",
-      defaultValue = "null",
-      allowMultiple = true,
-      converter = ModuleOverrideConverter.class,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "override_module",
+        defaultValue = "null",
+        allowMultiple = true,
+        converter = ModuleOverrideConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Override a module with a local path in the form of `{module name}={path}`. If the given
           path is an absolute path, it will be used as it is. If the given path is a
           relative path, it is relative to the current working directory. If the given path
           starts with `%workspace%`, it is relative to the workspace root, which is the
           output of `bazel info workspace`. If the given path is empty, then remove any
           previous overrides.
-          """)
-  public abstract List<ModuleOverride> getModuleOverrides();
+          
+          """.trimIndent()
+    )
+    abstract val moduleOverrides: MutableList<ModuleOverride?>?
 
-  @Option(
-      name = "experimental_scale_timeouts",
-      defaultValue = "1.0",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help =
-          "Scale all timeouts in Starlark repository rules by this factor."
-              + " In this way, external repositories can be made working on machines"
-              + " that are slower than the rule author expected, without changing the"
-              + " source code")
-  public abstract double getExperimentalScaleTimeouts();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_scale_timeouts",
+        defaultValue = "1.0",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.EXPERIMENTAL],
+        help = ("Scale all timeouts in Starlark repository rules by this factor."
+                + " In this way, external repositories can be made working on machines"
+                + " that are slower than the rule author expected, without changing the"
+                + " source code")
+    )
+    abstract val experimentalScaleTimeouts: Double
 
-  @Option(
-      name = "downloader_config",
-      oldName = "experimental_downloader_config",
-      allowMultiple = true,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.REMOTE,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      converter = OptionsUtils.PathFragmentConverter.class,
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "downloader_config",
+        oldName = "experimental_downloader_config",
+        allowMultiple = true,
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.REMOTE,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        converter = OptionsUtils.PathFragmentConverter::class,
+        help = """
           Specify a file to configure the remote downloader with.
 
           This file consists of directives, one per line, that adjust how the
@@ -305,10 +301,10 @@ public abstract class RepositoryOptions extends OptionsBase {
           The `rewrite` directive takes two regex patterns: the first to match a URL
           and the second to substitute matched URLs with. For example, `rewrite
           github.com.example/bazel-contrib/rules_python/releases/download/(.*)/(.*)
-          mycorp.example/rules_python_mirror/$1/$2` will cause the downloader
+          mycorp.example/rules_python_mirror/${'$'}1/${'$'}2` will cause the downloader
           to access `mycorp.example/rules_python_mirror` whenever attempting
           to download rules_python from example.com. The substitute URL supports
-          back-references starting from `$1`. It is possible for multiple
+          back-references starting from `${'$'}1`. It is possible for multiple
           `rewrite` directives for the same matched URL to be provided, and in
           this case multiple URLs will be returned and tried sequentially. Do not
           include the URL scheme (`http://` or `https://`) in the patterns.
@@ -337,242 +333,256 @@ public abstract class RepositoryOptions extends OptionsBase {
 
           # See internal doc id1234 for why gitblit is blocked
           block gitblit.github.com.example
-          rewrite repo.maven.apache.org.example/maven2/(.*) artifacts.mycorp.example/libs-release/$1
+          rewrite repo.maven.apache.org.example/maven2/(.*) artifacts.mycorp.example/libs-release/${'$'}1
 
           # Use our GCS bucket for rules_python
-          rewrite github.com.example/bazel-contrib/rules_python/releases/download/(.*)/(.*) mycorp.example/rules_python_mirror/$1/$2
+          rewrite github.com.example/bazel-contrib/rules_python/releases/download/(.*)/(.*) mycorp.example/rules_python_mirror/${'$'}1/${'$'}2
           ```
 
           See also: [Insulating Builds from the Internet]
 
           [Insulating Builds from the Internet]: https://bazel.build/external/faq#how-do-i-insulate-my-builds-from-the-internet
-          """)
-  public abstract List<PathFragment> getDownloaderConfigs();
+          
+          """.trimIndent()
+    )
+    abstract val downloaderConfigs: MutableList<PathFragment>?
 
-  @Option(
-      name = "ignore_dev_dependency",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "ignore_dev_dependency",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = """
           If true, Bazel ignores `bazel_dep` and `use_extension` declared as `dev_dependency` in
           the `MODULE.bazel` of the root module. Note that, those dev dependencies are always
           ignored in the `MODULE.bazel` if it's not the root module regardless of the value
           of this flag.
-          """)
-  public abstract boolean getIgnoreDevDependency();
+          
+          """.trimIndent()
+    )
+    abstract val ignoreDevDependency: Boolean
 
-  @Option(
-      name = "check_direct_dependencies",
-      defaultValue = "warning",
-      converter = CheckDirectDepsMode.Converter.class,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          "Check if the direct `bazel_dep` dependencies declared in the root module are the same"
-              + " versions you get in the resolved dependency graph. Valid values are `off` to"
-              + " disable the check, `warning` to print a warning when mismatch detected or `error`"
-              + " to escalate it to a resolution failure.")
-  public abstract CheckDirectDepsMode getCheckDirectDependencies();
+    @get:com.google.devtools.common.options.Option(
+        name = "check_direct_dependencies",
+        defaultValue = "warning",
+        converter = com.google.devtools.build.lib.bazel.repository.RepositoryOptions.CheckDirectDepsMode.Converter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = ("Check if the direct `bazel_dep` dependencies declared in the root module are the same"
+                + " versions you get in the resolved dependency graph. Valid values are `off` to"
+                + " disable the check, `warning` to print a warning when mismatch detected or `error`"
+                + " to escalate it to a resolution failure.")
+    )
+    abstract val checkDirectDependencies: CheckDirectDepsMode?
 
-  @Option(
-      name = "experimental_check_external_repository_files",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Check for modifications to files in external repositories. Consider setting "
-              + "this flag to false if you don't expect these files to change outside of bazel "
-              + "since it will speed up subsequent runs as they won't have to check a "
-              + "previous run's cache.")
-  public abstract boolean getCheckExternalRepositoryFiles();
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_check_external_repository_files",
+        defaultValue = "true",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("Check for modifications to files in external repositories. Consider setting "
+                + "this flag to false if you don't expect these files to change outside of bazel "
+                + "since it will speed up subsequent runs as they won't have to check a "
+                + "previous run's cache.")
+    )
+    abstract val checkExternalRepositoryFiles: Boolean
 
-  @Option(
-      name = "check_bazel_compatibility",
-      defaultValue = "error",
-      converter = BazelCompatibilityMode.Converter.class,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          "Check bazel version compatibility of Bazel modules. Valid values are `error` to escalate"
-              + " it to a resolution failure, `off` to disable the check, or `warning` to print a"
-              + " warning when mismatch detected.")
-  public abstract BazelCompatibilityMode getBazelCompatibilityMode();
+    @get:com.google.devtools.common.options.Option(
+        name = "check_bazel_compatibility",
+        defaultValue = "error",
+        converter = com.google.devtools.build.lib.bazel.repository.RepositoryOptions.BazelCompatibilityMode.Converter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = ("Check bazel version compatibility of Bazel modules. Valid values are `error` to escalate"
+                + " it to a resolution failure, `off` to disable the check, or `warning` to print a"
+                + " warning when mismatch detected.")
+    )
+    abstract val bazelCompatibilityMode: BazelCompatibilityMode?
 
-  @Option(
-      name = "lockfile_mode",
-      converter = LockfileMode.Converter.class,
-      defaultValue = "update",
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          "Specifies how and whether or not to use the lockfile. Valid values are `update` to"
-              + " use the lockfile and update it if there are changes, `refresh` to additionally"
-              + " refresh mutable information (yanked versions and previously missing modules)"
-              + " from remote registries from time to time, `error` to use the lockfile but throw"
-              + " an error if it's not up-to-date, or `off` to neither read from or write to the"
-              + " lockfile.")
-  public abstract LockfileMode getLockfileMode();
+    @get:com.google.devtools.common.options.Option(
+        name = "lockfile_mode",
+        converter = com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode.Converter::class,
+        defaultValue = "update",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = ("Specifies how and whether or not to use the lockfile. Valid values are `update` to"
+                + " use the lockfile and update it if there are changes, `refresh` to additionally"
+                + " refresh mutable information (yanked versions and previously missing modules)"
+                + " from remote registries from time to time, `error` to use the lockfile but throw"
+                + " an error if it's not up-to-date, or `off` to neither read from or write to the"
+                + " lockfile.")
+    )
+    abstract val lockfileMode: LockfileMode?
 
-  @Option(
-      name = "vendor_dir",
-      defaultValue = "null",
-      converter = OptionsUtils.PathFragmentConverter.class,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          "Specifies the directory that should hold the external repositories in vendor mode, "
-              + "whether for the purpose of fetching them into it or using them while building. "
-              + "The path can be specified as either an absolute path or a path relative to the "
-              + "workspace directory.")
-  public abstract PathFragment getVendorDirectory();
+    @get:com.google.devtools.common.options.Option(
+        name = "vendor_dir",
+        defaultValue = "null",
+        converter = OptionsUtils.PathFragmentConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BZLMOD,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = ("Specifies the directory that should hold the external repositories in vendor mode, "
+                + "whether for the purpose of fetching them into it or using them while building. "
+                + "The path can be specified as either an absolute path or a path relative to the "
+                + "workspace directory.")
+    )
+    abstract val vendorDirectory: PathFragment?
 
-  /** An enum for specifying different modes for checking direct dependency accuracy. */
-  public enum CheckDirectDepsMode {
-    OFF, // Don't check direct dependency accuracy.
-    WARNING, // Print warning when mismatch.
-    ERROR; // Throw an error when mismatch.
+    /** An enum for specifying different modes for checking direct dependency accuracy.  */
+    enum class CheckDirectDepsMode {
+        OFF,  // Don't check direct dependency accuracy.
+        WARNING,  // Print warning when mismatch.
+        ERROR; // Throw an error when mismatch.
 
-    /** Converts to {@link CheckDirectDepsMode}. */
-    public static class Converter extends EnumConverter<CheckDirectDepsMode> {
-      public Converter() {
-        super(CheckDirectDepsMode.class, "direct deps check mode");
-      }
+        /** Converts to [CheckDirectDepsMode].  */
+        class Converter : com.google.devtools.common.options.EnumConverter<CheckDirectDepsMode?>(
+            CheckDirectDepsMode::class.java,
+            "direct deps check mode"
+        )
     }
-  }
 
-  /** An enum for specifying different modes for bazel compatibility check. */
-  public enum BazelCompatibilityMode {
-    ERROR, // Check and throw an error when mismatched.
-    WARNING, // Print warning when mismatched.
-    OFF; // Don't check bazel version compatibility.
+    /** An enum for specifying different modes for bazel compatibility check.  */
+    enum class BazelCompatibilityMode {
+        ERROR,  // Check and throw an error when mismatched.
+        WARNING,  // Print warning when mismatched.
+        OFF; // Don't check bazel version compatibility.
 
-    /** Converts to {@link BazelCompatibilityMode}. */
-    public static class Converter extends EnumConverter<BazelCompatibilityMode> {
-      public Converter() {
-        super(BazelCompatibilityMode.class, "Bazel compatibility check mode");
-      }
+        /** Converts to [BazelCompatibilityMode].  */
+        class Converter : com.google.devtools.common.options.EnumConverter<BazelCompatibilityMode?>(
+            BazelCompatibilityMode::class.java,
+            "Bazel compatibility check mode"
+        )
     }
-  }
 
-  /** An enum for specifying how to use the lockfile. */
-  public enum LockfileMode {
-    OFF, // Don't use the lockfile at all.
-    UPDATE, // Update the lockfile wh
-    REFRESH,
-    ERROR; // Throw an error when it mismatc
+    /** An enum for specifying how to use the lockfile.  */
+    enum class LockfileMode {
+        OFF,  // Don't use the lockfile at all.
+        UPDATE,  // Update the lockfile wh
+        REFRESH,
+        ERROR; // Throw an error when it mismatc
 
-    /** Converts to {@link LockfileMode}. */
-    public static class Converter extends EnumConverter<LockfileMode> {
-      public Converter() {
-        super(LockfileMode.class, "Lockfile mode");
-      }
+        /** Converts to [LockfileMode].  */
+        class Converter :
+            com.google.devtools.common.options.EnumConverter<LockfileMode?>(LockfileMode::class.java, "Lockfile mode")
     }
-  }
 
-  /**
-   * Converts from an equals-separated pair of strings into RepositoryName->PathFragment mapping.
-   */
-  public static class RepositoryOverrideConverter
-      extends Converter.Contextless<RepositoryOverride> {
+    /**
+     * Converts from an equals-separated pair of strings into RepositoryName->PathFragment mapping.
+     */
+    class RepositoryOverrideConverter
 
-    @Override
-    public RepositoryOverride convert(String input) throws OptionsParsingException {
-      String[] pieces = input.split("=", 2);
-      if (pieces.length != 2) {
-        throw new OptionsParsingException(
-            "Repository overrides must be of the form 'repository-name=path'", input);
-      }
-      OptionsUtils.PathFragmentConverter pathConverter = new OptionsUtils.PathFragmentConverter();
-      String pathString = pathConverter.convert(pieces[1]).getPathString();
-      try {
-        if (RepositoryName.isApparent(pieces[0])) {
-          RepositoryName.validateUserProvidedRepoName(pieces[0]);
-        } else {
-          var unused = RepositoryName.create(pieces[0]);
+        : com.google.devtools.common.options.Converter.Contextless<RepositoryOverride?>() {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): RepositoryOverride {
+            val pieces: Array<String?> = input.split("=", 2)
+            if (pieces.size != 2) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    "Repository overrides must be of the form 'repository-name=path'", input
+                )
+            }
+            val pathConverter: OptionsUtils.PathFragmentConverter = OptionsUtils.PathFragmentConverter()
+            val pathString: String? = pathConverter.convert(pieces[1]).getPathString()
+            try {
+                if (RepositoryName.Companion.isApparent(pieces[0])) {
+                    RepositoryName.Companion.validateUserProvidedRepoName(pieces[0])
+                } else {
+                    val unused: RepositoryName? = RepositoryName.Companion.create(pieces[0])
+                }
+                return RepositoryOverride(pieces[0], pathString)
+            } catch (e: LabelSyntaxException) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    "Invalid repository name given to override",
+                    input,
+                    e
+                )
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    "Invalid repository name given to override",
+                    input,
+                    e
+                )
+            }
         }
-        return new RepositoryOverride(pieces[0], pathString);
-      } catch (LabelSyntaxException | EvalException e) {
-        throw new OptionsParsingException("Invalid repository name given to override", input, e);
-      }
+
+        val typeDescription: String
+            get() = "an equals-separated mapping of repository name to path"
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "an equals-separated mapping of repository name to path";
-    }
-  }
+    /**
+     * Converts from an equals-separated pair of strings into RepositoryName->PathFragment mapping.
+     */
+    class RepositoryInjectionConverter
 
-  /**
-   * Converts from an equals-separated pair of strings into RepositoryName->PathFragment mapping.
-   */
-  public static class RepositoryInjectionConverter
-      extends Converter.Contextless<RepositoryInjection> {
+        : com.google.devtools.common.options.Converter.Contextless<RepositoryInjection?>() {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): RepositoryInjection {
+            val pieces: Array<String?> = input.split("=", 2)
+            if (pieces.size != 2) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    "Repository injections must be of the form 'repository-name=path'", input
+                )
+            }
+            val pathConverter: OptionsUtils.PathFragmentConverter = OptionsUtils.PathFragmentConverter()
+            val pathString: String? = pathConverter.convert(pieces[1]).getPathString()
+            try {
+                RepositoryName.Companion.validateUserProvidedRepoName(pieces[0])
+                return RepositoryInjection(pieces[0], pathString)
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    "Invalid repository name given to inject",
+                    input,
+                    e
+                )
+            }
+        }
 
-    @Override
-    public RepositoryInjection convert(String input) throws OptionsParsingException {
-      String[] pieces = input.split("=", 2);
-      if (pieces.length != 2) {
-        throw new OptionsParsingException(
-            "Repository injections must be of the form 'repository-name=path'", input);
-      }
-      OptionsUtils.PathFragmentConverter pathConverter = new OptionsUtils.PathFragmentConverter();
-      String pathString = pathConverter.convert(pieces[1]).getPathString();
-      try {
-        RepositoryName.validateUserProvidedRepoName(pieces[0]);
-        return new RepositoryInjection(pieces[0], pathString);
-      } catch (EvalException e) {
-        throw new OptionsParsingException("Invalid repository name given to inject", input, e);
-      }
-    }
-
-    @Override
-    public String getTypeDescription() {
-      return "an equals-separated mapping of repository name to path";
-    }
-  }
-
-  /** Converts from an equals-separated pair of strings into ModuleName->PathFragment mapping. */
-  public static class ModuleOverrideConverter extends Converter.Contextless<ModuleOverride> {
-
-    @Override
-    public ModuleOverride convert(String input) throws OptionsParsingException {
-      String[] pieces = input.split("=", 2);
-      if (pieces.length != 2) {
-        throw new OptionsParsingException(
-            "Module overrides must be of the form 'module-name=path'", input);
-      }
-
-      if (!RepositoryName.VALID_MODULE_NAME.matcher(pieces[0]).matches()) {
-        throw new OptionsParsingException(
-            String.format(
-                "invalid module name '%s': valid names must 1) only contain lowercase letters"
-                    + " (a-z), digits (0-9), dots (.), hyphens (-), and underscores (_); 2) begin"
-                    + " with a lowercase letter; 3) end with a lowercase letter or digit.",
-                pieces[0]));
-      }
-
-      OptionsUtils.PathFragmentConverter pathConverter = new OptionsUtils.PathFragmentConverter();
-      String pathString = pathConverter.convert(pieces[1]).getPathString();
-      return new ModuleOverride(pieces[0], pathString);
+        val typeDescription: String
+            get() = "an equals-separated mapping of repository name to path"
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "an equals-separated mapping of module name to path";
+    /** Converts from an equals-separated pair of strings into ModuleName->PathFragment mapping.  */
+    class ModuleOverrideConverter : com.google.devtools.common.options.Converter.Contextless<ModuleOverride?>() {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): ModuleOverride {
+            val pieces: Array<String?> = input.split("=", 2)
+            if (pieces.size != 2) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    "Module overrides must be of the form 'module-name=path'", input
+                )
+            }
+
+            if (!RepositoryName.Companion.VALID_MODULE_NAME.matcher(pieces[0]).matches()) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    java.lang.String.format(
+                        ("invalid module name '%s': valid names must 1) only contain lowercase letters"
+                                + " (a-z), digits (0-9), dots (.), hyphens (-), and underscores (_); 2) begin"
+                                + " with a lowercase letter; 3) end with a lowercase letter or digit."),
+                        pieces[0]
+                    )
+                )
+            }
+
+            val pathConverter: OptionsUtils.PathFragmentConverter = OptionsUtils.PathFragmentConverter()
+            val pathString: String? = pathConverter.convert(pieces[1]).getPathString()
+            return ModuleOverride(pieces[0], pathString)
+        }
+
+        val typeDescription: String
+            get() = "an equals-separated mapping of module name to path"
     }
-  }
 
-  /** A repository override, represented by a name and an absolute path to a repository. */
-  public record RepositoryOverride(String repositoryName, String path) {}
+    /** A repository override, represented by a name and an absolute path to a repository.  */
+    @kotlin.jvm.JvmRecord
+    data class RepositoryOverride(@kotlin.jvm.JvmField val repositoryName: String?, @kotlin.jvm.JvmField val path: String?)
 
-  /**
-   * A repository injected into the scope of the root module, represented by a name and an absolute
-   * path to a repository.
-   */
-  public record RepositoryInjection(String apparentName, String path) {}
+    /**
+     * A repository injected into the scope of the root module, represented by a name and an absolute
+     * path to a repository.
+     */
+    @kotlin.jvm.JvmRecord
+    data class RepositoryInjection(val apparentName: String?, val path: String?)
 
-  /** A module override, represented by a name and an absolute path to a module. */
-  public record ModuleOverride(String moduleName, String path) {}
+    /** A module override, represented by a name and an absolute path to a module.  */
+    @kotlin.jvm.JvmRecord
+    data class ModuleOverride(val moduleName: String?, @kotlin.jvm.JvmField val path: String?)
 }

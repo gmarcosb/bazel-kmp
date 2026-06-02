@@ -11,51 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import com.google.errorprone.annotations.Immutable;
+/** Determines whether a Spawn is executable locally, remotely, or both.  */
+@com.google.errorprone.annotations.Immutable
+class ExecutionPolicy private constructor(private val locality: Locality) {
+    private enum class Locality {
+        LOCAL_ONLY,
+        REMOTE_ONLY,
+        BOTH
+    }
 
-/** Determines whether a Spawn is executable locally, remotely, or both. */
-@Immutable
-public final class ExecutionPolicy {
-  private enum Locality {
-    LOCAL_ONLY,
-    REMOTE_ONLY,
-    BOTH;
-  }
+    fun canRunRemotelyOnly(): Boolean {
+        return locality == Locality.REMOTE_ONLY
+    }
 
-  public static final ExecutionPolicy LOCAL_EXECUTION_ONLY =
-      new ExecutionPolicy(Locality.LOCAL_ONLY);
+    fun canRunRemotely(): Boolean {
+        return locality != Locality.LOCAL_ONLY
+    }
 
-  public static final ExecutionPolicy REMOTE_EXECUTION_ONLY =
-      new ExecutionPolicy(Locality.REMOTE_ONLY);
+    fun canRunLocallyOnly(): Boolean {
+        return locality == Locality.LOCAL_ONLY
+    }
 
-  public static final ExecutionPolicy ANYWHERE = new ExecutionPolicy(Locality.BOTH);
+    fun canRunLocally(): Boolean {
+        return locality != Locality.REMOTE_ONLY
+    }
 
-  private final Locality locality;
+    override fun toString(): String {
+        return locality.toString()
+    }
 
-  private ExecutionPolicy(Locality locality) {
-    this.locality = locality;
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val LOCAL_EXECUTION_ONLY: ExecutionPolicy = ExecutionPolicy(Locality.LOCAL_ONLY)
 
-  public boolean canRunRemotelyOnly() {
-    return locality == Locality.REMOTE_ONLY;
-  }
+        @kotlin.jvm.JvmField
+        val REMOTE_EXECUTION_ONLY: ExecutionPolicy = ExecutionPolicy(Locality.REMOTE_ONLY)
 
-  public boolean canRunRemotely() {
-    return locality != Locality.LOCAL_ONLY;
-  }
-
-  public boolean canRunLocallyOnly() {
-    return locality == Locality.LOCAL_ONLY;
-  }
-
-  public boolean canRunLocally() {
-    return locality != Locality.REMOTE_ONLY;
-  }
-
-  @Override
-  public String toString() {
-    return locality.toString();
-  }
+        @kotlin.jvm.JvmField
+        val ANYWHERE: ExecutionPolicy = ExecutionPolicy(Locality.BOTH)
+    }
 }

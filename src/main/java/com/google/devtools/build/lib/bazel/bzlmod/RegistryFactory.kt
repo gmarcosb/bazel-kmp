@@ -12,31 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode
+import java.net.URISyntaxException
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.vfs.Path;
-import java.net.URISyntaxException;
-import java.util.Optional;
-
-/** A factory type for {@link Registry}. */
-public interface RegistryFactory {
-
-  /**
-   * Creates a registry associated with the given URL.
-   *
-   * <p>Outside of tests, only {@link RegistryFunction} should call this method.
-   */
-  Registry createRegistry(
-      String url,
-      RepositoryOptions.LockfileMode lockfileMode,
-      ImmutableMap<String, Optional<Checksum>> fileHashes,
-      ImmutableMap<ModuleKey, String> previouslySelectedYankedVersions,
-      Optional<Path> vendorDir,
-      ImmutableSet<String> moduleMirrors)
-      throws URISyntaxException;
+/** A factory type for [Registry].  */
+interface RegistryFactory {
+    /**
+     * Creates a registry associated with the given URL.
+     * 
+     * 
+     * Outside of tests, only [RegistryFunction] should call this method.
+     */
+    @Throws(URISyntaxException::class)
+    fun createRegistry(
+        url: String?,
+        lockfileMode: LockfileMode?,
+        fileHashes: com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?,
+        previouslySelectedYankedVersions: com.google.common.collect.ImmutableMap<ModuleKey?, String?>?,
+        vendorDir: java.util.Optional<com.google.devtools.build.lib.vfs.Path?>?,
+        moduleMirrors: com.google.common.collect.ImmutableSet<String?>?
+    ): com.google.devtools.build.lib.bazel.bzlmod.Registry?
 }

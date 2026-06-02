@@ -11,337 +11,332 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.disk;
+package com.google.devtools.build.lib.remote.disk
 
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.remote.util.DigestUtil.isOldStyleDigestFunction;
-
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.Directory;
-import build.bazel.remote.execution.v2.Tree;
-import com.google.common.base.Ascii;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.io.ByteStreams;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.devtools.build.lib.remote.Store;
-import com.google.devtools.build.lib.remote.common.ActionKey;
-import com.google.devtools.build.lib.remote.common.CacheNotFoundException;
-import com.google.devtools.build.lib.remote.common.MaybePathBacked;
-import com.google.devtools.build.lib.remote.common.RemoteCacheClient.Blob;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.Utils;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ExtensionRegistryLite;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.UUID;
-import java.util.concurrent.Executors;
+import build.bazel.remote.execution.v2.ActionResult
+import com.google.common.base.Ascii
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.common.io.ByteStreams
+import com.google.common.util.concurrent.*
+import com.google.devtools.build.lib.remote.Store
+import com.google.devtools.build.lib.remote.common.RemoteCacheClient
+import com.google.devtools.build.lib.remote.util.Utils
+import com.google.devtools.build.lib.vfs.FileSystemUtils
+import com.google.devtools.build.lib.vfs.Path
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.Callable
+import java.util.function.BiFunction
 
 /**
  * An on-disk store for the remote action cache.
- *
- * <p>Concurrent Bazel processes can safely retrieve and store entries in a shared disk cache, even
+ * 
+ * 
+ * Concurrent Bazel processes can safely retrieve and store entries in a shared disk cache, even
  * when they collide.
- *
- * <p>The mtime of an entry reflects the most recent time the entry was stored *or* retrieved. This
+ * 
+ * 
+ * The mtime of an entry reflects the most recent time the entry was stored *or* retrieved. This
  * property may be used to garbage collect the disk cache by deleting the least recently accessed
- * entries. This may be done by Bazel itself (see {@link DiskCacheGarbageCollectorIdleTask}), by
+ * entries. This may be done by Bazel itself (see [DiskCacheGarbageCollectorIdleTask]), by
  * another Bazel process sharing the disk cache, or by an external process. Although we could have
  * arranged for an ongoing garbage collection to block a concurrent build, we judge it to not be
  * worth the extra complexity; assuming that the collection policy is not overly aggressive, the
  * likelihood of a race condition is fairly small, and an affected build is able to automatically
  * recover by retrying.
  */
-public class DiskCacheClient {
+class DiskCacheClient(root: Path, digestUtil: DigestUtil) {
+    private val storeRootMap: ImmutableMap<Store?, Path?>
+    private val tmpRoot: Path
 
-  private static final String AC_DIR = "ac";
-  private static final String CAS_DIR = "cas";
-  private static final String TMP_DIR = "tmp";
+    // Disk cache operations are almost entirely I/O-bound as digests are only computed as part of
+    // I/O operations, so using virtual threads is appropriate.
+    private val executorService: ListeningExecutorService = MoreExecutors.listeningDecorator(
+        Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("disk-cache-", 0).factory())
+    )
 
-  private final ImmutableMap<Store, Path> storeRootMap;
-  private final Path tmpRoot;
+    init {
+        val fnRoot =
+            if (DigestUtil.isOldStyleDigestFunction(digestUtil.getDigestFunction()))
+                root
+            else
+                root.getChild(
+                    Ascii.toLowerCase(digestUtil.getDigestFunction().getValueDescriptor().getName())
+                )
+        this.storeRootMap =
+            ImmutableMap.of<Store?, Path?>(Store.AC, fnRoot.getChild(AC_DIR), Store.CAS, fnRoot.getChild(CAS_DIR))
 
-  // Disk cache operations are almost entirely I/O-bound as digests are only computed as part of
-  // I/O operations, so using virtual threads is appropriate.
+        this.tmpRoot = root.getChild(TMP_DIR)
 
-  private final ListeningExecutorService executorService =
-      MoreExecutors.listeningDecorator(
-          Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("disk-cache-", 0).factory()));
-
-  public DiskCacheClient(Path root, DigestUtil digestUtil) throws IOException {
-    Path fnRoot =
-        isOldStyleDigestFunction(digestUtil.getDigestFunction())
-            ? root
-            : root.getChild(
-                Ascii.toLowerCase(digestUtil.getDigestFunction().getValueDescriptor().getName()));
-    this.storeRootMap =
-        ImmutableMap.of(Store.AC, fnRoot.getChild(AC_DIR), Store.CAS, fnRoot.getChild(CAS_DIR));
-
-    this.tmpRoot = root.getChild(TMP_DIR);
-
-    fnRoot.createDirectoryAndParents();
-    tmpRoot.createDirectoryAndParents();
-  }
-
-  /**
-   * If the given path exists, updates its mtime and returns true. Otherwise, returns false.
-   *
-   * <p>This provides a cheap way to identify candidates for deletion when trimming the cache. We
-   * deliberately use the mtime because the atime is more likely to be externally modified and may
-   * be unavailable on some filesystems.
-   *
-   * <p>Prefer calling {@link #downloadBlob} instead, which will automatically update the mtime.
-   * This method should only be called by the remote worker implementation.
-   *
-   * @throws IOException if an I/O error other than a missing file occurs.
-   */
-  public boolean refresh(Path path) throws IOException {
-    try {
-      // Use NOW_SENTINEL_TIME instead of obtaining the current time so that the operation succeeds
-      // even when the file has a different owner, as might be the case for a shared cache.
-      path.setLastModifiedTime(Path.NOW_SENTINEL_TIME);
-    } catch (FileNotFoundException e) {
-      return false;
-    }
-    return true;
-  }
-
-  /**
-   * Moves an existing file into the cache.
-   *
-   * <p>The caller must ensure that the digest is correct and the file has been recently modified.
-   * This method should only be called by the combined cache implementation.
-   */
-  public void captureFile(Path src, Digest digest, Store store) throws IOException {
-    Path target = toPath(digest, store);
-
-    if (refresh(target)) {
-      src.delete();
-      return;
+        fnRoot.createDirectoryAndParents()
+        tmpRoot.createDirectoryAndParents()
     }
 
-    target.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.renameToleratingConcurrentCreation(src, target);
-  }
-
-  private ListenableFuture<Void> download(Digest digest, OutputStream out, Store store) {
-    return executorService.submit(
-        () -> {
-          Path path = toPath(digest, store);
-          if (!refresh(path)) {
-            throw new CacheNotFoundException(digest);
-          }
-          Path outPath = null;
-          if (out instanceof MaybePathBacked maybePathBacked) {
-            outPath = maybePathBacked.maybeGetPath();
-          }
-
-          if (outPath != null) {
-            // If the output stream is path-backed, the filesystem may be able to avoid copying the
-            // file.
-            FileSystemUtils.copyFile(path, outPath);
-          } else {
-            try (InputStream in = path.getInputStream()) {
-              ByteStreams.copy(in, out);
-            }
-          }
-          return null;
-        });
-  }
-
-  public ListenableFuture<Void> downloadBlob(Digest digest, OutputStream out) {
-    return Futures.transformAsync(
-        download(digest, out, Store.CAS),
-        (v) -> {
-          try {
-            out.flush();
-            return immediateFuture(null);
-          } catch (IOException e) {
-            return Futures.immediateFailedFuture(e);
-          }
-        },
-        directExecutor());
-  }
-
-  private void checkDigestExists(Digest digest) throws IOException {
-    if (digest.getSizeBytes() == 0) {
-      return;
-    }
-
-    Path path = toPath(digest, Store.CAS);
-    if (!refresh(path)) {
-      throw new CacheNotFoundException(digest);
-    }
-  }
-
-  private void checkOutputDirectory(Directory dir) throws IOException {
-    for (var file : dir.getFilesList()) {
-      checkDigestExists(file.getDigest());
-    }
-  }
-
-  /**
-   * Checks that all of the blobs referenced by the {@link ActionResult} exist and marks them as
-   * recently used.
-   *
-   * @throws CacheNotFoundException if at least one of the referenced blobs is missing.
-   * @throws IOException if an I/O error other than a missing file occurs.
-   */
-  private void checkActionResult(ActionResult actionResult) throws IOException {
-    for (var outputFile : actionResult.getOutputFilesList()) {
-      checkDigestExists(outputFile.getDigest());
-    }
-
-    for (var outputDirectory : actionResult.getOutputDirectoriesList()) {
-      var treeDigest = outputDirectory.getTreeDigest();
-      checkDigestExists(treeDigest);
-
-      Tree tree;
-      try (var in = toPath(treeDigest, Store.CAS).getInputStream()) {
-        tree = Tree.parseFrom(in, ExtensionRegistryLite.getEmptyRegistry());
-      }
-      checkOutputDirectory(tree.getRoot());
-      for (var dir : tree.getChildrenList()) {
-        checkOutputDirectory(dir);
-      }
-    }
-
-    if (actionResult.hasStdoutDigest()) {
-      checkDigestExists(actionResult.getStdoutDigest());
-    }
-
-    if (actionResult.hasStderrDigest()) {
-      checkDigestExists(actionResult.getStderrDigest());
-    }
-  }
-
-  public ListenableFuture<ActionResult> downloadActionResult(ActionKey actionKey) {
-    return Futures.transformAsync(
-        // Update the mtime on the action result itself before any of the blobs it references.
-        // This ensures that the blobs are always newer than the action result, so that trimming the
-        // cache in LRU order cannot create dangling references.
-        Utils.downloadAsActionResult(actionKey, (digest, out) -> download(digest, out, Store.AC)),
-        actionResult -> {
-          if (actionResult == null) {
-            return immediateFuture(null);
-          }
-
-          try {
-            // Verify that all of the referenced blobs exist and update their mtime.
-            checkActionResult(actionResult);
-          } catch (CacheNotFoundException e) {
-            // If at least one of the referenced blobs is missing, consider the action result to be
-            // stale. At this point we might have unnecessarily updated the mtime on some of the
-            // referenced blobs, but this should happen infrequently, and doing it this way avoids a
-            // double pass over the blobs.
-            return immediateFuture(null);
-          }
-
-          return immediateFuture(actionResult);
-        },
-        directExecutor());
-  }
-
-  public ListenableFuture<Void> uploadActionResult(ActionKey actionKey, ActionResult actionResult) {
-    return executorService.submit(
-        () -> {
-          try (InputStream data = actionResult.toByteString().newInput()) {
-            saveFile(actionKey.digest(), Store.AC, data);
-          }
-          return null;
-        });
-  }
-
-  public void close() {
-    executorService.close();
-  }
-
-  public ListenableFuture<Void> uploadFile(Digest digest, Path file) {
-    return executorService.submit(
-        () -> {
-          try (InputStream in = file.getInputStream()) {
-            saveFile(digest, Store.CAS, in);
-          }
-          return null;
-        });
-  }
-
-  public ListenableFuture<Void> uploadBlob(Digest digest, ByteString data) {
-    return uploadBlob(digest, (Blob) data::newInput);
-  }
-
-  /** Uploads a blob from a stream supplier. */
-  public ListenableFuture<Void> uploadBlob(Digest digest, Blob blob) {
-    return executorService.submit(
-        () -> {
-          try (InputStream in = blob.get()) {
-            saveFile(digest, Store.CAS, in);
-          }
-          return null;
-        });
-  }
-
-  public ListenableFuture<ImmutableSet<Digest>> findMissingDigests(Iterable<Digest> digests) {
-    // Both upload and download check if the file exists before doing I/O. So we don't
-    // have to do it here.
-    return immediateFuture(ImmutableSet.copyOf(digests));
-  }
-
-  public Path getTempPath() {
-    return tmpRoot.getChild(UUID.randomUUID().toString());
-  }
-
-  public Path toPath(Digest digest, Store store) {
-    String hash = digest.getHash();
-    return toPath(hash, store);
-  }
-
-  public Path toPath(String hash, Store store) {
-    // Create the file in a subfolder to bypass possible folder file count limits.
-    return storeRootMap.get(store).getChild(hash.substring(0, 2)).getChild(hash);
-  }
-
-  public void saveFile(Digest digest, Store store, InputStream in) throws IOException {
-    Path path = toPath(digest, store);
-
-    // CAS entries are content-addressed and thus automatically have the correct content if they
-    // exist.
-    if (store == Store.CAS && refresh(path)) {
-      return;
-    }
-
-    // Write a temporary file first, and then rename, to avoid data corruption in case of a crash.
-    Path temp = getTempPath();
-
-    try {
-      try (OutputStream out = temp.getOutputStream()) {
-        ByteStreams.copy(in, out);
-        // Fsync temp before we rename it to avoid data loss in the case of machine
-        // crashes (the OS may reorder the writes and the rename).
-        if (out instanceof FileOutputStream fos) {
-          fos.getFD().sync();
+    /**
+     * If the given path exists, updates its mtime and returns true. Otherwise, returns false.
+     * 
+     * 
+     * This provides a cheap way to identify candidates for deletion when trimming the cache. We
+     * deliberately use the mtime because the atime is more likely to be externally modified and may
+     * be unavailable on some filesystems.
+     * 
+     * 
+     * Prefer calling [.downloadBlob] instead, which will automatically update the mtime.
+     * This method should only be called by the remote worker implementation.
+     * 
+     * @throws IOException if an I/O error other than a missing file occurs.
+     */
+    @Throws(IOException::class)
+    fun refresh(path: Path): Boolean {
+        try {
+            // Use NOW_SENTINEL_TIME instead of obtaining the current time so that the operation succeeds
+            // even when the file has a different owner, as might be the case for a shared cache.
+            path.setLastModifiedTime(Path.NOW_SENTINEL_TIME)
+        } catch (e: FileNotFoundException) {
+            return false
         }
-      }
-      path.getParentDirectory().createDirectoryAndParents();
-      FileSystemUtils.renameToleratingConcurrentCreation(temp, path);
-    } catch (IOException e) {
-      try {
-        temp.delete();
-      } catch (IOException deleteErr) {
-        e.addSuppressed(deleteErr);
-      }
-      throw e;
+        return true
     }
-  }
+
+    /**
+     * Moves an existing file into the cache.
+     * 
+     * 
+     * The caller must ensure that the digest is correct and the file has been recently modified.
+     * This method should only be called by the combined cache implementation.
+     */
+    @Throws(IOException::class)
+    fun captureFile(src: Path, digest: Digest, store: Store?) {
+        val target: Path = toPath(digest, store)
+
+        if (refresh(target)) {
+            src.delete()
+            return
+        }
+
+        target.getParentDirectory()!!.createDirectoryAndParents()
+        FileSystemUtils.renameToleratingConcurrentCreation(src, target)
+    }
+
+    private fun download(digest: Digest, out: OutputStream, store: Store?): ListenableFuture<Void?> {
+        return executorService.submit<Void?>(
+            Callable {
+                val path: Path = toPath(digest, store)
+                if (!refresh(path)) {
+                    throw CacheNotFoundException(digest)
+                }
+                var outPath: Path? = null
+                if (out is MaybePathBacked) {
+                    outPath = out.maybeGetPath()
+                }
+
+                if (outPath != null) {
+                    // If the output stream is path-backed, the filesystem may be able to avoid copying the
+                    // file.
+                    FileSystemUtils.copyFile(path, outPath)
+                } else {
+                    path.getInputStream().use { `in` ->
+                        ByteStreams.copy(`in`, out)
+                    }
+                }
+                null
+            })
+    }
+
+    fun downloadBlob(digest: Digest, out: OutputStream): ListenableFuture<Void?> {
+        return Futures.transformAsync<Void?, Void?>(
+            download(digest, out, Store.CAS),
+            AsyncFunction { v: Void? ->
+                try {
+                    out.flush()
+                    return@transformAsync Futures.immediateFuture<Void?>(null)
+                } catch (e: IOException) {
+                    return@transformAsync Futures.immediateFailedFuture<Void?>(e)
+                }
+            },
+            MoreExecutors.directExecutor()
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun checkDigestExists(digest: Digest) {
+        if (digest.getSizeBytes() === 0) {
+            return
+        }
+
+        val path: Path = toPath(digest, Store.CAS)
+        if (!refresh(path)) {
+            throw CacheNotFoundException(digest)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun checkOutputDirectory(dir: Directory) {
+        for (file in dir.getFilesList()) {
+            checkDigestExists(file.getDigest())
+        }
+    }
+
+    /**
+     * Checks that all of the blobs referenced by the [ActionResult] exist and marks them as
+     * recently used.
+     * 
+     * @throws CacheNotFoundException if at least one of the referenced blobs is missing.
+     * @throws IOException if an I/O error other than a missing file occurs.
+     */
+    @Throws(IOException::class)
+    private fun checkActionResult(actionResult: ActionResult) {
+        for (outputFile in actionResult.getOutputFilesList()) {
+            checkDigestExists(outputFile.getDigest())
+        }
+
+        for (outputDirectory in actionResult.getOutputDirectoriesList()) {
+            val treeDigest: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                outputDirectory.getTreeDigest()
+            checkDigestExists(treeDigest)
+
+            val tree: Tree
+            toPath(treeDigest, Store.CAS).getInputStream().use { `in` ->
+                tree = Tree.parseFrom(`in`, ExtensionRegistryLite.getEmptyRegistry())
+            }
+            checkOutputDirectory(tree.getRoot())
+            for (dir in tree.getChildrenList()) {
+                checkOutputDirectory(dir)
+            }
+        }
+
+        if (actionResult.hasStdoutDigest()) {
+            checkDigestExists(actionResult.getStdoutDigest())
+        }
+
+        if (actionResult.hasStderrDigest()) {
+            checkDigestExists(actionResult.getStderrDigest())
+        }
+    }
+
+    fun downloadActionResult(actionKey: ActionKey): ListenableFuture<ActionResult?> {
+        return Futures.transformAsync<ActionResult?, ActionResult?>( // Update the mtime on the action result itself before any of the blobs it references.
+            // This ensures that the blobs are always newer than the action result, so that trimming the
+            // cache in LRU order cannot create dangling references.
+            Utils.downloadAsActionResult(
+                actionKey,
+                BiFunction { digest: Digest?, out: OutputStream? -> download(digest, out!!, Store.AC) }),
+            AsyncFunction { actionResult: ActionResult? ->
+                if (actionResult == null) {
+                    return@transformAsync Futures.immediateFuture<ActionResult?>(null)
+                }
+                try {
+                    // Verify that all of the referenced blobs exist and update their mtime.
+                    checkActionResult(actionResult)
+                } catch (e: CacheNotFoundException) {
+                    // If at least one of the referenced blobs is missing, consider the action result to be
+                    // stale. At this point we might have unnecessarily updated the mtime on some of the
+                    // referenced blobs, but this should happen infrequently, and doing it this way avoids a
+                    // double pass over the blobs.
+                    return@transformAsync Futures.immediateFuture<ActionResult?>(null)
+                }
+                Futures.immediateFuture<ActionResult?>(actionResult)
+            },
+            MoreExecutors.directExecutor()
+        )
+    }
+
+    fun uploadActionResult(actionKey: ActionKey, actionResult: ActionResult): ListenableFuture<Void?> {
+        return executorService.submit<Void?>(
+            Callable {
+                actionResult.toByteString().newInput().use { data ->
+                    saveFile(actionKey.digest, Store.AC, data)
+                }
+                null
+            })
+    }
+
+    fun close() {
+        executorService.close()
+    }
+
+    fun uploadFile(digest: Digest, file: Path): ListenableFuture<Void?> {
+        return executorService.submit<Void?>(
+            Callable {
+                file.getInputStream().use { `in` ->
+                    saveFile(digest, Store.CAS, `in`)
+                }
+                null
+            })
+    }
+
+    fun uploadBlob(digest: Digest, data: ByteString): ListenableFuture<Void?> {
+        return uploadBlob(digest, RemoteCacheClient.Blob { data.newInput() })
+    }
+
+    /** Uploads a blob from a stream supplier.  */
+    fun uploadBlob(digest: Digest, blob: RemoteCacheClient.Blob): ListenableFuture<Void?> {
+        return executorService.submit<Void?>(
+            Callable {
+                blob.get().use { `in` ->
+                    saveFile(digest, Store.CAS, `in`)
+                }
+                null
+            })
+    }
+
+    fun findMissingDigests(digests: Iterable<Digest?>): ListenableFuture<ImmutableSet<Digest?>?> {
+        // Both upload and download check if the file exists before doing I/O. So we don't
+        // have to do it here.
+        return Futures.immediateFuture<ImmutableSet<Digest?>?>(ImmutableSet.copyOf<Digest?>(digests))
+    }
+
+    val tempPath: Path
+        get() = tmpRoot.getChild(UUID.randomUUID().toString())
+
+    fun toPath(digest: Digest, store: Store?): Path {
+        val hash: String = digest.getHash()
+        return toPath(hash, store)
+    }
+
+    fun toPath(hash: String, store: Store?): Path {
+        // Create the file in a subfolder to bypass possible folder file count limits.
+        return storeRootMap.get(store)!!.getChild(hash.substring(0, 2)).getChild(hash)
+    }
+
+    @Throws(IOException::class)
+    fun saveFile(digest: Digest, store: Store?, `in`: InputStream) {
+        val path: Path = toPath(digest, store)
+
+        // CAS entries are content-addressed and thus automatically have the correct content if they
+        // exist.
+        if (store == Store.CAS && refresh(path)) {
+            return
+        }
+
+        // Write a temporary file first, and then rename, to avoid data corruption in case of a crash.
+        val temp = this.tempPath
+
+        try {
+            temp.getOutputStream().use { out ->
+                ByteStreams.copy(`in`, out)
+                // Fsync temp before we rename it to avoid data loss in the case of machine
+                // crashes (the OS may reorder the writes and the rename).
+                if (out is FileOutputStream) {
+                    out.getFD().sync()
+                }
+            }
+            path.getParentDirectory()!!.createDirectoryAndParents()
+            FileSystemUtils.renameToleratingConcurrentCreation(temp, path)
+        } catch (e: IOException) {
+            try {
+                temp.delete()
+            } catch (deleteErr: IOException) {
+                e.addSuppressed(deleteErr)
+            }
+            throw e
+        }
+    }
+
+    companion object {
+        private const val AC_DIR = "ac"
+        private const val CAS_DIR = "cas"
+        private const val TMP_DIR = "tmp"
+    }
 }

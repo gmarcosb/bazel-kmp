@@ -1444,7 +1444,7 @@ public class AspectTest extends AnalysisTestCase {
   private List<String> getInstrumentedFiles(String label) throws InterruptedException {
     return ActionsTestUtil.baseArtifactNames(
         getConfiguredTarget(label)
-            .get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+            .get(InstrumentedFilesInfo.provider)
             .getInstrumentedFiles());
   }
 

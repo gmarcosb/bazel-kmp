@@ -11,206 +11,196 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import com.google.common.base.Throwables;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.remote.ChannelConnectionWithServerCapabilitiesFactory.ChannelConnectionWithServerCapabilities;
-import com.google.devtools.build.lib.remote.grpc.DynamicConnectionPool;
-import com.google.devtools.build.lib.remote.grpc.SharedConnectionFactory.SharedConnection;
-import com.google.devtools.build.lib.remote.util.RxFutures;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import io.grpc.Channel;
-import io.netty.util.AbstractReferenceCounted;
-import io.netty.util.ReferenceCounted;
-import io.reactivex.rxjava3.annotations.CheckReturnValue;
-import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.core.SingleObserver;
-import io.reactivex.rxjava3.core.SingleSource;
-import io.reactivex.rxjava3.disposables.Disposable;
-import io.reactivex.rxjava3.functions.Function;
-import java.io.IOException;
-import java.util.concurrent.ExecutionException;
+import build.bazel.remote.execution.v2.ServerCapabilities
 
 /**
- * A wrapper around a {@link DynamicConnectionPool} exposing {@link Channel} and a reference count.
- * When instantiated the reference count is 1. {@link DynamicConnectionPool#close()} will be called
+ * A wrapper around a [DynamicConnectionPool] exposing [Channel] and a reference count.
+ * When instantiated the reference count is 1. [DynamicConnectionPool.close] will be called
  * on the wrapped channel when the reference count reaches 0.
- *
- * <p>See {@link ReferenceCounted} for more information about reference counting.
+ * 
+ * 
+ * See [ReferenceCounted] for more information about reference counting.
  */
-public class ReferenceCountedChannel implements ReferenceCounted {
-  private final DynamicConnectionPool dynamicConnectionPool;
-  private final AbstractReferenceCounted referenceCounted =
-      new AbstractReferenceCounted() {
-        @Override
-        protected void deallocate() {
-          try {
-            dynamicConnectionPool.close();
-          } catch (IOException e) {
-            throw new AssertionError(e.getMessage(), e);
-          }
+class ReferenceCountedChannel @kotlin.jvm.JvmOverloads constructor(
+    connectionFactory: ChannelConnectionWithServerCapabilitiesFactory,
+    maxConnections: Int = 0
+) : io.netty.util.ReferenceCounted {
+    private val dynamicConnectionPool: DynamicConnectionPool
+    private val referenceCounted: io.netty.util.AbstractReferenceCounted =
+        object : io.netty.util.AbstractReferenceCounted() {
+            override fun deallocate() {
+                try {
+                    dynamicConnectionPool.close()
+                } catch (e: IOException) {
+                    throw java.lang.AssertionError(e.getMessage(), e)
+                }
+            }
+
+            override fun touch(o: Any?): io.netty.util.ReferenceCounted {
+                return this
+            }
         }
 
-        @Override
-        public ReferenceCounted touch(Object o) {
-          return this;
+    init {
+        this.dynamicConnectionPool =
+            DynamicConnectionPool(
+                connectionFactory, connectionFactory.maxConcurrency(), maxConnections
+            )
+    }
+
+    @get:Throws(IOException::class)
+    val serverCapabilities: ServerCapabilities?
+        get() {
+            try {
+                Profiler.instance().profile("getServerCapabilities").use { s ->
+                    return blockingGet<ServerCapabilities?>(
+                        withChannelConnection<ServerCapabilities?>(io.reactivex.rxjava3.functions.Function { obj: ChannelConnectionWithServerCapabilities? -> obj.getServerCapabilities() })
+                    )
+                }
+            } catch (e: java.lang.InterruptedException) {
+                java.lang.Thread.currentThread().interrupt()
+                throw IOException(e)
+            }
         }
-      };
 
-  public ReferenceCountedChannel(ChannelConnectionWithServerCapabilitiesFactory connectionFactory) {
-    this(connectionFactory, /* maxConnections= */ 0);
-  }
+    val isShutdown: Boolean
+        get() = dynamicConnectionPool.isClosed()
 
-  public ReferenceCountedChannel(
-      ChannelConnectionWithServerCapabilitiesFactory connectionFactory, int maxConnections) {
-    this.dynamicConnectionPool =
-        new DynamicConnectionPool(
-            connectionFactory, connectionFactory.maxConcurrency(), maxConnections);
-  }
-
-  public ServerCapabilities getServerCapabilities() throws IOException {
-    try (var s = Profiler.instance().profile("getServerCapabilities")) {
-      return blockingGet(
-          withChannelConnection(ChannelConnectionWithServerCapabilities::getServerCapabilities));
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IOException(e);
+    /**
+     * A specialized [Function] that can only throw [IOException] and [ ].
+     */
+    @java.lang.FunctionalInterface
+    interface IOFunction<T, R> : io.reactivex.rxjava3.functions.Function<T?, R?> {
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        override fun apply(t: T?): R?
     }
-  }
 
-  public boolean isShutdown() {
-    return dynamicConnectionPool.isClosed();
-  }
-
-  /**
-   * A specialized {@link Function} that can only throw {@link IOException} and {@link
-   * InterruptedException}.
-   */
-  @FunctionalInterface
-  public interface IOFunction<T, R> extends Function<T, R> {
-    @Override
-    R apply(T t) throws IOException, InterruptedException;
-  }
-
-  @CheckReturnValue
-  public <T> ListenableFuture<T> withChannelFuture(
-      IOFunction<Channel, ? extends ListenableFuture<T>> source) {
-    return RxFutures.toListenableFuture(
-        withChannel(channel -> RxFutures.toSingle(() -> source.apply(channel), directExecutor())));
-  }
-
-  public <T> T withChannelBlocking(IOFunction<Channel, T> source)
-      throws IOException, InterruptedException {
-    return blockingGet(withChannel(channel -> Single.just(source.apply(channel))));
-  }
-
-  // prevents rxjava silent possible wrap of RuntimeException and misinterpretation
-  private <T> T blockingGet(Single<T> single) throws IOException, InterruptedException {
-    SettableFuture<T> future = SettableFuture.create();
-    single.subscribe(
-        new SingleObserver<T>() {
-          @Override
-          public void onError(Throwable t) {
-            future.setException(t);
-          }
-
-          @Override
-          public void onSuccess(T t) {
-            future.set(t);
-          }
-
-          @Override
-          public void onSubscribe(Disposable d) {
-            future.addListener(
-                () -> {
-                  if (future.isCancelled()) {
-                    d.dispose();
-                  }
-                },
-                directExecutor());
-          }
-        });
-
-    try {
-      return future.get();
-    } catch (ExecutionException e) {
-      Throwable cause = e.getCause();
-      Throwables.throwIfInstanceOf(cause, IOException.class);
-      Throwables.throwIfInstanceOf(cause, InterruptedException.class);
-      Throwables.throwIfUnchecked(cause);
-      throw new IllegalStateException("Unexpected exception type", cause);
+    @io.reactivex.rxjava3.annotations.CheckReturnValue
+    fun <T> withChannelFuture(
+        source: IOFunction<io.grpc.Channel?, out com.google.common.util.concurrent.ListenableFuture<T?>?>
+    ): com.google.common.util.concurrent.ListenableFuture<T?> {
+        return RxFutures.toListenableFuture<T?>(
+            withChannel<T?>(io.reactivex.rxjava3.functions.Function { channel: io.grpc.Channel? ->
+                RxFutures.toSingle<T?>(
+                    io.reactivex.rxjava3.functions.Supplier { source.apply(channel) },
+                    com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                )
+            })
+        )
     }
-  }
 
-  @CheckReturnValue
-  public <T> Single<T> withChannel(Function<Channel, ? extends SingleSource<? extends T>> source) {
-    return withChannelConnection(channelConnection -> source.apply(channelConnection.getChannel()));
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun <T> withChannelBlocking(source: IOFunction<io.grpc.Channel?, T?>): T? {
+        return blockingGet<T?>(withChannel<T?>(io.reactivex.rxjava3.functions.Function { channel: io.grpc.Channel? ->
+            Single.just<T?>(
+                source.apply(channel)
+            )
+        }))
+    }
 
-  private <T> Single<T> withChannelConnection(
-      Function<ChannelConnectionWithServerCapabilities, ? extends SingleSource<? extends T>>
-          source) {
-    return dynamicConnectionPool
-        .create()
-        .flatMap(
-            sharedConnection ->
-                Single.using(
-                    () -> sharedConnection,
-                    conn -> {
-                      var connection =
-                          (ChannelConnectionWithServerCapabilities)
-                              sharedConnection.getUnderlyingConnection();
-                      return source.apply(connection);
-                    },
-                    SharedConnection::close));
-  }
+    // prevents rxjava silent possible wrap of RuntimeException and misinterpretation
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun <T> blockingGet(single: Single<T?>): T? {
+        val future: com.google.common.util.concurrent.SettableFuture<T?> =
+            com.google.common.util.concurrent.SettableFuture.create<T?>()
+        single.subscribe(
+            object : SingleObserver<T?>() {
+                override fun onError(t: Throwable) {
+                    future.setException(t)
+                }
 
-  @Override
-  public int refCnt() {
-    return referenceCounted.refCnt();
-  }
+                override fun onSuccess(t: T?) {
+                    future.set(t)
+                }
 
-  @CanIgnoreReturnValue
-  @Override
-  public ReferenceCountedChannel retain() {
-    referenceCounted.retain();
-    return this;
-  }
+                override fun onSubscribe(d: Disposable) {
+                    future.addListener(
+                        java.lang.Runnable {
+                            if (future.isCancelled()) {
+                                d.dispose()
+                            }
+                        },
+                        com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                    )
+                }
+            })
 
-  @CanIgnoreReturnValue
-  @Override
-  public ReferenceCountedChannel retain(int increment) {
-    referenceCounted.retain(increment);
-    return this;
-  }
+        try {
+            return future.get()
+        } catch (e: ExecutionException) {
+            val cause: Throwable = e.getCause()
+            com.google.common.base.Throwables.throwIfInstanceOf<IOException?>(cause, IOException::class.java)
+            com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                cause,
+                java.lang.InterruptedException::class.java
+            )
+            com.google.common.base.Throwables.throwIfUnchecked(cause)
+            throw java.lang.IllegalStateException("Unexpected exception type", cause)
+        }
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public ReferenceCounted touch() {
-    referenceCounted.touch();
-    return this;
-  }
+    @io.reactivex.rxjava3.annotations.CheckReturnValue
+    fun <T> withChannel(source: io.reactivex.rxjava3.functions.Function<io.grpc.Channel?, out SingleSource<out T?>?>): Single<T?>? {
+        return withChannelConnection<T?>(io.reactivex.rxjava3.functions.Function { channelConnection: ChannelConnectionWithServerCapabilities? ->
+            source.apply(
+                channelConnection.getChannel()
+            )
+        })
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public ReferenceCounted touch(Object hint) {
-    referenceCounted.touch(hint);
-    return this;
-  }
+    private fun <T> withChannelConnection(
+        source: io.reactivex.rxjava3.functions.Function<ChannelConnectionWithServerCapabilities?, out SingleSource<out T?>?>
+    ): Single<T?>? {
+        return dynamicConnectionPool
+            .create()
+            .flatMap<T?>(
+                io.reactivex.rxjava3.functions.Function { sharedConnection: SharedConnection? ->
+                    Single.using(
+                        io.reactivex.rxjava3.functions.Supplier { sharedConnection },
+                        io.reactivex.rxjava3.functions.Function { conn: SharedConnection? ->
+                            val connection: ChannelConnectionWithServerCapabilities? =
+                                sharedConnection.getUnderlyingConnection() as ChannelConnectionWithServerCapabilities?
+                            source.apply(connection)
+                        },
+                        io.reactivex.rxjava3.functions.Consumer { obj: SharedConnection? -> obj.close() })
+                })
+    }
 
-  @Override
-  public boolean release() {
-    return referenceCounted.release();
-  }
+    override fun refCnt(): Int {
+        return referenceCounted.refCnt()
+    }
 
-  @Override
-  public boolean release(int decrement) {
-    return referenceCounted.release(decrement);
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun retain(): ReferenceCountedChannel {
+        referenceCounted.retain()
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun retain(increment: Int): ReferenceCountedChannel {
+        referenceCounted.retain(increment)
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun touch(): io.netty.util.ReferenceCounted {
+        referenceCounted.touch()
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun touch(hint: Any?): io.netty.util.ReferenceCounted {
+        referenceCounted.touch(hint)
+        return this
+    }
+
+    override fun release(): Boolean {
+        return referenceCounted.release()
+    }
+
+    override fun release(decrement: Int): Boolean {
+        return referenceCounted.release(decrement)
+    }
 }

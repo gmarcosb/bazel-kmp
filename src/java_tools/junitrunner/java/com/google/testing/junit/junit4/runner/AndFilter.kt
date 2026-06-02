@@ -11,36 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.junit4.runner
 
-package com.google.testing.junit.junit4.runner;
-
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+import org.junit.runner.Description
+import org.junit.runner.manipulation.Filter
 
 /**
- * A filter that returns {@code true} if both of its components return {@code
- * true}.
+ * A filter that returns `true` if both of its components return `true`.
  */
-@Deprecated
-class AndFilter extends Filter {
-  private final Filter filter1;
-  private final Filter filter2;
+@Deprecated("")
+internal class AndFilter(filter1: Filter, filter2: Filter) : Filter() {
+    private val filter1: Filter
+    private val filter2: Filter
 
-  public AndFilter(Filter filter1, Filter filter2) {
-    if (filter1 == null || filter2 == null) {
-      throw new NullPointerException();
+    init {
+        if (filter1 == null || filter2 == null) {
+            throw NullPointerException()
+        }
+        this.filter1 = filter1
+        this.filter2 = filter2
     }
-    this.filter1 = filter1;
-    this.filter2 = filter2;
-  }
 
-  @Override
-  public boolean shouldRun(Description description) {
-    return filter1.shouldRun(description) && filter2.shouldRun(description);
-  }
+    override fun shouldRun(description: Description?): Boolean {
+        return filter1.shouldRun(description) && filter2.shouldRun(description)
+    }
 
-  @Override
-  public String describe() {
-    return String.format("%s && %s", filter1.describe(), filter2.describe());
-  }
+    override fun describe(): String? {
+        return String.format("%s && %s", filter1.describe(), filter2.describe())
+    }
 }

@@ -11,36 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType;
+import com.google.common.collect.ImmutableList
 
 /**
  * A label(pattern, argument) filter expression, which computes the set of resulting actions of
  * argument whose outputs matches the regexp 'pattern'. The pattern follows java.util.regex format.
- *
+ * 
  * <pre>expr ::= OUTPUTS '(' WORD ',' expr ')'</pre>
- *
+ * 
  * Example patterns:
- *
+ * 
  * <pre>
  * '//third_party/a.java'     Match all actions whose outputs includes //third_party/a.java
  * '//third_party/.*\.js'     Match all actions whose outputs includes js files under //third_party/
  * '.*'                       Match all actions
  * '*'                        Error: invalid regex
- * </pre>
+</pre> * 
  */
-public class OutputsFunction extends ActionFilterFunction {
-  public static final String OUTPUTS = "outputs";
+class OutputsFunction : ActionFilterFunction() {
+    override fun getName(): String {
+        return OUTPUTS
+    }
 
-  @Override
-  public String getName() {
-    return OUTPUTS;
-  }
+    override fun getArgumentTypes(): Iterable<QueryEnvironment.ArgumentType?> {
+        return ImmutableList.of<QueryEnvironment.ArgumentType?>(
+            QueryEnvironment.ArgumentType.WORD,
+            QueryEnvironment.ArgumentType.EXPRESSION
+        )
+    }
 
-  @Override
-  public Iterable<ArgumentType> getArgumentTypes() {
-    return ImmutableList.of(ArgumentType.WORD, ArgumentType.EXPRESSION);
-  }
+    companion object {
+        const val OUTPUTS: String = "outputs"
+    }
 }

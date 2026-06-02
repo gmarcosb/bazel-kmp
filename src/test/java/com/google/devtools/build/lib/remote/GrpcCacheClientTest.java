@@ -169,8 +169,8 @@ public class GrpcCacheClientTest {
   private GrpcCacheClient newClient(RemoteOptions remoteOptions, Supplier<Backoff> backoffSupplier)
       throws IOException {
     AuthAndTLSOptions authTlsOptions = Options.getDefaults(AuthAndTLSOptions.class);
-    authTlsOptions.setUseGoogleDefaultCredentials(true);
-    authTlsOptions.setGoogleCredentials("/execroot/main/creds.json");
+    authTlsOptions.useGoogleDefaultCredentials = true;
+    authTlsOptions.googleCredentials = "/execroot/main/creds.json";
     authTlsOptions.setGoogleAuthScopes(ImmutableList.of("dummy.scope"));
 
     JsonObject json = new JsonObject();
@@ -179,16 +179,16 @@ public class GrpcCacheClientTest {
     json.addProperty("client_secret", "foo");
     json.addProperty("refresh_token", "bar");
     Scratch scratch = new Scratch();
-    scratch.file(authTlsOptions.getGoogleCredentials(), json.toString());
+    scratch.file(authTlsOptions.googleCredentials, json.toString());
 
     CallCredentialsProvider callCredentialsProvider;
-    try (InputStream in = scratch.resolve(authTlsOptions.getGoogleCredentials()).getInputStream()) {
+    try (InputStream in = scratch.resolve(authTlsOptions.googleCredentials).getInputStream()) {
       callCredentialsProvider =
           GoogleAuthUtils.newCallCredentialsProvider(
               GoogleAuthUtils.newGoogleCredentialsFromFile(
-                  in, authTlsOptions.getGoogleAuthScopes()));
+                  in, authTlsOptions.googleAuthScopes));
     }
-    CallCredentials creds = callCredentialsProvider.getCallCredentials();
+    CallCredentials creds = callCredentialsProvider.callCredentials;
 
     RemoteRetrier retrier =
         TestUtils.newRemoteRetrier(

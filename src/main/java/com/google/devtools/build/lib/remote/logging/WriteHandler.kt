@@ -11,59 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
+import com.google.bytestream.ByteStreamProto.WriteRequest
+import com.google.common.collect.Iterables
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableSet
 
-import com.google.bytestream.ByteStreamProto.WriteRequest;
-import com.google.bytestream.ByteStreamProto.WriteResponse;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.WriteDetails;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+/** LoggingHandler for [google.bytestream.Write] gRPC call.  */
+class WriteHandler : LoggingHandler<WriteRequest?, WriteResponse?> {
+    private val builder: WriteDetails.Builder = WriteDetails.newBuilder()
+    private val resources: MutableSet<String?> = LinkedHashSet<String?>()
+    private val offsets: MutableList<Long?> = ArrayList<Long?>()
+    private val finishWrites: MutableList<Long?> = ArrayList<Long?>()
+    private var bytesSentInSequence: Long = 0
+    private var numWrites: Long = 0
+    private var bytesSent: Long = 0
 
-/** LoggingHandler for {@link google.bytestream.Write} gRPC call. */
-public class WriteHandler implements LoggingHandler<WriteRequest, WriteResponse> {
-  private final WriteDetails.Builder builder = WriteDetails.newBuilder();
-  private final Set<String> resources = new LinkedHashSet<>();
-  private final List<Long> offsets = new ArrayList<>();
-  private final List<Long> finishWrites = new ArrayList<>();
-  private long bytesSentInSequence = 0;
-  private long numWrites = 0;
-  private long bytesSent = 0;
+    override fun handleReq(message: WriteRequest) {
+        resources.add(message.getResourceName())
+        val writeOffset: Long = message.getWriteOffset()
+        if (numWrites == 0L || Iterables.getLast<Long?>(offsets)!! + bytesSentInSequence != writeOffset) {
+            offsets.add(writeOffset)
+            bytesSentInSequence = 0
+        }
+        val size: Int = message.getData().size()
+        if (message.getFinishWrite()) {
+            finishWrites.add(writeOffset + size)
+        }
 
-  @Override
-  public void handleReq(WriteRequest message) {
-    resources.add(message.getResourceName());
-    long writeOffset = message.getWriteOffset();
-    if (numWrites == 0 || Iterables.getLast(offsets) + bytesSentInSequence != writeOffset) {
-      offsets.add(writeOffset);
-      bytesSentInSequence = 0;
+        numWrites++
+        bytesSent += size.toLong()
+        bytesSentInSequence += size.toLong()
     }
-    int size = message.getData().size();
-    if (message.getFinishWrite()) {
-      finishWrites.add(writeOffset + size);
+
+    override fun handleResp(message: WriteResponse?) {
+        builder.setResponse(message)
     }
 
-    numWrites++;
-    bytesSent += size;
-    bytesSentInSequence += size;
-  }
-
-  @Override
-  public void handleResp(WriteResponse message) {
-    builder.setResponse(message);
-  }
-
-  @Override
-  public RpcCallDetails getDetails() {
-    builder.addAllResourceNames(resources);
-    builder.addAllOffsets(offsets);
-    builder.addAllFinishWrites(finishWrites);
-    builder.setNumWrites(numWrites);
-    builder.setBytesSent(bytesSent);
-    return RpcCallDetails.newBuilder().setWrite(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        builder.addAllResourceNames(resources)
+        builder.addAllOffsets(offsets)
+        builder.addAllFinishWrites(finishWrites)
+        builder.setNumWrites(numWrites)
+        builder.setBytesSent(bytesSent)
+        return RpcCallDetails.newBuilder().setWrite(builder).build()
+    }
 }

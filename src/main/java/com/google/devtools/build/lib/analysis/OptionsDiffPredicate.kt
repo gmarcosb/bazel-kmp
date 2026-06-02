@@ -11,18 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.common.options.OptionDefinition;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
 /**
  * Predicate for determining whether the analysis cache should be cleared, given the new and old
  * value of an option which has changed and the values of the other new options.
  */
-@FunctionalInterface
-public interface OptionsDiffPredicate {
-  OptionsDiffPredicate ALWAYS_INVALIDATE = (options, option, oldValue, newValue) -> true;
+fun interface OptionsDiffPredicate {
+    fun apply(
+        newOptions: BuildOptions?,
+        option: com.google.devtools.common.options.OptionDefinition?,
+        oldValue: Any?,
+        newValue: Any?
+    ): Boolean
 
-  boolean apply(BuildOptions newOptions, OptionDefinition option, Object oldValue, Object newValue);
+    companion object {
+        val ALWAYS_INVALIDATE: OptionsDiffPredicate =
+            OptionsDiffPredicate { options: BuildOptions?, option: com.google.devtools.common.options.OptionDefinition?, oldValue: Any?, newValue: Any? -> true }
+    }
 }

@@ -11,13 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.actions.ActionLookupValue;
+import com.google.devtools.build.lib.actions.ActionLookupValue
 
 /**
- * Common interface for {@link AspectValue} and {@link
- * com.google.devtools.build.lib.skyframe.RuleConfiguredTargetValue}
+ * Common interface for [AspectValue] and [ ]
  */
-public interface RuleConfiguredObjectValue extends ConfiguredObjectValue, ActionLookupValue {}
+interface RuleConfiguredObjectValue : ConfiguredObjectValue, ActionLookupValue

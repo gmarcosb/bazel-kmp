@@ -11,411 +11,454 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.bzlmod.modcommand;
+package com.google.devtools.build.lib.bazel.bzlmod.modcommand
 
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Ascii;
-import com.google.common.collect.ImmutableBiMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.bazel.bzlmod.Version;
-import com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.server.FailureDetails.ModCommand.Code;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters.CommaSeparatedNonEmptyOptionListConverter;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.Optional;
-import net.starlark.java.eval.EvalException;
+import com.google.common.base.Ascii
+import com.google.common.collect.ImmutableBiMap
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.bazel.bzlmod.Version
+import com.google.devtools.build.lib.cmdline.RepositoryMapping
+import com.google.devtools.build.lib.server.FailureDetails.ModCommand.Code
+import com.google.devtools.common.options.Converter
+import com.google.devtools.common.options.Converters
+import com.google.devtools.common.options.OptionsParsingException
+import net.starlark.java.eval.EvalException
+import java.lang.String
+import java.util.*
+import java.util.function.Function
+import java.util.function.Predicate
+import kotlin.Boolean
+import kotlin.Int
+import kotlin.toString
 
 /**
  * Represents a reference to one or more modules in the external dependency graph, used for
  * modquery. This is parsed from a command-line argument (either as the value of a flag, or just as
  * a bare argument), and can take one of various forms (see implementations).
  */
-public interface ModuleArg {
+interface ModuleArg {
+    /** Resolves this module argument to a set of module keys.  */
+    @Throws(InvalidArgumentException::class)
+    fun resolveToModuleKeys(
+        modulesIndex: ImmutableMap<String?, ImmutableSet<ModuleKey?>?>?,
+        depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>?,
+        moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+        baseModuleDeps: ImmutableBiMap<String?, ModuleKey?>?,
+        baseModuleUnusedDeps: ImmutableBiMap<String?, ModuleKey?>?,
+        includeUnused: Boolean,
+        warnUnused: Boolean
+    ): ImmutableSet<ModuleKey?>?
 
-  /** Resolves this module argument to a set of module keys. */
-  ImmutableSet<ModuleKey> resolveToModuleKeys(
-      ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-      ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-      ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-      ImmutableBiMap<String, ModuleKey> baseModuleDeps,
-      ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps,
-      boolean includeUnused,
-      boolean warnUnused)
-      throws InvalidArgumentException;
+    /** Resolves this module argument to a set of repo names.  */
+    @Throws(InvalidArgumentException::class)
+    fun resolveToRepoNames(
+        modulesIndex: ImmutableMap<String?, ImmutableSet<ModuleKey?>?>?,
+        depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>?,
+        moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+        mapping: RepositoryMapping?
+    ): ImmutableMap<String?, RepositoryName?>?
 
-  /** Resolves this module argument to a set of repo names. */
-  ImmutableMap<String, RepositoryName> resolveToRepoNames(
-      ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-      ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-      ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-      RepositoryMapping mapping)
-      throws InvalidArgumentException;
-
-  /**
-   * Refers to a specific version of a module. Parsed from {@code <module>@<version>}. {@code
-   * <version>} can be the special string {@code _} to signify the empty version (for non-registry
-   * overrides).
-   */
-  public record SpecificVersionOfModule(ModuleKey moduleKey) implements ModuleArg {
-    public SpecificVersionOfModule {
-      requireNonNull(moduleKey, "moduleKey");
-    }
-
-    static SpecificVersionOfModule create(ModuleKey key) {
-      return new SpecificVersionOfModule(key);
-    }
-
-    private void throwIfNonexistent(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        boolean includeUnused,
-        boolean warnUnused)
-        throws InvalidArgumentException {
-      AugmentedModule mod = depGraph.get(moduleKey());
-      if (mod != null && !includeUnused && warnUnused && !mod.isUsed()) {
-        // Warn the user when unused modules are allowed and the specified version exists, but the
-        // --include_unused flag was not set.
-        throw new InvalidArgumentException(
-            String.format(
-                "Module version %s is unused as a result of module resolution. Use the"
-                    + " --include_unused flag to include it.",
-                moduleKey()),
-            Code.INVALID_ARGUMENTS);
-      }
-      if (mod == null || (!includeUnused && !mod.isUsed())) {
-        ImmutableSet<ModuleKey> existingKeys = modulesIndex.get(moduleKey().name());
-        if (existingKeys == null) {
-          throw new InvalidArgumentException(
-              String.format(
-                  "Module %s does not exist in the dependency graph.", moduleKey().name()),
-              Code.INVALID_ARGUMENTS);
+    /**
+     * Refers to a specific version of a module. Parsed from `<module>@<version>`. `<version>` can be the special string `_` to signify the empty version (for non-registry
+     * overrides).
+     */
+    class SpecificVersionOfModule(moduleKey: ModuleKey?) : ModuleArg {
+        @Throws(InvalidArgumentException::class)
+        private fun throwIfNonexistent(
+            modulesIndex: ImmutableMap<String?, ImmutableSet<ModuleKey?>?>,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            includeUnused: Boolean,
+            warnUnused: Boolean
+        ) {
+            val mod: AugmentedModule? = depGraph.get(this.moduleKey)
+            if (mod != null && !includeUnused && warnUnused && !mod.isUsed()) {
+                // Warn the user when unused modules are allowed and the specified version exists, but the
+                // --include_unused flag was not set.
+                throw InvalidArgumentException(
+                    String.format(
+                        "Module version %s is unused as a result of module resolution. Use the"
+                                + " --include_unused flag to include it.",
+                        this.moduleKey
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            if (mod == null || (!includeUnused && !mod.isUsed())) {
+                val existingKeys: ImmutableSet<ModuleKey?>? = modulesIndex.get(this.moduleKey.name)
+                if (existingKeys == null) {
+                    throw InvalidArgumentException(
+                        String.format(
+                            "Module %s does not exist in the dependency graph.", this.moduleKey.name
+                        ),
+                        Code.INVALID_ARGUMENTS
+                    )
+                }
+                // If --include_unused is not true, unused modules will be considered non-existent and an
+                // error will be thrown.
+                val filteredKeys: ImmutableSet<ModuleKey?> =
+                    existingKeys.stream()
+                        .filter(Predicate { k: ModuleKey? -> includeUnused || depGraph.get(k).isUsed() })
+                        .collect(ImmutableSet.toImmutableSet<ModuleKey?>())
+                throw InvalidArgumentException(
+                    String.format(
+                        "Module version %s does not exist, available versions: %s.",
+                        this.moduleKey, filteredKeys
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
         }
-        // If --include_unused is not true, unused modules will be considered non-existent and an
-        // error will be thrown.
-        ImmutableSet<ModuleKey> filteredKeys =
-            existingKeys.stream()
-                .filter(k -> includeUnused || depGraph.get(k).isUsed())
-                .collect(toImmutableSet());
-        throw new InvalidArgumentException(
-            String.format(
-                "Module version %s does not exist, available versions: %s.",
-                moduleKey(), filteredKeys),
-            Code.INVALID_ARGUMENTS);
-      }
-    }
 
-    @Override
-    public final ImmutableSet<ModuleKey> resolveToModuleKeys(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        ImmutableBiMap<String, ModuleKey> baseModuleDeps,
-        ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps,
-        boolean includeUnused,
-        boolean warnUnused)
-        throws InvalidArgumentException {
-      throwIfNonexistent(modulesIndex, depGraph, includeUnused, warnUnused);
-      return ImmutableSet.of(moduleKey());
-    }
-
-    @Override
-    public ImmutableMap<String, RepositoryName> resolveToRepoNames(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        RepositoryMapping mapping)
-        throws InvalidArgumentException {
-      throwIfNonexistent(
-          modulesIndex, depGraph, /* includeUnused= */ false, /* warnUnused= */ false);
-      return ImmutableMap.of(moduleKey().toString(), moduleKeyToCanonicalNames.get(moduleKey()));
-    }
-
-    @Override
-    public final String toString() {
-      return moduleKey().toString();
-    }
-  }
-
-  /** Refers to all versions of a module. Parsed from {@code <module>}. */
-  public record AllVersionsOfModule(String moduleName) implements ModuleArg {
-    public AllVersionsOfModule {
-      requireNonNull(moduleName, "moduleName");
-    }
-
-    static AllVersionsOfModule create(String moduleName) {
-      return new AllVersionsOfModule(moduleName);
-    }
-
-    private ImmutableSet<ModuleKey> resolveInternal(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        boolean includeUnused,
-        boolean warnUnused)
-        throws InvalidArgumentException {
-      ImmutableSet<ModuleKey> existingKeys = modulesIndex.get(moduleName());
-      if (existingKeys == null) {
-        throw new InvalidArgumentException(
-            String.format("Module %s does not exist in the dependency graph.", moduleName()),
-            Code.INVALID_ARGUMENTS);
-      }
-      ImmutableSet<ModuleKey> filteredKeys =
-          existingKeys.stream()
-              .filter(k -> includeUnused || depGraph.get(k).isUsed())
-              .collect(toImmutableSet());
-      if (filteredKeys.isEmpty()) {
-        if (warnUnused) {
-          throw new InvalidArgumentException(
-              String.format(
-                  "Module %s is unused as a result of module resolution. Use the --include_unused"
-                      + " flag to include it.",
-                  moduleName()),
-              Code.INVALID_ARGUMENTS);
+        @Throws(InvalidArgumentException::class)
+        override fun resolveToModuleKeys(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+            baseModuleDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            baseModuleUnusedDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            includeUnused: Boolean,
+            warnUnused: Boolean
+        ): ImmutableSet<ModuleKey?> {
+            throwIfNonexistent(modulesIndex, depGraph, includeUnused, warnUnused)
+            return ImmutableSet.of<ModuleKey?>(this.moduleKey)
         }
-        throw new InvalidArgumentException(
-            String.format("Module %s does not exist in the dependency graph.", moduleName()),
-            Code.INVALID_ARGUMENTS);
-      }
-      return filteredKeys;
-    }
 
-    @Override
-    public ImmutableSet<ModuleKey> resolveToModuleKeys(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        ImmutableBiMap<String, ModuleKey> baseModuleDeps,
-        ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps,
-        boolean includeUnused,
-        boolean warnUnused)
-        throws InvalidArgumentException {
-      return resolveInternal(modulesIndex, depGraph, includeUnused, warnUnused);
-    }
-
-    @Override
-    public ImmutableMap<String, RepositoryName> resolveToRepoNames(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        RepositoryMapping mapping)
-        throws InvalidArgumentException {
-      return resolveInternal(
-              modulesIndex, depGraph, /* includeUnused= */ false, /* warnUnused= */ false)
-          .stream()
-          .collect(toImmutableMap(ModuleKey::toString, moduleKeyToCanonicalNames::get));
-    }
-
-    @Override
-    public final String toString() {
-      return moduleName();
-    }
-  }
-
-  /**
-   * Refers to a module with the given apparent repo name, in the context of {@code --base_module}
-   * (or when parsing that flag itself, in the context of the root module). Parsed from
-   * {@code @<name>}.
-   */
-  public record ApparentRepoName(String name) implements ModuleArg {
-    public ApparentRepoName {
-      requireNonNull(name, "name");
-    }
-
-    static ApparentRepoName create(String name) {
-      return new ApparentRepoName(name);
-    }
-
-    @Override
-    public ImmutableSet<ModuleKey> resolveToModuleKeys(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        ImmutableBiMap<String, ModuleKey> baseModuleDeps,
-        ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps,
-        boolean includeUnused,
-        boolean warnUnused)
-        throws InvalidArgumentException {
-      ImmutableSet.Builder<ModuleKey> builder = new ImmutableSet.Builder<>();
-      ModuleKey dep = baseModuleDeps.get(name());
-      if (dep != null) {
-        builder.add(dep);
-      }
-      ModuleKey unusedDep = baseModuleUnusedDeps.get(name());
-      if (includeUnused && unusedDep != null) {
-        builder.add(unusedDep);
-      }
-      var result = builder.build();
-      if (result.isEmpty()) {
-        throw new InvalidArgumentException(
-            String.format(
-                "No module with the apparent repo name @%s exists in the dependency graph", name()),
-            Code.INVALID_ARGUMENTS);
-      }
-      return result;
-    }
-
-    @Override
-    public ImmutableMap<String, RepositoryName> resolveToRepoNames(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        RepositoryMapping mapping)
-        throws InvalidArgumentException {
-      RepositoryName repoName = mapping.get(name());
-      if (!repoName.isVisible()) {
-        throw new InvalidArgumentException(
-            String.format(
-                "No repo visible as %s from @%s", name(), repoName.getContextRepoDisplayString()),
-            Code.INVALID_ARGUMENTS);
-      }
-      return ImmutableMap.of(toString(), repoName);
-    }
-
-    @Override
-    public final String toString() {
-      return "@" + name();
-    }
-  }
-
-  /** Refers to a module with the given canonical repo name. Parsed from {@code @@<name>}. */
-  public record CanonicalRepoName(RepositoryName repoName) implements ModuleArg {
-    public CanonicalRepoName {
-      requireNonNull(repoName, "repoName");
-    }
-
-    static CanonicalRepoName create(RepositoryName repoName) {
-      return new CanonicalRepoName(repoName);
-    }
-
-    @Override
-    public ImmutableSet<ModuleKey> resolveToModuleKeys(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        ImmutableBiMap<String, ModuleKey> baseModuleDeps,
-        ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps,
-        boolean includeUnused,
-        boolean warnUnused)
-        throws InvalidArgumentException {
-      Optional<AugmentedModule> mod =
-          depGraph.values().stream()
-              .filter(m -> repoName().equals(moduleKeyToCanonicalNames.get(m.key())))
-              .findAny();
-      if (mod.isPresent() && !includeUnused && warnUnused && !mod.get().isUsed()) {
-        // Warn the user when unused modules are allowed and the specified version exists, but the
-        // --include_unused flag was not set.
-        throw new InvalidArgumentException(
-            String.format(
-                "Module version %s is unused as a result of module resolution. Use the"
-                    + " --include_unused flag to include it.",
-                mod.get().key()),
-            Code.INVALID_ARGUMENTS);
-      }
-      if (mod.isEmpty() || (!includeUnused && !mod.get().isUsed())) {
-        // If --include_unused is not true, unused modules will be considered non-existent and an
-        // error will be thrown.
-        throw new InvalidArgumentException(
-            String.format(
-                "No module with the canonical repo name @@%s exists in the dependency graph",
-                repoName().getName()),
-            Code.INVALID_ARGUMENTS);
-      }
-      return ImmutableSet.of(mod.get().key());
-    }
-
-    @Override
-    public ImmutableMap<String, RepositoryName> resolveToRepoNames(
-        ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-        ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-        ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-        RepositoryMapping mapping) {
-      return ImmutableMap.of(toString(), repoName());
-    }
-
-    @Override
-    public final String toString() {
-      return "@@" + repoName().getName();
-    }
-  }
-
-  /** Converter for {@link ModuleArg}. */
-  final class ModuleArgConverter extends Converter.Contextless<ModuleArg> {
-    public static final ModuleArgConverter INSTANCE = new ModuleArgConverter();
-
-    @Override
-    public ModuleArg convert(String input) throws OptionsParsingException {
-      if (Ascii.equalsIgnoreCase(input, "<root>")) {
-        return SpecificVersionOfModule.create(ModuleKey.ROOT);
-      }
-      if (input.startsWith("@@")) {
-        try {
-          return CanonicalRepoName.create(RepositoryName.create(input.substring(2)));
-        } catch (LabelSyntaxException e) {
-          throw new OptionsParsingException("invalid argument '" + input + "': " + e.getMessage());
+        @Throws(InvalidArgumentException::class)
+        override fun resolveToRepoNames(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>,
+            mapping: RepositoryMapping?
+        ): ImmutableMap<kotlin.String?, RepositoryName?> {
+            throwIfNonexistent(
+                modulesIndex, depGraph,  /* includeUnused= */false,  /* warnUnused= */false
+            )
+            return ImmutableMap.of<kotlin.String?, RepositoryName?>(
+                this.moduleKey.toString(),
+                moduleKeyToCanonicalNames.get(this.moduleKey)
+            )
         }
-      }
-      if (input.startsWith("@")) {
-        String apparentRepoName = input.substring(1);
-        try {
-          RepositoryName.validateUserProvidedRepoName(apparentRepoName);
-        } catch (EvalException e) {
-          throw new OptionsParsingException("invalid argument '" + input + "': " + e.getMessage());
+
+        override fun toString(): kotlin.String {
+            return this.moduleKey.toString()
         }
-        return ApparentRepoName.create(apparentRepoName);
-      }
-      int atIdx = input.indexOf('@');
-      if (atIdx >= 0) {
-        String moduleName = input.substring(0, atIdx);
-        String versionStr = input.substring(atIdx + 1);
-        if (versionStr.isEmpty()) {
-          throw new OptionsParsingException(
-              "invalid argument '" + input + "': use _ for the empty version");
+
+        val moduleKey: ModuleKey?
+
+        init {
+            this.moduleKey = moduleKey
+            Objects.requireNonNull<ModuleKey?>(moduleKey, "moduleKey")
         }
-        try {
-          Version version = versionStr.equals("_") ? Version.EMPTY : Version.parse(versionStr);
-          return SpecificVersionOfModule.create(new ModuleKey(moduleName, version));
-        } catch (ParseException e) {
-          throw new OptionsParsingException("invalid argument '" + input + "': " + e.getMessage());
+
+        companion object {
+            fun create(key: ModuleKey?): SpecificVersionOfModule {
+                return SpecificVersionOfModule(key)
+            }
         }
-      }
-      return AllVersionsOfModule.create(input);
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "\"<root>\" for the root module; <module>@<version> for a specific version of a"
-          + " module; <module> for all versions of a module; @<name> for a repo with the"
-          + " given apparent name; or @@<name> for a repo with the given canonical name";
-    }
-  }
+    /** Refers to all versions of a module. Parsed from `<module>`.  */
+    @kotlin.jvm.JvmRecord
+    data class AllVersionsOfModule(val moduleName: kotlin.String?) : ModuleArg {
+        @Throws(InvalidArgumentException::class)
+        private fun resolveInternal(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            includeUnused: Boolean,
+            warnUnused: Boolean
+        ): ImmutableSet<ModuleKey?> {
+            val existingKeys: ImmutableSet<ModuleKey?>? = modulesIndex.get(this.moduleName)
+            if (existingKeys == null) {
+                throw InvalidArgumentException(
+                    String.format("Module %s does not exist in the dependency graph.", this.moduleName),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            val filteredKeys: ImmutableSet<ModuleKey?> =
+                existingKeys.stream()
+                    .filter(Predicate { k: ModuleKey? -> includeUnused || depGraph.get(k).isUsed() })
+                    .collect(ImmutableSet.toImmutableSet<ModuleKey?>())
+            if (filteredKeys.isEmpty()) {
+                if (warnUnused) {
+                    throw InvalidArgumentException(
+                        String.format(
+                            "Module %s is unused as a result of module resolution. Use the --include_unused"
+                                    + " flag to include it.",
+                            this.moduleName
+                        ),
+                        Code.INVALID_ARGUMENTS
+                    )
+                }
+                throw InvalidArgumentException(
+                    String.format("Module %s does not exist in the dependency graph.", this.moduleName),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            return filteredKeys
+        }
 
-  /** Converter for a comma-separated list of {@link ModuleArg}s. */
-  class CommaSeparatedModuleArgListConverter
-      extends Converter.Contextless<ImmutableList<ModuleArg>> {
+        @Throws(InvalidArgumentException::class)
+        override fun resolveToModuleKeys(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+            baseModuleDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            baseModuleUnusedDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            includeUnused: Boolean,
+            warnUnused: Boolean
+        ): ImmutableSet<ModuleKey?> {
+            return resolveInternal(modulesIndex, depGraph, includeUnused, warnUnused)
+        }
 
-    @Override
-    public ImmutableList<ModuleArg> convert(String input) throws OptionsParsingException {
-      ImmutableList<String> args = new CommaSeparatedNonEmptyOptionListConverter().convert(input);
-      ImmutableList.Builder<ModuleArg> moduleArgs = new ImmutableList.Builder<>();
-      for (String arg : args) {
-        moduleArgs.add(ModuleArgConverter.INSTANCE.convert(arg));
-      }
-      return moduleArgs.build();
+        @Throws(InvalidArgumentException::class)
+        override fun resolveToRepoNames(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>,
+            mapping: RepositoryMapping?
+        ): ImmutableMap<kotlin.String?, RepositoryName?> {
+            return resolveInternal(
+                modulesIndex, depGraph,  /* includeUnused= */false,  /* warnUnused= */false
+            )
+                .stream()
+                .collect(
+                    ImmutableMap.toImmutableMap<ModuleKey?, kotlin.String?, RepositoryName?>(
+                        Function { obj: ModuleKey? -> obj.toString() },
+                        Function { key: ModuleKey? -> moduleKeyToCanonicalNames.get(key) })
+                )
+        }
+
+        override fun toString(): kotlin.String {
+            return this.moduleName!!
+        }
+
+        init {
+            Objects.requireNonNull<kotlin.String?>(moduleName, "moduleName")
+        }
+
+        companion object {
+            @kotlin.jvm.JvmStatic
+            fun create(moduleName: kotlin.String?): AllVersionsOfModule {
+                return AllVersionsOfModule(moduleName)
+            }
+        }
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "a comma-separated list of <module>s";
+    /**
+     * Refers to a module with the given apparent repo name, in the context of `--base_module`
+     * (or when parsing that flag itself, in the context of the root module). Parsed from
+     * `@<name>`.
+     */
+    @kotlin.jvm.JvmRecord
+    data class ApparentRepoName(val name: kotlin.String) : ModuleArg {
+        @Throws(InvalidArgumentException::class)
+        override fun resolveToModuleKeys(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>?,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+            baseModuleDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>,
+            baseModuleUnusedDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>,
+            includeUnused: Boolean,
+            warnUnused: Boolean
+        ): ImmutableSet<ModuleKey?> {
+            val builder: ImmutableSet.Builder<ModuleKey?> = ImmutableSet.Builder<ModuleKey?>()
+            val dep: ModuleKey? = baseModuleDeps.get(this.name)
+            if (dep != null) {
+                builder.add(dep)
+            }
+            val unusedDep: ModuleKey? = baseModuleUnusedDeps.get(this.name)
+            if (includeUnused && unusedDep != null) {
+                builder.add(unusedDep)
+            }
+            val result: ImmutableSet<ModuleKey?> = builder.build()
+            if (result.isEmpty()) {
+                throw InvalidArgumentException(
+                    String.format(
+                        "No module with the apparent repo name @%s exists in the dependency graph", this.name
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            return result
+        }
+
+        @Throws(InvalidArgumentException::class)
+        override fun resolveToRepoNames(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>?,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+            mapping: RepositoryMapping
+        ): ImmutableMap<kotlin.String?, RepositoryName?> {
+            val repoName: RepositoryName = mapping.get(this.name)
+            if (!repoName.isVisible()) {
+                throw InvalidArgumentException(
+                    String.format(
+                        "No repo visible as %s from @%s", this.name, repoName.getContextRepoDisplayString()
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            return ImmutableMap.of<kotlin.String?, RepositoryName?>(toString(), repoName)
+        }
+
+        override fun toString(): kotlin.String {
+            return "@" + this.name
+        }
+
+        init {
+            Objects.requireNonNull<kotlin.String?>(name, "name")
+        }
+
+        companion object {
+            @kotlin.jvm.JvmStatic
+            fun create(name: kotlin.String): ApparentRepoName {
+                return ApparentRepoName(name)
+            }
+        }
     }
-  }
+
+    /** Refers to a module with the given canonical repo name. Parsed from `@@<name>`.  */
+    class CanonicalRepoName(repoName: RepositoryName?) : ModuleArg {
+        @Throws(InvalidArgumentException::class)
+        override fun resolveToModuleKeys(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>,
+            baseModuleDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            baseModuleUnusedDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            includeUnused: Boolean,
+            warnUnused: Boolean
+        ): ImmutableSet<ModuleKey?> {
+            val mod: Optional<AugmentedModule?> =
+                depGraph.values().stream()
+                    .filter(Predicate { m: AugmentedModule? -> this.repoName == moduleKeyToCanonicalNames.get(m.key) })
+                    .findAny()
+            if (mod.isPresent() && !includeUnused && warnUnused && !mod.get().isUsed()) {
+                // Warn the user when unused modules are allowed and the specified version exists, but the
+                // --include_unused flag was not set.
+                throw InvalidArgumentException(
+                    String.format(
+                        "Module version %s is unused as a result of module resolution. Use the"
+                                + " --include_unused flag to include it.",
+                        mod.get().key
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            if (mod.isEmpty() || (!includeUnused && !mod.get().isUsed())) {
+                // If --include_unused is not true, unused modules will be considered non-existent and an
+                // error will be thrown.
+                throw InvalidArgumentException(
+                    String.format(
+                        "No module with the canonical repo name @@%s exists in the dependency graph",
+                        this.repoName.getName()
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            return ImmutableSet.of<ModuleKey?>(mod.get().key)
+        }
+
+        override fun resolveToRepoNames(
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>?,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+            mapping: RepositoryMapping?
+        ): ImmutableMap<kotlin.String?, RepositoryName?> {
+            return ImmutableMap.of<kotlin.String?, RepositoryName?>(toString(), this.repoName)
+        }
+
+        override fun toString(): kotlin.String {
+            return "@@" + this.repoName.getName()
+        }
+
+        val repoName: RepositoryName?
+
+        init {
+            this.repoName = repoName
+            Objects.requireNonNull<RepositoryName?>(repoName, "repoName")
+        }
+
+        companion object {
+            fun create(repoName: RepositoryName?): CanonicalRepoName {
+                return CanonicalRepoName(repoName)
+            }
+        }
+    }
+
+    /** Converter for [ModuleArg].  */
+    class ModuleArgConverter : Converter.Contextless<ModuleArg?>() {
+        @Throws(OptionsParsingException::class)
+        override fun convert(input: kotlin.String): ModuleArg {
+            if (Ascii.equalsIgnoreCase(input, "<root>")) {
+                return SpecificVersionOfModule.Companion.create(ModuleKey.Companion.ROOT)
+            }
+            if (input.startsWith("@@")) {
+                try {
+                    return CanonicalRepoName.Companion.create(RepositoryName.create(input.substring(2)))
+                } catch (e: LabelSyntaxException) {
+                    throw OptionsParsingException("invalid argument '" + input + "': " + e.getMessage())
+                }
+            }
+            if (input.startsWith("@")) {
+                val apparentRepoName: kotlin.String = input.substring(1)
+                try {
+                    RepositoryName.validateUserProvidedRepoName(apparentRepoName)
+                } catch (e: EvalException) {
+                    throw OptionsParsingException("invalid argument '" + input + "': " + e.getMessage())
+                }
+                return ApparentRepoName.Companion.create(apparentRepoName)
+            }
+            val atIdx: Int = input.indexOf('@'.code)
+            if (atIdx >= 0) {
+                val moduleName: kotlin.String = input.substring(0, atIdx)
+                val versionStr: kotlin.String = input.substring(atIdx + 1)
+                if (versionStr.isEmpty()) {
+                    throw OptionsParsingException(
+                        "invalid argument '" + input + "': use _ for the empty version"
+                    )
+                }
+                try {
+                    val version: Version? =
+                        if (versionStr == "_") Version.Companion.EMPTY else Version.Companion.parse(versionStr)
+                    return SpecificVersionOfModule.Companion.create(ModuleKey(moduleName, version))
+                } catch (e: Version.ParseException) {
+                    throw OptionsParsingException("invalid argument '" + input + "': " + e.getMessage())
+                }
+            }
+            return AllVersionsOfModule.Companion.create(input)
+        }
+
+        override fun getTypeDescription(): kotlin.String {
+            return ("\"<root>\" for the root module; <module>@<version> for a specific version of a"
+                    + " module; <module> for all versions of a module; @<name> for a repo with the"
+                    + " given apparent name; or @@<name> for a repo with the given canonical name")
+        }
+
+        companion object {
+            @kotlin.jvm.JvmField
+            val INSTANCE: ModuleArgConverter = ModuleArgConverter()
+        }
+    }
+
+    /** Converter for a comma-separated list of [ModuleArg]s.  */
+    class CommaSeparatedModuleArgListConverter
+
+        : Converter.Contextless<ImmutableList<ModuleArg?>?>() {
+        @Throws(OptionsParsingException::class)
+        override fun convert(input: kotlin.String): ImmutableList<ModuleArg?> {
+            val args = Converters.CommaSeparatedNonEmptyOptionListConverter().convert(input)
+            val moduleArgs = ImmutableList.Builder<ModuleArg?>()
+            for (arg in args) {
+                moduleArgs.add(ModuleArgConverter.Companion.INSTANCE.convert(arg))
+            }
+            return moduleArgs.build()
+        }
+
+        override fun getTypeDescription(): kotlin.String {
+            return "a comma-separated list of <module>s"
+        }
+    }
 }

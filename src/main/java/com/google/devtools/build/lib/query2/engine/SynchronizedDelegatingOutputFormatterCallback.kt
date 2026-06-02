@@ -11,48 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import java.io.IOException;
-import javax.annotation.Nullable;
+import java.io.IOException
 
 /**
- * A {@link ThreadSafeOutputFormatterCallback} wrapper around a {@link OutputFormatterCallback}
+ * A [ThreadSafeOutputFormatterCallback] wrapper around a [OutputFormatterCallback]
  * delegate.
  */
-public final class SynchronizedDelegatingOutputFormatterCallback<T>
-    extends ThreadSafeOutputFormatterCallback<T> {
-  private final OutputFormatterCallback<T> delegate;
+class SynchronizedDelegatingOutputFormatterCallback<T>
+    (private val delegate: OutputFormatterCallback<T?>) : ThreadSafeOutputFormatterCallback<T?>() {
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class)
+    override fun start() {
+        delegate.start()
+    }
 
-  public SynchronizedDelegatingOutputFormatterCallback(OutputFormatterCallback<T> delegate) {
-    this.delegate = delegate;
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(InterruptedException::class, IOException::class)
+    override fun close(failFast: Boolean) {
+        delegate.close(failFast)
+    }
 
-  @Override
-  public synchronized void start() throws IOException  {
-    delegate.start();
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(QueryException::class, InterruptedException::class)
+    override fun process(partialResult: Iterable<T?>?) {
+        delegate.process(partialResult)
+    }
 
-  @Override
-  public synchronized void close(boolean failFast) throws InterruptedException, IOException {
-    delegate.close(failFast);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, InterruptedException::class)
+    override fun processOutput(partialResult: Iterable<T?>?) {
+        delegate.processOutput(partialResult)
+    }
 
-  @Override
-  public synchronized void process(Iterable<T> partialResult)
-      throws QueryException, InterruptedException {
-    delegate.process(partialResult);
-  }
-
-  @Override
-  public synchronized void processOutput(Iterable<T> partialResult)
-      throws IOException, InterruptedException {
-    delegate.processOutput(partialResult);
-  }
-
-  @Override
-  @Nullable
-  public IOException getIoException() {
-    return delegate.getIoException();
-  }
+    override fun getIoException(): IOException? {
+        return delegate.getIoException()
+    }
 }

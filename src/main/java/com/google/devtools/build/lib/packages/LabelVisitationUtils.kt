@@ -11,123 +11,135 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import javax.annotation.Nullable;
+package com.google.devtools.build.lib.packages
 
 /**
- * Helper functions for visiting the {@link Label}s of the loading-phase deps of a {@link Target}
- * that are entailed by the values of the {@link Target}'s attributes. Notably, this does *not*
+ * Helper functions for visiting the [Label]s of the loading-phase deps of a [Target]
+ * that are entailed by the values of the [Target]'s attributes. Notably, this does *not*
  * include aspect-entailed deps.
  */
-public final class LabelVisitationUtils {
+object LabelVisitationUtils {
+    // An attribute which symbolizes the "toolchains" parameter of rule class definitions
+    // (user-specified via the `toolchains` parameter of the starlark rule() function). This is so
+    // that labels specified in this `toolchains` parameter may be treated the same as dependencies
+    // defined on an implicit rule attribute. This "fake" attribute uses an obscure placeholder name
+    // to prevent dependencies on this implementation detail.
+    private val TOOLCHAIN_TYPE_ATTR_FOR_FILTERING: com.google.devtools.build.lib.packages.Attribute? =
+        com.google.devtools.build.lib.packages.Attribute.Companion.attr<MutableList<Label?>?>(
+            "_hidden_toolchain_types",
+            BuildType.LABEL_LIST
+        )
+            .allowedFileTypes(FileTypeSet.NO_FILE)
+            .build()
 
-  // An attribute which symbolizes the "toolchains" parameter of rule class definitions
-  // (user-specified via the `toolchains` parameter of the starlark rule() function). This is so
-  // that labels specified in this `toolchains` parameter may be treated the same as dependencies
-  // defined on an implicit rule attribute. This "fake" attribute uses an obscure placeholder name
-  // to prevent dependencies on this implementation detail.
-  private static final Attribute TOOLCHAIN_TYPE_ATTR_FOR_FILTERING =
-      Attribute.attr("_hidden_toolchain_types", BuildType.LABEL_LIST)
-          .allowedFileTypes(FileTypeSet.NO_FILE)
-          .build();
-
-  private LabelVisitationUtils() {}
-
-  /** Interface for processing the {@link Label} of dep, one at a time. */
-  public interface LabelProcessor {
     /**
-     * Processes the {@link Label} of a single dep.
-     *
-     * @param from the {@link Target} that has the dep.
-     * @param attribute if non-{@code null}, the {@link Attribute} whose value entailed the dep.
-     * @param to the {@link Label} of the dep.
+     * Visits the loading-phase deps of `target` that satisfy `edgeFilter`, feeding each
+     * one to `labelProcessor` in a streaming manner.
      */
-    void process(Target from, @Nullable Attribute attribute, Label to);
-  }
+    fun visitTarget(
+        target: com.google.devtools.build.lib.packages.Target?,
+        edgeFilter: DependencyFilter,
+        labelProcessor: LabelProcessor
+    ) {
+        if (target is OutputFile) {
+            labelProcessor.process(
+                target,  /*attribute=*/null, (target as OutputFile).getGeneratingRule().getLabel()
+            )
+            visitTargetVisibility(target,  /*attribute=*/null, labelProcessor)
+            return
+        }
 
-  /**
-   * Visits the loading-phase deps of {@code target} that satisfy {@code edgeFilter}, feeding each
-   * one to {@code labelProcessor} in a streaming manner.
-   */
-  public static void visitTarget(
-      Target target, DependencyFilter edgeFilter, LabelProcessor labelProcessor) {
-    if (target instanceof OutputFile) {
-      labelProcessor.process(
-          target, /*attribute=*/ null, ((OutputFile) target).getGeneratingRule().getLabel());
-      visitTargetVisibility(target, /*attribute=*/ null, labelProcessor);
-      return;
+        if (target is InputFile) {
+            visitTargetVisibility(target,  /*attribute=*/null, labelProcessor)
+            return
+        }
+
+        if (target is com.google.devtools.build.lib.packages.Rule) {
+            visitRuleVisibility(target, edgeFilter, labelProcessor)
+            visitRule(target, edgeFilter, labelProcessor)
+            visitRuleToolchains(target, edgeFilter, labelProcessor)
+            return
+        }
+
+        if (target is PackageGroup) {
+            visitPackageGroup(target as PackageGroup, labelProcessor)
+        }
     }
 
-    if (target instanceof InputFile) {
-      visitTargetVisibility(target, /*attribute=*/ null, labelProcessor);
-      return;
+    private fun visitTargetVisibility(
+        target: com.google.devtools.build.lib.packages.Target,
+        attribute: com.google.devtools.build.lib.packages.Attribute?,
+        labelProcessor: LabelProcessor
+    ) {
+        for (label in target.getVisibilityDependencyLabels()) {
+            labelProcessor.process(target, attribute, label)
+        }
     }
 
-    if (target instanceof Rule rule) {
-      visitRuleVisibility(rule, edgeFilter, labelProcessor);
-      visitRule(rule, edgeFilter, labelProcessor);
-      visitRuleToolchains(rule, edgeFilter, labelProcessor);
-      return;
+    private fun visitRuleVisibility(
+        rule: com.google.devtools.build.lib.packages.Rule, edgeFilter: DependencyFilter, labelProcessor: LabelProcessor
+    ) {
+        val ruleClass: RuleClass = rule.getRuleClassObject()
+        val index: Int? = ruleClass.getAttributeProvider().getAttributeIndex("visibility")
+        if (index == null) {
+            return
+        }
+        val visibilityAttribute: com.google.devtools.build.lib.packages.Attribute =
+            ruleClass.getAttributeProvider().getAttribute(index)
+        if (visibilityAttribute.getType() !== BuildType.NODEP_LABEL_LIST) {
+            return
+        }
+        if (edgeFilter.test(rule, visibilityAttribute)) {
+            visitTargetVisibility(rule, visibilityAttribute, labelProcessor)
+        }
     }
 
-    if (target instanceof PackageGroup) {
-      visitPackageGroup((PackageGroup) target, labelProcessor);
+    private fun visitRuleToolchains(
+        rule: com.google.devtools.build.lib.packages.Rule, edgeFilter: DependencyFilter, labelProcessor: LabelProcessor
+    ) {
+        val ruleClass: RuleClass = rule.getRuleClassObject()
+        if (edgeFilter.test(rule, TOOLCHAIN_TYPE_ATTR_FOR_FILTERING)) {
+            for (t in ruleClass.getToolchainTypes()) {
+                labelProcessor.process(rule, TOOLCHAIN_TYPE_ATTR_FOR_FILTERING, t.toolchainType())
+            }
+        }
     }
-  }
 
-  private static void visitTargetVisibility(
-      Target target, @Nullable Attribute attribute, LabelProcessor labelProcessor) {
-    for (Label label : target.getVisibilityDependencyLabels()) {
-      labelProcessor.process(target, attribute, label);
+    private fun visitRule(
+        rule: com.google.devtools.build.lib.packages.Rule?,
+        edgeFilter: DependencyFilter?,
+        labelProcessor: LabelProcessor
+    ) {
+        AggregatingAttributeMapper.Companion.of(rule)
+            .visitLabels(
+                edgeFilter,
+                com.google.devtools.build.lib.packages.Type.LabelVisitor { label: Label?, attribute: com.google.devtools.build.lib.packages.Attribute? ->
+                    if (label == null) {
+                        return@visitLabels
+                    }
+                    labelProcessor.process(rule, attribute, label)
+                })
     }
-  }
 
-  private static void visitRuleVisibility(
-      Rule rule, DependencyFilter edgeFilter, LabelProcessor labelProcessor) {
-    RuleClass ruleClass = rule.getRuleClassObject();
-    Integer index = ruleClass.getAttributeProvider().getAttributeIndex("visibility");
-    if (index == null) {
-      return;
+    private fun visitPackageGroup(packageGroup: PackageGroup, labelProcessor: LabelProcessor) {
+        for (label in packageGroup.getIncludes()) {
+            labelProcessor.process(packageGroup,  /*attribute=*/null, label)
+        }
     }
-    Attribute visibilityAttribute = ruleClass.getAttributeProvider().getAttribute(index);
-    if (visibilityAttribute.getType() != BuildType.NODEP_LABEL_LIST) {
-      return;
-    }
-    if (edgeFilter.test(rule, visibilityAttribute)) {
-      visitTargetVisibility(rule, visibilityAttribute, labelProcessor);
-    }
-  }
 
-  private static void visitRuleToolchains(
-      Rule rule, DependencyFilter edgeFilter, LabelProcessor labelProcessor) {
-    RuleClass ruleClass = rule.getRuleClassObject();
-    if (edgeFilter.test(rule, TOOLCHAIN_TYPE_ATTR_FOR_FILTERING)) {
-      for (ToolchainTypeRequirement t : ruleClass.getToolchainTypes()) {
-        labelProcessor.process(rule, TOOLCHAIN_TYPE_ATTR_FOR_FILTERING, t.toolchainType());
-      }
+    /** Interface for processing the [Label] of dep, one at a time.  */
+    interface LabelProcessor {
+        /**
+         * Processes the [Label] of a single dep.
+         * 
+         * @param from the [Target] that has the dep.
+         * @param attribute if non-`null`, the [Attribute] whose value entailed the dep.
+         * @param to the [Label] of the dep.
+         */
+        fun process(
+            from: com.google.devtools.build.lib.packages.Target?,
+            attribute: com.google.devtools.build.lib.packages.Attribute?,
+            to: Label?
+        )
     }
-  }
-
-  private static void visitRule(
-      Rule rule, DependencyFilter edgeFilter, LabelProcessor labelProcessor) {
-    AggregatingAttributeMapper.of(rule)
-        .visitLabels(
-            edgeFilter,
-            (Label label, Attribute attribute) -> {
-              if (label == null) {
-                return;
-              }
-              labelProcessor.process(rule, attribute, label);
-            });
-  }
-
-  private static void visitPackageGroup(PackageGroup packageGroup, LabelProcessor labelProcessor) {
-    for (Label label : packageGroup.getIncludes()) {
-      labelProcessor.process(packageGroup, /*attribute=*/ null, label);
-    }
-  }
 }

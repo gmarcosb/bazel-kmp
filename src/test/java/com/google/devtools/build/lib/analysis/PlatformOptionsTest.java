@@ -99,13 +99,13 @@ public final class PlatformOptionsTest extends OptionsTestCase<PlatformOptions> 
   @Test
   public void platformMappings_default() throws Exception {
     PlatformOptions options = create(ImmutableList.of());
-    assertThat(options.getPlatformMappingKey()).isEqualTo(PlatformMappingKey.DEFAULT);
+    assertThat(options.platformMappingKey).isEqualTo(PlatformMappingKey.DEFAULT);
   }
 
   @Test
   public void platformMappings_custom() throws Exception {
     PlatformOptions options = createWithPrefix(PLATFORM_MAPPINGS_PREFIX, "a/b/platform_mappings");
-    assertThat(options.getPlatformMappingKey())
+    assertThat(options.platformMappingKey)
         .isEqualTo(
             PlatformMappingKey.createExplicitlySet(PathFragment.create("a/b/platform_mappings")));
   }
@@ -120,7 +120,7 @@ public final class PlatformOptionsTest extends OptionsTestCase<PlatformOptions> 
   @Test
   public void hostPlatformEmpty_default() throws Exception {
     PlatformOptions options = createWithPrefix(HOST_PLATFORM_PREFIX, "");
-    assertThat(options.getHostPlatform())
+    assertThat(options.hostPlatform)
         .isEqualTo(Label.parseCanonicalUnchecked(PlatformOptions.DEFAULT_HOST_PLATFORM));
   }
 }

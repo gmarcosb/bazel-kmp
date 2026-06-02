@@ -11,121 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.QueryExceptionMarkerInterface;
-import com.google.devtools.build.lib.server.FailureDetails.ActionQuery;
-import com.google.devtools.build.lib.server.FailureDetails.ConfigurableQuery;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Query;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.cmdline.QueryExceptionMarkerInterface
 
-/** Exception indicating a failure in Blaze query, aquery, or cquery. */
-public class QueryException extends Exception implements QueryExceptionMarkerInterface {
+/** Exception indicating a failure in Blaze query, aquery, or cquery.  */
+class QueryException : Exception, QueryExceptionMarkerInterface {
+    /**
+     * Returns the subexpression for which evaluation failed, or null if
+     * the failure occurred during lexing/parsing.
+     */
+    val failedExpression: QueryExpression?
+    private val failureDetail: FailureDetail?
 
-  /** Returns a better error message for the query. */
-  static String describeFailedQuery(QueryException e, QueryExpression toplevel) {
-    QueryExpression badQuery = e.getFailedExpression();
-    if (badQuery == null) {
-      return "Evaluation failed: " + e.getMessage();
+    constructor(e: QueryException, toplevel: QueryExpression?) : super(describeFailedQuery(e, toplevel), e) {
+        this.failedExpression = null
+        this.failureDetail = e.getFailureDetail()
     }
-    return badQuery == toplevel
-        ? "Evaluation of query \"" + toplevel.toTrunctatedString() + "\" failed: " + e.getMessage()
-        : "Evaluation of subquery \""
-            + badQuery.toTrunctatedString()
-            + "\" failed (did you want to use --keep_going?): "
-            + e.getMessage();
-  }
 
-  private final QueryExpression expression;
-  private final FailureDetail failureDetail;
+    constructor(
+        expression: QueryExpression?,
+        message: String?,
+        cause: Throwable?,
+        failureDetail: FailureDetail?
+    ) : super(message, cause) {
+        this.failedExpression = expression
+        this.failureDetail = Preconditions.checkNotNull<FailureDetail?>(failureDetail)
+    }
 
-  public QueryException(QueryException e, QueryExpression toplevel) {
-    super(describeFailedQuery(e, toplevel), e);
-    this.expression = null;
-    this.failureDetail = e.getFailureDetail();
-  }
+    constructor(expression: QueryExpression?, message: String?, failureDetail: FailureDetail?) : super(message) {
+        this.failedExpression = expression
+        this.failureDetail = Preconditions.checkNotNull<FailureDetail?>(failureDetail)
+    }
 
-  public QueryException(
-      QueryExpression expression, String message, Throwable cause, FailureDetail failureDetail) {
-    super(message, cause);
-    this.expression = expression;
-    this.failureDetail = Preconditions.checkNotNull(failureDetail);
-  }
-
-  public QueryException(QueryExpression expression, String message, FailureDetail failureDetail) {
-    super(message);
-    this.expression = expression;
-    this.failureDetail = Preconditions.checkNotNull(failureDetail);
-  }
-
-  public QueryException(QueryExpression expression, String message, Query.Code queryCode) {
-    this(
+    constructor(expression: QueryExpression?, message: String?, queryCode: Query.Code?) : this(
         expression,
         message,
         FailureDetail.newBuilder()
             .setMessage(message)
             .setQuery(Query.newBuilder().setCode(queryCode).build())
-            .build());
-  }
+            .build()
+    )
 
-  public QueryException(
-      QueryExpression expression, String message, ActionQuery.Code actionQueryCode) {
-    this(
+    constructor(expression: QueryExpression?, message: String?, actionQueryCode: ActionQuery.Code?) : this(
         expression,
         message,
         FailureDetail.newBuilder()
             .setMessage(message)
             .setActionQuery(ActionQuery.newBuilder().setCode(actionQueryCode).build())
-            .build());
-  }
+            .build()
+    )
 
-  public QueryException(
-      QueryExpression expression, String message, ConfigurableQuery.Code configurableQueryCode) {
-    this(
+    constructor(expression: QueryExpression?, message: String?, configurableQueryCode: ConfigurableQuery.Code?) : this(
         expression,
         message,
         FailureDetail.newBuilder()
             .setMessage(message)
             .setConfigurableQuery(
-                ConfigurableQuery.newBuilder().setCode(configurableQueryCode).build())
-            .build());
-  }
+                ConfigurableQuery.newBuilder().setCode(configurableQueryCode).build()
+            )
+            .build()
+    )
 
-  public QueryException(String message, Throwable cause, FailureDetail failureDetail) {
-    super(message, cause);
-    this.expression = null;
-    this.failureDetail = Preconditions.checkNotNull(failureDetail);
-  }
+    constructor(message: String?, cause: Throwable?, failureDetail: FailureDetail?) : super(message, cause) {
+        this.failedExpression = null
+        this.failureDetail = Preconditions.checkNotNull<FailureDetail?>(failureDetail)
+    }
 
-  public QueryException(String message, FailureDetail failureDetail) {
-    super(message);
-    this.expression = null;
-    this.failureDetail = Preconditions.checkNotNull(failureDetail);
-  }
+    constructor(message: String?, failureDetail: FailureDetail?) : super(message) {
+        this.failedExpression = null
+        this.failureDetail = Preconditions.checkNotNull<FailureDetail?>(failureDetail)
+    }
 
-  public QueryException(String message, Query.Code queryCode) {
-    this(null, message, queryCode);
-  }
+    constructor(message: String?, queryCode: Query.Code?) : this(null, message, queryCode)
 
-  public QueryException(String message, ActionQuery.Code actionQueryCode) {
-    this(null, message, actionQueryCode);
-  }
+    constructor(message: String?, actionQueryCode: ActionQuery.Code?) : this(null, message, actionQueryCode)
 
-  public QueryException(String message, ConfigurableQuery.Code configurableQueryCode) {
-    this(null, message, configurableQueryCode);
-  }
+    constructor(message: String?, configurableQueryCode: ConfigurableQuery.Code?) : this(
+        null,
+        message,
+        configurableQueryCode
+    )
 
-  /**
-   * Returns the subexpression for which evaluation failed, or null if
-   * the failure occurred during lexing/parsing.
-   */
-  public QueryExpression getFailedExpression() {
-    return expression;
-  }
+    /** Returns a [FailureDetail] with a corresponding code of the query error.  */
+    fun getFailureDetail(): FailureDetail? {
+        return failureDetail
+    }
 
-  /** Returns a {@link FailureDetail} with a corresponding code of the query error. */
-  public FailureDetail getFailureDetail() {
-    return failureDetail;
-  }
+    companion object {
+        /** Returns a better error message for the query.  */
+        fun describeFailedQuery(e: QueryException, toplevel: QueryExpression?): String {
+            val badQuery = e.failedExpression
+            if (badQuery == null) {
+                return "Evaluation failed: " + e.message
+            }
+            return if (badQuery === toplevel)
+                "Evaluation of query \"" + toplevel.toTrunctatedString() + "\" failed: " + e.message
+            else
+                ("Evaluation of subquery \""
+                        + badQuery.toTrunctatedString()
+                        + "\" failed (did you want to use --keep_going?): "
+                        + e.message)
+        }
+    }
 }

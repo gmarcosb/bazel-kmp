@@ -227,8 +227,8 @@ public class HttpStreamTest {
               }
             });
 
-    assertThat(thrown.getActualSize()).isEqualTo(bigData.length);
-    assertThat(thrown.getExpectedSize()).isEqualTo(bigData.length + 1);
+    assertThat(thrown.actualSize).isEqualTo(bigData.length);
+    assertThat(thrown.expectedSize).isEqualTo(bigData.length + 1);
   }
 
   @Test
@@ -253,8 +253,8 @@ public class HttpStreamTest {
               }
             });
 
-    assertThat(thrown.getActualSize()).isEqualTo(bigData.length);
-    assertThat(thrown.getExpectedSize()).isEqualTo(bigData.length - 1);
+    assertThat(thrown.actualSize).isEqualTo(bigData.length);
+    assertThat(thrown.expectedSize).isEqualTo(bigData.length - 1);
   }
 
   @Test

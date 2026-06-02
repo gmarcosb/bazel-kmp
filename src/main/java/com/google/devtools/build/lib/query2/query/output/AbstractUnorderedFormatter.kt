@@ -11,72 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query.output
 
-package com.google.devtools.build.lib.query2.query.output;
+import com.google.common.collect.Iterables
+import com.google.common.hash.HashFunction
+import com.google.devtools.build.lib.events.EventHandler
+import com.google.devtools.build.lib.graph.Node
+import java.io.OutputStream
 
-import com.google.common.collect.Iterables;
-import com.google.common.hash.HashFunction;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.graph.Digraph;
-import com.google.devtools.build.lib.graph.Node;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleClassId;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.common.CommonQueryOptions;
-import com.google.devtools.build.lib.query2.engine.OutputFormatterCallback;
-import com.google.devtools.build.lib.query2.query.aspectresolvers.AspectResolver;
-import com.google.devtools.build.lib.query2.query.output.QueryOptions.OrderOutput;
-import java.io.IOException;
-import java.io.OutputStream;
-import javax.annotation.Nullable;
-
-abstract class AbstractUnorderedFormatter extends OutputFormatter implements StreamedFormatter {
-
-  static String getKind(QueryOptions options, Target target) {
-    if (options.getDisplayFullKind() && target instanceof Rule rule) {
-      RuleClassId ruleClassId = rule.getRuleClassObject().getRuleClassId();
-      return ruleClassId.key() + Rule.targetKindSuffix();
+internal abstract class AbstractUnorderedFormatter : OutputFormatter(), StreamedFormatter {
+    override fun setOptions(
+        options: CommonQueryOptions?, aspectResolver: AspectResolver?, hashFunction: HashFunction?
+    ) {
     }
 
-    return target.getTargetKind();
-  }
+    /** Optionally sets a handler for reporting status output / errors.  */
+    override fun setEventHandler(eventHandler: EventHandler?) {}
 
-  @Override
-  public void setOptions(
-      CommonQueryOptions options, AspectResolver aspectResolver, HashFunction hashFunction) {}
-
-  /** Optionally sets a handler for reporting status output / errors. */
-  @Override
-  public void setEventHandler(@Nullable EventHandler eventHandler) {}
-
-  @Override
-  public void output(
-      QueryOptions options,
-      Digraph<Target> result,
-      OutputStream out,
-      AspectResolver aspectResolver,
-      @Nullable EventHandler eventHandler,
-      HashFunction hashFunction,
-      LabelPrinter labelPrinter)
-      throws IOException, InterruptedException {
-    setOptions(options, aspectResolver, hashFunction);
-    setEventHandler(eventHandler);
-    OutputFormatterCallback.processAllTargets(
-        createPostFactoStreamCallback(out, options, labelPrinter),
-        getOrderedTargets(result, options));
-  }
-
-  protected Iterable<Target> getOrderedTargets(Digraph<Target> result, QueryOptions options) {
-    if (options.getOrderOutput() == OrderOutput.FULL) {
-      // Get targets in total order, the difference here from topological ordering is the sorting of
-      // nodes before post-order visitation (which ensures determinism at a time cost).
-      return Iterables.transform(
-          result.getTopologicalOrder(new FormatUtils.TargetOrdering()), Node::getLabel);
-    } else if (options.getOrderOutput() == OrderOutput.DEPS) {
-      // Get targets in topological order.
-      return Iterables.transform(result.getTopologicalOrder(), Node::getLabel);
+    @Throws(IOException::class, InterruptedException::class)
+    override fun output(
+        options: QueryOptions,
+        result: Digraph<Target?>,
+        out: OutputStream?,
+        aspectResolver: AspectResolver?,
+        eventHandler: EventHandler?,
+        hashFunction: HashFunction?,
+        labelPrinter: LabelPrinter?
+    ) {
+        setOptions(options, aspectResolver, hashFunction)
+        setEventHandler(eventHandler)
+        OutputFormatterCallback.Companion.processAllTargets<Target?>(
+            createPostFactoStreamCallback(out, options, labelPrinter),
+            getOrderedTargets(result, options)
+        )
     }
-    return result.getLabels();
-  }
+
+    protected fun getOrderedTargets(result: Digraph<Target?>, options: QueryOptions): Iterable<Target?> {
+        if (options.getOrderOutput() == OrderOutput.FULL) {
+            // Get targets in total order, the difference here from topological ordering is the sorting of
+            // nodes before post-order visitation (which ensures determinism at a time cost).
+            return Iterables.transform<Node<Target?>?, Target?>(
+                result.getTopologicalOrder(TargetOrdering()), Node::label
+            )
+        } else if (options.getOrderOutput() == OrderOutput.DEPS) {
+            // Get targets in topological order.
+            return Iterables.transform<Node<Target?>?, Target?>(result.topologicalOrder, Node::label)
+        }
+        return result.labels
+    }
+
+    companion object {
+        fun getKind(options: QueryOptions, target: Target): String {
+            if (options.getDisplayFullKind() && target is Rule) {
+                val ruleClassId: RuleClassId = target.getRuleClassObject().getRuleClassId()
+                return ruleClassId.key() + Rule.targetKindSuffix()
+            }
+
+            return target.getTargetKind()
+        }
+    }
 }

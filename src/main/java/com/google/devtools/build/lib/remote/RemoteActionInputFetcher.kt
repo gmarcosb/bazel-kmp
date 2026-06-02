@@ -11,164 +11,144 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.RequestMetadata;
-import com.google.common.base.Preconditions;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionOutputDirectoryHelper;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.VirtualActionInput;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.remote.common.CacheNotFoundException;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.lib.util.TempPathGenerator;
-import com.google.devtools.build.lib.vfs.OutputPermissions;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import java.io.IOException;
-import java.util.Collection;
-import javax.annotation.Nullable;
+import build.bazel.remote.execution.v2.Digest
 
 /**
  * Stages output files that are stored remotely to the local filesystem.
- *
- * <p>This is used to ensure that the inputs to a local action are present, even when they are
+ * 
+ * 
+ * This is used to ensure that the inputs to a local action are present, even when they are
  * provided by a remote action when building without the bytes, or by an external repository when
  * building with a remote repository cache enabled.
  */
-public class RemoteActionInputFetcher extends AbstractActionInputPrefetcher {
+class RemoteActionInputFetcher internal constructor(
+    reporter: com.google.devtools.build.lib.events.Reporter?,
+    buildRequestId: String?,
+    commandId: String?,
+    combinedCache: CombinedCache?,
+    execRoot: com.google.devtools.build.lib.vfs.Path?,
+    tempPathGenerator: TempPathGenerator?,
+    remoteOutputChecker: RemoteOutputChecker?,
+    outputDirectoryHelper: ActionOutputDirectoryHelper?,
+    outputPermissions: OutputPermissions?
+) : AbstractActionInputPrefetcher(
+    reporter,
+    execRoot,
+    tempPathGenerator,
+    remoteOutputChecker,
+    outputDirectoryHelper,
+    outputPermissions
+) {
+    private val buildRequestId: String
+    private val commandId: String
+    private val combinedCache: CombinedCache
+    private val rewoundActionOutputs: ConcurrentArtifactPathTrie = ConcurrentArtifactPathTrie()
 
-  private final String buildRequestId;
-  private final String commandId;
-  private final CombinedCache combinedCache;
-  private final ConcurrentArtifactPathTrie rewoundActionOutputs = new ConcurrentArtifactPathTrie();
-
-  RemoteActionInputFetcher(
-      Reporter reporter,
-      String buildRequestId,
-      String commandId,
-      CombinedCache combinedCache,
-      Path execRoot,
-      TempPathGenerator tempPathGenerator,
-      RemoteOutputChecker remoteOutputChecker,
-      @Nullable ActionOutputDirectoryHelper outputDirectoryHelper,
-      OutputPermissions outputPermissions) {
-    super(
-        reporter,
-        execRoot,
-        tempPathGenerator,
-        remoteOutputChecker,
-        outputDirectoryHelper,
-        outputPermissions);
-    this.buildRequestId = Preconditions.checkNotNull(buildRequestId);
-    this.commandId = Preconditions.checkNotNull(commandId);
-    this.combinedCache = Preconditions.checkNotNull(combinedCache);
-  }
-
-  @Override
-  protected void prefetchVirtualActionInput(VirtualActionInput input) throws IOException {
-    input.atomicallyWriteRelativeTo(execRoot);
-  }
-
-  @Override
-  protected boolean canDownloadFile(Path path, FileArtifactValue metadata) {
-    // When action rewinding is enabled, an action that had remote metadata at some point during the
-    // build may have been re-executed locally to regenerate lost inputs, but may then be rewound
-    // again and thus have its (now local) outputs deleted. In this case, we need to download the
-    // outputs again, even if they are now considered local.
-    return metadata.isRemote() || (forceRefetch(path) && !path.exists(Symlinks.NOFOLLOW));
-  }
-
-  @Override
-  protected boolean forceRefetch(Path path) {
-    // Caches for download operations and output directory creation need to be disregarded for the
-    // outputs of rewound actions as they may have been deleted after they were first created.
-    return path.startsWith(execRoot) && rewoundActionOutputs.contains(path.relativeTo(execRoot));
-  }
-
-  @Override
-  protected ListenableFuture<Void> doDownloadFile(
-      @Nullable ActionExecutionMetadata action,
-      Reporter reporter,
-      ActionInput input,
-      Path tempPath,
-      FileArtifactValue metadata,
-      Priority priority,
-      Reason reason)
-      throws IOException {
-    RequestMetadata requestMetadata =
-        TracingMetadataUtils.buildMetadata(
-            buildRequestId,
-            commandId,
-            switch (reason) {
-              case INPUTS -> "input";
-              case OUTPUTS -> "output";
-            },
-            action);
-    RemoteActionExecutionContext context = RemoteActionExecutionContext.create(requestMetadata);
-
-    Digest digest = DigestUtil.buildDigest(metadata.getDigest(), metadata.getSize());
-
-    // Treat other download error as CacheNotFoundException so that Bazel can
-    // correctly rewind the action/build.
-    // Intentionally, do not transform IOExceptions directly thrown by downloadFile rather than in
-    // the returned future, as those are likely to be caused by local FS issues.
-    return Futures.catchingAsync(
-        combinedCache.downloadFile(
-            context,
-            input.getExecPathString(),
-            input.getExecPath(),
-            tempPath.forHostFileSystem(),
-            digest,
-            new CombinedCache.DownloadProgressReporter(
-                progress -> {
-                  if (action != null) {
-                    progress.postTo(reporter, action);
-                  }
-                },
-                input.getExecPathString(),
-                digest.getSizeBytes())),
-        IOException.class,
-        e ->
-            immediateFailedFuture(
-                switch (e) {
-                  case CacheNotFoundException cacheNotFoundException -> cacheNotFoundException;
-                  default -> {
-                    var cacheNotFoundException =
-                        new CacheNotFoundException(digest, input.getExecPath());
-                    cacheNotFoundException.addSuppressed(e);
-                    yield cacheNotFoundException;
-                  }
-                }),
-        directExecutor());
-  }
-
-  public void handleRewoundActionOutputs(Collection<Artifact> outputs) {
-    // SkyframeActionExecutor#prepareForRewinding does *not* call this method because the
-    // RemoteActionFileSystem corresponds to an ActionFileSystemType with inMemoryFileSystem() ==
-    // true. While it is true that resetting outputDirectoryHelper isn't necessary to undo the
-    // caching of output directory creation during action preparation, we still need to reset here
-    // since outputDirectoryHelper is also used by AbstractActionInputPrefetcher.
-    outputDirectoryHelper.invalidateTreeArtifactDirectoryCreation(outputs);
-    for (Artifact output : outputs) {
-      // Action templates have TreeFileArtifacts as outputs, which isn't supported by the trie. We
-      // only need to track the tree artifacts themselves.
-      if (output instanceof Artifact.TreeFileArtifact) {
-        rewoundActionOutputs.add(output.getParent());
-      } else {
-        rewoundActionOutputs.add(output);
-      }
+    init {
+        this.buildRequestId = com.google.common.base.Preconditions.checkNotNull<String>(buildRequestId)
+        this.commandId = com.google.common.base.Preconditions.checkNotNull<String>(commandId)
+        this.combinedCache = com.google.common.base.Preconditions.checkNotNull<CombinedCache>(combinedCache)
     }
-  }
+
+    @Throws(IOException::class)
+    override fun prefetchVirtualActionInput(input: VirtualActionInput) {
+        input.atomicallyWriteRelativeTo(execRoot)
+    }
+
+    override fun canDownloadFile(path: com.google.devtools.build.lib.vfs.Path, metadata: FileArtifactValue): Boolean {
+        // When action rewinding is enabled, an action that had remote metadata at some point during the
+        // build may have been re-executed locally to regenerate lost inputs, but may then be rewound
+        // again and thus have its (now local) outputs deleted. In this case, we need to download the
+        // outputs again, even if they are now considered local.
+        return metadata.isRemote() || (forceRefetch(path) && !path.exists(Symlinks.NOFOLLOW))
+    }
+
+    override fun forceRefetch(path: com.google.devtools.build.lib.vfs.Path): Boolean {
+        // Caches for download operations and output directory creation need to be disregarded for the
+        // outputs of rewound actions as they may have been deleted after they were first created.
+        return path.startsWith(execRoot) && rewoundActionOutputs.contains(path.relativeTo(execRoot))
+    }
+
+    @Throws(IOException::class)
+    protected override fun doDownloadFile(
+        action: ActionExecutionMetadata?,
+        reporter: com.google.devtools.build.lib.events.Reporter?,
+        input: ActionInput,
+        tempPath: com.google.devtools.build.lib.vfs.Path,
+        metadata: FileArtifactValue,
+        priority: Priority?,
+        reason: Reason
+    ): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+        val requestMetadata: RequestMetadata? =
+            TracingMetadataUtils.buildMetadata(
+                buildRequestId,
+                commandId,
+                when (reason) {
+                    INPUTS -> "input"
+                    OUTPUTS -> "output"
+                },
+                action
+            )
+        val context: RemoteActionExecutionContext = RemoteActionExecutionContext.Companion.create(requestMetadata)
+
+        val digest: Digest = DigestUtil.buildDigest(metadata.getDigest(), metadata.getSize())
+
+        // Treat other download error as CacheNotFoundException so that Bazel can
+        // correctly rewind the action/build.
+        // Intentionally, do not transform IOExceptions directly thrown by downloadFile rather than in
+        // the returned future, as those are likely to be caused by local FS issues.
+        return com.google.common.util.concurrent.Futures.catchingAsync<java.lang.Void?, IOException?>(
+            combinedCache.downloadFile(
+                context,
+                input.getExecPathString(),
+                input.getExecPath(),
+                tempPath.forHostFileSystem(),
+                digest,
+                DownloadProgressReporter(
+                    ProgressStatusListener { progress: SpawnProgressEvent? ->
+                        if (action != null) {
+                            progress.postTo(reporter, action)
+                        }
+                    },
+                    input.getExecPathString(),
+                    digest.getSizeBytes()
+                )
+            ),
+            IOException::class.java,
+            com.google.common.util.concurrent.AsyncFunction { e: IOException? ->
+                com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(
+                    when (e) {
+                        -> cacheNotFoundException
+                        else -> {
+                            val cacheNotFoundException: CacheNotFoundException =
+                                CacheNotFoundException(digest, input.getExecPath())
+                            cacheNotFoundException.addSuppressed(e)
+                            cacheNotFoundException
+                        }
+                    }
+                )
+            },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+    }
+
+    fun handleRewoundActionOutputs(outputs: MutableCollection<Artifact>) {
+        // SkyframeActionExecutor#prepareForRewinding does *not* call this method because the
+        // RemoteActionFileSystem corresponds to an ActionFileSystemType with inMemoryFileSystem() ==
+        // true. While it is true that resetting outputDirectoryHelper isn't necessary to undo the
+        // caching of output directory creation during action preparation, we still need to reset here
+        // since outputDirectoryHelper is also used by AbstractActionInputPrefetcher.
+        outputDirectoryHelper.invalidateTreeArtifactDirectoryCreation(outputs)
+        for (output in outputs) {
+            // Action templates have TreeFileArtifacts as outputs, which isn't supported by the trie. We
+            // only need to track the tree artifacts themselves.
+            if (output is Artifact.TreeFileArtifact) {
+                rewoundActionOutputs.add(output.getParent())
+            } else {
+                rewoundActionOutputs.add(output)
+            }
+        }
+    }
 }

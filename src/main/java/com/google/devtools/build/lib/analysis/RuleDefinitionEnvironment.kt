@@ -11,12 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import java.util.Optional;
+import com.google.devtools.build.lib.cmdline.RepositoryName
 
 // TODO(brandjon): Almost all the uses of this class are in lib/analysis and specific native rule
 // implementations. But there are a couple of uses in lib/packages, namely RuleClassProvider and
@@ -26,28 +23,27 @@ import java.util.Optional;
 // files.
 /**
  * A minimal context available during rule definition, for both native and starlark rules.
- *
- * <p>Encapsulates the services available for implementors of the {@link RuleDefinition} interface.
+ * 
+ * 
+ * Encapsulates the services available for implementors of the [RuleDefinition] interface.
  */
-public interface RuleDefinitionEnvironment {
+interface RuleDefinitionEnvironment {
+    /** Returns the name of the tools repository, such as "@bazel_tools".  */
+    @kotlin.jvm.JvmField
+    val toolsRepository: RepositoryName?
 
-  /** Returns the name of the tools repository, such as "@bazel_tools". */
-  RepositoryName getToolsRepository();
+    /**
+     * Prepends the tools repository path to the given string and parses the result using [ ][Label.parseCanonicalUnchecked].
+     * 
+     * 
+     * TODO(brandjon,twigg): Require override to handle repositoryMapping? Note that
+     * Label.parseAbsoluteUnchecked itself is deprecated because of repositoryMapping!
+     */
+    fun getToolsLabel(labelValue: String?): com.google.devtools.build.lib.cmdline.Label? {
+        return com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked(this.toolsRepository.toString() + labelValue)
+    }
 
-  /**
-   * Prepends the tools repository path to the given string and parses the result using {@link
-   * Label#parseCanonicalUnchecked}.
-   *
-   * <p>TODO(brandjon,twigg): Require override to handle repositoryMapping? Note that
-   * Label.parseAbsoluteUnchecked itself is deprecated because of repositoryMapping!
-   */
-  default Label getToolsLabel(String labelValue) {
-    return Label.parseCanonicalUnchecked(getToolsRepository() + labelValue);
-  }
-
-  /** Returns a label for network allowlist for tests if one should be added. */
-  // TODO(b/192694287): Remove once we migrate all tests from the allowlist.
-  default Optional<Label> getNetworkAllowlistForTests() {
-    return Optional.empty();
-  }
+    val networkAllowlistForTests: java.util.Optional<com.google.devtools.build.lib.cmdline.Label?>?
+        /** Returns a label for network allowlist for tests if one should be added.  */
+        get() = java.util.Optional.empty<com.google.devtools.build.lib.cmdline.Label?>()
 }

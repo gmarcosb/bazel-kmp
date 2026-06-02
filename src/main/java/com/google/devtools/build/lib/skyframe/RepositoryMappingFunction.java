@@ -56,7 +56,7 @@ public class RepositoryMappingFunction implements SkyFunction {
     if (repositoryMappingValue == RepositoryMappingValue.NOT_FOUND_VALUE
         && RepoDefinitionFunction.REPOSITORY_OVERRIDES
             .get(env)
-            .containsKey(key.repoName().getName())) {
+            .containsKey(key.repoName().name)) {
       throw new RepositoryMappingFunctionException(
           // Use this rather than NoSuchThingException so that the error mentions the requested
           // target.
@@ -82,14 +82,14 @@ public class RepositoryMappingFunction implements SkyFunction {
 
     if (StarlarkBuiltinsValue.isBuiltinsRepo(repositoryName)) {
       // If tools repo is not set, use the default empty mapping.
-      if (ruleClassProvider.getToolsRepository() == null) {
+      if (ruleClassProvider.toolsRepository == null) {
         return RepositoryMappingValue.DEFAULT_VALUE_FOR_BUILTINS_REPO;
       }
       // Builtins .bzl files should use the repo mapping of @bazel_tools, to get access to repos
       // such as @platforms.
       RepositoryMappingValue bazelToolsMapping =
           (RepositoryMappingValue)
-              env.getValue(RepositoryMappingValue.key(ruleClassProvider.getToolsRepository()));
+              env.getValue(RepositoryMappingValue.key(ruleClassProvider.toolsRepository));
       if (bazelToolsMapping == null) {
         return null;
       }
@@ -125,7 +125,7 @@ public class RepositoryMappingFunction implements SkyFunction {
       }
       return RepositoryMappingValue.create(
           RepositoryMapping.create(repoMappingEntriesValue.entries(), repositoryName),
-          repoMappingEntriesValue.moduleKey().name(),
+              repoMappingEntriesValue.moduleKey().name,
           repoMappingEntriesValue.moduleKey().version());
     }
 
@@ -142,11 +142,11 @@ public class RepositoryMappingFunction implements SkyFunction {
    */
   private Optional<RepositoryMappingValue> computeForBazelModuleRepo(
       RepositoryName repositoryName, BazelDepGraphValue bazelDepGraphValue) {
-    ModuleKey moduleKey = bazelDepGraphValue.getCanonicalRepoNameLookup().get(repositoryName);
+    ModuleKey moduleKey = bazelDepGraphValue.canonicalRepoNameLookup.get(repositoryName);
     if (moduleKey == null) {
       return Optional.empty();
     }
-    Module module = bazelDepGraphValue.getDepGraph().get(moduleKey);
+    Module module = bazelDepGraphValue.depGraph.get(moduleKey);
     return Optional.of(
         RepositoryMappingValue.create(
             bazelDepGraphValue.getFullRepoMapping(moduleKey),
@@ -157,7 +157,7 @@ public class RepositoryMappingFunction implements SkyFunction {
   private static Optional<ModuleExtensionId> maybeGetModuleExtensionForRepo(
       RepositoryName repositoryName, BazelDepGraphValue bazelDepGraphValue) {
     return bazelDepGraphValue.getExtensionUniqueNames().entrySet().stream()
-        .filter(e -> repositoryName.getName().startsWith(e.getValue() + "+"))
+        .filter(e -> repositoryName.name.startsWith(e.getValue() + "+"))
         .map(Entry::getKey)
         .findFirst();
   }

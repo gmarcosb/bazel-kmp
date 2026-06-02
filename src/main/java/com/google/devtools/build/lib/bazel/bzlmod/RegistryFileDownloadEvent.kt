@@ -12,41 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache
+import com.google.devtools.build.lib.bazel.repository.downloader.Checksum.InvalidChecksumException
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.hash.Hashing;
-import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import java.util.Collection;
-import java.util.Optional;
+/** Event that records the fact that a file has been downloaded from a remote registry.  */
+internal class RegistryFileDownloadEvent(
+  @kotlin.jvm.JvmField val uri: String?,
+  checksum: java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?
+) : com.google.devtools.build.lib.events.ExtendedEventHandler.Postable {
+    val checksum: java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?
 
-/** Event that records the fact that a file has been downloaded from a remote registry. */
-record RegistryFileDownloadEvent(String uri, Optional<Checksum> checksum) implements Postable {
-
-  static RegistryFileDownloadEvent create(String uri, Optional<byte[]> content) {
-    return new RegistryFileDownloadEvent(uri, content.map(RegistryFileDownloadEvent::computeHash));
-  }
-
-  static ImmutableMap<String, Optional<Checksum>> collectToMap(Collection<Postable> postables) {
-    ImmutableMap.Builder<String, Optional<Checksum>> builder = ImmutableMap.builder();
-    for (Postable postable : postables) {
-      if (postable instanceof RegistryFileDownloadEvent(String uri, Optional<Checksum> checksum)) {
-        builder.put(uri, checksum);
-      }
+    init {
+        this.checksum = checksum
     }
-    return builder.buildKeepingLast();
-  }
 
-  private static Checksum computeHash(byte[] bytes) {
-    try {
-      return Checksum.fromString(
-          DownloadCache.KeyType.SHA256, Hashing.sha256().hashBytes(bytes).toString());
-    } catch (Checksum.InvalidChecksumException e) {
-      // This can't happen since HashCode.toString() always returns a valid hash.
-      throw new IllegalStateException(e);
+    companion object {
+        fun create(uri: String?, content: java.util.Optional<ByteArray?>): RegistryFileDownloadEvent {
+            return RegistryFileDownloadEvent(
+                uri,
+                content.map<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>(java.util.function.Function { bytes: ByteArray? ->
+                    Companion.computeHash(bytes!!)
+                })
+            )
+        }
+
+        fun collectToMap(postables: MutableCollection<com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?>): com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?> {
+            val builder: com.google.common.collect.ImmutableMap.Builder<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?> =
+                com.google.common.collect.ImmutableMap.builder<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>()
+            for (postable in postables) {
+                if (postable is) {
+                    builder.put(uri, checksum)
+                }
+            }
+            return builder.buildKeepingLast()
+        }
+
+        private fun computeHash(bytes: ByteArray): com.google.devtools.build.lib.bazel.repository.downloader.Checksum {
+            try {
+                return com.google.devtools.build.lib.bazel.repository.downloader.Checksum.fromString(
+                    DownloadCache.KeyType.SHA256, com.google.common.hash.Hashing.sha256().hashBytes(bytes).toString()
+                )
+            } catch (e: InvalidChecksumException) {
+                // This can't happen since HashCode.toString() always returns a valid hash.
+                throw java.lang.IllegalStateException(e)
+            }
+        }
     }
-  }
 }

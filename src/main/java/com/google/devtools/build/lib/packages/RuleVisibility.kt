@@ -11,255 +11,257 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import java.util.List;
-import java.util.Objects;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A RuleVisibility specifies which other rules can depend on a specified rule. Note that the actual
  * method that performs this check is declared in RuleConfiguredTargetVisibility.
- *
- * <p>The conversion to ConfiguredTargetVisibility is handled in an ugly if-ladder, because I want
+ * 
+ * 
+ * The conversion to ConfiguredTargetVisibility is handled in an ugly if-ladder, because I want
  * to avoid this package depending on build.lib.view.
- *
- * <p>All implementations of this interface are immutable.
+ * 
+ * 
+ * All implementations of this interface are immutable.
  */
-public abstract class RuleVisibility {
+abstract class RuleVisibility {
+    /**
+     * Returns the list of all labels comprising this visibility.
+     * 
+     * 
+     * This includes labels that are not loadable, such as //visibility:public and //foo:__pkg__.
+     */
+    abstract fun getDeclaredLabels(): MutableList<Label?>
 
-  /**
-   * Returns the list of all labels comprising this visibility.
-   *
-   * <p>This includes labels that are not loadable, such as //visibility:public and //foo:__pkg__.
-   */
-  public abstract List<Label> getDeclaredLabels();
+    /**
+     * Same as [.getDeclaredLabels], but excludes labels that cannot be loaded.
+     * 
+     * 
+     * I.e., this returns the labels of the top-level `package_group`s that must be loaded in
+     * order to determine the complete set of packages represented by this visibility. (Additional
+     * `package_group`s may need to be loaded due to their `includes` attribute.)
+     */
+    abstract fun getDependencyLabels(): MutableList<Label?>?
 
-  /**
-   * Same as {@link #getDeclaredLabels}, but excludes labels that cannot be loaded.
-   *
-   * <p>I.e., this returns the labels of the top-level {@code package_group}s that must be loaded in
-   * order to determine the complete set of packages represented by this visibility. (Additional
-   * {@code package_group}s may need to be loaded due to their {@code includes} attribute.)
-   */
-  public abstract List<Label> getDependencyLabels();
+    /**
+     * Returns a `RuleVisibility` representing the logical result of concatenating this
+     * visibility's label list with a singleton list containing the given package.
+     * 
+     * 
+     * Public and private visibilities are normalized as in [.validateAndSimplify]. In
+     * addition, the new item is not concatenated if it is already present as an item in this
+     * visibility's list.
+     */
+    fun concatWithPackage(packageIdentifier: PackageIdentifier?): RuleVisibility {
+        val pkgItem: Label = Label.createUnvalidated(packageIdentifier, "__pkg__")
 
-  @SerializationConstant
-  public static final Label PUBLIC_LABEL = Label.parseCanonicalUnchecked("//visibility:public");
+        if (this == PRIVATE) {
+            // Left-side private is dropped.
+            return parseUnchecked(com.google.common.collect.ImmutableList.of<Label?>(pkgItem))
+        } else if (this == PUBLIC) {
+            // Public is idempotent.
+            return PUBLIC
+        } else {
+            val items: MutableList<Label?> = getDeclaredLabels()
+            if (items.contains(pkgItem)) {
+                return this
+            } else {
+                val newItems: com.google.common.collect.ImmutableList.Builder<Label?> =
+                    com.google.common.collect.ImmutableList.Builder<Label?>()
+                newItems.addAll(items)
+                newItems.add(pkgItem)
+                return parseUnchecked(newItems.build())
+            }
+        }
+    }
 
-  @SerializationConstant
-  public static final Label PRIVATE_LABEL = Label.parseCanonicalUnchecked("//visibility:private");
+    override fun equals(other: Any?): Boolean {
+        if (this === other) {
+            return true
+        } else if (other !is RuleVisibility) {
+            return false
+        } else {
+            // PackageGroupsRuleVisibility is not allowed to contain the special public/private items, so
+            // we don't have to worry about that overlapping with our singleton PUBLIC/PRIVATE instances
+            // here.
+            return getDeclaredLabels() == other.getDeclaredLabels()
+        }
+    }
 
-  // Constant for memory efficiency; see b/370873477.
-  @SerializationConstant
-  public static final ImmutableList<Label> PUBLIC_DECLARED_LABELS = ImmutableList.of(PUBLIC_LABEL);
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(getClass(), getDeclaredLabels())
+    }
 
-  // Constant for memory efficiency; see b/370873477.
-  @SerializationConstant
-  public static final ImmutableList<Label> PRIVATE_DECLARED_LABELS =
-      ImmutableList.of(PRIVATE_LABEL);
+    companion object {
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val PUBLIC_LABEL: Label = Label.parseCanonicalUnchecked("//visibility:public")
 
-  @SerializationConstant
-  public static final RuleVisibility PUBLIC =
-      new RuleVisibility() {
-        @Override
-        public ImmutableList<Label> getDeclaredLabels() {
-          return PUBLIC_DECLARED_LABELS;
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val PRIVATE_LABEL: Label = Label.parseCanonicalUnchecked("//visibility:private")
+
+        // Constant for memory efficiency; see b/370873477.
+        @SerializationConstant
+        val PUBLIC_DECLARED_LABELS: com.google.common.collect.ImmutableList<Label> =
+            com.google.common.collect.ImmutableList.of<Label>(
+                PUBLIC_LABEL
+            )
+
+        // Constant for memory efficiency; see b/370873477.
+        @SerializationConstant
+        val PRIVATE_DECLARED_LABELS: com.google.common.collect.ImmutableList<Label> =
+            com.google.common.collect.ImmutableList.of<Label>(
+                PRIVATE_LABEL
+            )
+
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val PUBLIC: RuleVisibility = object : RuleVisibility() {
+            override fun getDeclaredLabels(): com.google.common.collect.ImmutableList<Label> {
+                return PUBLIC_DECLARED_LABELS
+            }
+
+            override fun getDependencyLabels(): com.google.common.collect.ImmutableList<Label?> {
+                return com.google.common.collect.ImmutableList.of<Label?>()
+            }
+
+            override fun toString(): String {
+                return PUBLIC_LABEL.toString()
+            }
         }
 
-        @Override
-        public ImmutableList<Label> getDependencyLabels() {
-          return ImmutableList.of();
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val PRIVATE: RuleVisibility = object : RuleVisibility() {
+            override fun getDeclaredLabels(): com.google.common.collect.ImmutableList<Label> {
+                return PRIVATE_DECLARED_LABELS
+            }
+
+            override fun getDependencyLabels(): com.google.common.collect.ImmutableList<Label?> {
+                return com.google.common.collect.ImmutableList.of<Label?>()
+            }
+
+            override fun toString(): String {
+                return PRIVATE_LABEL.toString()
+            }
         }
 
-        @Override
-        public String toString() {
-          return PUBLIC_LABEL.toString();
-        }
-      };
-
-  @SerializationConstant
-  public static final RuleVisibility PRIVATE =
-      new RuleVisibility() {
-        @Override
-        public ImmutableList<Label> getDeclaredLabels() {
-          return PRIVATE_DECLARED_LABELS;
+        /** Validates and parses the given labels into a [RuleVisibility].  */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun parse(labels: MutableList<Label>): RuleVisibility {
+            return parseUnchecked(validateAndSimplify(labels))
         }
 
-        @Override
-        public ImmutableList<Label> getDependencyLabels() {
-          return ImmutableList.of();
+        /**
+         * Same as [.parse] except does not perform validation checks or public/private
+         * simplification.
+         * 
+         * 
+         * Use only after the given labels have been [validated and][.validateAndSimplify].
+         */
+        fun parseUnchecked(labels: MutableList<Label>): RuleVisibility {
+            val result = parseIfConstant(labels)
+            if (result != null) {
+                return result
+            }
+            return PackageGroupsRuleVisibility.Companion.create(labels)
         }
 
-        @Override
-        public String toString() {
-          return PRIVATE_LABEL.toString();
+        /**
+         * If the given list of labels represents a constant [RuleVisibility] ([.PUBLIC] or
+         * [.PRIVATE]), returns that visibility instance, otherwise returns `null`.
+         * 
+         * 
+         * Use only after the given labels have been [validated and][.validateAndSimplify].
+         */
+        fun parseIfConstant(labels: MutableList<Label>): RuleVisibility? {
+            if (labels.size() != 1) {
+                return null
+            }
+            val label: Label = labels.getFirst()
+            if (label.equals(PUBLIC_LABEL)) {
+                return PUBLIC
+            }
+            if (label.equals(PRIVATE_LABEL)) {
+                return PRIVATE
+            }
+            return null
         }
-      };
 
-  /** Validates and parses the given labels into a {@link RuleVisibility}. */
-  static RuleVisibility parse(List<Label> labels) throws EvalException {
-    return parseUnchecked(validateAndSimplify(labels));
-  }
+        /**
+         * Throws if the label is in the special `//visibility` package but is neither `//visibility:__pkg__` nor `//visibility:__subpackages__`.
+         * 
+         * 
+         * The caller is presumed to have already handled the cases where it is `//visibility:public` or `//visibility:private`. If those labels make it to this method it
+         * will throw.
+         * 
+         * 
+         * `//visibility:__pkg__` and `//visibility:__subpackages__` are only useful in the
+         * rare case that there exists a literal `//visibility` package in the build. It is
+         * disallowed to refer to any package groups declared in `//visibility`. This restriction
+         * lets us presume that any label in `//visibility` besides these four cases is an
+         * accidental misspelling.
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun checkForVisibilityMisspelling(label: Label) {
+            if (label.getPackageIdentifier().equals(PUBLIC_LABEL.getPackageIdentifier())
+                && PackageSpecification.Companion.fromLabel(label) == null
+            ) {
+                // Suggest just public/private, as that's way more common than //visibility:__pkg__ or
+                // //visibility:__subpackages__.
+                throw net.starlark.java.eval.Starlark.errorf(
+                    "Invalid visibility label '%s'; did you mean //visibility:public or"
+                            + " //visibility:private?",
+                    label
+                )
+            }
+        }
 
-  /**
-   * Same as {@link #parse} except does not perform validation checks or public/private
-   * simplification.
-   *
-   * <p>Use only after the given labels have been {@linkplain #validateAndSimplify validated and
-   * simplified}.
-   */
-  static RuleVisibility parseUnchecked(List<Label> labels) {
-    RuleVisibility result = parseIfConstant(labels);
-    if (result != null) {
-      return result;
+        /**
+         * Validates visibility labels, simplifies a list containing "//visibility:public" to
+         * ["//visibility:public"], drops "//visibility:private" if it occurs with other labels, and
+         * canonicalizes an empty list to ["//visibility:private"].
+         * 
+         * @param labels list of visibility labels; not modified even if mutable.
+         * @return either `labels` unmodified if it does not require simplification, or a new
+         * simplified list of visibility labels.
+         */
+        // TODO(arostovtsev): we ought to uniquify the labels, matching the behavior of {@link
+        // #concatWithElement}; note that this would be an incompatible change (affects query output).
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun validateAndSimplify(labels: MutableList<Label>): MutableList<Label> {
+            var hasPublicLabel = false
+            var numPrivateLabels = 0
+            for (label in labels) {
+                if (label.equals(PUBLIC_LABEL)) {
+                    // Do not short-circuit here; we want to validate all the labels.
+                    hasPublicLabel = true
+                } else if (label.equals(PRIVATE_LABEL)) {
+                    numPrivateLabels++
+                } else {
+                    checkForVisibilityMisspelling(label)
+                }
+            }
+            if (hasPublicLabel) {
+                return PUBLIC_DECLARED_LABELS
+            }
+            if (numPrivateLabels == labels.size()) {
+                return PRIVATE_DECLARED_LABELS
+            }
+            if (numPrivateLabels == 0) {
+                return labels
+            }
+            val withoutPrivateLabels: com.google.common.collect.ImmutableList.Builder<Label?> =
+                com.google.common.collect.ImmutableList.builderWithExpectedSize<Label?>(labels.size() - numPrivateLabels)
+            for (label in labels) {
+                if (!label.equals(PRIVATE_LABEL)) {
+                    withoutPrivateLabels.add(label)
+                }
+            }
+            return withoutPrivateLabels.build()
+        }
     }
-    return PackageGroupsRuleVisibility.create(labels);
-  }
-
-  /**
-   * If the given list of labels represents a constant {@link RuleVisibility} ({@link #PUBLIC} or
-   * {@link #PRIVATE}), returns that visibility instance, otherwise returns {@code null}.
-   *
-   * <p>Use only after the given labels have been {@linkplain #validateAndSimplify validated and
-   * simplified}.
-   */
-  @Nullable
-  static RuleVisibility parseIfConstant(List<Label> labels) {
-    if (labels.size() != 1) {
-      return null;
-    }
-    Label label = labels.getFirst();
-    if (label.equals(PUBLIC_LABEL)) {
-      return PUBLIC;
-    }
-    if (label.equals(PRIVATE_LABEL)) {
-      return PRIVATE;
-    }
-    return null;
-  }
-
-  /**
-   * Throws if the label is in the special {@code //visibility} package but is neither {@code
-   * //visibility:__pkg__} nor {@code //visibility:__subpackages__}.
-   *
-   * <p>The caller is presumed to have already handled the cases where it is {@code
-   * //visibility:public} or {@code //visibility:private}. If those labels make it to this method it
-   * will throw.
-   *
-   * <p>{@code //visibility:__pkg__} and {@code //visibility:__subpackages__} are only useful in the
-   * rare case that there exists a literal {@code //visibility} package in the build. It is
-   * disallowed to refer to any package groups declared in {@code //visibility}. This restriction
-   * lets us presume that any label in {@code //visibility} besides these four cases is an
-   * accidental misspelling.
-   */
-  private static void checkForVisibilityMisspelling(Label label) throws EvalException {
-    if (label.getPackageIdentifier().equals(PUBLIC_LABEL.getPackageIdentifier())
-        && PackageSpecification.fromLabel(label) == null) {
-      // Suggest just public/private, as that's way more common than //visibility:__pkg__ or
-      // //visibility:__subpackages__.
-      throw Starlark.errorf(
-          "Invalid visibility label '%s'; did you mean //visibility:public or"
-              + " //visibility:private?",
-          label);
-    }
-  }
-
-  /**
-   * Validates visibility labels, simplifies a list containing "//visibility:public" to
-   * ["//visibility:public"], drops "//visibility:private" if it occurs with other labels, and
-   * canonicalizes an empty list to ["//visibility:private"].
-   *
-   * @param labels list of visibility labels; not modified even if mutable.
-   * @return either {@code labels} unmodified if it does not require simplification, or a new
-   *     simplified list of visibility labels.
-   */
-  // TODO(arostovtsev): we ought to uniquify the labels, matching the behavior of {@link
-  // #concatWithElement}; note that this would be an incompatible change (affects query output).
-  static List<Label> validateAndSimplify(List<Label> labels) throws EvalException {
-    boolean hasPublicLabel = false;
-    int numPrivateLabels = 0;
-    for (Label label : labels) {
-      if (label.equals(PUBLIC_LABEL)) {
-        // Do not short-circuit here; we want to validate all the labels.
-        hasPublicLabel = true;
-      } else if (label.equals(PRIVATE_LABEL)) {
-        numPrivateLabels++;
-      } else {
-        checkForVisibilityMisspelling(label);
-      }
-    }
-    if (hasPublicLabel) {
-      return PUBLIC_DECLARED_LABELS;
-    }
-    if (numPrivateLabels == labels.size()) {
-      return PRIVATE_DECLARED_LABELS;
-    }
-    if (numPrivateLabels == 0) {
-      return labels;
-    }
-    ImmutableList.Builder<Label> withoutPrivateLabels =
-        ImmutableList.builderWithExpectedSize(labels.size() - numPrivateLabels);
-    for (Label label : labels) {
-      if (!label.equals(PRIVATE_LABEL)) {
-        withoutPrivateLabels.add(label);
-      }
-    }
-    return withoutPrivateLabels.build();
-  }
-
-  /**
-   * Returns a {@code RuleVisibility} representing the logical result of concatenating this
-   * visibility's label list with a singleton list containing the given package.
-   *
-   * <p>Public and private visibilities are normalized as in {@link #validateAndSimplify}. In
-   * addition, the new item is not concatenated if it is already present as an item in this
-   * visibility's list.
-   */
-  RuleVisibility concatWithPackage(PackageIdentifier packageIdentifier) {
-    Label pkgItem = Label.createUnvalidated(packageIdentifier, "__pkg__");
-
-    if (this.equals(RuleVisibility.PRIVATE)) {
-      // Left-side private is dropped.
-      return parseUnchecked(ImmutableList.of(pkgItem));
-    } else if (this.equals(RuleVisibility.PUBLIC)) {
-      // Public is idempotent.
-      return RuleVisibility.PUBLIC;
-    } else {
-      List<Label> items = getDeclaredLabels();
-      if (items.contains(pkgItem)) {
-        return this;
-      } else {
-        ImmutableList.Builder<Label> newItems = new ImmutableList.Builder<>();
-        newItems.addAll(items);
-        newItems.add(pkgItem);
-        return parseUnchecked(newItems.build());
-      }
-    }
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (this == other) {
-      return true;
-    } else if (!(other instanceof RuleVisibility)) {
-      return false;
-    } else {
-      // PackageGroupsRuleVisibility is not allowed to contain the special public/private items, so
-      // we don't have to worry about that overlapping with our singleton PUBLIC/PRIVATE instances
-      // here.
-      return getDeclaredLabels().equals(((RuleVisibility) other).getDeclaredLabels());
-    }
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(getClass(), getDeclaredLabels());
-  }
 }

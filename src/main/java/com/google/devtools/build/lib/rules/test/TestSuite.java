@@ -113,7 +113,7 @@ public class TestSuite implements RuleConfiguredTargetFactory {
       TestTagsProvider tagsProvider = dep.getProvider(TestTagsProvider.class);
       if (provider == null && tagsProvider == null) {
         ruleContext.attributeError(attributeName,
-            "expecting a test or a test_suite rule but '" + dep.getLabel() + "' is not one");
+            "expecting a test or a test_suite rule but '" + dep.label + "' is not one");
       }
     }
   }

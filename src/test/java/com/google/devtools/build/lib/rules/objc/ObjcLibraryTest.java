@@ -2550,7 +2550,7 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
     CcToolchainProvider ccToolchainProvider =
         CcToolchainProvider.getFromTarget(getConfiguredTarget("//a:toolchain"));
     InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider);
 
     assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isNotEmpty();
     assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList())
@@ -2572,7 +2572,7 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
         """);
 
     InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider);
 
     assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isEmpty();
   }
@@ -2600,7 +2600,7 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
     useConfiguration("--collect_code_coverage", "--instrumentation_filter=//a[:/]");
 
     InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:bar").get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+        getConfiguredTarget("//a:bar").get(InstrumentedFilesInfo.provider);
 
     assertThat(
             Artifact.toRootRelativePaths(instrumentedFilesInfo.getInstrumentationMetadataFiles()))

@@ -11,73 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.platform.PlatformValue;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import com.google.devtools.build.skyframe.state.StateMachine.ValueOrException2Sink;
-import com.google.devtools.common.options.OptionsParsingException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.platform.PlatformValue
+import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.state.StateMachine
+import com.google.devtools.build.skyframe.state.StateMachine.ValueOrException2Sink
 
-/** Retrieves {@link PlatformValue} for a given platform. */
-final class PlatformProducer
-    implements StateMachine,
-        ValueOrException2Sink<InvalidPlatformException, OptionsParsingException> {
+/** Retrieves [PlatformValue] for a given platform.  */
+internal class PlatformProducer
+    (
+    platformLabel: com.google.devtools.build.lib.cmdline.Label?,
+    flagAliasMappings: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.cmdline.Label?>?,
+    sink: ResultSink,
+    runAfter: StateMachine?
+) : StateMachine,
+    ValueOrException2Sink<InvalidPlatformException?, com.google.devtools.common.options.OptionsParsingException?> {
+    internal interface ResultSink {
+        fun acceptPlatformValue(value: PlatformValue?)
 
-  interface ResultSink {
-    void acceptPlatformValue(PlatformValue value);
+        fun acceptPlatformInfoError(error: InvalidPlatformException?)
 
-    void acceptPlatformInfoError(InvalidPlatformException error);
-
-    void acceptOptionsParsingError(OptionsParsingException error);
-  }
-
-  // -------------------- Input --------------------
-  private final Label platformLabel;
-  private final ImmutableMap<String, Label> flagAliasMappings;
-
-  // -------------------- Output --------------------
-  private final ResultSink sink;
-
-  // -------------------- Sequencing --------------------
-  private final StateMachine runAfter;
-
-  PlatformProducer(
-      Label platformLabel,
-      ImmutableMap<String, Label> flagAliasMappings,
-      ResultSink sink,
-      StateMachine runAfter) {
-    this.platformLabel = platformLabel;
-    this.flagAliasMappings = flagAliasMappings;
-    this.sink = sink;
-    this.runAfter = runAfter;
-  }
-
-  @Override
-  public StateMachine step(Tasks tasks) {
-    tasks.lookUp(
-        PlatformValue.key(platformLabel, flagAliasMappings),
-        InvalidPlatformException.class,
-        OptionsParsingException.class,
-        this);
-    return runAfter;
-  }
-
-  @Override
-  public void acceptValueOrException2(
-      @Nullable SkyValue value,
-      @Nullable InvalidPlatformException invalidPlatformException,
-      @Nullable OptionsParsingException optionsParsingException) {
-    if (value != null) {
-      sink.acceptPlatformValue((PlatformValue) value);
-    } else if (invalidPlatformException != null) {
-      sink.acceptPlatformInfoError(invalidPlatformException);
-    } else {
-      sink.acceptOptionsParsingError(optionsParsingException);
+        fun acceptOptionsParsingError(error: com.google.devtools.common.options.OptionsParsingException?)
     }
-  }
+
+    // -------------------- Input --------------------
+    private val platformLabel: com.google.devtools.build.lib.cmdline.Label?
+    private val flagAliasMappings: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.cmdline.Label?>?
+
+    // -------------------- Output --------------------
+    private val sink: ResultSink
+
+    // -------------------- Sequencing --------------------
+    private val runAfter: StateMachine?
+
+    init {
+        this.platformLabel = platformLabel
+        this.flagAliasMappings = flagAliasMappings
+        this.sink = sink
+        this.runAfter = runAfter
+    }
+
+    override fun step(tasks: StateMachine.Tasks): StateMachine? {
+        tasks.lookUp<InvalidPlatformException?, com.google.devtools.common.options.OptionsParsingException?>(
+            PlatformValue.Companion.key(platformLabel, flagAliasMappings),
+            InvalidPlatformException::class.java,
+            com.google.devtools.common.options.OptionsParsingException::class.java,
+            this
+        )
+        return runAfter
+    }
+
+    override fun acceptValueOrException2(
+        value: SkyValue?,
+        invalidPlatformException: InvalidPlatformException?,
+        optionsParsingException: com.google.devtools.common.options.OptionsParsingException?
+    ) {
+        if (value != null) {
+            sink.acceptPlatformValue(value as PlatformValue)
+        } else if (invalidPlatformException != null) {
+            sink.acceptPlatformInfoError(invalidPlatformException)
+        } else {
+            sink.acceptOptionsParsingError(optionsParsingException)
+        }
+    }
 }

@@ -42,7 +42,7 @@ public final class AttributeInfoExtractor {
             .setName(internalToUnicode(attribute.getPublicName()))
             .setType(getAttributeType(context, attribute.getType(), attribute.getPublicName()))
             .setMandatory(attribute.isMandatory());
-    Optional.ofNullable(attribute.getDoc())
+    Optional.ofNullable(attribute.doc)
         .map(StringEncoding::internalToUnicode)
         .ifPresent(builder::setDocString);
     if (!attribute.isConfigurable()) {
@@ -61,7 +61,7 @@ public final class AttributeInfoExtractor {
 
     if (!attribute.isMandatory()) {
       try {
-        Object defaultValue = Attribute.valueToStarlark(attribute.getDefaultValueUnchecked());
+        Object defaultValue = Attribute.valueToStarlark(attribute.defaultValueUnchecked);
         builder.setDefaultValue(
             StringEncoding.internalToUnicode(
                 context.labelRenderer().reprWithoutLabelConstructor(defaultValue)));
@@ -97,7 +97,7 @@ public final class AttributeInfoExtractor {
       builder.accept(implicitAttributeInfo);
     }
     for (Attribute attribute : attributes) {
-      if (implicitAttributeInfos.containsKey(attribute.getName())) {
+      if (implicitAttributeInfos.containsKey(attribute.name)) {
         continue;
       }
       if ((attribute.starlarkDefined() || context.extractNativelyDefinedAttrs())

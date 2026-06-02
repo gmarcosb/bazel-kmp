@@ -11,22 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.http
 
-package com.google.devtools.build.lib.remote.http;
+import io.netty.handler.codec.http.HttpResponse
+import java.io.IOException
 
-import io.netty.handler.codec.http.HttpResponse;
-import java.io.IOException;
-
-/** An exception that propagates the http status. */
-public final class HttpException extends IOException {
-  private final HttpResponse response;
-
-  HttpException(HttpResponse response, String message, Throwable cause) {
-    super(message, cause);
-    this.response = response;
-  }
-
-  public HttpResponse response() {
-    return response;
-  }
+/** An exception that propagates the http status.  */
+class HttpException internal constructor(private val response: HttpResponse?, message: String?, cause: Throwable?) :
+    IOException(message, cause) {
+    fun response(): HttpResponse? {
+        return response
+    }
 }

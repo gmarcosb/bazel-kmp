@@ -11,35 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
-
-import build.bazel.remote.execution.v2.GetCapabilitiesRequest;
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.GetCapabilitiesDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
+import build.bazel.remote.execution.v2.GetCapabilitiesRequest
 
 /**
- * LoggingHandler for {@link google.devtools.remoteexecution.v1test.ActionCache.GetCapabilities}
+ * LoggingHandler for [google.devtools.remoteexecution.v1test.ActionCache.GetCapabilities]
  * gRPC call.
  */
-public class GetCapabilitiesHandler
-    implements LoggingHandler<GetCapabilitiesRequest, ServerCapabilities> {
+class GetCapabilitiesHandler
 
-  private final GetCapabilitiesDetails.Builder builder = GetCapabilitiesDetails.newBuilder();
+    : LoggingHandler<GetCapabilitiesRequest?, ServerCapabilities?> {
+    private val builder: GetCapabilitiesDetails.Builder = GetCapabilitiesDetails.newBuilder()
 
-  @Override
-  public void handleReq(GetCapabilitiesRequest message) {
-    builder.setRequest(message);
-  }
+    override fun handleReq(message: GetCapabilitiesRequest?) {
+        builder.setRequest(message)
+    }
 
-  @Override
-  public void handleResp(ServerCapabilities message) {
-    builder.setResponse(message);
-  }
+    override fun handleResp(message: ServerCapabilities?) {
+        builder.setResponse(message)
+    }
 
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder().setGetCapabilities(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder().setGetCapabilities(builder).build()
+    }
 }

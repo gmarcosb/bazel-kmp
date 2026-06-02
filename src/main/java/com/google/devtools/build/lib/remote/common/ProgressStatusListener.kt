@@ -11,20 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import com.google.devtools.build.lib.exec.SpawnProgressEvent;
-import com.google.devtools.build.lib.exec.SpawnRunner.ProgressStatus;
+import com.google.devtools.build.lib.exec.SpawnProgressEvent
 
-/** An interface that is used to receive {@link ProgressStatus} updates during spawn execution. */
-@FunctionalInterface
-public interface ProgressStatusListener {
+/** An interface that is used to receive [ProgressStatus] updates during spawn execution.  */
+fun interface ProgressStatusListener {
+    fun onProgressStatus(progress: SpawnProgressEvent?)
 
-  void onProgressStatus(SpawnProgressEvent progress);
-
-  /** A {@link ProgressStatusListener} that does nothing. */
-  ProgressStatusListener NO_ACTION =
-      progress -> {
-        // Intentionally left empty
-      };
+    companion object {
+        /** A [ProgressStatusListener] that does nothing.  */
+        val NO_ACTION: ProgressStatusListener = ProgressStatusListener { progress: SpawnProgressEvent? -> }
+    }
 }

@@ -11,59 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.starlark.annotations;
-
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+package com.google.devtools.build.lib.analysis.starlark.annotations
 
 /**
  * A marker interface for Java methods of Starlark-exposed configuration fragments which denote
  * Starlark "configuration fields": late-bound attribute defaults that depend on configuration.
- *
- * <p>Methods annotated with this annotation have a few constraints:
- *
- * <ul>
- *   <li>The annotated method must be on a configuration fragment exposed to Starlark.
- *   <li>The method must have return type Label.
- *   <li>The method must be public.
- *   <li>The method must have zero arguments.
- *   <li>The method must not throw exceptions.
- * </ul>
+ * 
+ * 
+ * Methods annotated with this annotation have a few constraints:
+ * 
+ * 
+ *  * The annotated method must be on a configuration fragment exposed to Starlark.
+ *  * The method must have return type Label.
+ *  * The method must be public.
+ *  * The method must have zero arguments.
+ *  * The method must not throw exceptions.
+ * 
  */
-@Target({ElementType.METHOD})
-@Retention(RetentionPolicy.RUNTIME)
-public @interface StarlarkConfigurationField {
-
-  /** Name of the configuration field, as exposed to Starlark. */
-  String name();
-
-  /**
-   * The default label associated with this field, corresponding to the value of this configuration
-   * field with default command line flags.
-   *
-   * <p>If the default label is under the tools repository, omit the tools repository prefix
-   * from this default, but set {@link #defaultInToolRepository} to true.</p>
-   */
-  String defaultLabel() default "";
-
-  /**
-   * Whether the default label as defined in {@link #defaultLabel} should be prefixed with
-   * the tools repository.
-   */
-  boolean defaultInToolRepository() default false;
-
-  /**
-   * The documentation text in Starlark. It can contain HTML tags for special formatting.
-   *
-   * <p>It is allowed to be empty only if {@link #documented()} is false.
-   */
-  String doc() default "";
-
-  /**
-   * If true, the function will appear in the Starlark documentation. Set this to false if the
-   * function is experimental or an overloading and doesn't need to be documented.
-   */
-  boolean documented() default true;
-}
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY_GETTER, AnnotationTarget.PROPERTY_SETTER)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class StarlarkConfigurationField(
+    /** Name of the configuration field, as exposed to Starlark.  */
+    val name: String,
+    /**
+     * The default label associated with this field, corresponding to the value of this configuration
+     * field with default command line flags.
+     * 
+     * 
+     * If the default label is under the tools repository, omit the tools repository prefix
+     * from this default, but set [.defaultInToolRepository] to true.
+     */
+    val defaultLabel: String = "",
+    /**
+     * Whether the default label as defined in [.defaultLabel] should be prefixed with
+     * the tools repository.
+     */
+    val defaultInToolRepository: Boolean = false,
+    /**
+     * The documentation text in Starlark. It can contain HTML tags for special formatting.
+     * 
+     * 
+     * It is allowed to be empty only if [.documented] is false.
+     */
+    val doc: String = "",
+    /**
+     * If true, the function will appear in the Starlark documentation. Set this to false if the
+     * function is experimental or an overloading and doesn't need to be documented.
+     */
+    val documented: Boolean = true
+)

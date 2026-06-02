@@ -11,43 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.junit4
 
-package com.google.testing.junit.runner.junit4;
-
-import com.google.testing.junit.runner.model.TestSuiteModel;
-import java.util.function.Supplier;
-import org.junit.runner.Description;
-import org.junit.runner.Request;
+import com.google.testing.junit.runner.model.TestSuiteModel
+import org.junit.runner.Request
+import java.util.function.Supplier
 
 /**
- * Builds a {@link TestSuiteModel} for JUnit4 tests.
+ * Builds a [TestSuiteModel] for JUnit4 tests.
  */
-class JUnit4TestModelBuilder implements Supplier<TestSuiteModel> {
-  private final Request request;
-  private final String suiteName;
-  private final TestSuiteModel.Builder builder;
-
-  public JUnit4TestModelBuilder(Request request, String suiteName, TestSuiteModel.Builder builder) {
-    this.request = request;
-    this.suiteName = suiteName;
-    this.builder = builder;
-  }
-
-  /**
-   * Creates a model for a JUnit4 suite. This can be expensive; callers should
-   * consider memoizing the result.
-   *
-   * @return model.
-   */
-  @Override
-  public TestSuiteModel get() {
-    Description root = request.getRunner().getDescription();
-    // A test class annotated with @Ignore effectively has no test methods,
-    // which is what isSuite() tests for.
-    if (!root.isSuite()) {
-      return builder.build(suiteName);
-    } else {
-      return builder.build(suiteName, root);
+internal class JUnit4TestModelBuilder(
+    private val request: Request,
+    private val suiteName: String?,
+    private val builder: TestSuiteModel.Builder
+) : Supplier<TestSuiteModel?> {
+    /**
+     * Creates a model for a JUnit4 suite. This can be expensive; callers should
+     * consider memoizing the result.
+     * 
+     * @return model.
+     */
+    override fun get(): TestSuiteModel? {
+        val root = request.getRunner().getDescription()
+        // A test class annotated with @Ignore effectively has no test methods,
+        // which is what isSuite() tests for.
+        if (!root.isSuite()) {
+            return builder.build(suiteName)
+        } else {
+            return builder.build(suiteName, root)
+        }
     }
-  }
 }

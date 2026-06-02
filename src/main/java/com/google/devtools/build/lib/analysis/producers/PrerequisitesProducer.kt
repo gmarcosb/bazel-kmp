@@ -11,389 +11,388 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.devtools.build.lib.analysis.AspectResolutionHelpers.computeAspectCollection;
-import static com.google.devtools.build.lib.analysis.AspectResolutionHelpers.computeAspectCollectionNoAspectsFiltering;
-import static com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.NULL_TRANSITION_KEYS;
-import static com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.VISIBILITY;
-import static com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData.SPLIT_DEP_ORDERING;
-import static java.util.Arrays.copyOfRange;
-import static java.util.Arrays.sort;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.AspectCollection;
-import com.google.devtools.build.lib.analysis.InconsistentAspectOrderException;
-import com.google.devtools.build.lib.analysis.InconsistentNullConfigException;
-import com.google.devtools.build.lib.analysis.InvalidVisibilityDependencyException;
-import com.google.devtools.build.lib.analysis.config.DependencyEvaluationException;
-import com.google.devtools.build.lib.analysis.configuredtargets.MergedConfiguredTarget.MergingException;
-import com.google.devtools.build.lib.analysis.configuredtargets.PackageGroupConfiguredTarget;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.skyframe.AspectCreationException;
-import com.google.devtools.build.lib.skyframe.BaseTargetPrerequisitesSupplier;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.lib.skyframe.LoadAspectsValue;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.analysis.AspectResolutionHelpers.computeAspectCollection
 
 /**
  * Computes requested prerequisite(s), applying any requested aspects.
- *
- * <p>A dependency is specified by a {@link Label} and an execution platform {@link Label} if it is
+ * 
+ * 
+ * A dependency is specified by a [Label] and an execution platform [Label] if it is
  * a toolchain.
- *
- * <p>Its configuration is determined by an {@link AttributeConfiguration}, which may be split and
+ * 
+ * 
+ * Its configuration is determined by an [AttributeConfiguration], which may be split and
  * result in multiple outputs.
- *
- * <p>Computes any specified aspects, applying the appropriate filtering, and merges them into the
+ * 
+ * 
+ * Computes any specified aspects, applying the appropriate filtering, and merges them into the
  * resulting values.
  */
-final class PrerequisitesProducer
-    implements StateMachine,
-        ConfiguredTargetAndDataProducer.ResultSink,
-        ConfiguredAspectProducer.ResultSink {
-  interface ResultSink {
-    void acceptPrerequisitesValue(ConfiguredTargetAndData[] prerequisites);
+internal class PrerequisitesProducer
+    (
+    parameters: PrerequisiteParameters,
+    label: com.google.devtools.build.lib.cmdline.Label?,
+    executionPlatformLabel: com.google.devtools.build.lib.cmdline.Label?,
+    configuration: AttributeConfiguration,
+    propagatingAspects: com.google.common.collect.ImmutableList<Aspect?>,
+    sink: ResultSink,
+    useBaseTargetPrerequisitesSupplier: Boolean,
+    next: StateMachine?
+) : StateMachine, com.google.devtools.build.lib.analysis.producers.ConfiguredTargetAndDataProducer.ResultSink,
+    com.google.devtools.build.lib.analysis.producers.ConfiguredAspectProducer.ResultSink {
+    internal interface ResultSink {
+        fun acceptPrerequisitesValue(prerequisites: Array<ConfiguredTargetAndData?>?)
 
-    void acceptPrerequisitesError(NoSuchThingException error);
+        fun acceptPrerequisitesError(error: NoSuchThingException?)
 
-    void acceptPrerequisitesError(InvalidVisibilityDependencyException error);
+        fun acceptPrerequisitesError(error: InvalidVisibilityDependencyException?)
 
-    void acceptPrerequisitesCreationError(ConfiguredValueCreationException error);
+        fun acceptPrerequisitesCreationError(error: ConfiguredValueCreationException?)
 
-    void acceptPrerequisitesAspectError(DependencyEvaluationException error);
+        fun acceptPrerequisitesAspectError(error: DependencyEvaluationException?)
 
-    void acceptPrerequisitesAspectError(AspectCreationException error);
-  }
+        fun acceptPrerequisitesAspectError(error: AspectCreationException?)
+    }
 
-  // -------------------- Input --------------------
-  private final PrerequisiteParameters parameters;
-  private final Label label;
-  @Nullable // Non-null for toolchain prerequisites.
-  private final Label executionPlatformLabel;
-  private final AttributeConfiguration configuration;
-  private final ImmutableList<Aspect> propagatingAspects;
-  private final boolean useBaseTargetPrerequisitesSupplier;
+    // -------------------- Input --------------------
+    private val parameters: PrerequisiteParameters
+    private val label: com.google.devtools.build.lib.cmdline.Label?
 
-  // -------------------- Output --------------------
-  private final ResultSink sink;
+    // Non-null for toolchain prerequisites.
+    private val executionPlatformLabel: com.google.devtools.build.lib.cmdline.Label?
+    private val configuration: AttributeConfiguration
+    private val propagatingAspects: com.google.common.collect.ImmutableList<Aspect?>
+    private val useBaseTargetPrerequisitesSupplier: Boolean
 
-  // -------------------- Sequencing --------------------
-  private final StateMachine next;
+    // -------------------- Output --------------------
+    private val sink: ResultSink
 
-  // -------------------- Internal State --------------------
-  private ConfiguredTargetAndData[] configuredTargets;
-  private ImmutableList<Aspect> execAspects = ImmutableList.of();
-  private boolean hasError;
+    // -------------------- Sequencing --------------------
+    private val next: StateMachine?
 
-  PrerequisitesProducer(
-      PrerequisiteParameters parameters,
-      Label label,
-      @Nullable Label executionPlatformLabel,
-      AttributeConfiguration configuration,
-      ImmutableList<Aspect> propagatingAspects,
-      ResultSink sink,
-      boolean useBaseTargetPrerequisitesSupplier,
-      StateMachine next) {
-    this.parameters = parameters;
-    this.label = label;
-    this.executionPlatformLabel = executionPlatformLabel;
-    this.configuration = configuration;
-    this.propagatingAspects = propagatingAspects;
-    this.sink = sink;
-    this.useBaseTargetPrerequisitesSupplier = useBaseTargetPrerequisitesSupplier;
-    this.next = next;
+    // -------------------- Internal State --------------------
+    private var configuredTargets: Array<ConfiguredTargetAndData?>
+    private var execAspects: com.google.common.collect.ImmutableList<Aspect?> =
+        com.google.common.collect.ImmutableList.of<Aspect?>()
+    private var hasError = false
 
-    // size > 0 guaranteed by contract of SplitTransition.
-    int size = configuration.count();
-    this.configuredTargets = new ConfiguredTargetAndData[size];
-  }
+    init {
+        this.parameters = parameters
+        this.label = label
+        this.executionPlatformLabel = executionPlatformLabel
+        this.configuration = configuration
+        this.propagatingAspects = propagatingAspects
+        this.sink = sink
+        this.useBaseTargetPrerequisitesSupplier = useBaseTargetPrerequisitesSupplier
+        this.next = next
 
-  @Override
-  public StateMachine step(Tasks tasks) {
-    BaseTargetPrerequisitesSupplier baseTargetPrerequisitesSupplier =
-        useBaseTargetPrerequisitesSupplier ? parameters.baseTargetPrerequisitesSupplier() : null;
-    switch (configuration.kind()) {
-      case VISIBILITY ->
-          tasks.enqueue(
-              new ConfiguredTargetAndDataProducer(
-                  getPrerequisiteKey(/* configurationKey= */ null),
-                  /* transitionKeys= */ ImmutableList.of(),
-                  parameters.transitiveState(),
-                  (ConfiguredTargetAndDataProducer.ResultSink) this,
-                  /* outputIndex= */ 0,
-                  baseTargetPrerequisitesSupplier));
-      case NULL_TRANSITION_KEYS ->
-          tasks.enqueue(
-              new ConfiguredTargetAndDataProducer(
-                  getPrerequisiteKey(/* configurationKey= */ null),
-                  configuration.nullTransitionKeys(),
-                  parameters.transitiveState(),
-                  (ConfiguredTargetAndDataProducer.ResultSink) this,
-                  /* outputIndex= */ 0,
-                  baseTargetPrerequisitesSupplier));
-      case UNARY ->
-          tasks.enqueue(
-              new ConfiguredTargetAndDataProducer(
-                  getPrerequisiteKey(configuration.unary()),
-                  /* transitionKeys= */ ImmutableList.of(),
-                  parameters.transitiveState(),
-                  (ConfiguredTargetAndDataProducer.ResultSink) this,
-                  /* outputIndex= */ 0,
-                  baseTargetPrerequisitesSupplier));
-      case SPLIT -> {
-        int index = 0;
-        for (Map.Entry<String, BuildConfigurationKey> entry : configuration.split().entrySet()) {
-          tasks.enqueue(
-              new ConfiguredTargetAndDataProducer(
-                  getPrerequisiteKey(entry.getValue()),
-                  ImmutableList.of(entry.getKey()),
-                  parameters.transitiveState(),
-                  (ConfiguredTargetAndDataProducer.ResultSink) this,
-                  index,
-                  baseTargetPrerequisitesSupplier));
-          ++index;
+        // size > 0 guaranteed by contract of SplitTransition.
+        val size: Int = configuration.count()
+        this.configuredTargets = arrayOfNulls<ConfiguredTargetAndData>(size)
+    }
+
+    override fun step(tasks: StateMachine.Tasks): StateMachine {
+        val baseTargetPrerequisitesSupplier: BaseTargetPrerequisitesSupplier? =
+            if (useBaseTargetPrerequisitesSupplier) parameters.baseTargetPrerequisitesSupplier() else null
+        when (configuration.kind()) {
+            com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.VISIBILITY -> tasks.enqueue(
+                ConfiguredTargetAndDataProducer(
+                    getPrerequisiteKey( /* configurationKey= */null),  /* transitionKeys= */
+                    com.google.common.collect.ImmutableList.of<String?>(),
+                    parameters.transitiveState(),
+                    this as com.google.devtools.build.lib.analysis.producers.ConfiguredTargetAndDataProducer.ResultSink,  /* outputIndex= */
+                    0,
+                    baseTargetPrerequisitesSupplier
+                )
+            )
+
+            com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.NULL_TRANSITION_KEYS -> tasks.enqueue(
+                ConfiguredTargetAndDataProducer(
+                    getPrerequisiteKey( /* configurationKey= */null),
+                    configuration.nullTransitionKeys(),
+                    parameters.transitiveState(),
+                    this as com.google.devtools.build.lib.analysis.producers.ConfiguredTargetAndDataProducer.ResultSink,  /* outputIndex= */
+                    0,
+                    baseTargetPrerequisitesSupplier
+                )
+            )
+
+            com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.UNARY -> tasks.enqueue(
+                ConfiguredTargetAndDataProducer(
+                    getPrerequisiteKey(configuration.unary()),  /* transitionKeys= */
+                    com.google.common.collect.ImmutableList.of<String?>(),
+                    parameters.transitiveState(),
+                    this as com.google.devtools.build.lib.analysis.producers.ConfiguredTargetAndDataProducer.ResultSink,  /* outputIndex= */
+                    0,
+                    baseTargetPrerequisitesSupplier
+                )
+            )
+
+            com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.SPLIT -> {
+                var index = 0
+                for (entry in configuration.split().entries) {
+                    tasks.enqueue(
+                        ConfiguredTargetAndDataProducer(
+                            getPrerequisiteKey(entry.value),
+                            com.google.common.collect.ImmutableList.of<String?>(entry.key),
+                            parameters.transitiveState(),
+                            this as com.google.devtools.build.lib.analysis.producers.ConfiguredTargetAndDataProducer.ResultSink,
+                            index,
+                            baseTargetPrerequisitesSupplier
+                        )
+                    )
+                    ++index
+                }
+            }
         }
-      }
-    }
-    return this::computeConfiguredAspects;
-  }
-
-  @Override
-  public void acceptConfiguredTargetAndData(ConfiguredTargetAndData value, int index) {
-    configuredTargets[index] = value;
-  }
-
-  @Override
-  public void acceptConfiguredTargetAndDataError(NoSuchThingException error) {
-    hasError = true;
-    sink.acceptPrerequisitesError(error);
-  }
-
-  @Override
-  public void acceptConfiguredTargetAndDataError(InconsistentNullConfigException error) {
-    hasError = true;
-    if (configuration.kind() == VISIBILITY) {
-      // The target was configurable, but used as a visibility dependency. This is invalid because
-      // only `PackageGroup`s are accepted as visibility dependencies and those are not
-      // configurable. Propagates the exception with more precise information.
-      sink.acceptPrerequisitesError(new InvalidVisibilityDependencyException(label));
-      return;
-    }
-    // `configuration.kind()` was `NULL_TRANSITION_KEYS`. This is only used when the target is in
-    // the same package as the parent and not configurable so this should never happen.
-    throw new IllegalStateException(error);
-  }
-
-  @Override
-  public void acceptConfiguredTargetAndDataError(ConfiguredValueCreationException error) {
-    hasError = true;
-    sink.acceptPrerequisitesCreationError(error);
-  }
-
-  private StateMachine computeConfiguredAspects(Tasks tasks) throws InterruptedException {
-    if (hasError) {
-      return DONE;
+        return StateMachine { tasks: StateMachine.Tasks? -> this.computeConfiguredAspects(tasks) }
     }
 
-    if (configuration.kind() == VISIBILITY) {
-      // Verifies that the dependency is a `package_group`. The value is always at index 0 because
-      // the `VISIBILITY` configuration is always unary.
-      if (!(configuredTargets[0].getConfiguredTarget() instanceof PackageGroupConfiguredTarget)) {
-        sink.acceptPrerequisitesError(new InvalidVisibilityDependencyException(label));
-        return DONE;
-      }
+    override fun acceptConfiguredTargetAndData(value: ConfiguredTargetAndData?, index: Int) {
+        configuredTargets[index] = value
     }
 
-    cleanupValues();
-
-    if (parameters.loadExecAspectsKey() != null) {
-      tasks.lookUp(parameters.loadExecAspectsKey(), (Consumer<SkyValue>) this::acceptExecAspects);
+    override fun acceptConfiguredTargetAndDataError(error: NoSuchThingException?) {
+        hasError = true
+        sink.acceptPrerequisitesError(error)
     }
-    return this::maybeFilterAspects;
-  }
 
-  private StateMachine maybeFilterAspects(Tasks tasks) throws InterruptedException {
-    AspectCollection aspects;
-    try {
-      // All configured targets in the set have the same underlying target so using an arbitrary one
-      // for aspect filtering is safe.
-      var filteredAspects =
-          filterAspectsBasedOnTarget(propagatingAspects, execAspects, configuredTargets[0]);
-      if (filteredAspects.isEmpty()) {
-        aspects = AspectCollection.EMPTY;
-      } else {
-        if (configuredTargets[0].isTargetRule()) {
-          aspects =
-              computeAspectCollection(
-                  filteredAspects,
-                  configuredTargets[0].getTargetAdvertisedProviders(),
-                  configuredTargets[0].getTargetLabel(),
-                  configuredTargets[0].getRuleDefinitionEnvironmentLabel(),
-                  configuredTargets[0].getRuleClass(),
-                  configuredTargets[0].getOnlyTagsAttribute(),
-                  configuredTargets[0].getLocation(),
-                  parameters.eventHandler());
+    override fun acceptConfiguredTargetAndDataError(error: InconsistentNullConfigException?) {
+        hasError = true
+        if (configuration.kind() == com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.VISIBILITY) {
+            // The target was configurable, but used as a visibility dependency. This is invalid because
+            // only `PackageGroup`s are accepted as visibility dependencies and those are not
+            // configurable. Propagates the exception with more precise information.
+            sink.acceptPrerequisitesError(InvalidVisibilityDependencyException(label))
+            return
+        }
+        // `configuration.kind()` was `NULL_TRANSITION_KEYS`. This is only used when the target is in
+        // the same package as the parent and not configurable so this should never happen.
+        throw java.lang.IllegalStateException(error)
+    }
+
+    override fun acceptConfiguredTargetAndDataError(error: ConfiguredValueCreationException?) {
+        hasError = true
+        sink.acceptPrerequisitesCreationError(error)
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun computeConfiguredAspects(tasks: StateMachine.Tasks): StateMachine {
+        if (hasError) {
+            return StateMachine.DONE
+        }
+
+        if (configuration.kind() == com.google.devtools.build.lib.analysis.producers.AttributeConfiguration.Kind.VISIBILITY) {
+            // Verifies that the dependency is a `package_group`. The value is always at index 0 because
+            // the `VISIBILITY` configuration is always unary.
+            if (configuredTargets[0].getConfiguredTarget() !is PackageGroupConfiguredTarget) {
+                sink.acceptPrerequisitesError(InvalidVisibilityDependencyException(label))
+                return StateMachine.DONE
+            }
+        }
+
+        cleanupValues()
+
+        if (parameters.loadExecAspectsKey() != null) {
+            tasks.lookUp(
+                parameters.loadExecAspectsKey(),
+                java.util.function.Consumer { execAspects: SkyValue? -> this.acceptExecAspects(execAspects) } as java.util.function.Consumer<SkyValue?>)
+        }
+        return StateMachine { tasks: StateMachine.Tasks? -> this.maybeFilterAspects(tasks) }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun maybeFilterAspects(tasks: StateMachine.Tasks): StateMachine? {
+        val aspects: AspectCollection
+        try {
+            // All configured targets in the set have the same underlying target so using an arbitrary one
+            // for aspect filtering is safe.
+            val filteredAspects: com.google.common.collect.ImmutableList<Aspect?> =
+                filterAspectsBasedOnTarget(propagatingAspects, execAspects, configuredTargets[0])
+            if (filteredAspects.isEmpty()) {
+                aspects = AspectCollection.EMPTY
+            } else {
+                if (configuredTargets[0].isTargetRule()) {
+                    aspects =
+                        computeAspectCollection(
+                            filteredAspects,
+                            configuredTargets[0].getTargetAdvertisedProviders(),
+                            configuredTargets[0].getTargetLabel(),
+                            configuredTargets[0].getRuleDefinitionEnvironmentLabel(),
+                            configuredTargets[0].getRuleClass(),
+                            configuredTargets[0].getOnlyTagsAttribute(),
+                            configuredTargets[0].getLocation(),
+                            parameters.eventHandler()
+                        )
+                } else {
+                    aspects =
+                        computeAspectCollectionNoAspectsFiltering(
+                            filteredAspects,
+                            configuredTargets[0].getTargetLabel(),
+                            configuredTargets[0].getLocation()
+                        )
+                }
+            }
+        } catch (e: InconsistentAspectOrderException) {
+            sink.acceptPrerequisitesAspectError(DependencyEvaluationException(e))
+            return StateMachine.DONE
+        } catch (e: net.starlark.java.eval.EvalException) {
+            parameters.eventHandler().handle(
+                com.google.devtools.build.lib.events.Event.error(
+                    parameters.location(),
+                    e.getMessageWithStack()
+                )
+            )
+            sink.acceptPrerequisitesAspectError(
+                DependencyEvaluationException(e, parameters.location())
+            )
+            return StateMachine.DONE
+        }
+
+        if (aspects.isEmpty()) { // Short circuits if there are no aspects.
+            sink.acceptPrerequisitesValue(configuredTargets)
+            return next
+        }
+
+        for (i in configuredTargets.indices) {
+            val target: ConfiguredTargetAndData? = configuredTargets[i]
+            configuredTargets[i] = null
+            tasks.enqueue(
+                ConfiguredAspectProducer(
+                    aspects,
+                    target,
+                    this as com.google.devtools.build.lib.analysis.producers.ConfiguredAspectProducer.ResultSink,
+                    i,
+                    parameters.transitiveState()
+                )
+            )
+        }
+        return StateMachine { tasks: StateMachine.Tasks? -> this.emitMergedTargets(tasks) }
+    }
+
+    override fun acceptConfiguredAspectMergedTarget(
+        outputIndex: Int, mergedTarget: ConfiguredTargetAndData?
+    ) {
+        configuredTargets[outputIndex] = mergedTarget
+    }
+
+    override fun acceptConfiguredAspectError(error: MergingException) {
+        hasError = true
+        sink.acceptPrerequisitesAspectError(
+            DependencyEvaluationException(
+                ConfiguredValueCreationException(
+                    parameters.location(),
+                    error.getMessage(),
+                    parameters.label(),
+                    parameters.eventId(),  /* rootCauses= */
+                    null,  /* detailedExitCode= */
+                    null
+                ),  /* depReportedOwnError= */
+                false
+            )
+        )
+    }
+
+    override fun acceptConfiguredAspectError(error: AspectCreationException?) {
+        hasError = true
+        sink.acceptPrerequisitesAspectError(error)
+    }
+
+    fun acceptExecAspects(execAspects: SkyValue?) {
+        if (execAspects is LoadAspectsValue) {
+            this.execAspects = execAspects.getAspects()
+        }
+    }
+
+    private fun emitMergedTargets(tasks: StateMachine.Tasks?): StateMachine? {
+        if (!hasError) {
+            sink.acceptPrerequisitesValue(configuredTargets)
+            return next
         } else {
-          aspects =
-              computeAspectCollectionNoAspectsFiltering(
-                  filteredAspects,
-                  configuredTargets[0].getTargetLabel(),
-                  configuredTargets[0].getLocation());
+            return StateMachine.DONE
         }
-      }
-    } catch (InconsistentAspectOrderException e) {
-      sink.acceptPrerequisitesAspectError(new DependencyEvaluationException(e));
-      return DONE;
-    } catch (EvalException e) {
-      parameters.eventHandler().handle(Event.error(parameters.location(), e.getMessageWithStack()));
-      sink.acceptPrerequisitesAspectError(
-          new DependencyEvaluationException(e, parameters.location()));
-      return DONE;
     }
 
-    if (aspects.isEmpty()) { // Short circuits if there are no aspects.
-      sink.acceptPrerequisitesValue(configuredTargets);
-      return next;
+    private fun getPrerequisiteKey(configurationKey: BuildConfigurationKey?): ConfiguredTargetKey? {
+        val key: com.google.devtools.build.lib.skyframe.ConfiguredTargetKey.Builder =
+            ConfiguredTargetKey.builder().setLabel(label).setConfigurationKey(configurationKey)
+        if (executionPlatformLabel != null) {
+            key.setExecutionPlatformLabel(executionPlatformLabel)
+        }
+        return key.build()
     }
 
-    for (int i = 0; i < configuredTargets.length; ++i) {
-      ConfiguredTargetAndData target = configuredTargets[i];
-      configuredTargets[i] = null;
-      tasks.enqueue(
-          new ConfiguredAspectProducer(
-              aspects,
-              target,
-              (ConfiguredAspectProducer.ResultSink) this,
-              i,
-              parameters.transitiveState()));
-    }
-    return this::emitMergedTargets;
-  }
+    private fun cleanupValues() {
+        if (configuredTargets.size == 1) {
+            return
+        }
 
-  private static ImmutableList<Aspect> filterAspectsBasedOnTarget(
-      ImmutableList<Aspect> propagatingAspects,
-      ImmutableList<Aspect> execAspects,
-      ConfiguredTargetAndData prerequisite) {
-    if (prerequisite.isTargetOutputFile()) {
-      return propagatingAspects.stream()
-          .filter(aspect -> aspect.getDefinition().applyToGeneratingRules())
-          .collect(toImmutableList());
-    }
+        // Otherwise, there was a split transition.
+        if (configuredTargets[0].getConfiguration() == null) {
+            // The resulting configurations are null. Aggregates the transition keys.
+            val keys: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.Builder<String?>()
+            keys.addAll(configuredTargets[0].getTransitionKeys())
+            for (i in 1..<configuredTargets.size) {
+                com.google.common.base.Preconditions.checkState(
+                    configuredTargets[i].getConfiguration() == null,
+                    "inconsistent split transition result from %s to %s",
+                    parameters.label(),
+                    label
+                )
+                keys.addAll(configuredTargets[i].getTransitionKeys())
+            }
+            configuredTargets =
+                arrayOf<ConfiguredTargetAndData?>(configuredTargets[0].copyWithTransitionKeys(keys.build()))
+            return
+        }
 
-    if (!prerequisite.isTargetRule() || prerequisite.isMaterializerRule()) {
-      return ImmutableList.of();
-    }
-
-    if (prerequisite.getConfiguration().isExecConfiguration()) {
-      return ImmutableList.<Aspect>builder().addAll(propagatingAspects).addAll(execAspects).build();
-    }
-
-    return propagatingAspects;
-  }
-
-  @Override
-  public void acceptConfiguredAspectMergedTarget(
-      int outputIndex, ConfiguredTargetAndData mergedTarget) {
-    configuredTargets[outputIndex] = mergedTarget;
-  }
-
-  @Override
-  public void acceptConfiguredAspectError(MergingException error) {
-    hasError = true;
-    sink.acceptPrerequisitesAspectError(
-        new DependencyEvaluationException(
-            new ConfiguredValueCreationException(
-                parameters.location(),
-                error.getMessage(),
-                parameters.label(),
-                parameters.eventId(),
-                /* rootCauses= */ null,
-                /* detailedExitCode= */ null),
-            /* depReportedOwnError= */ false));
-  }
-
-  @Override
-  public void acceptConfiguredAspectError(AspectCreationException error) {
-    hasError = true;
-    sink.acceptPrerequisitesAspectError(error);
-  }
-
-  public void acceptExecAspects(SkyValue execAspects) {
-    if (execAspects instanceof LoadAspectsValue loadAspectsValue) {
-      this.execAspects = loadAspectsValue.getAspects();
-    }
-  }
-
-  private StateMachine emitMergedTargets(Tasks tasks) {
-    if (!hasError) {
-      sink.acceptPrerequisitesValue(configuredTargets);
-      return next;
-    } else {
-      return DONE;
-    }
-  }
-
-  private ConfiguredTargetKey getPrerequisiteKey(@Nullable BuildConfigurationKey configurationKey) {
-    var key = ConfiguredTargetKey.builder().setLabel(label).setConfigurationKey(configurationKey);
-    if (executionPlatformLabel != null) {
-      key.setExecutionPlatformLabel(executionPlatformLabel);
-    }
-    return key.build();
-  }
-
-  private void cleanupValues() {
-    if (configuredTargets.length == 1) {
-      return;
-    }
-    // Otherwise, there was a split transition.
-
-    if (configuredTargets[0].getConfiguration() == null) {
-      // The resulting configurations are null. Aggregates the transition keys.
-      var keys = new ImmutableList.Builder<String>();
-      keys.addAll(configuredTargets[0].getTransitionKeys());
-      for (int i = 1; i < configuredTargets.length; ++i) {
-        checkState(
-            configuredTargets[i].getConfiguration() == null,
-            "inconsistent split transition result from %s to %s",
-            parameters.label(),
-            label);
-        keys.addAll(configuredTargets[i].getTransitionKeys());
-      }
-      configuredTargets =
-          new ConfiguredTargetAndData[] {configuredTargets[0].copyWithTransitionKeys(keys.build())};
-      return;
+        // Deduplicates entries that have identical configurations and thus identical values, keeping
+        // only the first entry with the configuration.
+        val seenConfigurations: HashSet<BuildConfigurationKey?> = HashSet<BuildConfigurationKey?>()
+        var firstIndex = 0
+        for (i in configuredTargets.indices) {
+            if (!seenConfigurations.add(configuredTargets[i].getConfigurationKey())) {
+                // The target at `i` was a duplicate of a previous target. Deletes it by:
+                // 1. overwriting it with the first target; and
+                // 2. removing the slot previously associated with the first target.
+                configuredTargets[i] = configuredTargets[firstIndex++]
+            }
+        }
+        if (firstIndex > 0) {
+            configuredTargets = java.util.Arrays.copyOfRange<ConfiguredTargetAndData?>(
+                configuredTargets,
+                firstIndex,
+                configuredTargets.size
+            )
+        }
+        java.util.Arrays.sort<ConfiguredTargetAndData?>(configuredTargets, ConfiguredTargetAndData.SPLIT_DEP_ORDERING)
     }
 
-    // Deduplicates entries that have identical configurations and thus identical values, keeping
-    // only the first entry with the configuration.
-    var seenConfigurations = new HashSet<BuildConfigurationKey>();
-    int firstIndex = 0;
-    for (int i = 0; i < configuredTargets.length; ++i) {
-      if (!seenConfigurations.add(configuredTargets[i].getConfigurationKey())) {
-        // The target at `i` was a duplicate of a previous target. Deletes it by:
-        // 1. overwriting it with the first target; and
-        // 2. removing the slot previously associated with the first target.
-        configuredTargets[i] = configuredTargets[firstIndex++];
-      }
+    companion object {
+        private fun filterAspectsBasedOnTarget(
+            propagatingAspects: com.google.common.collect.ImmutableList<Aspect?>,
+            execAspects: com.google.common.collect.ImmutableList<Aspect?>,
+            prerequisite: ConfiguredTargetAndData
+        ): com.google.common.collect.ImmutableList<Aspect?> {
+            if (prerequisite.isTargetOutputFile()) {
+                return propagatingAspects.stream()
+                    .filter { aspect: Aspect? -> aspect.getDefinition().applyToGeneratingRules() }
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<Aspect?>())
+            }
+
+            if (!prerequisite.isTargetRule() || prerequisite.isMaterializerRule()) {
+                return com.google.common.collect.ImmutableList.of<Aspect?>()
+            }
+
+            if (prerequisite.getConfiguration().isExecConfiguration()) {
+                return com.google.common.collect.ImmutableList.builder<Aspect?>().addAll(propagatingAspects)
+                    .addAll(execAspects).build()
+            }
+
+            return propagatingAspects
+        }
     }
-    if (firstIndex > 0) {
-      configuredTargets = copyOfRange(configuredTargets, firstIndex, configuredTargets.length);
-    }
-    sort(configuredTargets, SPLIT_DEP_ORDERING);
-  }
 }

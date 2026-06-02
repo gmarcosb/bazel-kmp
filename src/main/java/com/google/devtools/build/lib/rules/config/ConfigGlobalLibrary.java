@@ -158,7 +158,7 @@ public class ConfigGlobalLibrary implements ConfigGlobalLibraryApi {
                 "invalid transition %s '%s': no repo visible as @%s from %s",
                 singularErrorDescriptor,
                 label,
-                label.getRepository().getName(),
+                    label.getRepository().name,
                 label.getRepository().getContextRepoDisplayString());
           }
         } catch (LabelSyntaxException e) {

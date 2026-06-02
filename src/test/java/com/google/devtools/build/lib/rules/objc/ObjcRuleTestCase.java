@@ -1367,7 +1367,7 @@ cc_toolchain_forwarder = rule(
       throws Exception {
     ConfiguredTarget libraryTarget = getConfiguredTarget(targetLabel);
     Label parsedLabel = Label.parseCanonical(targetLabel);
-    Artifact linkedLibrary = getBinArtifact(parsedLabel.getName() + artifactSuffix, libraryTarget);
+    Artifact linkedLibrary = getBinArtifact(parsedLabel.name + artifactSuffix, libraryTarget);
     return getGeneratingAction(linkedLibrary);
   }
 

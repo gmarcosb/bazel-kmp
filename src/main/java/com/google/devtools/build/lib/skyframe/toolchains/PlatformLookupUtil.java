@@ -109,7 +109,7 @@ public class PlatformLookupUtil {
       try {
         Label platformLabel = platformKey.getLabel();
         Target target =
-            packages.get(platformLabel.getPackageIdentifier()).getTarget(platformLabel.getName());
+            packages.get(platformLabel.getPackageIdentifier()).getTarget(platformLabel.name);
         if (!hasPlatformInfo(target)) {
           // validation failure
           throw new InvalidPlatformException(platformLabel);

@@ -11,48 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.cmdline;
+package com.google.devtools.build.lib.cmdline
 
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
- * Interface for {@link com.google.devtools.build.lib.skyframe.BzlLoadValue.Key}.
- *
- * <p>This exists to break what would otherwise be a circular dependency between {@link Label},
- * {@link BazelModuleContext} and {@link com.google.devtools.build.lib.skyframe.BzlLoadValue.Key}.
+ * Interface for [com.google.devtools.build.lib.skyframe.BzlLoadValue.Key].
+ * 
+ * 
+ * This exists to break what would otherwise be a circular dependency between [Label],
+ * [BazelModuleContext] and [com.google.devtools.build.lib.skyframe.BzlLoadValue.Key].
  */
-public interface BazelModuleKey extends SkyKey {
-  /** Absolute label of the .bzl file to be loaded. */
-  Label getLabel();
+interface BazelModuleKey : SkyKey {
+    /** Absolute label of the .bzl file to be loaded.  */
+    val label: com.google.devtools.build.lib.cmdline.Label?
 
-  @Override
-  default SkyFunctionName functionName() {
-    return SkyFunctions.BZL_LOAD;
-  }
-
-  /** Creates a fake instance for testing. */
-  static BazelModuleKey createFakeModuleKeyForTesting(Label label) {
-    return new FakeModuleKey(label);
-  }
-
-  /** Key for {@link BazelModuleContext}s created outside of Skyframe for testing */
-  static final class FakeModuleKey implements BazelModuleKey {
-    private final Label label;
-
-    private FakeModuleKey(Label label) {
-      this.label = label;
+    override fun functionName(): SkyFunctionName? {
+        return SkyFunctions.BZL_LOAD
     }
 
-    @Override
-    public Label getLabel() {
-      return label;
+    /** Key for [BazelModuleContext]s created outside of Skyframe for testing  */
+    class FakeModuleKey private constructor(label: com.google.devtools.build.lib.cmdline.Label?) : BazelModuleKey {
+        private val label: com.google.devtools.build.lib.cmdline.Label?
+
+        init {
+            this.label = label
+        }
+
+        override fun getLabel(): com.google.devtools.build.lib.cmdline.Label? {
+            return label
+        }
+
+        override fun functionName(): SkyFunctionName? {
+            throw java.lang.UnsupportedOperationException()
+        }
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      throw new UnsupportedOperationException();
+    companion object {
+        /** Creates a fake instance for testing.  */
+        fun createFakeModuleKeyForTesting(label: com.google.devtools.build.lib.cmdline.Label?): BazelModuleKey {
+            return FakeModuleKey(label)
+        }
     }
-  }
 }

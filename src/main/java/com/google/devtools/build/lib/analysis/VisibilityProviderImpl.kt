@@ -11,37 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
+import com.google.devtools.build.lib.analysis.VisibilityProvider
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
+import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents
 
 /**
  * Visibility provider implementation.
- *
- * <p>This is just used for {@link AliasConfiguredTarget}; other configured targets inline the
- * {@code VisibilityProvider} interface into their own definition.
+ * 
+ * 
+ * This is just used for [AliasConfiguredTarget]; other configured targets inline the
+ * `VisibilityProvider` interface into their own definition.
  */
-@Immutable
-public final class VisibilityProviderImpl implements VisibilityProvider {
-  private final NestedSet<PackageGroupContents> visibility;
-  private final boolean isCreatedInSymbolicMacro;
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class VisibilityProviderImpl(visibility: NestedSet<PackageGroupContents?>?, isCreatedInSymbolicMacro: Boolean) :
+    VisibilityProvider {
+    private val visibility: NestedSet<PackageGroupContents?>?
+    val isCreatedInSymbolicMacro: Boolean
 
-  public VisibilityProviderImpl(
-      NestedSet<PackageGroupContents> visibility, boolean isCreatedInSymbolicMacro) {
-    this.visibility = visibility;
-    this.isCreatedInSymbolicMacro = isCreatedInSymbolicMacro;
-  }
+    init {
+        this.visibility = visibility
+        this.isCreatedInSymbolicMacro = isCreatedInSymbolicMacro
+    }
 
-  @Override
-  public NestedSet<PackageGroupContents> getVisibility() {
-    return visibility;
-  }
-
-  @Override
-  public boolean isCreatedInSymbolicMacro() {
-    return isCreatedInSymbolicMacro;
-  }
+    override fun getVisibility(): NestedSet<PackageGroupContents?>? {
+        return visibility
+    }
 }

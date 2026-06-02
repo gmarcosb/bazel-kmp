@@ -3443,6 +3443,6 @@ public class ModuleExtensionResolutionTest extends BuildViewTestCase {
       throw result.getError().getException();
     }
     assertThat(result.get(skyKey).getModule().getGlobal("data"))
-        .isEqualTo("root@%s".formatted(Version.parse(rootVersion).normalized()));
+        .isEqualTo("root@%s".formatted(Version.parse(rootVersion).normalized));
   }
 }

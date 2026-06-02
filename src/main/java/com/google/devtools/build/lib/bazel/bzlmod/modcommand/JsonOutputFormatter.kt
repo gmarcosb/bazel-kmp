@@ -11,159 +11,154 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod.modcommand
 
-package com.google.devtools.build.lib.bazel.bzlmod.modcommand;
+import com.google.common.collect.ImmutableSortedSet
+import com.google.common.collect.Sets
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode.*
+import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions.ExtensionShow
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import java.util.function.Consumer
+import java.util.function.Predicate
+import kotlin.collections.HashSet
+import kotlin.collections.MutableSet
 
-import static com.google.common.collect.ImmutableSortedSet.toImmutableSortedSet;
+/** Outputs graph-based results of [ModExecutor] in JSON format.  */
+class JsonOutputFormatter : OutputFormatters.OutputFormatter() {
+    private var seenExtensions: MutableSet<ModuleExtensionId?>? = null
 
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode.IsCycle;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode.IsExpanded;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode.IsIndirect;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor.ResultNode.NodeMetadata;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions.ExtensionShow;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.OutputFormatters.OutputFormatter;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import java.util.HashSet;
-import java.util.Map.Entry;
-import java.util.Set;
-import javax.annotation.Nullable;
-
-/** Outputs graph-based results of {@link ModExecutor} in JSON format. */
-public class JsonOutputFormatter extends OutputFormatter {
-  private Set<ModuleExtensionId> seenExtensions;
-
-  @Override
-  public void output() {
-    seenExtensions = new HashSet<>();
-    JsonObject root = printModule(ModuleKey.ROOT, null, IsExpanded.TRUE, IsIndirect.FALSE);
-    root.addProperty("root", true);
-    printer.println(
-        new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root));
-  }
-
-  public String printKey(ModuleKey key) {
-    if (key.equals(ModuleKey.ROOT)) {
-      return "<root>";
+    public override fun output() {
+        seenExtensions = HashSet<ModuleExtensionId?>()
+        val root = printModule(ModuleKey.Companion.ROOT, null, IsExpanded.TRUE, IsIndirect.FALSE)
+        root.addProperty("root", true)
+        printer.println(
+            GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root)
+        )
     }
-    return key.toString();
-  }
 
-  // Helper to print module extensions similarly to printModule
-  private JsonObject printExtension(
-      ModuleKey key, ModuleExtensionId extensionId, boolean unexpanded) {
-    JsonObject json = new JsonObject();
-    json.addProperty("key", extensionId.toString());
-    json.addProperty("unexpanded", unexpanded);
-    if (options.getExtensionInfo() == ExtensionShow.USAGES) {
-      return json;
+    fun printKey(key: ModuleKey): String {
+        if (key == ModuleKey.Companion.ROOT) {
+            return "<root>"
+        }
+        return key.toString()
     }
-    ImmutableSortedSet<String> repoImports =
-        ImmutableSortedSet.copyOf(extensionRepoImports.get(extensionId).inverse().get(key));
-    JsonArray usedRepos = new JsonArray();
-    for (String usedRepo : repoImports) {
-      usedRepos.add(usedRepo);
-    }
-    json.add("used_repos", usedRepos);
 
-    if (unexpanded || options.getExtensionInfo() == ExtensionShow.REPOS) {
-      return json;
-    }
-    ImmutableSortedSet<String> unusedRepos =
-        ImmutableSortedSet.copyOf(
-            Sets.difference(
-                extensionRepos.get(extensionId), extensionRepoImports.get(extensionId).keySet()));
-    JsonArray unusedReposJson = new JsonArray();
-    for (String unusedRepo : unusedRepos) {
-      unusedReposJson.add(unusedRepo);
-    }
-    json.add("unused_repos", unusedReposJson);
-    return json;
-  }
+    // Helper to print module extensions similarly to printModule
+    private fun printExtension(
+        key: ModuleKey?, extensionId: ModuleExtensionId, unexpanded: Boolean
+    ): JsonObject {
+        val json = JsonObject()
+        json.addProperty("key", extensionId.toString())
+        json.addProperty("unexpanded", unexpanded)
+        if (options.getExtensionInfo() == ExtensionShow.USAGES) {
+            return json
+        }
+        val repoImports =
+            ImmutableSortedSet.copyOf<String?>(extensionRepoImports.get(extensionId)!!.inverse().get(key))
+        val usedRepos = JsonArray()
+        for (usedRepo in repoImports) {
+            usedRepos.add(usedRepo)
+        }
+        json.add("used_repos", usedRepos)
 
-  // Depth-first traversal to display modules (while explicitly detecting cycles)
-  JsonObject printModule(
-      ModuleKey key, @Nullable ModuleKey parent, IsExpanded expanded, IsIndirect indirect) {
-    ResultNode node = result.get(key);
-    AugmentedModule module = depGraph.get(key);
-    JsonObject json = new JsonObject();
-    json.addProperty("key", printKey(key));
-    json.addProperty("name", module.name());
-    json.addProperty("version", module.version().toString());
-    String apparentName;
-    if (parent != null) {
-      // The apparent repository name under which parent refers to key.
-      apparentName = depGraph.get(parent).deps().inverse().get(key);
-    } else {
-      // The apparent repository name under which key refers to itself.
-      apparentName = module.repoName();
+        if (unexpanded || options.getExtensionInfo() == ExtensionShow.REPOS) {
+            return json
+        }
+        val unusedRepos =
+            ImmutableSortedSet.copyOf<String?>(
+                Sets.difference<String?>(
+                    extensionRepos.get(extensionId), extensionRepoImports.get(extensionId)!!.keySet()
+                )
+            )
+        val unusedReposJson = JsonArray()
+        for (unusedRepo in unusedRepos) {
+            unusedReposJson.add(unusedRepo)
+        }
+        json.add("unused_repos", unusedReposJson)
+        return json
     }
-    json.addProperty("apparentName", apparentName);
 
-    if (indirect == IsIndirect.FALSE && options.getVerbose() && parent != null) {
-      Explanation explanation = getExtraResolutionExplanation(key, parent);
-      if (explanation != null) {
-        if (!module.isUsed()) {
-          json.addProperty("unused", true);
-          json.addProperty("resolvedVersion", explanation.changedVersion().toString());
+    // Depth-first traversal to display modules (while explicitly detecting cycles)
+    fun printModule(
+        key: ModuleKey, parent: ModuleKey?, expanded: IsExpanded?, indirect: IsIndirect?
+    ): JsonObject {
+        val node = result.get(key)
+        val module = depGraph.get(key)
+        val json = JsonObject()
+        json.addProperty("key", printKey(key))
+        json.addProperty("name", module!!.name)
+        json.addProperty("version", module.version.toString())
+        val apparentName: String?
+        if (parent != null) {
+            // The apparent repository name under which parent refers to key.
+            apparentName = depGraph.get(parent)!!.deps.inverse().get(key)
         } else {
-          json.addProperty("originalVersion", explanation.changedVersion().toString());
+            // The apparent repository name under which key refers to itself.
+            apparentName = module.repoName
         }
-        json.addProperty("resolutionReason", explanation.changedVersion().toString());
-        if (explanation.requestedByModules() != null) {
-          JsonArray requestedBy = new JsonArray();
-          explanation.requestedByModules().forEach(k -> requestedBy.add(printKey(k)));
-          json.add("resolvedRequestedBy", requestedBy);
+        json.addProperty("apparentName", apparentName)
+
+        if (indirect == IsIndirect.FALSE && options.getVerbose() && parent != null) {
+            val explanation = getExtraResolutionExplanation(key, parent)
+            if (explanation != null) {
+                if (!module.isUsed()) {
+                    json.addProperty("unused", true)
+                    json.addProperty("resolvedVersion", explanation.changedVersion.toString())
+                } else {
+                    json.addProperty("originalVersion", explanation.changedVersion.toString())
+                }
+                json.addProperty("resolutionReason", explanation.changedVersion.toString())
+                if (explanation.requestedByModules != null) {
+                    val requestedBy = JsonArray()
+                    explanation.requestedByModules!!.forEach(Consumer { k: ModuleKey? -> requestedBy.add(printKey(k!!)) })
+                    json.add("resolvedRequestedBy", requestedBy)
+                }
+            }
         }
-      }
-    }
 
-    if (expanded == IsExpanded.FALSE) {
-      json.addProperty("unexpanded", true);
-      return json;
-    }
+        if (expanded == IsExpanded.FALSE) {
+            json.addProperty("unexpanded", true)
+            return json
+        }
 
-    JsonArray deps = new JsonArray();
-    JsonArray indirectDeps = new JsonArray();
-    JsonArray cycles = new JsonArray();
-    for (Entry<ModuleKey, NodeMetadata> e : node.getChildrenSortedByEdgeType()) {
-      ModuleKey childKey = e.getKey();
-      IsExpanded childExpanded = e.getValue().isExpanded();
-      IsIndirect childIndirect = e.getValue().isIndirect();
-      IsCycle childCycles = e.getValue().isCycle();
-      if (childCycles == IsCycle.TRUE) {
-        cycles.add(printModule(childKey, key, IsExpanded.FALSE, IsIndirect.FALSE));
-      } else if (childIndirect == IsIndirect.TRUE) {
-        indirectDeps.add(printModule(childKey, key, childExpanded, IsIndirect.TRUE));
-      } else {
-        deps.add(printModule(childKey, key, childExpanded, IsIndirect.FALSE));
-      }
-    }
-    json.add("dependencies", deps);
-    json.add("indirectDependencies", indirectDeps);
-    json.add("cycles", cycles);
+        val deps = JsonArray()
+        val indirectDeps = JsonArray()
+        val cycles = JsonArray()
+        for (e in node!!.getChildrenSortedByEdgeType()) {
+            val childKey: ModuleKey = e.getKey()
+            val childExpanded: IsExpanded? = e.getValue().isExpanded
+            val childIndirect: IsIndirect? = e.getValue().isIndirect
+            val childCycles: IsCycle? = e.getValue().isCycle
+            if (childCycles == IsCycle.TRUE) {
+                cycles.add(printModule(childKey, key, IsExpanded.FALSE, IsIndirect.FALSE))
+            } else if (childIndirect == IsIndirect.TRUE) {
+                indirectDeps.add(printModule(childKey, key, childExpanded, IsIndirect.TRUE))
+            } else {
+                deps.add(printModule(childKey, key, childExpanded, IsIndirect.FALSE))
+            }
+        }
+        json.add("dependencies", deps)
+        json.add("indirectDependencies", indirectDeps)
+        json.add("cycles", cycles)
 
-    if (options.getExtensionInfo() == ExtensionShow.HIDDEN) {
-      return json;
-    }
-    ImmutableSortedSet<ModuleExtensionId> extensionsUsed =
-        extensionRepoImports.keySet().stream()
-            .filter(e -> extensionRepoImports.get(e).inverse().containsKey(key))
-            .collect(toImmutableSortedSet(ModuleExtensionId.LEXICOGRAPHIC_COMPARATOR));
-    JsonArray extensionUsages = new JsonArray();
-    for (ModuleExtensionId extensionId : extensionsUsed) {
-      boolean unexpandedExtension = !seenExtensions.add(extensionId);
-      extensionUsages.add(printExtension(key, extensionId, unexpandedExtension));
-    }
-    json.add("extensionUsages", extensionUsages);
+        if (options.getExtensionInfo() == ExtensionShow.HIDDEN) {
+            return json
+        }
+        val extensionsUsed: ImmutableSortedSet<ModuleExtensionId> =
+            extensionRepoImports.keySet().stream()
+                .filter(Predicate { e: ModuleExtensionId? -> extensionRepoImports.get(e)!!.inverse().containsKey(key) })
+                .collect(ImmutableSortedSet.toImmutableSortedSet<ModuleExtensionId?>(ModuleExtensionId.Companion.LEXICOGRAPHIC_COMPARATOR))
+        val extensionUsages = JsonArray()
+        for (extensionId in extensionsUsed) {
+            val unexpandedExtension = !seenExtensions!!.add(extensionId)
+            extensionUsages.add(printExtension(key, extensionId, unexpandedExtension))
+        }
+        json.add("extensionUsages", extensionUsages)
 
-    return json;
-  }
+        return json
+    }
 }

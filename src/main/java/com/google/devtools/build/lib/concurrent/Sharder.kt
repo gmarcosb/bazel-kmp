@@ -11,65 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A class to build shards (work queues) for a given task.
- *
- * <p>{@link #add}ed elements will be equally distributed among the shards.
- *
+ * 
+ * 
+ * [.add]ed elements will be equally distributed among the shards.
+ * 
  * @param <T> the type of collection over which we're sharding
- */
-public final class Sharder<T> implements Iterable<List<T>> {
-  private final ImmutableList<List<T>> shards;
-  private final AtomicInteger count = new AtomicInteger();
+</T> */
+class Sharder<T>(maxNumShards: Int, expectedTotalSize: Int) : Iterable<MutableList<T?>?> {
+    private val shards: com.google.common.collect.ImmutableList<MutableList<T?>>
+    private val count: AtomicInteger = AtomicInteger()
 
-  public Sharder(int maxNumShards, int expectedTotalSize) {
-    Preconditions.checkArgument(maxNumShards > 0);
-    Preconditions.checkArgument(expectedTotalSize >= 0);
-    this.shards = immutableListOfLists(maxNumShards, expectedTotalSize / maxNumShards);
-  }
-
-  /**
-   * Adds an item to a shard.
-   *
-   * <p>May safely be called concurrently by multiple threads.
-   */
-  @ThreadSafe
-  public void add(T item) {
-    int nextShardIndex = count.incrementAndGet() % shards.size();
-    List<T> shard = shards.get(nextShardIndex);
-    synchronized (shard) {
-      shard.add(item);
+    init {
+        com.google.common.base.Preconditions.checkArgument(maxNumShards > 0)
+        com.google.common.base.Preconditions.checkArgument(expectedTotalSize >= 0)
+        this.shards = com.google.devtools.build.lib.concurrent.Sharder.Companion.immutableListOfLists<T?>(
+            maxNumShards,
+            expectedTotalSize / maxNumShards
+        )
     }
-  }
 
-  /**
-   * Returns an immutable list of mutable lists.
-   *
-   * @param numLists the number of top-level lists.
-   * @param expectedSize the expected size of each mutable list.
-   * @return a list of lists.
-   */
-  private static <T> ImmutableList<List<T>> immutableListOfLists(int numLists, int expectedSize) {
-    var outerList = ImmutableList.<List<T>>builderWithExpectedSize(numLists);
-    for (int i = 0; i < numLists; i++) {
-      outerList.add(new ArrayList<>(expectedSize));
+    /**
+     * Adds an item to a shard.
+     * 
+     * 
+     * May safely be called concurrently by multiple threads.
+     */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+    fun add(item: T?) {
+        val nextShardIndex: Int = count.incrementAndGet() % shards.size()
+        val shard: MutableList<T?> = shards.get(nextShardIndex)
+        synchronized(shard) {
+            shard.add(item)
+        }
     }
-    return outerList.build();
-  }
 
-  @Override
-  public Iterator<List<T>> iterator() {
-    return Iterables.filter(shards, list -> !list.isEmpty()).iterator();
-  }
+    override fun iterator(): MutableIterator<MutableList<T?>?>? {
+        return com.google.common.collect.Iterables.filter<MutableList<T?>?>(
+            shards,
+            com.google.common.base.Predicate { list: MutableList<T?>? -> !list!!.isEmpty() }).iterator()
+    }
+
+    companion object {
+        /**
+         * Returns an immutable list of mutable lists.
+         * 
+         * @param numLists the number of top-level lists.
+         * @param expectedSize the expected size of each mutable list.
+         * @return a list of lists.
+         */
+        private fun <T> immutableListOfLists(
+            numLists: Int,
+            expectedSize: Int
+        ): com.google.common.collect.ImmutableList<MutableList<T?>> {
+            val outerList: com.google.common.collect.ImmutableList.Builder<MutableList<T?>?> =
+                com.google.common.collect.ImmutableList.builderWithExpectedSize<MutableList<T?>?>(numLists)
+            for (i in 0..<numLists) {
+                outerList.add(java.util.ArrayList<T?>(expectedSize))
+            }
+            return outerList.build()
+        }
+    }
 }

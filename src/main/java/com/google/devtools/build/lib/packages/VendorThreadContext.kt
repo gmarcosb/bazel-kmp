@@ -11,51 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.RepositoryName
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import java.util.ArrayList;
-import java.util.List;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkThread;
+/** Context object for a Starlark thread evaluating the VENDOR.bazel file.  */
+class VendorThreadContext {
+    private val ignoredRepos: MutableList<RepositoryName?> = java.util.ArrayList<RepositoryName?>()
+    private val pinnedRepos: MutableList<RepositoryName?> = java.util.ArrayList<RepositoryName?>()
 
-/** Context object for a Starlark thread evaluating the VENDOR.bazel file. */
-public class VendorThreadContext {
-
-  private final List<RepositoryName> ignoredRepos = new ArrayList<>();
-  private final List<RepositoryName> pinnedRepos = new ArrayList<>();
-
-  public static VendorThreadContext fromOrFail(StarlarkThread thread, String what)
-      throws EvalException {
-    VendorThreadContext context = thread.getThreadLocal(VendorThreadContext.class);
-    if (context == null) {
-      throw Starlark.errorf("%s can only be called from VENDOR.bazel", what);
+    fun storeInThread(thread: net.starlark.java.eval.StarlarkThread) {
+        thread.setThreadLocal<VendorThreadContext?>(VendorThreadContext::class.java, this)
     }
-    return context;
-  }
 
-  public void storeInThread(StarlarkThread thread) {
-    thread.setThreadLocal(VendorThreadContext.class, this);
-  }
+    fun getIgnoredRepos(): com.google.common.collect.ImmutableList<RepositoryName?> {
+        return com.google.common.collect.ImmutableList.copyOf<RepositoryName?>(ignoredRepos)
+    }
 
-  public VendorThreadContext() {}
+    fun getPinnedRepos(): com.google.common.collect.ImmutableList<RepositoryName?> {
+        return com.google.common.collect.ImmutableList.copyOf<RepositoryName?>(pinnedRepos)
+    }
 
-  public ImmutableList<RepositoryName> getIgnoredRepos() {
-    return ImmutableList.copyOf(ignoredRepos);
-  }
+    fun addIgnoredRepo(repoName: RepositoryName?) {
+        ignoredRepos.add(repoName)
+    }
 
-  public ImmutableList<RepositoryName> getPinnedRepos() {
-    return ImmutableList.copyOf(pinnedRepos);
-  }
+    fun addPinnedRepo(repoName: RepositoryName?) {
+        pinnedRepos.add(repoName)
+    }
 
-  public void addIgnoredRepo(RepositoryName repoName) {
-    ignoredRepos.add(repoName);
-  }
-
-  public void addPinnedRepo(RepositoryName repoName) {
-    pinnedRepos.add(repoName);
-  }
+    companion object {
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun fromOrFail(thread: net.starlark.java.eval.StarlarkThread, what: String?): VendorThreadContext {
+            val context: VendorThreadContext =
+                thread.getThreadLocal<VendorThreadContext>(VendorThreadContext::class.java)
+            if (context == null) {
+                throw net.starlark.java.eval.Starlark.errorf("%s can only be called from VENDOR.bazel", what)
+            }
+            return context
+        }
+    }
 }

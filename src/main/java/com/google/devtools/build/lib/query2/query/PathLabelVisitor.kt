@@ -11,336 +11,334 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query
 
-package com.google.devtools.build.lib.query2.query;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.base.Throwables.throwIfInstanceOf;
-import static com.google.common.base.Throwables.throwIfUnchecked;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Multimap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.AspectDefinition;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.DependencyFilter;
-import com.google.devtools.build.lib.packages.LabelVisitationUtils;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.TargetProvider;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.OptionalInt;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.CompletionException;
-import javax.annotation.Nullable;
-
-/** Computes path queries given a {@link TargetProvider}. */
-final class PathLabelVisitor {
-  private final TargetProvider targetProvider;
-  private final DependencyFilter edgeFilter;
-  private final TargetEdgeErrorObserver errorObserver;
-
-  /**
-   * Construct a PathLabelVisitor.
-   *
-   * @param targetProvider how to resolve labels to targets
-   * @param edgeFilter which edges may be traversed
-   */
-  public PathLabelVisitor(
-      TargetProvider targetProvider,
-      DependencyFilter edgeFilter,
-      TargetEdgeErrorObserver errorObserver) {
-    this.targetProvider = targetProvider;
-    this.edgeFilter = edgeFilter;
-    this.errorObserver = errorObserver;
-  }
-
-  public Iterable<Target> somePath(
-      ExtendedEventHandler eventHandler, Iterable<Target> from, Iterable<Target> to)
-      throws InterruptedException {
-    Visitor visitor = new Visitor(eventHandler, VisitorMode.SOMEPATH);
-    // TODO(ulfjack): It might be faster to stop the visitation once we see any 'to' Target.
-    visitor.visitTargets(from);
-    for (Target t : to) {
-      if (visitor.hasVisited(t)) {
-        ArrayDeque<Target> result = new ArrayDeque<>();
-        Target at = t;
-        while (true) {
-          result.addFirst(at);
-          List<Target> pred = visitor.getParents(at);
-          if (pred == null || pred.isEmpty()) {
-            break;
-          }
-          at = pred.get(0);
-        }
-        return result;
-      }
-    }
-    return ImmutableList.of();
-  }
-
-  public Iterable<Target> allPaths(
-      ExtendedEventHandler eventHandler, Iterable<Target> from, Iterable<Target> to)
-      throws InterruptedException {
-    Visitor visitor = new Visitor(eventHandler, VisitorMode.ALLPATHS);
-    visitor.visitTargets(from);
-    Set<Target> result = new HashSet<>();
-    Queue<Target> workQueue = new ArrayDeque<>();
-    // Add all 'to' targets to the work queue that are in the transitive closure of 'from' targets.
-    for (Target t : to) {
-      if (visitor.hasVisited(t)) {
-        workQueue.add(t);
-      }
-    }
-    while (!workQueue.isEmpty()) {
-      Target at = workQueue.remove();
-      if (result.add(at)) {
-        List<Target> pred = visitor.getParents(at);
-        if (pred != null) {
-          workQueue.addAll(pred);
-        }
-      }
-    }
-    return result;
-  }
-
-  public Iterable<Target> samePkgDirectRdeps(
-      ExtendedEventHandler eventHandler, Iterable<Target> from) throws InterruptedException {
-    Visitor visitor = new Visitor(eventHandler, VisitorMode.SAME_PKG_DIRECT_RDEPS);
-    for (Target t : from) {
-      // TODO(https://github.com/bazelbuild/bazel/issues/23852): support lazy macro expansion
-      visitor.visitTargets(t.getPackage().getTargets().values());
-    }
-    Set<Target> result = new HashSet<>();
-    for (Target t : from) {
-      List<Target> pred = visitor.getParents(t);
-      if (pred != null) {
-        result.addAll(pred);
-      }
-    }
-    return result;
-  }
-
-  public Iterable<Target> rdeps(
-      ExtendedEventHandler eventHandler,
-      Iterable<Target> from,
-      Iterable<Target> universe,
-      OptionalInt depth)
-      throws InterruptedException {
-    Visitor visitor = new Visitor(eventHandler, VisitorMode.ALLPATHS);
-    visitor.visitTargets(universe);
-
-    Set<Target> result = new HashSet<>();
-    Set<Target> at = new HashSet<>();
-    // Add all 'from' targets to the work set that are in the transitive closure of 'universe'.
-    for (Target t : from) {
-      if (visitor.hasVisited(t)) {
-        at.add(t);
-      }
-    }
-    Set<Target> next = new HashSet<>();
-    // In round i, we add all targets at depth i to result, so we need depth + 1 rounds. Note that
-    // depth can be Integer.MAX_VALUE, so do not use "< depth + 1" here..
-    int i = 0;
-    while (QueryEnvironment.shouldVisit(depth, i++) && !at.isEmpty()) {
-      for (Target t : at) {
-        if (result.add(t)) {
-          List<Target> pred = visitor.getParents(t);
-          if (pred != null) {
-            next.addAll(pred);
-          }
-        }
-      }
-      at.clear();
-      Set<Target> temp = at;
-      at = next;
-      next = temp;
-    }
-    return result;
-  }
-
-  private enum VisitorMode {
-    DEPS,
-    ALLPATHS,
-    SOMEPATH,
-    SAME_PKG_DIRECT_RDEPS
-  }
-
-  private static class Visit {
-    private final Target from;
-    private final Attribute attribute;
-    private final Target target;
-
-    private Visit(Target from, Attribute attribute, Target target) {
-      if (target == null) {
-        throw new NullPointerException(
-            String.format(
-                "'%s' attribute '%s'",
-                from == null ? "(null)" : from.getLabel().toString(),
-                attribute == null ? "(null)" : attribute.getName()));
-      }
-      this.from = from;
-      this.attribute = attribute;
-      this.target = target;
-    }
-  }
-
-  private final class Visitor {
-    private final ExtendedEventHandler eventHandler;
-    private final VisitorMode mode;
-    private final Set<Target> visited = new HashSet<>();
-    private final Map<Target, List<Target>> parentMap = new HashMap<>();
-    private final Queue<Visit> workQueue = new ArrayDeque<>();
-
-    Visitor(ExtendedEventHandler eventHandler, VisitorMode mode) {
-      this.eventHandler = eventHandler;
-      this.mode = Preconditions.checkNotNull(mode);
-    }
-
-    public boolean hasVisited(Target target) {
-      return visited.contains(target);
-    }
-
-    @Nullable
-    public List<Target> getParents(Target target) {
-      return parentMap.get(target);
-    }
+/** Computes path queries given a [TargetProvider].  */
+internal class PathLabelVisitor(
+    targetProvider: TargetProvider,
+    edgeFilter: DependencyFilter?,
+    errorObserver: TargetEdgeErrorObserver
+) {
+    private val targetProvider: TargetProvider
+    private val edgeFilter: DependencyFilter?
+    private val errorObserver: TargetEdgeErrorObserver
 
     /**
-     * Visit the specified labels and follow the transitive closure of their outbound dependencies.
-     *
-     * @param targets the targets to visit
+     * Construct a PathLabelVisitor.
+     * 
+     * @param targetProvider how to resolve labels to targets
+     * @param edgeFilter which edges may be traversed
      */
-    @ThreadSafe
-    private void visitTargets(Iterable<Target> targets) throws InterruptedException {
-      for (Target t : targets) {
-        enqueue(null, null, t);
-      }
-      while (!workQueue.isEmpty()) {
-        Visit visit = workQueue.remove();
-        try {
-          visit(visit.from, visit.attribute, visit.target);
-        } catch (NoSuchThingException e) {
-          errorObserver.missingEdge(visit.from, visit.target.getLabel(), e);
-        }
-      }
+    init {
+        this.targetProvider = targetProvider
+        this.edgeFilter = edgeFilter
+        this.errorObserver = errorObserver
     }
 
-    private void enqueue(Target from, Attribute attribute, Label label)
-        throws InterruptedException, NoSuchThingException {
-      if (mode == VisitorMode.SAME_PKG_DIRECT_RDEPS) {
-        // Only track same-package dependencies to avoid loading unneeded packages.
-        if (!label.getPackageIdentifier().equals(from.getLabel().getPackageIdentifier())) {
-          return;
-        }
-      }
-      Target target = targetProvider.getTarget(eventHandler, label);
-      enqueue(from, attribute, target);
-    }
-
-    private void enqueue(Target from, Attribute attribute, Target target) {
-      workQueue.add(new Visit(from, attribute, target));
-    }
-
-    private void visit(Target from, Attribute attribute, Target target)
-        throws InterruptedException, NoSuchThingException {
-      if (from != null) {
-        switch (mode) {
-          case DEPS -> {
-            // Don't update parentMap; only use visited.
-          }
-          case SAME_PKG_DIRECT_RDEPS -> {
-            // Only track same-package dependencies.
-            if (target
-                .getLabel()
-                .getPackageIdentifier()
-                .equals(from.getLabel().getPackageIdentifier())) {
-              if (!parentMap.containsKey(target)) {
-                parentMap.put(target, new ArrayList<>());
-              }
-              parentMap.get(target).add(from);
+    @Throws(java.lang.InterruptedException::class)
+    fun somePath(
+        eventHandler: ExtendedEventHandler?, from: Iterable<Target>, to: Iterable<Target?>
+    ): Iterable<Target?> {
+        val visitor: Visitor =
+            com.google.devtools.build.lib.query2.query.PathLabelVisitor.Visitor(eventHandler, VisitorMode.SOMEPATH)
+        // TODO(ulfjack): It might be faster to stop the visitation once we see any 'to' Target.
+        visitor.visitTargets(from)
+        for (t in to) {
+            if (visitor.hasVisited(t)) {
+                val result: ArrayDeque<Target?> = ArrayDeque<Target?>()
+                var at = t
+                while (true) {
+                    result.addFirst(at)
+                    val pred = visitor.getParents(at)
+                    if (pred == null || pred.isEmpty()) {
+                        break
+                    }
+                    at = pred.get(0)
+                }
+                return result
             }
-            // We only need to perform a single level of visitation. We have a non-null 'from'
-            // target, and we're now at 'target' target, so we have one level, and can return here.
-            return;
-          }
-          case ALLPATHS -> {
-            if (!parentMap.containsKey(target)) {
-              parentMap.put(target, new ArrayList<>());
+        }
+        return com.google.common.collect.ImmutableList.of<Target?>()
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    fun allPaths(
+        eventHandler: ExtendedEventHandler?, from: Iterable<Target>, to: Iterable<Target?>
+    ): Iterable<Target?> {
+        val visitor: Visitor =
+            com.google.devtools.build.lib.query2.query.PathLabelVisitor.Visitor(eventHandler, VisitorMode.ALLPATHS)
+        visitor.visitTargets(from)
+        val result: MutableSet<Target?> = HashSet<Target?>()
+        val workQueue: java.util.Queue<Target?> = ArrayDeque<Target?>()
+        // Add all 'to' targets to the work queue that are in the transitive closure of 'from' targets.
+        for (t in to) {
+            if (visitor.hasVisited(t)) {
+                workQueue.add(t)
             }
-            parentMap.get(target).add(from);
-          }
-          case SOMEPATH -> parentMap.putIfAbsent(target, ImmutableList.of(from));
+        }
+        while (!workQueue.isEmpty()) {
+            val at: Target? = workQueue.remove()
+            if (result.add(at)) {
+                val pred = visitor.getParents(at)
+                if (pred != null) {
+                    workQueue.addAll(pred)
+                }
+            }
+        }
+        return result
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    fun samePkgDirectRdeps(
+        eventHandler: ExtendedEventHandler?, from: Iterable<Target>
+    ): Iterable<Target?> {
+        val visitor: Visitor = com.google.devtools.build.lib.query2.query.PathLabelVisitor.Visitor(
+            eventHandler,
+            VisitorMode.SAME_PKG_DIRECT_RDEPS
+        )
+        for (t in from) {
+            // TODO(https://github.com/bazelbuild/bazel/issues/23852): support lazy macro expansion
+            visitor.visitTargets(t.getPackage().getTargets().values())
+        }
+        val result: MutableSet<Target?> = HashSet<Target?>()
+        for (t in from) {
+            val pred = visitor.getParents(t)
+            if (pred != null) {
+                result.addAll(pred)
+            }
+        }
+        return result
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    fun rdeps(
+        eventHandler: ExtendedEventHandler?,
+        from: Iterable<Target?>,
+        universe: Iterable<Target>,
+        depth: OptionalInt
+    ): Iterable<Target?> {
+        val visitor: Visitor =
+            com.google.devtools.build.lib.query2.query.PathLabelVisitor.Visitor(eventHandler, VisitorMode.ALLPATHS)
+        visitor.visitTargets(universe)
+
+        val result: MutableSet<Target?> = HashSet<Target?>()
+        var at: MutableSet<Target?> = HashSet<Target?>()
+        // Add all 'from' targets to the work set that are in the transitive closure of 'universe'.
+        for (t in from) {
+            if (visitor.hasVisited(t)) {
+                at.add(t)
+            }
+        }
+        var next: MutableSet<Target?> = HashSet<Target?>()
+        // In round i, we add all targets at depth i to result, so we need depth + 1 rounds. Note that
+        // depth can be Integer.MAX_VALUE, so do not use "< depth + 1" here..
+        var i = 0
+        while (QueryEnvironment.Companion.shouldVisit(depth, i++) && !at.isEmpty()) {
+            for (t in at) {
+                if (result.add(t)) {
+                    val pred = visitor.getParents(t)
+                    if (pred != null) {
+                        next.addAll(pred)
+                    }
+                }
+            }
+            at.clear()
+            val temp = at
+            at = next
+            next = temp
+        }
+        return result
+    }
+
+    private enum class VisitorMode {
+        DEPS,
+        ALLPATHS,
+        SOMEPATH,
+        SAME_PKG_DIRECT_RDEPS
+    }
+
+    private class Visit(from: Target?, attribute: Attribute?, target: Target) {
+        private val from: Target?
+        private val attribute: Attribute?
+        private val target: Target
+
+        init {
+            if (target == null) {
+                throw java.lang.NullPointerException(
+                    java.lang.String.format(
+                        "'%s' attribute '%s'",
+                        if (from == null) "(null)" else from.getLabel().toString(),
+                        if (attribute == null) "(null)" else attribute.name
+                    )
+                )
+            }
+            this.from = from
+            this.attribute = attribute
+            this.target = target
+        }
+    }
+
+    private inner class Visitor(eventHandler: ExtendedEventHandler?, mode: VisitorMode?) {
+        private val eventHandler: ExtendedEventHandler?
+        private val mode: VisitorMode
+        private val visited: MutableSet<Target?> = HashSet<Target?>()
+        private val parentMap: MutableMap<Target?, MutableList<Target?>?> = HashMap<Target?, MutableList<Target?>?>()
+        private val workQueue: java.util.Queue<Visit> = ArrayDeque<Visit>()
+
+        init {
+            this.eventHandler = eventHandler
+            this.mode = com.google.common.base.Preconditions.checkNotNull<VisitorMode>(mode)
         }
 
-        visitAspectsIfRequired(from, attribute, target);
-      } else if (mode == VisitorMode.SOMEPATH) {
-        // Here we make sure that if this is a top-level visitation node (where 'from' is null),
-        // a parent edge cannot be made for this node. This prevents parent-edge cycles from being
-        // formed and hence infinite loops impossible when traversing parent-edges.
-        parentMap.putIfAbsent(target, ImmutableList.of());
-      }
-
-      if (visited.add(target)) {
-        visitEdgesOfTarget(target);
-      }
-    }
-
-    private void visitEdgesOfTarget(Target target)
-        throws InterruptedException, NoSuchThingException {
-      try {
-        LabelVisitationUtils.visitTarget(
-            target,
-            edgeFilter,
-            (from, attribute, label) -> {
-              try {
-                enqueue(from, attribute, label);
-              } catch (InterruptedException | NoSuchThingException e) {
-                // Tunnel the exception, since we can't throw checked exceptions from here.
-                throw new CompletionException(e);
-              }
-            });
-      } catch (CompletionException e) {
-        throwIfInstanceOf(e.getCause(), InterruptedException.class);
-        throwIfInstanceOf(e.getCause(), NoSuchThingException.class);
-        throwIfUnchecked(e.getCause());
-        throw e;
-      }
-    }
-
-    private void visitAspectsIfRequired(Target from, Attribute attribute, final Target to)
-        throws InterruptedException, NoSuchThingException {
-      // TODO(bazel-team): The getAspects call below is duplicate work for each direct dep entailed
-      // by an attribute's value. Additionally, we might end up enqueueing the same exact visitation
-      // multiple times: consider the case where the same direct dependency is entailed by aspects
-      // of *different* attributes. These visitations get culled later, but we still have to pay the
-      // overhead for all that.
-
-      if (!(from instanceof Rule fromRule) || !(to instanceof Rule toRule)) {
-        return;
-      }
-      for (Aspect aspect : attribute.getAspects(fromRule)) {
-        if (AspectDefinition.satisfies(
-            aspect, toRule.getRuleClassObject().getAdvertisedProviders())) {
-          Multimap<Attribute, Label> allLabels = HashMultimap.create();
-          AspectDefinition.addAllAttributesOfAspect(allLabels, aspect, edgeFilter);
-          for (Map.Entry<Attribute, Label> e : allLabels.entries()) {
-            enqueue(from, e.getKey(), e.getValue());
-          }
+        fun hasVisited(target: Target?): Boolean {
+            return visited.contains(target)
         }
-      }
+
+        fun getParents(target: Target?): MutableList<Target?>? {
+            return parentMap.get(target)
+        }
+
+        /**
+         * Visit the specified labels and follow the transitive closure of their outbound dependencies.
+         * 
+         * @param targets the targets to visit
+         */
+        @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+        @Throws(java.lang.InterruptedException::class)
+        fun visitTargets(targets: Iterable<Target>) {
+            for (t in targets) {
+                enqueue(null, null, t)
+            }
+            while (!workQueue.isEmpty()) {
+                val visit: Visit = workQueue.remove()
+                try {
+                    visit(visit.from, visit.attribute, visit.target)
+                } catch (e: NoSuchThingException) {
+                    errorObserver.missingEdge(visit.from, visit.target.getLabel(), e)
+                }
+            }
+        }
+
+        @Throws(java.lang.InterruptedException::class, NoSuchThingException::class)
+        fun enqueue(from: Target, attribute: Attribute?, label: Label) {
+            if (mode == VisitorMode.SAME_PKG_DIRECT_RDEPS) {
+                // Only track same-package dependencies to avoid loading unneeded packages.
+                if (!label.getPackageIdentifier().equals(from.getLabel().getPackageIdentifier())) {
+                    return
+                }
+            }
+            val target: Target = targetProvider.getTarget(eventHandler, label)
+            enqueue(from, attribute, target)
+        }
+
+        fun enqueue(from: Target?, attribute: Attribute?, target: Target) {
+            workQueue.add(Visit(from, attribute, target))
+        }
+
+        @Throws(java.lang.InterruptedException::class, NoSuchThingException::class)
+        fun visit(from: Target?, attribute: Attribute, target: Target) {
+            if (from != null) {
+                when (mode) {
+                    VisitorMode.DEPS -> {
+                        // Don't update parentMap; only use visited.
+                    }
+
+                    VisitorMode.SAME_PKG_DIRECT_RDEPS -> {
+                        // Only track same-package dependencies.
+                        if (target
+                                .getLabel()
+                                .getPackageIdentifier()
+                                .equals(from.getLabel().getPackageIdentifier())
+                        ) {
+                            if (!parentMap.containsKey(target)) {
+                                parentMap.put(target, java.util.ArrayList<Target?>())
+                            }
+                            parentMap.get(target)!!.add(from)
+                        }
+                        // We only need to perform a single level of visitation. We have a non-null 'from'
+                        // target, and we're now at 'target' target, so we have one level, and can return here.
+                        return
+                    }
+
+                    VisitorMode.ALLPATHS -> {
+                        if (!parentMap.containsKey(target)) {
+                            parentMap.put(target, java.util.ArrayList<Target?>())
+                        }
+                        parentMap.get(target)!!.add(from)
+                    }
+
+                    VisitorMode.SOMEPATH -> parentMap.putIfAbsent(
+                        target,
+                        com.google.common.collect.ImmutableList.of<Target?>(from)
+                    )
+                }
+
+                visitAspectsIfRequired(from, attribute, target)
+            } else if (mode == VisitorMode.SOMEPATH) {
+                // Here we make sure that if this is a top-level visitation node (where 'from' is null),
+                // a parent edge cannot be made for this node. This prevents parent-edge cycles from being
+                // formed and hence infinite loops impossible when traversing parent-edges.
+                parentMap.putIfAbsent(target, com.google.common.collect.ImmutableList.of<Target?>())
+            }
+
+            if (visited.add(target)) {
+                visitEdgesOfTarget(target)
+            }
+        }
+
+        @Throws(java.lang.InterruptedException::class, NoSuchThingException::class)
+        fun visitEdgesOfTarget(target: Target?) {
+            try {
+                LabelVisitationUtils.visitTarget(
+                    target,
+                    edgeFilter,
+                    { from, attribute, label ->
+                        try {
+                            enqueue(from, attribute, label)
+                        } catch (e: java.lang.InterruptedException) {
+                            // Tunnel the exception, since we can't throw checked exceptions from here.
+                            throw CompletionException(e)
+                        } catch (e: NoSuchThingException) {
+                            throw CompletionException(e)
+                        }
+                    })
+            } catch (e: CompletionException) {
+                com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                    e.getCause(),
+                    java.lang.InterruptedException::class.java
+                )
+                com.google.common.base.Throwables.throwIfInstanceOf<X?>(e.getCause(), NoSuchThingException::class.java)
+                com.google.common.base.Throwables.throwIfUnchecked(e.getCause())
+                throw e
+            }
+        }
+
+        @Throws(java.lang.InterruptedException::class, NoSuchThingException::class)
+        fun visitAspectsIfRequired(from: Target, attribute: Attribute, to: Target?) {
+            // TODO(bazel-team): The getAspects call below is duplicate work for each direct dep entailed
+            // by an attribute's value. Additionally, we might end up enqueueing the same exact visitation
+            // multiple times: consider the case where the same direct dependency is entailed by aspects
+            // of *different* attributes. These visitations get culled later, but we still have to pay the
+            // overhead for all that.
+
+            if (from !is Rule || to !is Rule) {
+                return
+            }
+            for (aspect in attribute.getAspects(from)) {
+                if (AspectDefinition.satisfies(
+                        aspect, to.getRuleClassObject().getAdvertisedProviders()
+                    )
+                ) {
+                    val allLabels: com.google.common.collect.Multimap<Attribute?, Label?> =
+                        com.google.common.collect.HashMultimap.create<Attribute?, Label?>()
+                    AspectDefinition.addAllAttributesOfAspect(allLabels, aspect, edgeFilter)
+                    for (e in allLabels.entries()) {
+                        enqueue(from, e.getKey(), e.getValue())
+                    }
+                }
+            }
+        }
     }
-  }
 }

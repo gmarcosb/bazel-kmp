@@ -11,16 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.rules.repository.RepoRecordedInput;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.ryanharter.auto.value.gson.GenerateTypeAdapter;
-import java.util.Optional;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.bazel.bzlmod.LockfileModuleExtensionMetadata
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionEvalFactors
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
+import com.google.devtools.build.lib.rules.repository.RepoRecordedInput.WithValue
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.ryanharter.auto.value.gson.GenerateTypeAdapter
 
 /**
  * This object serves as a container for the transitive digest (obtained from transitive .bzl files)
@@ -29,54 +28,61 @@ import java.util.Optional;
  */
 @AutoValue
 @GenerateTypeAdapter
-public abstract class LockFileModuleExtension {
+abstract class LockFileModuleExtension {
+    abstract fun getBzlTransitiveDigest(): ByteArray?
 
-  public static Builder builder() {
-    return new AutoValue_LockFileModuleExtension.Builder()
-        .setModuleExtensionMetadata(Optional.empty());
-  }
+    abstract fun getUsagesDigest(): ByteArray?
 
-  @SuppressWarnings("mutable")
-  public abstract byte[] getBzlTransitiveDigest();
+    abstract fun getRecordedInputs(): com.google.common.collect.ImmutableList<WithValue?>?
 
-  @SuppressWarnings("mutable")
-  public abstract byte[] getUsagesDigest();
+    abstract fun getGeneratedRepoSpecs(): com.google.common.collect.ImmutableMap<String?, RepoSpec?>?
 
-  public abstract ImmutableList<RepoRecordedInput.WithValue> getRecordedInputs();
+    abstract fun getModuleExtensionMetadata(): java.util.Optional<LockfileModuleExtensionMetadata?>?
 
-  public abstract ImmutableMap<String, RepoSpec> getGeneratedRepoSpecs();
+    fun isReproducible(): Boolean {
+        return getModuleExtensionMetadata()
+            .map<Boolean?>(java.util.function.Function { obj: LockfileModuleExtensionMetadata? -> obj.getReproducible() })
+            .orElse(false)
+    }
 
-  public abstract Optional<LockfileModuleExtensionMetadata> getModuleExtensionMetadata();
+    /** Builder type for [LockFileModuleExtension].  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun setBzlTransitiveDigest(digest: ByteArray?): Builder?
 
-  public boolean isReproducible() {
-    return getModuleExtensionMetadata()
-        .map(LockfileModuleExtensionMetadata::getReproducible)
-        .orElse(false);
-  }
+        abstract fun setUsagesDigest(digest: ByteArray?): Builder?
 
-  /** Builder type for {@link LockFileModuleExtension}. */
-  @AutoValue.Builder
-  public abstract static class Builder {
+        abstract fun setRecordedInputs(value: com.google.common.collect.ImmutableList<WithValue?>?): Builder?
 
-    public abstract Builder setBzlTransitiveDigest(byte[] digest);
+        abstract fun setGeneratedRepoSpecs(value: com.google.common.collect.ImmutableMap<String?, RepoSpec?>?): Builder?
 
-    public abstract Builder setUsagesDigest(byte[] digest);
+        abstract fun setModuleExtensionMetadata(
+            value: java.util.Optional<LockfileModuleExtensionMetadata?>?
+        ): Builder?
 
-    public abstract Builder setRecordedInputs(ImmutableList<RepoRecordedInput.WithValue> value);
+        abstract fun build(): LockFileModuleExtension?
+    }
 
-    public abstract Builder setGeneratedRepoSpecs(ImmutableMap<String, RepoSpec> value);
+    /**
+     * A [LockFileModuleExtension] together with its [ModuleExtensionEvalFactors],
+     * comprising a single lockfile entry for a certain extension.
+     */
+    @AutoCodec
+    class WithFactors(extensionFactors: ModuleExtensionEvalFactors?, moduleExtension: LockFileModuleExtension?) {
+        val extensionFactors: ModuleExtensionEvalFactors?
+        val moduleExtension: LockFileModuleExtension?
 
-    public abstract Builder setModuleExtensionMetadata(
-        Optional<LockfileModuleExtensionMetadata> value);
+        init {
+            this.extensionFactors = extensionFactors
+            this.moduleExtension = moduleExtension
+        }
+    }
 
-    public abstract LockFileModuleExtension build();
-  }
-
-  /**
-   * A {@link LockFileModuleExtension} together with its {@link ModuleExtensionEvalFactors},
-   * comprising a single lockfile entry for a certain extension.
-   */
-  @AutoCodec
-  public record WithFactors(
-      ModuleExtensionEvalFactors extensionFactors, LockFileModuleExtension moduleExtension) {}
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return Builder()
+                .setModuleExtensionMetadata(java.util.Optional.empty<T?>())!!
+        }
+    }
 }

@@ -11,205 +11,192 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.includescanning;
+package com.google.devtools.build.lib.includescanning
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Sets
+import com.google.devtools.build.lib.actions.ActionExecutionContext
+import com.google.devtools.build.lib.profiler.Profiler
+import com.google.devtools.build.lib.profiler.ProfilerTask
+import com.google.devtools.build.lib.vfs.FileSystemUtils
+import java.util.function.Supplier
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableSet
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.EnvironmentalExecException;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.UserExecException;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.rules.cpp.CppCompileAction;
-import com.google.devtools.build.lib.rules.cpp.CppIncludeScanningContext;
-import com.google.devtools.build.lib.rules.cpp.IncludeScanner;
-import com.google.devtools.build.lib.rules.cpp.IncludeScanner.IncludeScanningHeaderData;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.IncludeScanning.Code;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+/** Include scanning context implementation.  */
+class CppIncludeScanningContextImpl(private val includeScannerSupplier: Supplier<IncludeScannerSupplier?>?) :
+    CppIncludeScanningContext {
+    @Throws(ExecException::class, InterruptedException::class)
+    override fun findAdditionalInputs(
+        action: CppCompileAction,
+        actionExecutionContext: ActionExecutionContext,
+        includeScanningHeaderData: IncludeScanningHeaderData
+    ): MutableList<Artifact?>? {
+        Preconditions.checkNotNull<Supplier<IncludeScannerSupplier?>?>(includeScannerSupplier, action)
 
-/** Include scanning context implementation. */
-public final class CppIncludeScanningContextImpl implements CppIncludeScanningContext {
-  private final Supplier<IncludeScannerSupplier> includeScannerSupplier;
+        val includes: MutableSet<Artifact> = Sets.newConcurrentHashSet<Artifact>()
+        includes.addAll(action.getBuiltInIncludeFiles())
 
-  public CppIncludeScanningContextImpl(Supplier<IncludeScannerSupplier> includeScannerSupplier) {
-    this.includeScannerSupplier = includeScannerSupplier;
-  }
+        // Deduplicate include directories. This can occur especially with "built-in" and "system"
+        // include directories because of the way we retrieve them. Duplicate include directories
+        // really mess up #include_next directives.
+        val includeDirs: MutableSet<PathFragment?> = LinkedHashSet<PathFragment?>(action.getIncludeDirs())
+        val quoteIncludeDirs: MutableList<PathFragment?>? = action.getQuoteIncludeDirs()
+        val frameworkIncludeDirs: MutableList<PathFragment?>? = action.getFrameworkIncludeDirs()
+        val cmdlineIncludes: MutableList<String?>? = includeScanningHeaderData.getCmdlineIncludes()
 
-  @Override
-  @Nullable
-  public List<Artifact> findAdditionalInputs(
-      CppCompileAction action,
-      ActionExecutionContext actionExecutionContext,
-      IncludeScanningHeaderData includeScanningHeaderData)
-      throws ExecException, InterruptedException {
-    Preconditions.checkNotNull(includeScannerSupplier, action);
+        includeDirs.addAll(includeScanningHeaderData.getSystemIncludeDirs())
 
-    Set<Artifact> includes = Sets.newConcurrentHashSet();
-    includes.addAll(action.getBuiltInIncludeFiles());
-
-    // Deduplicate include directories. This can occur especially with "built-in" and "system"
-    // include directories because of the way we retrieve them. Duplicate include directories
-    // really mess up #include_next directives.
-    Set<PathFragment> includeDirs = new LinkedHashSet<>(action.getIncludeDirs());
-    List<PathFragment> quoteIncludeDirs = action.getQuoteIncludeDirs();
-    List<PathFragment> frameworkIncludeDirs = action.getFrameworkIncludeDirs();
-    List<String> cmdlineIncludes = includeScanningHeaderData.getCmdlineIncludes();
-
-    includeDirs.addAll(includeScanningHeaderData.getSystemIncludeDirs());
-
-    // Add the system include paths to the list of include paths.
-    List<PathFragment> absoluteBuiltInIncludeDirs = new ArrayList<>();
-    for (PathFragment pathFragment : action.getBuiltInIncludeDirectories()) {
-      if (pathFragment.isAbsolute()) {
-        absoluteBuiltInIncludeDirs.add(pathFragment);
-      }
-      includeDirs.add(pathFragment);
-    }
-
-    ImmutableList<PathFragment> includeDirList = ImmutableList.copyOf(includeDirs);
-    IncludeScanner scanner =
-        includeScannerSupplier
-            .get()
-            .scannerFor(quoteIncludeDirs, includeDirList, frameworkIncludeDirs);
-
-    Artifact mainSource = action.getMainIncludeScannerSource();
-    ImmutableList<Artifact> sources =
-        expandTreeArtifacts(
-            action.getIncludeScannerSources(),
-            actionExecutionContext.getEnvironmentForDiscoveringInputs());
-    if (sources == null) {
-      return null;
-    }
-
-    try (SilentCloseable c =
-        Profiler.instance()
-            .profile(ProfilerTask.SCANNER, action.getSourceFile().getExecPathString())) {
-      scanner.processAsync(
-          mainSource,
-          sources,
-          includeScanningHeaderData,
-          cmdlineIncludes,
-          includes,
-          action,
-          actionExecutionContext,
-          action.getGrepIncludes(),
-          action.getExecutionPlatform());
-      if (actionExecutionContext.getEnvironmentForDiscoveringInputs().valuesMissing()) {
-        return null;
-      }
-      return collect(actionExecutionContext, includes, absoluteBuiltInIncludeDirs);
-    } catch (IOException e) {
-      throw new EnvironmentalExecException(
-          e, createFailureDetail("Include scanning IOException", Code.SCANNING_IO_EXCEPTION));
-    } catch (NoSuchPackageException e) {
-      throw new EnvironmentalExecException(
-          e,
-          createFailureDetail(
-              "Error for BUILD file during include scanning: " + e.getMessage(),
-              Code.PACKAGE_LOAD_FAILURE));
-    }
-  }
-
-  /**
-   * Returns a list of artifacts with all tree artifacts replaced by their expansion or null if we
-   * are missing a Skyframe dependency.
-   *
-   * <p>We take an ad-hoc approach, which consults Skyframe to retrieve the tree expansions. This is
-   * necessary because include scanning may include tree artifacts which are not inputs of the
-   * original action.
-   *
-   * <p>Normally, we expand tree artifacts using a tree artifact expander from the {@link
-   * ActionExecutionContext}, however the expander available before include scanning only captures
-   * tree artifacts from the action inputs, which is insufficient. In fact, the action execution
-   * context for include scanning has a null expander in it.
-   */
-  @Nullable
-  private static ImmutableList<Artifact> expandTreeArtifacts(
-      ImmutableList<Artifact> artifacts, Environment env) throws InterruptedException {
-    ImmutableList<Artifact> trees =
-        artifacts.stream().filter(Artifact::isTreeArtifact).collect(toImmutableList());
-    if (trees.isEmpty()) {
-      return artifacts;
-    }
-
-    SkyframeLookupResult expansions = env.getValuesAndExceptions(trees);
-    ImmutableList.Builder<Artifact> expanded = ImmutableList.builder();
-    for (var artifact : artifacts) {
-      if (!artifact.isTreeArtifact()) {
-        expanded.add(artifact);
-        continue;
-      }
-
-      TreeArtifactValue treeArtifactValue = (TreeArtifactValue) expansions.get(artifact);
-      if (treeArtifactValue == null) {
-        return null;
-      }
-      expanded.addAll(treeArtifactValue.getChildren());
-    }
-    return expanded.build();
-  }
-
-  private static List<Artifact> collect(
-      ActionExecutionContext actionExecutionContext,
-      Set<Artifact> includes,
-      List<PathFragment> absoluteBuiltInIncludeDirs)
-      throws ExecException {
-    // Collect inputs and output
-    List<Artifact> inputs = new ArrayList<>(includes.size());
-    for (Artifact included : includes) {
-      // Check for absolute includes -- we assign the file system root as
-      // the root path for such includes
-      if (included.getRoot().getRoot().isAbsolute()) {
-        if (FileSystemUtils.startsWithAny(
-            actionExecutionContext.getInputPath(included).asFragment(),
-            absoluteBuiltInIncludeDirs)) {
-          // Skip include files found in absolute include directories.
-          continue;
+        // Add the system include paths to the list of include paths.
+        val absoluteBuiltInIncludeDirs: MutableList<PathFragment?> = ArrayList<PathFragment?>()
+        for (pathFragment in action.getBuiltInIncludeDirectories()) {
+            if (pathFragment.isAbsolute()) {
+                absoluteBuiltInIncludeDirs.add(pathFragment)
+            }
+            includeDirs.add(pathFragment)
         }
-        throw new UserExecException(
-            createFailureDetail(
-                "illegal absolute path to include file: "
-                    + actionExecutionContext.getInputPath(included),
-                Code.ILLEGAL_ABSOLUTE_PATH));
-      }
-      if (included.hasParent() && included.getParent().isTreeArtifact()) {
-        // Note that this means every file in the TreeArtifact becomes an input to the action, and
-        // we have spurious rebuilds if non-included files change.
-        Preconditions.checkArgument(
-            included instanceof TreeFileArtifact, "Not a TreeFileArtifact: %s", included);
-        inputs.add(included.getParent());
-      } else {
-        inputs.add(included);
-      }
-    }
-    return inputs;
-  }
 
-  private static FailureDetail createFailureDetail(String message, Code detailedCode) {
-    return FailureDetail.newBuilder()
-        .setMessage(message)
-        .setIncludeScanning(FailureDetails.IncludeScanning.newBuilder().setCode(detailedCode))
-        .build();
-  }
+        val includeDirList: ImmutableList<PathFragment?> = ImmutableList.copyOf<PathFragment?>(includeDirs)
+        val scanner: IncludeScanner =
+            includeScannerSupplier!!
+                .get()!!
+                .scannerFor(quoteIncludeDirs, includeDirList, frameworkIncludeDirs)
+
+        val mainSource: Artifact? = action.getMainIncludeScannerSource()
+        val sources: ImmutableList<Artifact>? =
+            expandTreeArtifacts(
+                action.getIncludeScannerSources(),
+                actionExecutionContext.getEnvironmentForDiscoveringInputs()
+            )
+        if (sources == null) {
+            return null
+        }
+
+        try {
+            Profiler.instance()
+                .profile(ProfilerTask.SCANNER, action.getSourceFile().getExecPathString()).use { c ->
+                    scanner.processAsync(
+                        mainSource,
+                        sources,
+                        includeScanningHeaderData,
+                        cmdlineIncludes,
+                        includes,
+                        action,
+                        actionExecutionContext,
+                        action.getGrepIncludes(),
+                        action.getExecutionPlatform()
+                    )
+                    if (actionExecutionContext.getEnvironmentForDiscoveringInputs().valuesMissing()) {
+                        return null
+                    }
+                    return collect(actionExecutionContext, includes, absoluteBuiltInIncludeDirs)
+                }
+        } catch (e: IOException) {
+            throw EnvironmentalExecException(
+                e, createFailureDetail("Include scanning IOException", Code.SCANNING_IO_EXCEPTION)
+            )
+        } catch (e: NoSuchPackageException) {
+            throw EnvironmentalExecException(
+                e,
+                createFailureDetail(
+                    "Error for BUILD file during include scanning: " + e.getMessage(),
+                    Code.PACKAGE_LOAD_FAILURE
+                )
+            )
+        }
+    }
+
+    companion object {
+        /**
+         * Returns a list of artifacts with all tree artifacts replaced by their expansion or null if we
+         * are missing a Skyframe dependency.
+         * 
+         * 
+         * We take an ad-hoc approach, which consults Skyframe to retrieve the tree expansions. This is
+         * necessary because include scanning may include tree artifacts which are not inputs of the
+         * original action.
+         * 
+         * 
+         * Normally, we expand tree artifacts using a tree artifact expander from the [ ], however the expander available before include scanning only captures
+         * tree artifacts from the action inputs, which is insufficient. In fact, the action execution
+         * context for include scanning has a null expander in it.
+         */
+        @Throws(InterruptedException::class)
+        private fun expandTreeArtifacts(
+            artifacts: ImmutableList<Artifact>, env: SkyFunction.Environment
+        ): ImmutableList<Artifact>? {
+            val trees: ImmutableList<Artifact?> =
+                artifacts.stream().filter(Artifact::isTreeArtifact).collect(ImmutableList.toImmutableList<Artifact?>())
+            if (trees.isEmpty()) {
+                return artifacts
+            }
+
+            val expansions: SkyframeLookupResult = env.getValuesAndExceptions(trees)
+            val expanded: ImmutableList.Builder<Artifact?> = ImmutableList.builder<Artifact?>()
+            for (artifact in artifacts) {
+                if (!artifact.isTreeArtifact()) {
+                    expanded.add(artifact)
+                    continue
+                }
+
+                val treeArtifactValue: TreeArtifactValue? = expansions.get(artifact) as TreeArtifactValue?
+                if (treeArtifactValue == null) {
+                    return null
+                }
+                expanded.addAll(treeArtifactValue.getChildren())
+            }
+            return expanded.build()
+        }
+
+        @Throws(ExecException::class)
+        private fun collect(
+            actionExecutionContext: ActionExecutionContext,
+            includes: MutableSet<Artifact>,
+            absoluteBuiltInIncludeDirs: MutableList<PathFragment?>?
+        ): MutableList<Artifact?> {
+            // Collect inputs and output
+            val inputs: MutableList<Artifact?> = ArrayList<Artifact?>(includes.size())
+            for (included in includes) {
+                // Check for absolute includes -- we assign the file system root as
+                // the root path for such includes
+                if (included.getRoot().getRoot().isAbsolute()) {
+                    if (FileSystemUtils.startsWithAny(
+                            actionExecutionContext.getInputPath(included).asFragment(),
+                            absoluteBuiltInIncludeDirs
+                        )
+                    ) {
+                        // Skip include files found in absolute include directories.
+                        continue
+                    }
+                    throw UserExecException(
+                        createFailureDetail(
+                            "illegal absolute path to include file: "
+                                    + actionExecutionContext.getInputPath(included),
+                            Code.ILLEGAL_ABSOLUTE_PATH
+                        )
+                    )
+                }
+                if (included.hasParent() && included.getParent().isTreeArtifact()) {
+                    // Note that this means every file in the TreeArtifact becomes an input to the action, and
+                    // we have spurious rebuilds if non-included files change.
+                    Preconditions.checkArgument(
+                        included is TreeFileArtifact, "Not a TreeFileArtifact: %s", included
+                    )
+                    inputs.add(included.getParent())
+                } else {
+                    inputs.add(included)
+                }
+            }
+            return inputs
+        }
+
+        private fun createFailureDetail(message: String?, detailedCode: Code?): FailureDetail {
+            return FailureDetail.newBuilder()
+                .setMessage(message)
+                .setIncludeScanning(FailureDetails.IncludeScanning.newBuilder().setCode(detailedCode))
+                .build()
+        }
+    }
 }

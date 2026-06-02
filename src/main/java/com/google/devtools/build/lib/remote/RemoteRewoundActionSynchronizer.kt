@@ -11,74 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
-
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.vfs.OutputService.RewoundActionSynchronizer;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.concurrent.locks.StampedLock;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Action
 
 /**
- * A {@link RewoundActionSynchronizer} implementation for Bazel's remote filesystem, which is backed
+ * A [RewoundActionSynchronizer] implementation for Bazel's remote filesystem, which is backed
  * by actual files on disk and requires synchronization to ensure that action outputs aren't deleted
  * while they are being read.
  */
-final class RemoteRewoundActionSynchronizer implements RewoundActionSynchronizer {
-  /** A task with a cancellation callback. */
-  public interface Cancellable {
-    void cancel() throws InterruptedException;
-  }
+internal class RemoteRewoundActionSynchronizer(actionInputFetcher: RemoteActionInputFetcher) :
+    RewoundActionSynchronizer {
+    /** A task with a cancellation callback.  */
+    interface Cancellable {
+        @Throws(java.lang.InterruptedException::class)
+        fun cancel()
+    }
 
-  private final RemoteActionInputFetcher actionInputFetcher;
-  private final ConcurrentHashMap<ActionExecutionMetadata, Cancellable> outputUploadTasks =
-      new ConcurrentHashMap<>();
+    private val actionInputFetcher: RemoteActionInputFetcher
+    private val outputUploadTasks: ConcurrentHashMap<ActionExecutionMetadata?, Cancellable?> =
+        ConcurrentHashMap<ActionExecutionMetadata?, Cancellable?>()
 
-  // A single coarse lock is used to synchronize rewound actions (writers) and both rewound and
-  // non-rewound actions (readers) as long as no rewound action has attempted to prepare for its
-  // execution.
-  // This ensures high throughput and low memory footprint for the common case of no rewound
-  // actions. In this case, there won't be any writers and the performance characteristics of a
-  // ReentrantReadWriteLock are comparable to that of an atomic counter. A StampedLock would not be
-  // a good fit as its performance regresses with 127 or more concurrent readers.
-  // Note that it wouldn't be correct to only start using this lock once an action is rewound,
-  // because a non-rewound action consuming its non-lost outputs could have already started
-  // executing.
-  @Nullable private volatile ReadWriteLock coarseLock = new ReentrantReadWriteLock();
+    // A single coarse lock is used to synchronize rewound actions (writers) and both rewound and
+    // non-rewound actions (readers) as long as no rewound action has attempted to prepare for its
+    // execution.
+    // This ensures high throughput and low memory footprint for the common case of no rewound
+    // actions. In this case, there won't be any writers and the performance characteristics of a
+    // ReentrantReadWriteLock are comparable to that of an atomic counter. A StampedLock would not be
+    // a good fit as its performance regresses with 127 or more concurrent readers.
+    // Note that it wouldn't be correct to only start using this lock once an action is rewound,
+    // because a non-rewound action consuming its non-lost outputs could have already started
+    // executing.
+    @kotlin.concurrent.Volatile
+    private var coarseLock: ReadWriteLock? = ReentrantReadWriteLock()
 
-  // A fine-grained lock structure that is switched to when the first rewound action attempts to
-  // prepare for its execution. This structure is used to ensure that rewound actions do not
-  // delete their outputs while they are being read by other actions, while still allowing
-  // rewound actions and non-rewound actions to run concurrently (i.e., not force the equivalent
-  // of --jobs=1 for as long as a rewound action is running, as the coarse lock would).
-  // A rewound action will acquire a write lock on its lookup data before it prepares for
-  // execution, while any action will acquire a read lock on the lookup data of any generating
-  // action of its inputs before it starts executing.
-  // The values of this cache are weakly referenced to ensure that locks are cleaned up when they
-  // are no longer needed.
-  @Nullable private volatile LoadingCache<ActionLookupData, ReadWriteLock> fineLocks;
+    // A fine-grained lock structure that is switched to when the first rewound action attempts to
+    // prepare for its execution. This structure is used to ensure that rewound actions do not
+    // delete their outputs while they are being read by other actions, while still allowing
+    // rewound actions and non-rewound actions to run concurrently (i.e., not force the equivalent
+    // of --jobs=1 for as long as a rewound action is running, as the coarse lock would).
+    // A rewound action will acquire a write lock on its lookup data before it prepares for
+    // execution, while any action will acquire a read lock on the lookup data of any generating
+    // action of its inputs before it starts executing.
+    // The values of this cache are weakly referenced to ensure that locks are cleaned up when they
+    // are no longer needed.
+    @kotlin.concurrent.Volatile
+    private var fineLocks: com.github.benmanes.caffeine.cache.LoadingCache<ActionLookupData?, ReadWriteLock>? = null
 
-  public RemoteRewoundActionSynchronizer(RemoteActionInputFetcher actionInputFetcher) {
-    this.actionInputFetcher = actionInputFetcher;
-  }
+    init {
+        this.actionInputFetcher = actionInputFetcher
+    }
 
-  /*
+    /*
   Proof of deadlock freedom:
 
   As long as the coarse lock is used, there can't be any deadlock because there is only a single
@@ -128,168 +112,178 @@ final class RemoteRewoundActionSynchronizer implements RewoundActionSynchronizer
      with a fixed number of locks. In fact, this gives rise to a deadlock if the number of stripes
      is at least 2, but low enough that distinct generating actions hash to the same stripe.
    */
-
-  @Override
-  public SilentCloseable enterActionPreparation(Action action, boolean wasRewound)
-      throws InterruptedException {
-    // Skyframe schedules non-rewound actions such that they never run concurrently with actions
-    // that consume their outputs.
-    if (!wasRewound) {
-      return () -> {};
-    }
-    try (SilentCloseable c =
-        Profiler.instance().profile(ProfilerTask.ACTION_LOCK, "action.enterActionPreparation")) {
-      return enterActionPreparationForRewinding(action);
-    }
-  }
-
-  private SilentCloseable enterActionPreparationForRewinding(Action action)
-      throws InterruptedException {
-    var localCoarseLock = coarseLock;
-    if (localCoarseLock != null) {
-      // This is the first time a rewound action has attempted to prepare for its execution.
-      // Switch to using the fine locks under the protection of the coarse write lock.
-      localCoarseLock.writeLock().lockInterruptibly();
-      try {
-        // Check again under the lock to avoid a race between multiple rewound actions attempting
-        // to prepare for execution at the same time.
-        if (fineLocks == null) {
-          fineLocks =
-              Caffeine.newBuilder()
-                  .weakValues()
-                  // ReentrantReadWriteLock would not work here as its individual read and write
-                  // locks do not strongly reference the parent lock, which would lead to locks
-                  // being cleaned up while they are still held
-                  // (https://bugs.openjdk.org/browse/JDK-8189598). This can be worked around by
-                  // using a construction similar to Guava's Striped helpers. StampedLock is both
-                  // more memory-efficient and its views do strongly reference the parent lock
-                  // (https://github.com/openjdk/jdk/blob/b349f661ea5f14b258191134714a7e712c90ef3e/src/java.base/share/classes/java/util/concurrent/locks/StampedLock.java#L1039),
-                  // TODO: Investigate the effect of fair locks on build wall time.
-                  .build((ActionLookupData unused) -> new StampedLock().asReadWriteLock());
-          coarseLock = null;
+    @Throws(java.lang.InterruptedException::class)
+    override fun enterActionPreparation(action: Action, wasRewound: Boolean): SilentCloseable {
+        // Skyframe schedules non-rewound actions such that they never run concurrently with actions
+        // that consume their outputs.
+        if (!wasRewound) {
+            return SilentCloseable {}
         }
-      } finally {
-        localCoarseLock.writeLock().unlock();
-      }
+        Profiler.instance().profile(ProfilerTask.ACTION_LOCK, "action.enterActionPreparation").use { c ->
+            return enterActionPreparationForRewinding(action)
+        }
     }
 
-    var writeLock = fineLocks.get(outputKeyFor(action)).writeLock();
-    writeLock.lockInterruptibly();
-    prepareOutputsForRewinding(action);
-    return writeLock::unlock;
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun enterActionPreparationForRewinding(action: Action): SilentCloseable {
+        val localCoarseLock: ReadWriteLock? = coarseLock
+        if (localCoarseLock != null) {
+            // This is the first time a rewound action has attempted to prepare for its execution.
+            // Switch to using the fine locks under the protection of the coarse write lock.
+            localCoarseLock.writeLock().lockInterruptibly()
+            try {
+                // Check again under the lock to avoid a race between multiple rewound actions attempting
+                // to prepare for execution at the same time.
+                if (fineLocks == null) {
+                    fineLocks =
+                        Caffeine.newBuilder()
+                            .weakValues() // ReentrantReadWriteLock would not work here as its individual read and write
+                            // locks do not strongly reference the parent lock, which would lead to locks
+                            // being cleaned up while they are still held
+                            // (https://bugs.openjdk.org/browse/JDK-8189598). This can be worked around by
+                            // using a construction similar to Guava's Striped helpers. StampedLock is both
+                            // more memory-efficient and its views do strongly reference the parent lock
+                            // (https://github.com/openjdk/jdk/blob/b349f661ea5f14b258191134714a7e712c90ef3e/src/java.base/share/classes/java/util/concurrent/locks/StampedLock.java#L1039),
+                            // TODO: Investigate the effect of fair locks on build wall time.
+                            .build<ActionLookupData?, ReadWriteLock?>(com.github.benmanes.caffeine.cache.CacheLoader { unused: ActionLookupData? -> StampedLock().asReadWriteLock() })
+                    coarseLock = null
+                }
+            } finally {
+                localCoarseLock.writeLock().unlock()
+            }
+        }
 
-  /**
-   * Cancels all async tasks that operate on the action's outputs and resets any cached data about
-   * their prefetching state.
-   */
-  private void prepareOutputsForRewinding(Action action) throws InterruptedException {
-    Cancellable task = outputUploadTasks.remove(action);
-    if (task != null) {
-      task.cancel();
+        val writeLock: java.util.concurrent.locks.Lock = fineLocks.get(outputKeyFor(action)).writeLock()
+        writeLock.lockInterruptibly()
+        prepareOutputsForRewinding(action)
+        return SilentCloseable { writeLock.unlock() }
     }
-    actionInputFetcher.handleRewoundActionOutputs(action.getOutputs());
-  }
 
-  @Override
-  public SilentCloseable enterActionExecution(Action action, InputMetadataProvider metadataProvider)
-      throws InterruptedException {
-    try (SilentCloseable c =
-        Profiler.instance().profile(ProfilerTask.ACTION_LOCK, "action.enterActionExecution")) {
-      return lockArtifactsForConsumption(
-          () -> action.getInputs().toList().iterator(), metadataProvider);
+    /**
+     * Cancels all async tasks that operate on the action's outputs and resets any cached data about
+     * their prefetching state.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    private fun prepareOutputsForRewinding(action: Action) {
+        val task: Cancellable? = outputUploadTasks.remove(action)
+        if (task != null) {
+            task.cancel()
+        }
+        actionInputFetcher.handleRewoundActionOutputs(action.getOutputs())
     }
-  }
 
-  /**
-   * Guards a call to {@link
-   * com.google.devtools.build.lib.remote.RemoteImportantOutputHandler#processOutputsAndGetLostArtifacts}.
-   */
-  public SilentCloseable enterProcessOutputsAndGetLostArtifacts(
-      Iterable<Artifact> importantOutputs, InputMetadataProvider fullMetadataProvider)
-      throws InterruptedException {
-    try (SilentCloseable c =
+    @Throws(java.lang.InterruptedException::class)
+    override fun enterActionExecution(action: Action, metadataProvider: InputMetadataProvider): SilentCloseable {
+        Profiler.instance().profile(ProfilerTask.ACTION_LOCK, "action.enterActionExecution").use { c ->
+            return lockArtifactsForConsumption(
+                Iterable { action.getInputs().toList().iterator() }, metadataProvider
+            )
+        }
+    }
+
+    /**
+     * Guards a call to [ ][com.google.devtools.build.lib.remote.RemoteImportantOutputHandler.processOutputsAndGetLostArtifacts].
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun enterProcessOutputsAndGetLostArtifacts(
+        importantOutputs: Iterable<Artifact?>, fullMetadataProvider: InputMetadataProvider
+    ): SilentCloseable {
         Profiler.instance()
-            .profile(ProfilerTask.ACTION_LOCK, "action.enterProcessOutputsAndGetLostArtifacts")) {
-      return lockArtifactsForConsumption(importantOutputs, fullMetadataProvider);
-    }
-  }
-
-  /**
-   * Registers a cancellation callback for an upload of action outputs that may still be running
-   * after the action has completed.
-   */
-  public void registerOutputUploadTask(ActionExecutionMetadata action, Cancellable task) {
-    // We don't expect to have multiple output upload tasks for the same action registered at the
-    // same time.
-    outputUploadTasks.merge(
-        action,
-        task,
-        (oldTask, newTask) -> {
-          throw new IllegalStateException(
-              "Attempted to register multiple output upload tasks for %s: %s and %s"
-                  .formatted(action, oldTask, newTask));
-        });
-  }
-
-  private SilentCloseable lockArtifactsForConsumption(
-      Iterable<Artifact> artifacts, InputMetadataProvider metadataProvider)
-      throws InterruptedException {
-    var localCoarseLock = coarseLock;
-    if (localCoarseLock != null) {
-      // Common case for builds without any rewound actions: acquire the single lock that is never
-      // acquired by a writer.
-      localCoarseLock.readLock().lockInterruptibly();
-    }
-    // Read the fine locks after acquiring the coarse lock to allow the fine locks to be inflated
-    // lazily.
-    var localFineLocks = fineLocks;
-    if (localFineLocks == null) {
-      // Continuation of the common case for builds without any rewound actions: the fine locks
-      // have not been inflated.
-      return localCoarseLock.readLock()::unlock;
+            .profile(ProfilerTask.ACTION_LOCK, "action.enterProcessOutputsAndGetLostArtifacts").use { c ->
+                return lockArtifactsForConsumption(importantOutputs, fullMetadataProvider)
+            }
     }
 
-    // At this point, there has been at least one rewound action that has inflated the fine locks.
-    // We need to switch to it.
-    if (localCoarseLock != null) {
-      localCoarseLock.readLock().unlock();
+    /**
+     * Registers a cancellation callback for an upload of action outputs that may still be running
+     * after the action has completed.
+     */
+    fun registerOutputUploadTask(action: ActionExecutionMetadata?, task: Cancellable?) {
+        // We don't expect to have multiple output upload tasks for the same action registered at the
+        // same time.
+        outputUploadTasks.merge(
+            action,
+            task,
+            java.util.function.BiFunction { oldTask: Cancellable?, newTask: Cancellable? ->
+                throw java.lang.IllegalStateException(
+                    "Attempted to register multiple output upload tasks for %s: %s and %s"
+                        .formatted(action, oldTask, newTask)
+                )
+            })
     }
-    var allReadWriteLocks =
-        localFineLocks.getAll(inputKeysFor(artifacts, metadataProvider)).values();
-    var locksToUnlockBuilder =
-        ImmutableList.<Lock>builderWithExpectedSize(allReadWriteLocks.size());
-    try {
-      for (var readWriteLock : allReadWriteLocks) {
-        var readLock = readWriteLock.readLock();
-        readLock.lockInterruptibly();
-        locksToUnlockBuilder.add(readLock);
-      }
-    } catch (InterruptedException e) {
-      for (var readLock : locksToUnlockBuilder.build()) {
-        readLock.unlock();
-      }
-      throw e;
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun lockArtifactsForConsumption(
+        artifacts: Iterable<Artifact?>, metadataProvider: InputMetadataProvider
+    ): SilentCloseable {
+        val localCoarseLock: ReadWriteLock? = coarseLock
+        if (localCoarseLock != null) {
+            // Common case for builds without any rewound actions: acquire the single lock that is never
+            // acquired by a writer.
+            localCoarseLock.readLock().lockInterruptibly()
+        }
+        // Read the fine locks after acquiring the coarse lock to allow the fine locks to be inflated
+        // lazily.
+        val localFineLocks: com.github.benmanes.caffeine.cache.LoadingCache<ActionLookupData?, ReadWriteLock>? =
+            fineLocks
+        if (localFineLocks == null) {
+            // Continuation of the common case for builds without any rewound actions: the fine locks
+            // have not been inflated.
+            return SilentCloseable { localCoarseLock.readLock().unlock() }
+        }
+
+        // At this point, there has been at least one rewound action that has inflated the fine locks.
+        // We need to switch to it.
+        if (localCoarseLock != null) {
+            localCoarseLock.readLock().unlock()
+        }
+        val allReadWriteLocks: MutableCollection<ReadWriteLock> =
+            localFineLocks.getAll(inputKeysFor(artifacts, metadataProvider)).values()
+        val locksToUnlockBuilder: com.google.common.collect.ImmutableList.Builder<java.util.concurrent.locks.Lock?> =
+            com.google.common.collect.ImmutableList.builderWithExpectedSize<java.util.concurrent.locks.Lock?>(
+                allReadWriteLocks.size()
+            )
+        try {
+            for (readWriteLock in allReadWriteLocks) {
+                val readLock: java.util.concurrent.locks.Lock = readWriteLock.readLock()
+                readLock.lockInterruptibly()
+                locksToUnlockBuilder.add(readLock)
+            }
+        } catch (e: java.lang.InterruptedException) {
+            for (readLock in locksToUnlockBuilder.build()) {
+                readLock.unlock()
+            }
+            throw e
+        }
+        val locksToUnlock: com.google.common.collect.ImmutableList<java.util.concurrent.locks.Lock?> =
+            locksToUnlockBuilder.build()
+        return SilentCloseable { locksToUnlock.forEach(java.util.function.Consumer { obj: java.util.concurrent.locks.Lock? -> obj.unlock() }) }
     }
-    var locksToUnlock = locksToUnlockBuilder.build();
-    return () -> locksToUnlock.forEach(Lock::unlock);
-  }
 
-  private static Iterable<ActionLookupData> inputKeysFor(
-      Iterable<Artifact> artifacts, InputMetadataProvider metadataProvider) {
-    var allArtifacts =
-        Iterables.concat(
-            artifacts,
-            Iterables.concat(
-                Iterables.transform(
-                    metadataProvider.getRunfilesTrees(),
-                    runfilesTree -> runfilesTree.getArtifacts().toList())));
-    return Iterables.transform(
-        Iterables.filter(allArtifacts, artifact -> artifact instanceof DerivedArtifact),
-        artifact -> ((DerivedArtifact) artifact).getGeneratingActionKey());
-  }
+    companion object {
+        private fun inputKeysFor(
+            artifacts: Iterable<Artifact?>, metadataProvider: InputMetadataProvider
+        ): Iterable<ActionLookupData?> {
+            val allArtifacts: Iterable<Any?> =
+                com.google.common.collect.Iterables.concat<Any?>(
+                    artifacts,
+                    com.google.common.collect.Iterables.concat<T?>(
+                        com.google.common.collect.Iterables.transform<F?, T?>(
+                            metadataProvider.getRunfilesTrees(),
+                            com.google.common.base.Function { runfilesTree: F? ->
+                                runfilesTree.getArtifacts().toList()
+                            })
+                    )
+                )
+            return com.google.common.collect.Iterables.transform<Any?, ActionLookupData?>(
+                com.google.common.collect.Iterables.filter<Any?>(
+                    allArtifacts,
+                    com.google.common.base.Predicate { artifact: Any? -> artifact is DerivedArtifact }),
+                com.google.common.base.Function { artifact: Any? -> (artifact as DerivedArtifact).getGeneratingActionKey() })
+        }
 
-  private static ActionLookupData outputKeyFor(Action action) {
-    return ((DerivedArtifact) action.getPrimaryOutput()).getGeneratingActionKey();
-  }
+        private fun outputKeyFor(action: Action): ActionLookupData {
+            return (action.getPrimaryOutput() as DerivedArtifact).getGeneratingActionKey()
+        }
+    }
 }

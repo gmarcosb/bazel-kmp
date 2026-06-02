@@ -267,7 +267,7 @@ public class LocalSpawnRunnerTest {
     SubprocessBuilder.setDefaultSubprocessFactory(factory);
 
     LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    options.setLocalSigkillGraceSeconds(456);
+    options.localSigkillGraceSeconds = 456;
     TestedLocalSpawnRunner testedRunner =
         new TestedLocalSpawnRunner(
             fs.getPath("/execroot"),
@@ -324,7 +324,7 @@ public class LocalSpawnRunnerTest {
     SubprocessBuilder.setDefaultSubprocessFactory(factory);
 
     LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    options.setLocalSigkillGraceSeconds(456);
+    options.localSigkillGraceSeconds = 456;
     Path execRoot = fs.getPath("/execroot");
     LocalSpawnRunner runner =
         new TestedLocalSpawnRunner(
@@ -407,7 +407,7 @@ public class LocalSpawnRunnerTest {
     SubprocessBuilder.setDefaultSubprocessFactory(factory);
 
     LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    options.setLocalSigkillGraceSeconds(456);
+    options.localSigkillGraceSeconds = 456;
     LocalSpawnRunner runner =
         new TestedLocalSpawnRunner(
             fs.getPath("/execroot"),

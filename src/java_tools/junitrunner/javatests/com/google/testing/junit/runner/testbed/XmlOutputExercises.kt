@@ -11,101 +11,106 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
-
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
-import org.junit.runner.RunWith;
+import com.google.common.truth.Truth
+import org.junit.Assert
+import org.junit.Before
+import org.junit.Test
+import org.junit.experimental.runners.Enclosed
+import org.junit.runner.RunWith
 
 /**
  * This is a testbed for testing XML output functionality.
  */
-@RunWith(Enclosed.class)
-public class XmlOutputExercises {
+@RunWith(Enclosed::class)
+class XmlOutputExercises {
+    /**
+     * A sample test class testing .compareTo()
+     */
+    class ComparabilityTest {
+        private var exampleObject: ExampleObject? = null
 
-  /**
-   * A sample test class testing .compareTo()
-   */
-  public static class ComparabilityTest {
-    private ExampleObject exampleObject;
+        @Before
+        @Throws(Exception::class)
+        fun setUp() {
+            exampleObject = ExampleObject("example")
+        }
 
-    @Before
-    public void setUp() throws Exception {
-      exampleObject = new ExampleObject("example");
+        @Test
+        @Throws(Exception::class)
+        fun compareToEqualInstance() {
+            val test = ExampleObject("example")
+            Truth.assertThat<ExampleObject?>(test).isEquivalentAccordingToCompareTo(exampleObject)
+        }
+
+        @Test
+        @Throws(Exception::class)
+        fun compareToGreaterInstance() {
+            val test = ExampleObject("gxample")
+            Truth.assertThat<ExampleObject?>(test).isGreaterThan(exampleObject)
+        }
+
+        @Test
+        @Throws(Exception::class)
+        fun compareToLessInstance() {
+            val test = ExampleObject("axample")
+            Truth.assertThat<ExampleObject?>(test).isLessThan(exampleObject)
+        }
     }
 
-    @Test
-    public void compareToEqualInstance() throws Exception {
-      ExampleObject test = new ExampleObject("example");
-      assertThat(test).isEquivalentAccordingToCompareTo(exampleObject);
+    /**
+     * A sample test class testing .equals() and .hashCode()
+     */
+    class EqualsHashCodeTest {
+        private var exampleObject: ExampleObject? = null
+
+        @Before
+        @Throws(Exception::class)
+        fun setUp() {
+            exampleObject = ExampleObject("example")
+        }
+
+        @Test
+        @Throws(Exception::class)
+        fun testEquals() {
+            Truth.assertThat<ExampleObject?>(ExampleObject("example")).isEqualTo(exampleObject)
+            Truth.assertThat<ExampleObject?>(ExampleObject("wrong")).isNotEqualTo(exampleObject)
+        }
+
+        @Test
+        @Throws(Exception::class)
+        fun testHashCode() {
+            Truth.assertThat(exampleObject!!.hashCode()).isEqualTo("example".hashCode())
+        }
     }
 
-    @Test
-    public void compareToGreaterInstance() throws Exception {
-      ExampleObject test = new ExampleObject("gxample");
-      assertThat(test).isGreaterThan(exampleObject);
+    /**
+     * A sample test class testing .toString()
+     */
+    class OtherTests {
+        private var exampleObject: ExampleObject? = null
+
+        @Before
+        @Throws(Exception::class)
+        fun setUp() {
+            exampleObject = ExampleObject("example")
+        }
+
+        @Test
+        fun testToString() {
+            Truth.assertThat(exampleObject.toString()).isEqualTo("example")
+        }
     }
 
-    @Test
-    public void compareToLessInstance() throws Exception {
-      ExampleObject test = new ExampleObject("axample");
-      assertThat(test).isLessThan(exampleObject);
+
+    /**
+     * A sample test class testing failures
+     */
+    class FailureTest {
+        @Test
+        fun testFail() {
+            Assert.fail("This is an expected error. The test is supposed to fail.")
+        }
     }
-  }
-
-  /**
-   * A sample test class testing .equals() and .hashCode()
-   */
-  public static class EqualsHashCodeTest {
-    private ExampleObject exampleObject;
-
-    @Before
-    public void setUp() throws Exception {
-      exampleObject = new ExampleObject("example");
-    }
-
-    @Test
-    public void testEquals() throws Exception {
-      assertThat(new ExampleObject("example")).isEqualTo(exampleObject);
-      assertThat(new ExampleObject("wrong")).isNotEqualTo(exampleObject);
-    }
-
-    @Test
-    public void testHashCode() throws Exception {
-      assertThat(exampleObject.hashCode()).isEqualTo("example".hashCode());
-    }
-  }
-
-  /**
-   * A sample test class testing .toString()
-   */
-  public static class OtherTests {
-    private ExampleObject exampleObject;
-
-    @Before
-    public void setUp() throws Exception {
-      exampleObject = new ExampleObject("example");
-    }
-
-    @Test
-    public void testToString() {
-      assertThat(exampleObject.toString()).isEqualTo("example");
-    }
-  }
-
-
-  /**
-   * A sample test class testing failures
-   */
-  public static class FailureTest {
-    @Test
-    public void testFail() {
-      fail("This is an expected error. The test is supposed to fail.");
-    }
-  }
 }

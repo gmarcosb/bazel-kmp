@@ -11,96 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.devtools.build.lib.collect.nestedset.NestedArrayCodec.nestedArrayCodec;
-
-import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec.DeferredValue
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.devtools.build.zip.ZipReader.entries
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
  * A codec implementation that is asynchronous-compatible.
- *
- * <p>This is required if deserialization of the {@link NestedSet} elements may perform Skyframe
- * lookups using {@link AsyncDeserializationContext#getSkyValue}.
+ * 
+ * 
+ * This is required if deserialization of the [NestedSet] elements may perform Skyframe
+ * lookups using [AsyncDeserializationContext.getSkyValue].
  */
-public final class DeferredNestedSetCodec extends DeferredObjectCodec<NestedSet<?>> {
-
-  @Override
-  public boolean autoRegister() {
-    return false;
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public Class<NestedSet<?>> getEncodedClass() {
-    return (Class<NestedSet<?>>) ((Class<?>) NestedSet.class);
-  }
-
-  @Override
-  public void serialize(SerializationContext context, NestedSet<?> obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    checkState(!obj.isEmpty(), "empty NestedSet should have been a serialization constant");
-    codedOut.writeInt32NoTag(obj.getDepthAndOrder());
-    if (obj.isSingleton()) {
-      codedOut.writeBoolNoTag(true);
-      context.serialize(obj.getChildren(), codedOut);
-      return;
-    }
-    codedOut.writeBoolNoTag(false);
-    context.putSharedValue(
-        (Object[]) obj.getChildren(), /* distinguisher= */ null, nestedArrayCodec(), codedOut);
-  }
-
-  @Override
-  public DeferredValue<NestedSet<?>> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int depthAndOrder = codedIn.readInt32();
-    Order order = Order.values()[depthAndOrder & 3];
-    int depth = depthAndOrder >> 2;
-    var builder = new DeserializationBuilder(order, depth);
-    if (codedIn.readBool()) { // singleton
-      context.deserialize(codedIn, builder, DeserializationBuilder::setChildren);
-    } else {
-      context.getSharedValue(
-          codedIn,
-          /* distinguisher= */ null,
-          nestedArrayCodec(),
-          builder,
-          DeserializationBuilder::setChildren);
-    }
-    return builder;
-  }
-
-  private static class DeserializationBuilder implements DeferredValue<NestedSet<?>> {
-    private final Order order;
-    private final int approxDepth;
-    private Object children;
-
-    private DeserializationBuilder(Order order, int approxDepth) {
-      this.order = order;
-      this.approxDepth = approxDepth;
+class DeferredNestedSetCodec : DeferredObjectCodec<NestedSet<*>?>() {
+    override fun autoRegister(): Boolean {
+        return false
     }
 
-    @Override
-    public NestedSet<?> call() {
-      return NestedSet.forDeserialization(order, approxDepth, children);
+    val encodedClass: java.lang.Class<NestedSet<*>?>
+        get() = (NestedSet::class.java as java.lang.Class<*>) as java.lang.Class<NestedSet<*>?>
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: SerializationContext, obj: NestedSet<*>, codedOut: CodedOutputStream) {
+        com.google.common.base.Preconditions.checkState(
+            !obj.isEmpty(),
+            "empty NestedSet should have been a serialization constant"
+        )
+        codedOut.writeInt32NoTag(obj.getDepthAndOrder())
+        if (obj.isSingleton()) {
+            codedOut.writeBoolNoTag(true)
+            context.serialize(obj.getChildren(), codedOut)
+            return
+        }
+        codedOut.writeBoolNoTag(false)
+        context.putSharedValue<Array<Any?>?>(
+            obj.getChildren() as Array<Any?>?,  /* distinguisher= */
+            null,
+            com.google.devtools.build.lib.collect.nestedset.NestedArrayCodec.Companion.nestedArrayCodec(),
+            codedOut
+        )
     }
 
-    private static void setChildren(DeserializationBuilder builder, Object children) {
-      builder.children = children;
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeDeferred(
+        context: AsyncDeserializationContext, codedIn: CodedInputStream
+    ): DeferredValue<NestedSet<*>?> {
+        val depthAndOrder: Int = codedIn.readInt32()
+        val order: com.google.devtools.build.lib.collect.nestedset.Order? =
+            com.google.devtools.build.lib.collect.nestedset.Order.entries[depthAndOrder and 3]
+        val depth = depthAndOrder shr 2
+        val builder: DeserializationBuilder =
+            com.google.devtools.build.lib.collect.nestedset.DeferredNestedSetCodec.DeserializationBuilder(order, depth)
+        if (codedIn.readBool()) { // singleton
+            context.deserialize<DeserializationBuilder?>(
+                codedIn,
+                builder,
+                AsyncDeserializationContext.FieldSetter { builder: DeserializationBuilder?, children: Any? ->
+                    com.google.devtools.build.lib.collect.nestedset.DeferredNestedSetCodec.DeserializationBuilder.Companion.setChildren(
+                        builder,
+                        children
+                    )
+                })
+        } else {
+            context.getSharedValue<DeserializationBuilder?>(
+                codedIn,  /* distinguisher= */
+                null,
+                com.google.devtools.build.lib.collect.nestedset.NestedArrayCodec.Companion.nestedArrayCodec(),
+                builder,
+                AsyncDeserializationContext.FieldSetter { builder: DeserializationBuilder?, children: Any? ->
+                    com.google.devtools.build.lib.collect.nestedset.DeferredNestedSetCodec.DeserializationBuilder.Companion.setChildren(
+                        builder,
+                        children
+                    )
+                })
+        }
+        return builder
     }
-  }
 
-  static {
-    // A sanity check of for NestedSet.depthAndOrder properties, which this codec depends on.
-    checkState(Order.values().length == 4);
-  }
+    private class DeserializationBuilder(
+        order: com.google.devtools.build.lib.collect.nestedset.Order?,
+        approxDepth: Int
+    ) : DeferredValue<NestedSet<*>?> {
+        private val order: com.google.devtools.build.lib.collect.nestedset.Order?
+        private val approxDepth: Int
+        private var children: Any? = null
+
+        init {
+            this.order = order
+            this.approxDepth = approxDepth
+        }
+
+        override fun call(): NestedSet<*> {
+            return NestedSet.Companion.forDeserialization<Any?>(order, approxDepth, children)
+        }
+
+        companion object {
+            private fun setChildren(builder: DeserializationBuilder, children: Any?) {
+                builder.children = children
+            }
+        }
+    }
+
+    companion object {
+        init {
+            // A sanity check of for NestedSet.depthAndOrder properties, which this codec depends on.
+            com.google.common.base.Preconditions.checkState(com.google.devtools.build.lib.collect.nestedset.Order.entries.toTypedArray().length == 4)
+        }
+    }
 }

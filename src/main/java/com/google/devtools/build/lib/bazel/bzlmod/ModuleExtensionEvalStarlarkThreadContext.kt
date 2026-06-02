@@ -12,181 +12,205 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.bazel.repository.RepoRule;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.StarlarkThreadContext;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.LabelConverter;
-import com.google.devtools.build.lib.packages.StarlarkNativeModule.ExistingRulesShouldBeNoOp;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.NoneType;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.bazel.bzlmod.ExternalDepsException
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
+import com.google.devtools.build.lib.bazel.repository.RepoRule
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
+import com.google.devtools.build.lib.cmdline.RepositoryName
+import com.google.devtools.build.lib.cmdline.StarlarkThreadContext
+import com.google.devtools.build.lib.packages.LabelConverter
+import com.google.devtools.build.lib.packages.StarlarkNativeModule.ExistingRulesShouldBeNoOp
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier
+import java.util.LinkedHashMap
 
 /**
- * A context object that should be stored in a {@link StarlarkThread} for use during module
+ * A context object that should be stored in a [StarlarkThread] for use during module
  * extension evaluation.
  */
-public final class ModuleExtensionEvalStarlarkThreadContext extends StarlarkThreadContext {
-  @Override
-  public void storeInThread(StarlarkThread thread) {
-    super.storeInThread(thread);
-    // The following is just a hack; see documentation there for an explanation.
-    thread.setThreadLocal(ExistingRulesShouldBeNoOp.class, new ExistingRulesShouldBeNoOp());
-  }
-
-  @Nullable
-  public static ModuleExtensionEvalStarlarkThreadContext fromOrNull(StarlarkThread thread) {
-    StarlarkThreadContext ctx = thread.getThreadLocal(StarlarkThreadContext.class);
-    return ctx instanceof ModuleExtensionEvalStarlarkThreadContext c ? c : null;
-  }
-
-  record RepoRuleCall(
-      RepoRule repoRule,
-      Dict<String, Object> kwargs,
-      Location location,
-      ImmutableList<StarlarkThread.CallStackEntry> callStack) {}
-
-  private final ModuleExtensionId extensionId;
-  private final String repoPrefix;
-  private final PackageIdentifier basePackageId;
-  private final RepositoryMapping baseRepoMapping;
-  private final ImmutableMap<String, RepositoryName> repoOverrides;
-  private final ExtendedEventHandler eventHandler;
-  private final Map<String, RepoRuleCall> deferredRepos = new LinkedHashMap<>();
-
-  public ModuleExtensionEvalStarlarkThreadContext(
-      ModuleExtensionId extensionId,
-      String repoPrefix,
-      PackageIdentifier basePackageId,
-      RepositoryMapping baseRepoMapping,
-      ImmutableMap<String, RepositoryName> repoOverrides,
-      RepositoryMapping mainRepoMapping,
-      ExtendedEventHandler eventHandler) {
-    super(() -> mainRepoMapping);
-    this.extensionId = extensionId;
-    this.repoPrefix = repoPrefix;
-    this.basePackageId = basePackageId;
-    this.baseRepoMapping = baseRepoMapping;
-    this.repoOverrides = repoOverrides;
-    this.eventHandler = eventHandler;
-  }
-
-  /**
-   * Records a call to a repo rule that should be created at the end of the module extension
-   * evaluation.
-   */
-  @SuppressWarnings("unchecked")
-  public void lazilyCreateRepo(
-      StarlarkThread thread, Dict<String, Object> kwargs, RepoRule repoRule) throws EvalException {
-    Object nameValue = kwargs.getOrDefault("name", Starlark.NONE);
-    if (!(nameValue instanceof String name)) {
-      throw Starlark.errorf(
-          "expected string for attribute 'name', got '%s'", Starlark.type(nameValue));
+class ModuleExtensionEvalStarlarkThreadContext(
+    extensionId: ModuleExtensionId?,
+    repoPrefix: String?,
+    basePackageId: PackageIdentifier?,
+    baseRepoMapping: com.google.devtools.build.lib.cmdline.RepositoryMapping,
+    repoOverrides: com.google.common.collect.ImmutableMap<String?, RepositoryName?>,
+    mainRepoMapping: com.google.devtools.build.lib.cmdline.RepositoryMapping?,
+    eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?
+) : StarlarkThreadContext(InterruptibleSupplier { mainRepoMapping }) {
+    override fun storeInThread(thread: net.starlark.java.eval.StarlarkThread) {
+        super.storeInThread(thread)
+        // The following is just a hack; see documentation there for an explanation.
+        thread.setThreadLocal<ExistingRulesShouldBeNoOp?>(
+            ExistingRulesShouldBeNoOp::class.java,
+            ExistingRulesShouldBeNoOp()
+        )
     }
-    RepositoryName.validateUserProvidedRepoName(name);
-    RepoRuleCall conflict = deferredRepos.get(name);
-    if (conflict != null) {
-      throw Starlark.errorf(
-          "A repo named %s is already generated by this module extension at %s",
-          name, conflict.location());
-    }
-    var callStack = thread.getCallStack();
-    deferredRepos.put(
-        name,
-        new RepoRuleCall(
-            repoRule,
-            // The extension may mutate the values of the kwargs after this function returns.
-            (Dict<String, Object>) deepCloneAttrValue(kwargs),
-            thread.getCallerLocation(),
-            // Pop the call to the repo rule itself
-            callStack.subList(0, callStack.size() - 1)));
-  }
 
-  /**
-   * Evaluates the repo rule calls recorded by {@link #lazilyCreateRepo} and returns all repos
-   * generated by the extension. The key is the "internal name" (as specified by the extension) of
-   * the repo, and the value is the {@link RepoSpec}.
-   */
-  public ImmutableMap<String, RepoSpec> createRepos() throws ExternalDepsException {
-    // LINT.IfChange
-    // Make it possible to refer to extension repos in the label attributes of another extension
-    // repo. Wrapping a label in Label(...) ensures that it is evaluated with respect to the
-    // containing module's repo mapping instead.
-    ImmutableMap.Builder<String, RepositoryName> entries = ImmutableMap.builder();
-    entries.putAll(baseRepoMapping.entries());
-    entries.putAll(
-        Maps.asMap(
-            deferredRepos.keySet(),
-            apparentName -> RepositoryName.createUnvalidated(repoPrefix + apparentName)));
-    entries.putAll(repoOverrides);
-    RepositoryMapping fullRepoMapping =
-        RepositoryMapping.create(entries.buildKeepingLast(), baseRepoMapping.contextRepo());
-    // LINT.ThenChange(//src/main/java/com/google/devtools/build/lib/bazel/bzlmod/ModuleExtensionRepoMappingEntriesFunction.java)
+    internal class RepoRuleCall(
+        repoRule: RepoRule?,
+        kwargs: net.starlark.java.eval.Dict<String?, Any?>?,
+        location: net.starlark.java.syntax.Location?,
+        callStack: com.google.common.collect.ImmutableList<net.starlark.java.eval.StarlarkThread.CallStackEntry?>?
+    ) {
+        val repoRule: RepoRule?
+        val kwargs: net.starlark.java.eval.Dict<String?, Any?>?
+        val location: net.starlark.java.syntax.Location?
+        val callStack: com.google.common.collect.ImmutableList<net.starlark.java.eval.StarlarkThread.CallStackEntry?>?
 
-    LabelConverter labelConverter = new LabelConverter(basePackageId, fullRepoMapping);
-    ImmutableMap.Builder<String, RepoSpec> repoSpecs = ImmutableMap.builder();
-    for (var entry : deferredRepos.entrySet()) {
-      String name = entry.getKey();
-      RepoRuleCall repoRuleCall = entry.getValue();
-      repoSpecs.put(
-          name,
-          repoRuleCall.repoRule.instantiate(
-              repoRuleCall.kwargs,
-              repoRuleCall.callStack,
-              labelConverter,
-              eventHandler,
-              "in the extension '%s'".formatted(extensionId)));
+        init {
+            this.repoRule = repoRule
+            this.kwargs = kwargs
+            this.location = location
+            this.callStack = callStack
+        }
     }
-    return repoSpecs.buildOrThrow();
-  }
 
-  /**
-   * Deep-clones a potentially mutable Starlark object that is a valid repo rule attribute.
-   * Immutable (sub-)objects are not cloned.
-   */
-  private static Object deepCloneAttrValue(Object x) throws EvalException {
-    if (x instanceof NoneType
-        || x instanceof Boolean
-        || x instanceof StarlarkInt
-        || x instanceof String
-        || x instanceof Label) {
-      return x;
+    private val extensionId: ModuleExtensionId?
+    private val repoPrefix: String?
+    private val basePackageId: PackageIdentifier?
+    private val baseRepoMapping: com.google.devtools.build.lib.cmdline.RepositoryMapping
+    private val repoOverrides: com.google.common.collect.ImmutableMap<String?, RepositoryName?>
+    private val eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler?
+    private val deferredRepos: MutableMap<String?, RepoRuleCall> = LinkedHashMap<String?, RepoRuleCall>()
+
+    init {
+        this.extensionId = extensionId
+        this.repoPrefix = repoPrefix
+        this.basePackageId = basePackageId
+        this.baseRepoMapping = baseRepoMapping
+        this.repoOverrides = repoOverrides
+        this.eventHandler = eventHandler
     }
-    // Mutable Starlark values have to be cloned deeply.
-    if (x instanceof Dict<?, ?> dict) {
-      Dict.Builder<Object, Object> newDict = Dict.builder();
-      for (Map.Entry<?, ?> e : dict.entrySet()) {
-        newDict.put(deepCloneAttrValue(e.getKey()), deepCloneAttrValue(e.getValue()));
-      }
-      return newDict.buildImmutable();
+
+    /**
+     * Records a call to a repo rule that should be created at the end of the module extension
+     * evaluation.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun lazilyCreateRepo(
+        thread: net.starlark.java.eval.StarlarkThread,
+        kwargs: net.starlark.java.eval.Dict<String?, Any>,
+        repoRule: RepoRule?
+    ) {
+        val nameValue: Any = kwargs.getOrDefault("name", net.starlark.java.eval.Starlark.NONE)
+        if (nameValue !is String) {
+            throw net.starlark.java.eval.Starlark.errorf(
+                "expected string for attribute 'name', got '%s'", net.starlark.java.eval.Starlark.type(nameValue)
+            )
+        }
+        RepositoryName.validateUserProvidedRepoName(nameValue)
+        val conflict = deferredRepos.get(nameValue)
+        if (conflict != null) {
+            throw net.starlark.java.eval.Starlark.errorf(
+                "A repo named %s is already generated by this module extension at %s",
+                nameValue, conflict.location
+            )
+        }
+        val callStack: com.google.common.collect.ImmutableList<net.starlark.java.eval.StarlarkThread.CallStackEntry?> =
+            thread.getCallStack()
+        deferredRepos.put(
+            nameValue,
+            RepoRuleCall(
+                repoRule,  // The extension may mutate the values of the kwargs after this function returns.
+                deepCloneAttrValue(kwargs) as net.starlark.java.eval.Dict<String?, Any?>?,
+                thread.getCallerLocation(),  // Pop the call to the repo rule itself
+                callStack.subList(0, callStack.size() - 1)
+            )
+        )
     }
-    if (x instanceof Iterable<?> iterable) {
-      ImmutableList.Builder<Object> newList = ImmutableList.builder();
-      for (Object item : iterable) {
-        newList.add(deepCloneAttrValue(item));
-      }
-      return StarlarkList.immutableCopyOf(newList.build());
+
+    /**
+     * Evaluates the repo rule calls recorded by [.lazilyCreateRepo] and returns all repos
+     * generated by the extension. The key is the "internal name" (as specified by the extension) of
+     * the repo, and the value is the [RepoSpec].
+     */
+    @Throws(ExternalDepsException::class)
+    fun createRepos(): com.google.common.collect.ImmutableMap<String?, RepoSpec?> {
+        // LINT.IfChange
+        // Make it possible to refer to extension repos in the label attributes of another extension
+        // repo. Wrapping a label in Label(...) ensures that it is evaluated with respect to the
+        // containing module's repo mapping instead.
+        val entries: com.google.common.collect.ImmutableMap.Builder<String?, RepositoryName?> =
+            com.google.common.collect.ImmutableMap.builder<String?, RepositoryName?>()
+        entries.putAll(baseRepoMapping.entries())
+        entries.putAll(
+            com.google.common.collect.Maps.asMap<String?, RepositoryName?>(
+                deferredRepos.keySet(),
+                com.google.common.base.Function { apparentName: String? -> RepositoryName.createUnvalidated(repoPrefix + apparentName) })
+        )
+        entries.putAll(repoOverrides)
+        val fullRepoMapping: com.google.devtools.build.lib.cmdline.RepositoryMapping =
+            com.google.devtools.build.lib.cmdline.RepositoryMapping.create(
+                entries.buildKeepingLast(),
+                baseRepoMapping.contextRepo()
+            )
+
+        // LINT.ThenChange(//src/main/java/com/google/devtools/build/lib/bazel/bzlmod/ModuleExtensionRepoMappingEntriesFunction.java)
+        val labelConverter: LabelConverter = LabelConverter(basePackageId, fullRepoMapping)
+        val repoSpecs: com.google.common.collect.ImmutableMap.Builder<String?, RepoSpec?> =
+            com.google.common.collect.ImmutableMap.builder<String?, RepoSpec?>()
+        for (entry in deferredRepos.entrySet()) {
+            val name: String? = entry.getKey()
+            val repoRuleCall: RepoRuleCall = entry.getValue()
+            repoSpecs.put(
+                name,
+                repoRuleCall.repoRule.instantiate(
+                    repoRuleCall.kwargs,
+                    repoRuleCall.callStack,
+                    labelConverter,
+                    eventHandler,
+                    "in the extension '%s'".formatted(extensionId)
+                )
+            )
+        }
+        return repoSpecs.buildOrThrow()
     }
-    throw Starlark.errorf(
-        "unexpected Starlark value: %s (of type %s)",
-        Starlark.repr(x, StarlarkSemantics.DEFAULT), Starlark.type(x));
-  }
+
+    companion object {
+        fun fromOrNull(thread: net.starlark.java.eval.StarlarkThread): ModuleExtensionEvalStarlarkThreadContext? {
+            val ctx: StarlarkThreadContext? =
+                thread.getThreadLocal<StarlarkThreadContext?>(StarlarkThreadContext::class.java)
+            return if (ctx is ModuleExtensionEvalStarlarkThreadContext) ctx else null
+        }
+
+        /**
+         * Deep-clones a potentially mutable Starlark object that is a valid repo rule attribute.
+         * Immutable (sub-)objects are not cloned.
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun deepCloneAttrValue(x: Any): Any? {
+            if (x is net.starlark.java.eval.NoneType
+                || x is Boolean
+                || x is net.starlark.java.eval.StarlarkInt
+                || x is String
+                || x is com.google.devtools.build.lib.cmdline.Label
+            ) {
+                return x
+            }
+            // Mutable Starlark values have to be cloned deeply.
+            if (x is net.starlark.java.eval.Dict<*, *>) {
+                val newDict: net.starlark.java.eval.Dict.Builder<Any?, Any?> =
+                    net.starlark.java.eval.Dict.builder<Any?, Any?>()
+                for (e in x.entrySet()) {
+                    newDict.put(deepCloneAttrValue(e.getKey()), deepCloneAttrValue(e.getValue()))
+                }
+                return newDict.buildImmutable()
+            }
+            if (x is Iterable<*>) {
+                val newList: com.google.common.collect.ImmutableList.Builder<Any?> =
+                    com.google.common.collect.ImmutableList.builder<Any?>()
+                for (item in x) {
+                    newList.add(Companion.deepCloneAttrValue(item!!))
+                }
+                return net.starlark.java.eval.StarlarkList.immutableCopyOf<Any?>(newList.build())
+            }
+            throw net.starlark.java.eval.Starlark.errorf(
+                "unexpected Starlark value: %s (of type %s)",
+                net.starlark.java.eval.Starlark.repr(x, net.starlark.java.eval.StarlarkSemantics.DEFAULT),
+                net.starlark.java.eval.Starlark.type(x)
+            )
+        }
+    }
 }

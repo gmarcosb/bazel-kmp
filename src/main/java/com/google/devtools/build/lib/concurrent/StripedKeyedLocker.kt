@@ -11,46 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import com.google.common.util.concurrent.Striped;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReadWriteLock
 
 /**
- * An implementation of {@link KeyedLocker} backed by a {@link Striped}.
+ * An implementation of [KeyedLocker] backed by a [Striped].
  */
-public class StripedKeyedLocker<K> implements KeyedLocker<K> {
+class StripedKeyedLocker<K>(stripes: Int) : com.google.devtools.build.lib.concurrent.KeyedLocker<K?> {
+    private val locks: com.google.common.util.concurrent.Striped<ReadWriteLock?>
 
-  private final Striped<ReadWriteLock> locks;
+    init {
+        locks = com.google.common.util.concurrent.Striped.readWriteLock(stripes)
+    }
 
-  public StripedKeyedLocker(int stripes) {
-    locks = Striped.readWriteLock(stripes);
-  }
+    override fun writeLock(key: K?): com.google.devtools.build.lib.concurrent.KeyedLocker.AutoUnlocker {
+        return com.google.devtools.build.lib.concurrent.StripedKeyedLocker.Companion.lockAndMakeAutoUnlocker(
+            locks.get(
+                key
+            ).writeLock(), key
+        )
+    }
 
-  private static AutoUnlocker lockAndMakeAutoUnlocker(
-      final Lock lock, final Object keyForDebugging) {
-    lock.lock();
-    return new AutoUnlocker() {
-      private final AtomicBoolean closeCalled = new AtomicBoolean(false);
+    companion object {
+        private fun lockAndMakeAutoUnlocker(
+            lock: java.util.concurrent.locks.Lock, keyForDebugging: Any?
+        ): com.google.devtools.build.lib.concurrent.KeyedLocker.AutoUnlocker {
+            lock.lock()
+            return object : com.google.devtools.build.lib.concurrent.KeyedLocker.AutoUnlocker {
+                private val closeCalled: AtomicBoolean = AtomicBoolean(false)
 
-      @Override
-      public void close() {
-        if (closeCalled.getAndSet(true)) {
-          String msg =
-              String.format(
-                  "For key %s, 'close' can be called at most once per AutoUnlocker instance",
-                  keyForDebugging);
-          throw new IllegalUnlockException(msg);
+                override fun close() {
+                    if (closeCalled.getAndSet(true)) {
+                        val msg: String? =
+                            java.lang.String.format(
+                                "For key %s, 'close' can be called at most once per AutoUnlocker instance",
+                                keyForDebugging
+                            )
+                        throw com.google.devtools.build.lib.concurrent.KeyedLocker.AutoUnlocker.IllegalUnlockException(
+                            msg
+                        )
+                    }
+                    lock.unlock()
+                }
+            }
         }
-        lock.unlock();
-      }
-    };
-  }
-
-  @Override
-  public AutoUnlocker writeLock(K key) {
-    return lockAndMakeAutoUnlocker(locks.get(key).writeLock(), key);
-  }
+    }
 }

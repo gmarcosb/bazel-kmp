@@ -11,128 +11,123 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.commands
 
-package com.google.devtools.build.lib.bazel.commands;
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.bazel.bzlmod.modcommand.InvalidArgumentException
+import com.google.devtools.build.lib.cmdline.LabelSyntaxException
+import com.google.devtools.build.lib.cmdline.RepositoryName
+import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue
+import com.google.devtools.build.lib.runtime.CommandEnvironment
+import com.google.devtools.build.lib.runtime.KeepGoingOption
+import com.google.devtools.build.lib.runtime.LoadingPhaseThreadsOption
+import com.google.devtools.build.lib.skyframe.RepositoryMappingValue.RepositoryMappingResolutionException
+import com.google.devtools.build.skyframe.EvaluationContext
+import com.google.devtools.build.skyframe.EvaluationResult
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import net.starlark.java.eval.EvalException
+import java.util.function.Function
 
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.InvalidArgumentException;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.KeepGoingOption;
-import com.google.devtools.build.lib.runtime.LoadingPhaseThreadsOption;
-import com.google.devtools.build.lib.skyframe.RepositoryMappingValue.RepositoryMappingResolutionException;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.List;
-import net.starlark.java.eval.EvalException;
-
-/** Fetches repositories for commands. */
-final class RepositoryFetcher {
-
-  private final CommandEnvironment env;
-  private final LoadingPhaseThreadsOption threadsOption;
-
-  private RepositoryFetcher(
-      CommandEnvironment env,
-      LoadingPhaseThreadsOption threadsOption) {
-    this.env = env;
-    this.threadsOption = threadsOption;
-  }
-
-  static ImmutableMap<RepositoryName, RepositoryDirectoryValue> fetchRepos(
-      List<String> repos,
-      CommandEnvironment env,
-      LoadingPhaseThreadsOption threadsOption)
-      throws RepositoryMappingResolutionException,
-          InterruptedException,
-          RepositoryFetcherException {
-    return new RepositoryFetcher(env, threadsOption).fetchRepos(repos);
-  }
-
-  private ImmutableMap<RepositoryName, RepositoryDirectoryValue> fetchRepos(List<String> repos)
-      throws InterruptedException,
-          RepositoryFetcherException,
-          RepositoryMappingResolutionException {
-    ImmutableSet<RepositoryName> reposnames = collectRepositoryNames(repos);
-    EvaluationResult<SkyValue> evaluationResult = evaluateFetch(reposnames);
-    return reposnames.stream()
-        .collect(
-            toImmutableMap(
-                repoName -> repoName,
-                repoName ->
-                    (RepositoryDirectoryValue)
-                        evaluationResult.get(RepositoryDirectoryValue.key(repoName))));
-  }
-
-  private EvaluationResult<SkyValue> evaluateFetch(ImmutableSet<RepositoryName> reposnames)
-      throws InterruptedException, RepositoryFetcherException {
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setParallelism(threadsOption.getThreads())
-            .setEventHandler(env.getReporter())
-            .build();
-    ImmutableSet<SkyKey> repoDelegatorKeys =
-        reposnames.stream().map(RepositoryDirectoryValue::key).collect(toImmutableSet());
-    EvaluationResult<SkyValue> evaluationResult =
-        env.getSkyframeExecutor().prepareAndGet(repoDelegatorKeys, evaluationContext);
-    if (evaluationResult.hasError()) {
-      Exception e = evaluationResult.getError().getException();
-      throw new RepositoryFetcherException(
-          e != null ? e.getMessage() : "Unexpected error during repository fetching.");
+/** Fetches repositories for commands.  */
+internal class RepositoryFetcher private constructor(
+    private val env: CommandEnvironment,
+    private val threadsOption: LoadingPhaseThreadsOption
+) {
+    @Throws(InterruptedException::class, RepositoryFetcherException::class, RepositoryMappingResolutionException::class)
+    private fun fetchRepos(repos: MutableList<String>): ImmutableMap<RepositoryName?, RepositoryDirectoryValue?> {
+        val reposnames = collectRepositoryNames(repos)
+        val evaluationResult = evaluateFetch(reposnames)
+        return reposnames.stream()
+            .collect(
+                ImmutableMap.toImmutableMap<RepositoryName?, RepositoryName?, RepositoryDirectoryValue?>(
+                    Function { repoName: RepositoryName? -> repoName },
+                    Function { repoName: RepositoryName? -> evaluationResult.get(RepositoryDirectoryValue.key(repoName)) as RepositoryDirectoryValue? })
+            )
     }
-    return evaluationResult;
-  }
 
-  private ImmutableSet<RepositoryName> collectRepositoryNames(List<String> repos)
-      throws InterruptedException,
-          RepositoryFetcherException,
-          RepositoryMappingResolutionException {
-    ImmutableSet.Builder<RepositoryName> reposnames = ImmutableSet.builder();
-    for (String repo : repos) {
-      try {
-        reposnames.add(getRepositoryName(repo));
-      } catch (LabelSyntaxException | EvalException | InvalidArgumentException e) {
-        throw new RepositoryFetcherException("Invalid repo name: " + e.getMessage());
-      }
+    @Throws(InterruptedException::class, RepositoryFetcherException::class)
+    private fun evaluateFetch(reposnames: ImmutableSet<RepositoryName?>): EvaluationResult<SkyValue?> {
+        val evaluationContext =
+            EvaluationContext.newBuilder()
+                .setParallelism(threadsOption.getThreads())
+                .setEventHandler(env.getReporter())
+                .build()
+        val repoDelegatorKeys =
+            reposnames.stream().map<RepositoryDirectoryValue.Key?>(Function { repository: RepositoryName? ->
+                RepositoryDirectoryValue.key(repository)
+            }).collect(
+                ImmutableSet.toImmutableSet<SkyKey?>()
+            )
+        val evaluationResult =
+            env.getSkyframeExecutor().prepareAndGet(repoDelegatorKeys, evaluationContext)
+        if (evaluationResult.hasError()) {
+            val e = evaluationResult.getError().getException()
+            throw RepositoryFetcherException(
+                if (e != null) e.getMessage() else "Unexpected error during repository fetching."
+            )
+        }
+        return evaluationResult
     }
-    return reposnames.build();
-  }
 
-  private RepositoryName getRepositoryName(String repoName)
-      throws EvalException,
-          InterruptedException,
-          LabelSyntaxException,
-          InvalidArgumentException,
-          RepositoryMappingResolutionException {
-    if (repoName.startsWith("@@")) { // canonical RepoName
-      return RepositoryName.create(repoName.substring(2));
-    } else if (repoName.startsWith("@")) { // apparent RepoName
-      RepositoryName.validateUserProvidedRepoName(repoName.substring(1));
-      RepositoryMapping repoMapping =
-          env.getSkyframeExecutor()
-              .getMainRepoMapping(
-                  env.getOptions().getOptions(KeepGoingOption.class).getKeepGoing(),
-                  threadsOption.getThreads(),
-                  env.getReporter());
-      return repoMapping.get(repoName.substring(1));
-    } else {
-      throw new InvalidArgumentException(
-          "The repo value has to be either apparent '@repo' or canonical '@@repo' repo name");
+    @Throws(InterruptedException::class, RepositoryFetcherException::class, RepositoryMappingResolutionException::class)
+    private fun collectRepositoryNames(repos: MutableList<String>): ImmutableSet<RepositoryName?> {
+        val reposnames = ImmutableSet.builder<RepositoryName?>()
+        for (repo in repos) {
+            try {
+                reposnames.add(getRepositoryName(repo))
+            } catch (e: LabelSyntaxException) {
+                throw RepositoryFetcherException("Invalid repo name: " + e.getMessage())
+            } catch (e: EvalException) {
+                throw RepositoryFetcherException("Invalid repo name: " + e.getMessage())
+            } catch (e: InvalidArgumentException) {
+                throw RepositoryFetcherException("Invalid repo name: " + e.getMessage())
+            }
+        }
+        return reposnames.build()
     }
-  }
 
-  static class RepositoryFetcherException extends Exception {
-    public RepositoryFetcherException(String message) {
-      super(message);
+    @Throws(
+        EvalException::class,
+        InterruptedException::class,
+        LabelSyntaxException::class,
+        InvalidArgumentException::class,
+        RepositoryMappingResolutionException::class
+    )
+    private fun getRepositoryName(repoName: String): RepositoryName? {
+        if (repoName.startsWith("@@")) { // canonical RepoName
+            return RepositoryName.create(repoName.substring(2))
+        } else if (repoName.startsWith("@")) { // apparent RepoName
+            RepositoryName.validateUserProvidedRepoName(repoName.substring(1))
+            val repoMapping =
+                env.getSkyframeExecutor()
+                    .getMainRepoMapping(
+                        env.getOptions().getOptions<KeepGoingOption?>(KeepGoingOption::class.java)!!.getKeepGoing(),
+                        threadsOption.getThreads(),
+                        env.getReporter()
+                    )
+            return repoMapping.get(repoName.substring(1))
+        } else {
+            throw InvalidArgumentException(
+                "The repo value has to be either apparent '@repo' or canonical '@@repo' repo name"
+            )
+        }
     }
-  }
+
+    internal class RepositoryFetcherException(message: String?) : Exception(message)
+    companion object {
+        @Throws(
+            RepositoryMappingResolutionException::class,
+            InterruptedException::class,
+            RepositoryFetcherException::class
+        )
+        fun fetchRepos(
+            repos: MutableList<String>,
+            env: CommandEnvironment,
+            threadsOption: LoadingPhaseThreadsOption
+        ): ImmutableMap<RepositoryName?, RepositoryDirectoryValue?> {
+            return RepositoryFetcher(env, threadsOption).fetchRepos(repos)
+        }
+    }
 }

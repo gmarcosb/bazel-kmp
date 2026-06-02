@@ -11,19 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.network
 
-package com.google.devtools.build.lib.network;
-
-import com.google.devtools.build.lib.network.ConnectivityStatus.Status;
-import com.google.devtools.build.lib.runtime.BlazeModule;
+import com.google.devtools.build.lib.network.ConnectivityStatus
+import com.google.devtools.build.lib.network.ConnectivityStatusProvider
+import com.google.devtools.build.lib.runtime.BlazeModule
 
 /**
- * No-op implementation of {@link ConnectivityStatusProvider}, which always returns an OK status.
+ * No-op implementation of [ConnectivityStatusProvider], which always returns an OK status.
  */
-public class NoOpConnectivityModule extends BlazeModule implements ConnectivityStatusProvider {
-
-  @Override
-  public ConnectivityStatus getStatus(String service) {
-    return new ConnectivityStatus(Status.OK, /* serviceInfo= */ "");
-  }
+class NoOpConnectivityModule : BlazeModule(), ConnectivityStatusProvider {
+    override fun getStatus(service: String?): ConnectivityStatus {
+        return ConnectivityStatus(
+            com.google.devtools.build.lib.network.ConnectivityStatus.Status.OK,  /* serviceInfo= */
+            ""
+        )
+    }
 }

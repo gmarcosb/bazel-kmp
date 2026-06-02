@@ -12,28 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoValue;
-import java.util.List;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Starlark;
+import com.google.auto.value.AutoValue
 
 /**
  * Wrapper around a dictionary of attribute names and values to facilitate de/serialization (see
- * {@link AttributeValuesAdapter}).
- *
- * <p>Note that all attribute values are stored as Starlark values (that is, {@link Starlark#valid}
- * -- so {@link net.starlark.java.eval.StarlarkInt} vs {@code int}, {@link
- * net.starlark.java.eval.StarlarkList} vs {@link List}, etc).
+ * [AttributeValuesAdapter]).
+ * 
+ * 
+ * Note that all attribute values are stored as Starlark values (that is, [Starlark.valid]
+ * -- so [net.starlark.java.eval.StarlarkInt] vs `int`, [ ] vs [List], etc).
  */
 @AutoValue
-public abstract class AttributeValues {
+abstract class AttributeValues {
+    abstract fun attributes(): net.starlark.java.eval.Dict<String?, Any?>?
 
-  public static AttributeValues create(Dict<String, Object> attribs) {
-    return new AutoValue_AttributeValues(attribs);
-  }
-
-  public abstract Dict<String, Object> attributes();
+    companion object {
+        fun create(attribs: net.starlark.java.eval.Dict<String?, Any?>?): AttributeValues {
+            return AutoValue_AttributeValues(attribs)
+        }
+    }
 }

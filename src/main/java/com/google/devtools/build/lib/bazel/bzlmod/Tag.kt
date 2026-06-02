@@ -12,67 +12,65 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoValue;
-import com.ryanharter.auto.value.gson.GenerateTypeAdapter;
-import net.starlark.java.syntax.Location;
+import com.google.auto.value.AutoValue
+import com.ryanharter.auto.value.gson.GenerateTypeAdapter
 
 /**
  * Represents a module extension tag, which is a piece of data following a specified attribute
  * schema that can be consumed by a module extension implementation function. The attribute schema
- * is defined by the {@link TagClass}, and checked at module extension resolution time (i.e.
- * <em>not</em> when the tag is created, which is during module discovery).
+ * is defined by the [TagClass], and checked at module extension resolution time (i.e.
+ * *not* when the tag is created, which is during module discovery).
  */
 @AutoValue
 @GenerateTypeAdapter
-public abstract class Tag {
+abstract class Tag {
+    abstract val tagName: String?
 
-  public abstract String getTagName();
+    /** All keyword arguments supplied to the tag instance.  */
+    abstract val attributeValues: com.google.devtools.build.lib.bazel.bzlmod.AttributeValues?
 
-  /** All keyword arguments supplied to the tag instance. */
-  public abstract AttributeValues getAttributeValues();
+    /** Whether this tag was created using a proxy created with dev_dependency = True.  */
+    abstract val isDevDependency: Boolean
 
-  /** Whether this tag was created using a proxy created with dev_dependency = True. */
-  public abstract boolean isDevDependency();
+    /** The source location in the module file where this tag was created.  */
+    abstract val location: net.starlark.java.syntax.Location?
 
-  /** The source location in the module file where this tag was created. */
-  public abstract Location getLocation();
+    abstract fun toBuilder(): Builder?
 
-  public abstract Builder toBuilder();
+    /**
+     * Returns a new tag with all information removed that does not influence the evaluation of the
+     * extension defining the tag.
+     */
+    fun trimForEvaluation(): Tag? {
+        // We start with the full usage and selectively remove information that does not influence the
+        // evaluation of the extension. Compared to explicitly copying over the parts that do, this
+        // preserves correctness in case new fields are added without updating this code.
+        return toBuilder()!! // Locations are only used for error reporting and thus don't influence whether the
+            // evaluation of the extension is successful and what its result is in case of success.
+            .setLocation(net.starlark.java.syntax.Location.BUILTIN)!!
+            .build()
+    }
 
-  public static Builder builder() {
-    return new AutoValue_Tag.Builder();
-  }
+    /** Builder for [Tag].  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun setTagName(value: String?): Builder?
 
-  /**
-   * Returns a new tag with all information removed that does not influence the evaluation of the
-   * extension defining the tag.
-   */
-  Tag trimForEvaluation() {
-    // We start with the full usage and selectively remove information that does not influence the
-    // evaluation of the extension. Compared to explicitly copying over the parts that do, this
-    // preserves correctness in case new fields are added without updating this code.
-    return toBuilder()
-        // Locations are only used for error reporting and thus don't influence whether the
-        // evaluation of the extension is successful and what its result is in case of success.
-        .setLocation(Location.BUILTIN)
-        .build();
-  }
+        abstract fun setAttributeValues(value: com.google.devtools.build.lib.bazel.bzlmod.AttributeValues?): Builder?
 
-  /** Builder for {@link Tag}. */
-  @AutoValue.Builder
-  public abstract static class Builder {
+        abstract fun setDevDependency(value: Boolean): Builder?
 
-    public abstract Builder setTagName(String value);
+        abstract fun setLocation(value: net.starlark.java.syntax.Location?): Builder?
 
-    public abstract Builder setAttributeValues(AttributeValues value);
+        abstract fun build(): Tag?
+    }
 
-    public abstract Builder setDevDependency(boolean value);
-
-    public abstract Builder setLocation(Location value);
-
-    public abstract Tag build();
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return Builder()
+        }
+    }
 }

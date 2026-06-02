@@ -11,76 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.vfs.Root;
-import java.util.Map;
+import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment
 
 /**
  * The collection of the supported build rules. Provides an StarlarkThread for Starlark rule
  * creation.
  */
-public interface RuleClassProvider extends RuleDefinitionEnvironment {
+interface RuleClassProvider : RuleDefinitionEnvironment {
+    /** Label referencing the prelude file.  */
+    fun getPreludeLabel(): Label?
 
-  /** Label referencing the prelude file. */
-  Label getPreludeLabel();
+    /** Returns true if a package location is considered to be experimental.  */
+    fun isPackageUnderExperimental(packageIdentifier: PackageIdentifier?): Boolean
 
-  /** Returns true if a package location is considered to be experimental. */
-  boolean isPackageUnderExperimental(PackageIdentifier packageIdentifier);
+    /** Returns true if a package location is considered to be under prototypes.  */
+    fun isPackageUnderPrototypes(packageIdentifier: PackageIdentifier?): Boolean
 
-  /** Returns true if a package location is considered to be under prototypes. */
-  boolean isPackageUnderPrototypes(PackageIdentifier packageIdentifier);
+    /**
+     * Returns true if the given non-experimental, non-prototype package is allowed to depend on (via
+     * target visibility or .bzl load visibility) prototype packages.
+     */
+    fun mayPackageDependOnPrototypes(packageIdentifier: PackageIdentifier?): Boolean
 
-  /**
-   * Returns true if the given non-experimental, non-prototype package is allowed to depend on (via
-   * target visibility or .bzl load visibility) prototype packages.
-   */
-  boolean mayPackageDependOnPrototypes(PackageIdentifier packageIdentifier);
+    /** The runfiles prefix.  */
+    fun getRunfilesPrefix(): String?
 
-  /** The runfiles prefix. */
-  String getRunfilesPrefix();
+    /**
+     * Where the bundled builtins bzl files are located. These are the builtins files used if `--experimental_builtins_bzl_path` is set to `%bundled%`. Note that this root lives in a
+     * separate [InMemoryFileSystem].
+     * 
+     * 
+     * May be null in tests, in which case `--experimental_builtins_bzl_path` must point to
+     * the builtins root to be used.
+     */
+    fun getBundledBuiltinsRoot(): Root?
 
-  /**
-   * Where the bundled builtins bzl files are located. These are the builtins files used if {@code
-   * --experimental_builtins_bzl_path} is set to {@code %bundled%}. Note that this root lives in a
-   * separate {@link InMemoryFileSystem}.
-   *
-   * <p>May be null in tests, in which case {@code --experimental_builtins_bzl_path} must point to
-   * the builtins root to be used.
-   */
-  Root getBundledBuiltinsRoot();
+    /**
+     * The relative location of the builtins_bzl directory within a Bazel source tree.
+     * 
+     * 
+     * May be null in tests, in which case --experimental_builtins_bzl_path may not be
+     * "%workspace%".
+     */
+    fun getBuiltinsBzlPackagePathInSource(): String?
 
-  /**
-   * The relative location of the builtins_bzl directory within a Bazel source tree.
-   *
-   * <p>May be null in tests, in which case --experimental_builtins_bzl_path may not be
-   * "%workspace%".
-   */
-  String getBuiltinsBzlPackagePathInSource();
+    /** Returns a map from rule names to rule class objects.  */
+    fun getRuleClassMap(): com.google.common.collect.ImmutableMap<String?, RuleClass?>?
 
-  /** Returns a map from rule names to rule class objects. */
-  ImmutableMap<String, RuleClass> getRuleClassMap();
+    /** Returns a map from aspect names to aspect factory objects.  */
+    fun getNativeAspectClassMap(): MutableMap<String?, NativeAspectClass?>?
 
-  /** Returns a map from aspect names to aspect factory objects. */
-  Map<String, NativeAspectClass> getNativeAspectClassMap();
+    /**
+     * Returns the [BazelStarlarkEnvironment], which is the final determiner of the BUILD and
+     * .bzl environment (with and without builtins injection).
+     */
+    fun getBazelStarlarkEnvironment(): BazelStarlarkEnvironment?
 
-  /**
-   * Returns the {@link BazelStarlarkEnvironment}, which is the final determiner of the BUILD and
-   * .bzl environment (with and without builtins injection).
-   */
-  BazelStarlarkEnvironment getBazelStarlarkEnvironment();
+    /** Retrieves an aspect from the aspect factory map using the key provided  */
+    fun getNativeAspectClass(key: String?): NativeAspectClass?
 
-  /** Retrieves an aspect from the aspect factory map using the key provided */
-  NativeAspectClass getNativeAspectClass(String key);
-
-  /**
-   * Retrieves a {@link Map} from Starlark configuration fragment name to configuration fragment
-   * class.
-   */
-  ImmutableMap<String, Class<?>> getConfigurationFragmentMap();
+    /**
+     * Retrieves a [Map] from Starlark configuration fragment name to configuration fragment
+     * class.
+     */
+    fun getConfigurationFragmentMap(): com.google.common.collect.ImmutableMap<String?, java.lang.Class<*>?>?
 }

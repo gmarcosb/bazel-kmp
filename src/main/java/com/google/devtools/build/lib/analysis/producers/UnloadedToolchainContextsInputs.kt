@@ -11,30 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.ExecGroupCollection;
-import com.google.devtools.build.lib.packages.DeclaredExecGroup;
-import com.google.devtools.build.lib.skyframe.toolchains.ToolchainContextKey;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ExecGroupCollection
 
-/** Collates inputs for the {@link UnloadedToolchainContextsProducer}. */
+/** Collates inputs for the [UnloadedToolchainContextsProducer].  */
 @AutoValue
-public abstract class UnloadedToolchainContextsInputs extends ExecGroupCollection.Builder {
-  @Nullable // Null if no toolchain resolution is required.
-  public abstract ToolchainContextKey targetToolchainContextKey();
+abstract class UnloadedToolchainContextsInputs : ExecGroupCollection.Builder() {
+    // Null if no toolchain resolution is required.
+    abstract fun targetToolchainContextKey(): ToolchainContextKey?
 
-  public static UnloadedToolchainContextsInputs create(
-      ImmutableMap<String, DeclaredExecGroup> processedExecGroups,
-      @Nullable ToolchainContextKey targetToolchainContextKey) {
-    return new AutoValue_UnloadedToolchainContextsInputs(
-        processedExecGroups, targetToolchainContextKey);
-  }
+    companion object {
+        fun create(
+            processedExecGroups: com.google.common.collect.ImmutableMap<String?, DeclaredExecGroup?>?,
+            targetToolchainContextKey: ToolchainContextKey?
+        ): UnloadedToolchainContextsInputs {
+            return AutoValue_UnloadedToolchainContextsInputs(
+                processedExecGroups, targetToolchainContextKey
+            )
+        }
 
-  public static UnloadedToolchainContextsInputs empty() {
-    return new AutoValue_UnloadedToolchainContextsInputs(
-        ImmutableMap.of(), /* targetToolchainContextKey= */ null);
-  }
+        @kotlin.jvm.JvmStatic
+        fun empty(): UnloadedToolchainContextsInputs {
+            return AutoValue_UnloadedToolchainContextsInputs(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* targetToolchainContextKey= */null
+            )
+        }
+    }
 }

@@ -11,114 +11,114 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Range;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
-import java.util.Locale;
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
+import java.util.Locale
+import java.util.stream.Collectors
 
 /**
- * Metric data for {@code description} object. Contains count, average, standard deviation, max and
+ * Metric data for `description` object. Contains count, average, standard deviation, max and
  * histogram.
  */
-public final class MetricData {
+class MetricData(
+    description: Any?, histogram: com.google.common.collect.ImmutableList<HistogramElement?>, count: Int,
+    avg: Double, stdDev: Double, max: Int
+) {
+    private val description: Any?
+    private val histogram: com.google.common.collect.ImmutableList<HistogramElement?>
+    private val count: Int
+    @kotlin.jvm.JvmField
+    private val avg: Double
+    @kotlin.jvm.JvmField
+    private val stdDev: Double
+    private val max: Int
 
-  private final Object description;
-  private final ImmutableList<HistogramElement> histogram;
-  private final int count;
-  private final double avg;
-  private final double stdDev;
-  private final int max;
-  public MetricData(Object description, ImmutableList<HistogramElement> histogram, int count,
-      double avg, double stdDev, int max) {
-    this.description = description;
-    this.histogram = histogram;
-    this.count = count;
-    this.avg = avg;
-    this.stdDev = stdDev;
-    this.max = max;
-  }
-
-  public Object getDescription() {
-    return description;
-  }
-
-  public ImmutableList<HistogramElement> getHistogram() {
-    return histogram;
-  }
-
-  public int getCount() {
-    return count;
-  }
-
-  public double getAvg() {
-    return avg;
-  }
-
-  public double getStdDev() {
-    return stdDev;
-  }
-
-  public int getMax() {
-    return max;
-  }
-
-  @Override
-  public String toString() {
-    if (count == 0) {
-      return "'" + description + "'. Zero data recorded";
+    init {
+        this.description = description
+        this.histogram = histogram
+        this.count = count
+        this.avg = avg
+        this.stdDev = stdDev
+        this.max = max
     }
-    DecimalFormat fmt = new DecimalFormat("0.###", new DecimalFormatSymbols(Locale.US));
-    return "'"
-        + description
-        + "'. "
-        + " Count: "
-        + count
-        + " Avg: "
-        + fmt.format(avg)
-        + " StdDev: "
-        + fmt.format(stdDev)
-        + " Max: "
-        + max
-        + " Histogram:\n  "
-        + histogram
+
+    fun getDescription(): Any? {
+        return description
+    }
+
+    fun getHistogram(): com.google.common.collect.ImmutableList<HistogramElement?> {
+        return histogram
+    }
+
+    fun getCount(): Int {
+        return count
+    }
+
+    fun getAvg(): Double {
+        return avg
+    }
+
+    fun getStdDev(): Double {
+        return stdDev
+    }
+
+    fun getMax(): Int {
+        return max
+    }
+
+    override fun toString(): String {
+        if (count == 0) {
+            return "'" + description + "'. Zero data recorded"
+        }
+        val fmt: DecimalFormat = DecimalFormat("0.###", DecimalFormatSymbols(Locale.US))
+        return ("'"
+                + description
+                + "'. "
+                + " Count: "
+                + count
+                + " Avg: "
+                + fmt.format(avg)
+                + " StdDev: "
+                + fmt.format(stdDev)
+                + " Max: "
+                + max
+                + " Histogram:\n  "
+                + histogram
             .stream()
-            .filter(element -> element.count > 0)
-            .map(Object::toString)
-            .collect(joining("\n  "));
-  }
-
-  /** An histogram element that contains the range that applies to and the number of elements. */
-  public static final class HistogramElement {
-
-    private final Range<Integer> range;
-    private final int count;
-
-    HistogramElement(Range<Integer> range, int count) {
-      this.range = range;
-      this.count = count;
+            .filter(java.util.function.Predicate { element: HistogramElement? -> element.count > 0 })
+            .map<String?>(java.util.function.Function { obj: HistogramElement? -> obj.toString() })
+            .collect(Collectors.joining("\n  ")))
     }
 
-    public Range<Integer> getRange() {
-      return range;
-    }
+    /** An histogram element that contains the range that applies to and the number of elements.  */
+    class HistogramElement internal constructor(range: com.google.common.collect.Range<Int?>, count: Int) {
+        private val range: com.google.common.collect.Range<Int?>
+        private val count: Int
 
-    public int getCount() {
-      return count;
-    }
+        init {
+            this.range = range
+            this.count = count
+        }
 
-    @Override
-    public String toString() {
+        fun getRange(): com.google.common.collect.Range<Int?> {
+            return range
+        }
 
-      return String.format("%-15s:%10s",
-          "[" + range.lowerEndpoint() + ".." + (range.hasUpperBound()
-                                                ? range.upperEndpoint()
-                                                : "\u221e") // infinite symbol
-              + " ms]", count);
+        fun getCount(): Int {
+            return count
+        }
+
+        override fun toString(): String {
+            return java.lang.String.format(
+                "%-15s:%10s",
+                ("[" + range.lowerEndpoint() + ".." + (if (range.hasUpperBound())
+                    range.upperEndpoint()
+                else
+                    "\u221e") // infinite symbol
+                        + " ms]"), count
+            )
+        }
     }
-  }
 }

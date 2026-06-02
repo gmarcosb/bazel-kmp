@@ -12,37 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-
-/** The key for {@link RegistryFunction}. */
+/** The key for [RegistryFunction].  */
 @AutoCodec
-record RegistryKey(String url) implements SkyKey {
-  RegistryKey {
-    requireNonNull(url, "url");
-  }
+@kotlin.jvm.JvmRecord
+internal data class RegistryKey(val url: String?) : SkyKey {
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.REGISTRY
+    }
 
-  private static final SkyKeyInterner<RegistryKey> interner = SkyKey.newInterner();
+    override fun getSkyKeyInterner(): SkyKeyInterner<RegistryKey?> {
+        return com.google.devtools.build.lib.bazel.bzlmod.RegistryKey.Companion.interner
+    }
 
-  @AutoCodec.Instantiator
-  static RegistryKey create(String url) {
-    return interner.intern(new RegistryKey(url));
-  }
+    init {
+        java.util.Objects.requireNonNull<String?>(url, "url")
+    }
 
-  @Override
-  public SkyFunctionName functionName() {
-    return SkyFunctions.REGISTRY;
-  }
+    companion object {
+        private val interner: SkyKeyInterner<RegistryKey?> = SkyKey.newInterner<RegistryKey?>()
 
-  @Override
-  public SkyKeyInterner<RegistryKey> getSkyKeyInterner() {
-    return interner;
-  }
+        @AutoCodec.Instantiator
+        fun create(url: String?): RegistryKey? {
+            return com.google.devtools.build.lib.bazel.bzlmod.RegistryKey.Companion.interner.intern(
+                com.google.devtools.build.lib.bazel.bzlmod.RegistryKey(
+                    url
+                )
+            )
+        }
+    }
 }

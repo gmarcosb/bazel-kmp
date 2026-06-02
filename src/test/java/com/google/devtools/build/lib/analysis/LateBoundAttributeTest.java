@@ -107,7 +107,7 @@ public class LateBoundAttributeTest extends BuildViewTestCase {
     }
 
     private void checkAttribute(RuleClass ruleClass, Attribute attribute) throws Exception {
-      String attributeName = attribute.getName();
+      String attributeName = attribute.name;
       if (!Attribute.isAnalysisDependent(attributeName)) {
         return;
       }
@@ -150,15 +150,15 @@ public class LateBoundAttributeTest extends BuildViewTestCase {
      */
     void checkLabel(RuleClass ruleClass, Attribute attribute, Label label) throws Exception {
       Label defaultValue;
-      if (attribute.getDefaultValueUnchecked() instanceof LateBoundDefault<?, ?>) {
+      if (attribute.defaultValueUnchecked instanceof LateBoundDefault<?, ?>) {
         defaultValue =
             BuildType.LABEL.cast(
-                ((LateBoundDefault<?, ?>) attribute.getDefaultValueUnchecked()).getDefault(null));
+                ((LateBoundDefault<?, ?>) attribute.defaultValueUnchecked).getDefault(null));
       } else {
-        defaultValue = (Label) attribute.getDefaultValueUnchecked();
+        defaultValue = (Label) attribute.defaultValueUnchecked;
       }
       if ((defaultValue == null) || !existsPath(defaultValue, label)) {
-        System.err.println("in " + ruleClass.getName() + " attribute " + attribute.getName() + ":");
+        System.err.println("in " + ruleClass.getName() + " attribute " + attribute.name + ":");
         System.err.println("  " + label + " is not in the transitive closure of " + defaultValue);
         failed = true;
       }
@@ -171,16 +171,16 @@ public class LateBoundAttributeTest extends BuildViewTestCase {
     @SuppressWarnings("unchecked")
     void checkLabelList(RuleClass ruleClass, Attribute attribute, Label label) throws Exception {
       List<Label> defaultValues;
-      if (attribute.getDefaultValueUnchecked() instanceof LateBoundDefault<?, ?>) {
+      if (attribute.defaultValueUnchecked instanceof LateBoundDefault<?, ?>) {
         defaultValues =
             BuildType.LABEL_LIST.cast(
-                ((LateBoundDefault<?, ?>) attribute.getDefaultValueUnchecked()).getDefault(null));
+                ((LateBoundDefault<?, ?>) attribute.defaultValueUnchecked).getDefault(null));
       } else {
-        defaultValues = (List<Label>) attribute.getDefaultValueUnchecked();
+        defaultValues = (List<Label>) attribute.defaultValueUnchecked;
       }
       failed = true;
       if (defaultValues == null) {
-        System.err.println("in " + ruleClass.getName() + " attribute " + attribute.getName() + ":");
+        System.err.println("in " + ruleClass.getName() + " attribute " + attribute.name + ":");
         System.err.println(" no available default for this attribute");
       } else {
         for (Label defaultLabel : defaultValues) {
@@ -191,7 +191,7 @@ public class LateBoundAttributeTest extends BuildViewTestCase {
         // label was not reachable from any label in the defaultValue
         if (failed) {
           System.out.println(
-              "in " + ruleClass.getName() + " attribute " + attribute.getName() + ":");
+              "in " + ruleClass.getName() + " attribute " + attribute.name + ":");
           System.out.println(
               "  " + label + " is not in the transitive closure of "
                   + Arrays.toString(defaultValues.toArray()));

@@ -11,73 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.metrics;
+package com.google.devtools.build.lib.metrics
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.google.devtools.build.lib.metrics.MetricsCollector
+import com.google.devtools.build.lib.runtime.BlazeModule
+import com.google.devtools.build.lib.runtime.CommandEnvironment
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * A blaze module that installs metrics instrumentations and issues a {@link BuildMetricsEvent} at
+ * A blaze module that installs metrics instrumentations and issues a [BuildMetricsEvent] at
  * the end of the build.
  */
-public class MetricsModule extends BlazeModule {
+class MetricsModule : BlazeModule() {
+    /** Metrics options.  */
+    @com.google.devtools.common.options.OptionsClass
+    abstract class Options : com.google.devtools.common.options.OptionsBase() {
+        @com.google.devtools.common.options.Option(
+            name = "experimental_record_metrics_for_all_mnemonics",
+            defaultValue = "false",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+            help = ("Controls the output of BEP ActionSummary and BuildGraphMetrics, limiting the number of"
+                    + " mnemonics in ActionData and number of entries reported in"
+                    + " BuildGraphMetrics.AspectCount/RuleClassCount. By default the number of types is"
+                    + " limited to the top 20, by number of executed actions for ActionData, and"
+                    + " instances for RuleClass and Asepcts. Setting this option will write statistics"
+                    + " for all mnemonics, rule classes and aspects.")
+        )
+        abstract fun getRecordMetricsForAllMnemonics(): Boolean
 
-  /** Metrics options. */
-  @OptionsClass
-  public abstract static class Options extends OptionsBase {
-    @Option(
-        name = "experimental_record_metrics_for_all_mnemonics",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.LOGGING,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help =
-            "Controls the output of BEP ActionSummary and BuildGraphMetrics, limiting the number of"
-                + " mnemonics in ActionData and number of entries reported in"
-                + " BuildGraphMetrics.AspectCount/RuleClassCount. By default the number of types is"
-                + " limited to the top 20, by number of executed actions for ActionData, and"
-                + " instances for RuleClass and Asepcts. Setting this option will write statistics"
-                + " for all mnemonics, rule classes and aspects.")
-    public abstract boolean getRecordMetricsForAllMnemonics();
+        @com.google.devtools.common.options.Option(
+            name = "experimental_record_skyframe_metrics",
+            defaultValue = "false",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+            help = ("Controls the output of BEP BuildGraphMetrics, including expensive "
+                    + "to compute skyframe metrics about Skykeys, RuleClasses and Aspects. "
+                    + "With this flag set to false BuildGraphMetrics.rule_count and aspect "
+                    + "fields will not be populated in the BEP.")
+        )
+        abstract fun getRecordSkyframeMetrics(): Boolean
+    }
 
-    @Option(
-        name = "experimental_record_skyframe_metrics",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.LOGGING,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help =
-            "Controls the output of BEP BuildGraphMetrics, including expensive "
-                + "to compute skyframe metrics about Skykeys, RuleClasses and Aspects. "
-                + "With this flag set to false BuildGraphMetrics.rule_count and aspect "
-                + "fields will not be populated in the BEP.")
-    public abstract boolean getRecordSkyframeMetrics();
-  }
+    private val numAnalyses: AtomicInteger = AtomicInteger()
+    private val numBuilds: AtomicInteger = AtomicInteger()
 
-  private final AtomicInteger numAnalyses = new AtomicInteger();
-  private final AtomicInteger numBuilds = new AtomicInteger();
+    override fun getCommonCommandOptions(): Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?> {
+        return com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+            com.google.devtools.build.lib.metrics.MetricsModule.Options::class.java
+        )
+    }
 
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getCommonCommandOptions() {
-    return ImmutableList.of(Options.class);
-  }
+    /**
+     * Informs the Blaze runtime that this module will post the BuildMetricsEvent and the runtime does
+     * not need to supply its own such module.
+     */
+    override fun postsBuildMetricsEvent(): Boolean {
+        return true
+    }
 
-  /**
-   * Informs the Blaze runtime that this module will post the BuildMetricsEvent and the runtime does
-   * not need to supply its own such module.
-   */
-  @Override
-  public boolean postsBuildMetricsEvent() {
-    return true;
-  }
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    MetricsCollector.installInEnv(env, numAnalyses, numBuilds);
-  }
+    override fun beforeCommand(env: CommandEnvironment?) {
+        MetricsCollector.Companion.installInEnv(env, numAnalyses, numBuilds)
+    }
 }

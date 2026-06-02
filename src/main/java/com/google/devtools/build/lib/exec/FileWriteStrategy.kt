@@ -11,61 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.EnvironmentalExecException;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.RunningActionEvent;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.analysis.actions.FileWriteActionContext;
-import com.google.devtools.build.lib.profiler.AutoProfiler;
-import com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils;
-import com.google.devtools.build.lib.server.FailureDetails.Execution.Code;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.time.Duration;
+import com.google.devtools.build.lib.actions.AbstractAction
 
 /**
- * A strategy for executing an {@link
- * com.google.devtools.build.lib.analysis.actions.AbstractFileWriteAction}.
+ * A strategy for executing an [ ].
  */
-public final class FileWriteStrategy implements FileWriteActionContext {
-  private static final Duration MIN_LOGGING = Duration.ofMillis(100);
-
-  @Override
-  public ImmutableList<SpawnResult> writeOutputToFile(
-      AbstractAction action,
-      ActionExecutionContext actionExecutionContext,
-      DeterministicWriter deterministicWriter,
-      boolean makeExecutable,
-      boolean isRemotable,
-      Artifact output)
-      throws ExecException {
-    actionExecutionContext.getEventHandler().post(new RunningActionEvent(action, "local"));
-    // TODO(ulfjack): Consider acquiring local resources here before trying to write the file.
-    try (AutoProfiler p =
-        GoogleAutoProfilerUtils.logged(
-            "running write for action " + action.prettyPrint(), MIN_LOGGING)) {
-      Path outputPath = actionExecutionContext.getInputPath(output);
-      try {
-        try (OutputStream out = new BufferedOutputStream(outputPath.getOutputStream())) {
-          deterministicWriter.writeTo(out);
+class FileWriteStrategy : FileWriteActionContext {
+    @Throws(ExecException::class)
+    public override fun writeOutputToFile(
+        action: AbstractAction,
+        actionExecutionContext: ActionExecutionContext,
+        deterministicWriter: DeterministicWriter,
+        makeExecutable: Boolean,
+        isRemotable: Boolean,
+        output: Artifact?
+    ): com.google.common.collect.ImmutableList<SpawnResult?> {
+        actionExecutionContext.getEventHandler().post(RunningActionEvent(action, "local"))
+        com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.logged(
+            "running write for action " + action.prettyPrint(), MIN_LOGGING
+        ).use { p ->
+            val outputPath: com.google.devtools.build.lib.vfs.Path = actionExecutionContext.getInputPath(output)
+            try {
+                BufferedOutputStream(outputPath.getOutputStream()).use { out ->
+                    deterministicWriter.writeTo(out)
+                }
+                if (makeExecutable) {
+                    outputPath.setExecutable(true)
+                }
+            } catch (e: IOException) {
+                throw EnvironmentalExecException(e, Code.FILE_WRITE_IO_EXCEPTION)
+            }
         }
-        if (makeExecutable) {
-          outputPath.setExecutable(true);
-        }
-      } catch (IOException e) {
-        throw new EnvironmentalExecException(e, Code.FILE_WRITE_IO_EXCEPTION);
-      }
+        return com.google.common.collect.ImmutableList.of<SpawnResult?>()
     }
-    return ImmutableList.of();
-  }
+
+    companion object {
+        private val MIN_LOGGING: java.time.Duration? = java.time.Duration.ofMillis(100)
+    }
 }

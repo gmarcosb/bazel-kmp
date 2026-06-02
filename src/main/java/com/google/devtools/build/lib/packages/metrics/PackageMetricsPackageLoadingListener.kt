@@ -11,94 +11,92 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.metrics;
+package com.google.devtools.build.lib.packages.metrics
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics.BzlFileMetrics;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackageLoadingListener;
-import com.google.devtools.build.lib.pkgcache.PackageOptions.LazyMacroExpansionPackages;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.protobuf.util.Durations;
-import javax.annotation.concurrent.GuardedBy;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics.BzlFileMetrics
+import com.google.devtools.build.lib.packages.Package
+import com.google.devtools.build.lib.packages.PackageLoadingListener
+import net.starlark.java.eval.StarlarkSemantics
+import javax.annotation.concurrent.GuardedBy
 
-/** Tracks per-invocation extreme package loading events. */
-public class PackageMetricsPackageLoadingListener implements PackageLoadingListener {
+/** Tracks per-invocation extreme package loading events.  */
+class PackageMetricsPackageLoadingListener private constructor() : PackageLoadingListener {
+    @kotlin.jvm.JvmField
+    @kotlin.concurrent.Volatile
+    private var recorder: PackageMetricsRecorder? = null
 
-  private volatile PackageMetricsRecorder recorder;
+    private var publishPackageMetricsInBep = false
 
-  private boolean publishPackageMetricsInBep = false;
+    override fun onLoadingCompleteAndSuccessful(
+        pkg: Package,
+        starlarkSemantics: StarlarkSemantics?,
+        lazyMacroExpansionPackages: LazyMacroExpansionPackages?,
+        metrics: PackageLoadingListener.Metrics
+    ) {
+        val currentRecorder = recorder
+        if (currentRecorder == null) {
+            // Micro-optimization - no need to track.
+            return
+        }
 
-  @GuardedBy("PackageMetricsPackageLoadingListener.class")
-  private static PackageMetricsPackageLoadingListener instance = null;
+        val builder: PackageLoadMetrics.Builder =
+            PackageLoadMetrics.newBuilder()
+                .setLoadDuration(Durations.fromNanos(metrics.loadTimeNanos))
+                .setGlobFilesystemOperationCost(metrics.globFilesystemOperationCost)
+                .setComputationSteps(pkg.getComputationSteps())
+                .setNumTargets(pkg.getTargets().size())
+                .setNumTransitiveLoads(pkg.getDeclarations().countTransitivelyLoadedStarlarkFiles())
 
-  public static synchronized PackageMetricsPackageLoadingListener getInstance() {
-    if (instance == null) {
-      instance = new PackageMetricsPackageLoadingListener();
-    }
-    return instance;
-  }
+        if (pkg.getPackageOverhead().isPresent()) {
+            builder.setPackageOverhead(pkg.getPackageOverhead().getAsLong())
+        }
 
-  private PackageMetricsPackageLoadingListener() {
-    this.recorder = null;
-  }
-
-  @Override
-  public void onLoadingCompleteAndSuccessful(
-      Package pkg,
-      StarlarkSemantics starlarkSemantics,
-      LazyMacroExpansionPackages lazyMacroExpansionPackages,
-      Metrics metrics) {
-    PackageMetricsRecorder currentRecorder = recorder;
-    if (currentRecorder == null) {
-      // Micro-optimization - no need to track.
-      return;
-    }
-
-    PackageLoadMetrics.Builder builder =
-        PackageLoadMetrics.newBuilder()
-            .setLoadDuration(Durations.fromNanos(metrics.loadTimeNanos()))
-            .setGlobFilesystemOperationCost(metrics.globFilesystemOperationCost())
-            .setComputationSteps(pkg.getComputationSteps())
-            .setNumTargets(pkg.getTargets().size())
-            .setNumTransitiveLoads(pkg.getDeclarations().countTransitivelyLoadedStarlarkFiles());
-
-    if (pkg.getPackageOverhead().isPresent()) {
-      builder.setPackageOverhead(pkg.getPackageOverhead().getAsLong());
+        currentRecorder.recordMetrics(pkg.getPackageIdentifier(), builder.build())
     }
 
-    currentRecorder.recordMetrics(pkg.getPackageIdentifier(), builder.build());
-  }
+    override fun onBzlCompileCompleteAndSuccessful(path: RootedPath, fileSize: Long) {
+        val currentRecorder = recorder
+        if (currentRecorder == null) {
+            return
+        }
 
-  @Override
-  public void onBzlCompileCompleteAndSuccessful(RootedPath path, long fileSize) {
-    PackageMetricsRecorder currentRecorder = recorder;
-    if (currentRecorder == null) {
-      return;
+        currentRecorder.recordBzlMetrics(
+            BzlFileMetrics.newBuilder()
+                .setPath(path.getRootRelativePath().getPathString())
+                .setSize(fileSize)
+                .build()
+        )
     }
 
-    currentRecorder.recordBzlMetrics(
-        BzlFileMetrics.newBuilder()
-            .setPath(path.getRootRelativePath().getPathString())
-            .setSize(fileSize)
-            .build());
-  }
+    /** Set the PackageMetricsRecorder for this listener.  */
+    fun setPackageMetricsRecorder(recorder: PackageMetricsRecorder?) {
+        this.recorder = recorder
+    }
 
-  /** Set the PackageMetricsRecorder for this listener. */
-  public void setPackageMetricsRecorder(PackageMetricsRecorder recorder) {
-    this.recorder = recorder;
-  }
+    fun setPublishPackageMetricsInBep(publishPackageMetricsInBep: Boolean) {
+        this.publishPackageMetricsInBep = publishPackageMetricsInBep
+    }
 
-  public void setPublishPackageMetricsInBep(boolean publishPackageMetricsInBep) {
-    this.publishPackageMetricsInBep = publishPackageMetricsInBep;
-  }
+    fun getPublishPackageMetricsInBep(): Boolean {
+        return publishPackageMetricsInBep
+    }
 
-  public boolean getPublishPackageMetricsInBep() {
-    return publishPackageMetricsInBep;
-  }
+    /** Returns the PackageMetricsRecorder, if any, for the PackageLoadingListener.  */
+    fun getPackageMetricsRecorder(): PackageMetricsRecorder? {
+        return recorder
+    }
 
-  /** Returns the PackageMetricsRecorder, if any, for the PackageLoadingListener. */
-  public PackageMetricsRecorder getPackageMetricsRecorder() {
-    return recorder;
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        @GuardedBy("PackageMetricsPackageLoadingListener.class")
+        private var instance: PackageMetricsPackageLoadingListener? = null
+
+        @kotlin.jvm.Synchronized
+        fun getInstance(): PackageMetricsPackageLoadingListener {
+            if (instance == null) {
+                instance = PackageMetricsPackageLoadingListener()
+            }
+            return instance!!
+        }
+    }
 }

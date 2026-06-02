@@ -93,7 +93,7 @@ public class PrepareDepsOfPatternFunction implements SkyFunction {
 
     IgnoredSubdirectoriesValue repositoryIgnoredPrefixes =
         (IgnoredSubdirectoriesValue)
-            env.getValue(IgnoredSubdirectoriesValue.key(parsedPattern.getRepository()));
+            env.getValue(IgnoredSubdirectoriesValue.key(parsedPattern.repository));
     if (repositoryIgnoredPrefixes == null) {
       return null;
     }
@@ -163,7 +163,7 @@ public class PrepareDepsOfPatternFunction implements SkyFunction {
     PrepareDepsOfPatternException(TargetPattern pattern, ProcessPackageDirectoryException e) {
       super(
           "Preparing deps of pattern '"
-              + pattern.getOriginalPattern()
+              + pattern.originalPattern
               + "' failed: "
               + e.getMessage(),
           e);
@@ -173,7 +173,7 @@ public class PrepareDepsOfPatternFunction implements SkyFunction {
     public PrepareDepsOfPatternException(TargetPattern pattern, InconsistentFilesystemException e) {
       super(
           "Preparing deps of pattern '"
-              + pattern.getOriginalPattern()
+              + pattern.originalPattern
               + "' failed: "
               + e.getMessage(),
           e);

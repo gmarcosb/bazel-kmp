@@ -578,14 +578,14 @@ public final class TerminalTestResultNotifierTest {
   private void printFailedToBuildSummaries(TestSummaryFormat testSummaryFormat)
       throws LabelSyntaxException {
     ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    executionOptions.setTestSummary(testSummaryFormat);
+    executionOptions.testSummary = testSummaryFormat;
     when(optionsParsingResult.getOptions(ExecutionOptions.class)).thenReturn(executionOptions);
     TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
     testSummaryOptions.setVerboseSummary(true);
     when(optionsParsingResult.getOptions(TestSummaryOptions.class)).thenReturn(testSummaryOptions);
 
     ImmutableSortedSet.Builder<TestSummary> builder =
-        ImmutableSortedSet.orderedBy(Comparator.comparing(o -> o.getLabel().getName()));
+        ImmutableSortedSet.orderedBy(Comparator.comparing(o -> o.getLabel().name));
     for (int i = 0; i < TerminalTestResultNotifier.NUM_FAILED_TO_BUILD + 1; i++) {
       TestSummary testSummary = mock(TestSummary.class);
       when(testSummary.getTotalTestCases()).thenReturn(0);
@@ -612,7 +612,7 @@ public final class TerminalTestResultNotifierTest {
       TestSummarySpec testSummarySpec, TestSummaryFormat testSummaryFormat)
       throws LabelSyntaxException {
     ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    executionOptions.setTestSummary(testSummaryFormat);
+    executionOptions.testSummary = testSummaryFormat;
     when(optionsParsingResult.getOptions(ExecutionOptions.class)).thenReturn(executionOptions);
     TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
     testSummaryOptions.setVerboseSummary(true);

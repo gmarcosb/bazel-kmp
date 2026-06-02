@@ -11,59 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.Aborted
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.Aborted;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.Aborted.AbortReason;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.Collection;
-import javax.annotation.Nullable;
+/** A [BuildEvent] reporting an event not coming due to the build being aborted.  */
+class AbortedEvent private constructor(
+    id: BuildEventId?,
+    children: MutableCollection<BuildEventId?>?,
+    reason: AbortReason?,
+    description: String?,
+    label: com.google.devtools.build.lib.cmdline.Label?
+) : GenericBuildEvent(id, children) {
+    private val reason: AbortReason?
+    private val description: String?
+    private val label: com.google.devtools.build.lib.cmdline.Label?
 
-/** A {@link BuildEvent} reporting an event not coming due to the build being aborted. */
-public final class AbortedEvent extends GenericBuildEvent {
+    constructor(id: BuildEventId?, reason: AbortReason?, description: String?) : this(
+        id,
+        reason,
+        description,  /*label=*/
+        null
+    )
 
-  private final AbortReason reason;
-  private final String description;
-  @Nullable private final Label label;
+    constructor(
+        id: BuildEventId?,
+        reason: AbortReason?,
+        description: String?,
+        label: com.google.devtools.build.lib.cmdline.Label?
+    ) : this(id,  /*children=*/com.google.common.collect.ImmutableList.of<BuildEventId?>(), reason, description, label)
 
-  public AbortedEvent(BuildEventId id, AbortReason reason, String description) {
-    this(id, reason, description, /*label=*/ null);
-  }
+    constructor(
+        id: BuildEventId?,
+        children: MutableCollection<BuildEventId?>?,
+        reason: AbortReason?,
+        description: String?
+    ) : this(id, children, reason, description,  /*label=*/null)
 
-  public AbortedEvent(
-      BuildEventId id, AbortReason reason, String description, @Nullable Label label) {
-    this(id, /*children=*/ ImmutableList.of(), reason, description, label);
-  }
+    init {
+        this.reason = reason
+        this.description = description
+        this.label = label
+    }
 
-  public AbortedEvent(
-      BuildEventId id, Collection<BuildEventId> children, AbortReason reason, String description) {
-    this(id, children, reason, description, /*label=*/ null);
-  }
+    fun getLabel(): com.google.devtools.build.lib.cmdline.Label? {
+        return label
+    }
 
-  private AbortedEvent(
-      BuildEventId id,
-      Collection<BuildEventId> children,
-      AbortReason reason,
-      String description,
-      @Nullable Label label) {
-    super(id, children);
-    this.reason = reason;
-    this.description = description;
-    this.label = label;
-  }
-
-  @Nullable
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    return GenericBuildEvent.protoChaining(this)
-        .setAborted(Aborted.newBuilder().setReason(reason).setDescription(description).build())
-        .build();
-  }
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        return GenericBuildEvent.Companion.protoChaining(this)
+            .setAborted(Aborted.newBuilder().setReason(reason).setDescription(description).build())
+            .build()
+    }
 }

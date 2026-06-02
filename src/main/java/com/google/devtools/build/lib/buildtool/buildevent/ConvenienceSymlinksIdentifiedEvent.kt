@@ -11,51 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.ConvenienceSymlink;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import java.util.Collection;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
 
 /**
  * This event is fired from ExecutionTool#handleConvenienceSymlinks() whenever convenience symlinks
- * are managed. If the value {@link ConvenienceSymlinksMode.NORMAL}, LOG_ONLY, CLEAN is passed into
- * the build request option {@code --experimental_create_convenience_symlinks}, then this event will
- * be populated with convenience symlink entries. However, if {@link ConvenienceSymlinksMode.IGNORE}
+ * are managed. If the value [ConvenienceSymlinksMode.NORMAL], LOG_ONLY, CLEAN is passed into
+ * the build request option `--experimental_create_convenience_symlinks`, then this event will
+ * be populated with convenience symlink entries. However, if [ConvenienceSymlinksMode.IGNORE]
  * is passed, then this will be an empty event.
  */
-public final class ConvenienceSymlinksIdentifiedEvent implements BuildEvent {
-  private final ImmutableList<ConvenienceSymlink> convenienceSymlinks;
+class ConvenienceSymlinksIdentifiedEvent(convenienceSymlinks: ImmutableList<ConvenienceSymlink?>?) : BuildEvent {
+    private val convenienceSymlinks: ImmutableList<ConvenienceSymlink?>?
 
-  /** Construct the ConvenienceSymlinksIdentifiedEvent. */
-  public ConvenienceSymlinksIdentifiedEvent(ImmutableList<ConvenienceSymlink> convenienceSymlinks) {
-    this.convenienceSymlinks = convenienceSymlinks;
-  }
+    /** Construct the ConvenienceSymlinksIdentifiedEvent.  */
+    init {
+        this.convenienceSymlinks = convenienceSymlinks
+    }
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.convenienceSymlinksIdentifiedId();
-  }
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.convenienceSymlinksIdentifiedId()
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    val childrenEvents: MutableCollection<BuildEventId>
+        get() = ImmutableList.of<BuildEventId?>()
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.ConvenienceSymlinksIdentified convenienceSymlinksIdentified =
-        BuildEventStreamProtos.ConvenienceSymlinksIdentified.newBuilder()
-            .addAllConvenienceSymlinks(convenienceSymlinks)
-            .build();
-    return GenericBuildEvent.protoChaining(this)
-        .setConvenienceSymlinksIdentified(convenienceSymlinksIdentified)
-        .build();
-  }
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        val convenienceSymlinksIdentified: BuildEventStreamProtos.ConvenienceSymlinksIdentified? =
+            BuildEventStreamProtos.ConvenienceSymlinksIdentified.newBuilder()
+                .addAllConvenienceSymlinks(convenienceSymlinks)
+                .build()
+        return GenericBuildEvent.Companion.protoChaining(this)
+            .setConvenienceSymlinksIdentified(convenienceSymlinksIdentified)
+            .build()
+    }
 }

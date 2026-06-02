@@ -11,40 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import org.apache.commons.compress.compressors.xz.XZUtils
+import org.tukaani.xz.XZInputStream
+import java.io.BufferedInputStream
+import java.io.IOException
+import java.io.InputStream
 
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import org.apache.commons.compress.compressors.xz.XZCompressorInputStream;
-import org.apache.commons.compress.compressors.xz.XZUtils;
+/** Decompresses an xz (LZMA) compressed file.  */
+class XzFunction : CompressedFunction() {
+    /**
+     * Uses [XZCompressorInputStream] from Apache Commons Compress to decompress.
+     * 
+     * 
+     * Why not use [XZInputStream] which is used in [TarXzFunction]? The
+     * Apache Commons Compress libraries are wrappers around org.tukaani.xz.XZInputStream, so they
+     * should be the same. Since we also use [ ], we keep consistency and use the Apache
+     * wrapper consistently in this class.
+     * 
+     * @see [javadoc](https://commons.apache.org/proper/commons-compress/apidocs/org/apache/commons/compress/compressors/xz/package-summary.html)
+     */
+    @Throws(IOException::class)
+    override fun getDecompressorStream(compressedInputStream: BufferedInputStream?): InputStream {
+        return XZCompressorInputStream(compressedInputStream)
+    }
 
-/** Decompresses an xz (LZMA) compressed file. */
-public class XzFunction extends CompressedFunction {
-  public static final Decompressor INSTANCE = new XzFunction();
+    override fun getUncompressedFileName(`in`: InputStream?, compressedFileName: String?): String? {
+        return XZUtils.getUncompressedFileName(compressedFileName)
+    }
 
-  /**
-   * Uses {@link XZCompressorInputStream} from Apache Commons Compress to decompress.
-   *
-   * <p>Why not use {@link org.tukaani.xz.XZInputStream} which is used in {@link TarXzFunction}? The
-   * Apache Commons Compress libraries are wrappers around org.tukaani.xz.XZInputStream, so they
-   * should be the same. Since we also use {@link
-   * org.apache.commons.compress.compressors.xz.XZUtils}, we keep consistency and use the Apache
-   * wrapper consistently in this class.
-   *
-   * @see <a
-   *     href="https://commons.apache.org/proper/commons-compress/apidocs/org/apache/commons/compress/compressors/xz/package-summary.html">javadoc</a>
-   */
-  @Override
-  protected InputStream getDecompressorStream(BufferedInputStream compressedInputStream)
-      throws IOException {
-    return new XZCompressorInputStream(compressedInputStream);
-  }
-
-  @Override
-  protected String getUncompressedFileName(InputStream in, String compressedFileName) {
-    return XZUtils.getUncompressedFileName(compressedFileName);
-  }
+    companion object {
+        val INSTANCE: DecompressorValue.Decompressor = XzFunction()
+    }
 }

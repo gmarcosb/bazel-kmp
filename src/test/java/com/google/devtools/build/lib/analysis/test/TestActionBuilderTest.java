@@ -385,12 +385,12 @@ public class TestActionBuilderTest extends BuildViewTestCase {
     TestRunnerAction testAction =
         (TestRunnerAction) getGeneratingAction(Iterables.get(testStatusList, 0));
     Integer timeout = testAction.getTestProperties().getTimeout().getTimeoutSeconds();
-    assertThat(timeout).isEqualTo(TestTimeout.SHORT.getTimeoutSeconds());
+    assertThat(timeout).isEqualTo(TestTimeout.SHORT.timeoutSeconds);
 
     testStatusList = getTestStatusArtifacts("//javatests/timeouts:small_with_timeout");
     testAction = (TestRunnerAction) getGeneratingAction(Iterables.get(testStatusList, 0));
     timeout = testAction.getTestProperties().getTimeout().getTimeoutSeconds();
-    assertThat(timeout).isEqualTo(TestTimeout.LONG.getTimeoutSeconds());
+    assertThat(timeout).isEqualTo(TestTimeout.LONG.timeoutSeconds);
   }
 
   @Test

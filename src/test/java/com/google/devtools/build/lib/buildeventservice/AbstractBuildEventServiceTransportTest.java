@@ -146,8 +146,8 @@ public abstract class AbstractBuildEventServiceTransportTest extends FoundationT
   @Before
   public void setUp() {
     when(buildRequest.getId()).thenReturn(UUID.fromString(BUILD_REQUEST_ID));
-    when(buildRequest.getCommandName()).thenReturn(COMMAND_NAME);
-    when(buildRequest.getOptionsDescription()).thenReturn("");
+    when(buildRequest.commandName).thenReturn(COMMAND_NAME);
+    when(buildRequest.optionsDescription).thenReturn("");
 
     fakeBesServer.startRpcServer();
   }
@@ -954,7 +954,7 @@ public abstract class AbstractBuildEventServiceTransportTest extends FoundationT
 
     BuildEventServiceOptions besOptions = Options.getDefaults(BuildEventServiceOptions.class);
     besOptions.setBesTimeout(closeTimeout);
-    besOptions.setBesLifecycleEvents(publishLifecycleEvents);
+    besOptions.besLifecycleEvents = publishLifecycleEvents;
 
     return new BuildEventServiceTransport.Builder()
         .besOptions(besOptions)

@@ -11,30 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.collect.ImmutableMap;
-
-import java.util.Map;
+package com.google.devtools.build.lib.analysis
 
 /**
  * This event is fired once the global make environment is available.
  */
-public final class MakeEnvironmentEvent {
+class MakeEnvironmentEvent(makeEnv: MutableMap<String?, String?>) {
+    private val makeEnvMap: MutableMap<String?, String?>
 
-  private final Map<String, String> makeEnvMap;
+    /**
+     * Construct the event.
+     */
+    init {
+        makeEnvMap = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(makeEnv)
+    }
 
-  /**
-   * Construct the event.
-   */
-  public MakeEnvironmentEvent(Map<String, String> makeEnv) {
-    makeEnvMap = ImmutableMap.copyOf(makeEnv);
-  }
-
-  /**
-   * Returns make environment variable names and values as a map.
-   */
-  public Map<String, String> getMakeEnvMap() {
-    return makeEnvMap;
-  }
+    /**
+     * Returns make environment variable names and values as a map.
+     */
+    fun getMakeEnvMap(): MutableMap<String?, String?> {
+        return makeEnvMap
+    }
 }

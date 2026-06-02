@@ -11,111 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.ShowSubcommands;
-import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.common.options.OptionsProvider;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionContext
 
 /**
  * The Executor class provides a dynamic abstraction of the various actual primitive system
  * operations that might be performed during a build step.
- *
- * <p>Constructions of this class might perform distributed execution, "virtual" execution for
+ * 
+ * 
+ * Constructions of this class might perform distributed execution, "virtual" execution for
  * testing purposes, or just print out the sequence of commands that would be executed, like Make's
  * "-n" option.
  */
-@ThreadSafe
-public final class BlazeExecutor implements Executor {
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class BlazeExecutor(
+    fileSystem: com.google.devtools.build.lib.vfs.FileSystem?,
+    execRoot: com.google.devtools.build.lib.vfs.Path?,
+    reporter: com.google.devtools.build.lib.events.Reporter?,
+    clock: com.google.devtools.build.lib.clock.Clock?,
+    bugReporter: BugReporter?,
+    options: com.google.devtools.common.options.OptionsProvider,
+    actionContextRegistry: ModuleActionContextRegistry,
+    spawnStrategyRegistry: SpawnStrategyRegistry
+) : Executor {
+    private val showSubcommands: ShowSubcommands?
+    private val fileSystem: com.google.devtools.build.lib.vfs.FileSystem?
+    private val execRoot: com.google.devtools.build.lib.vfs.Path?
+    private val clock: com.google.devtools.build.lib.clock.Clock?
+    private val bugReporter: BugReporter?
+    private val options: com.google.devtools.common.options.OptionsProvider
+    private val actionContextRegistry: ActionContext.ActionContextRegistry
 
-  private final ShowSubcommands showSubcommands;
-  private final FileSystem fileSystem;
-  private final Path execRoot;
-  private final Clock clock;
-  private final BugReporter bugReporter;
-  private final OptionsProvider options;
-  private final ActionContext.ActionContextRegistry actionContextRegistry;
+    /**
+     * Constructs an Executor, bound to a specified output base path, and which will use the specified
+     * reporter to announce SUBCOMMAND events, the given event bus to delegate events and the given
+     * output streams for streaming output. The list of strategy implementation classes is used to
+     * construct instances of the strategies mapped by their declared abstract type. This list is
+     * uniquified before using. Each strategy instance is created with a reference to this Executor as
+     * well as the given options object.
+     * 
+     * 
+     * Don't forget to call startBuildRequest() and stopBuildRequest() for each request, and
+     * shutdown() when you're done with this executor.
+     */
+    init {
+        val executionOptions: ExecutionOptions = com.google.common.base.Preconditions.checkNotNull<ExecutionOptions>(
+            options.getOptions<ExecutionOptions?>(ExecutionOptions::class.java)
+        )
+        this.showSubcommands = executionOptions.getShowSubcommands()
+        this.fileSystem = fileSystem
+        this.execRoot = execRoot
+        this.clock = clock
+        this.bugReporter = bugReporter
+        this.options = options
+        this.actionContextRegistry = actionContextRegistry
 
-  /**
-   * Constructs an Executor, bound to a specified output base path, and which will use the specified
-   * reporter to announce SUBCOMMAND events, the given event bus to delegate events and the given
-   * output streams for streaming output. The list of strategy implementation classes is used to
-   * construct instances of the strategies mapped by their declared abstract type. This list is
-   * uniquified before using. Each strategy instance is created with a reference to this Executor as
-   * well as the given options object.
-   *
-   * <p>Don't forget to call startBuildRequest() and stopBuildRequest() for each request, and
-   * shutdown() when you're done with this executor.
-   */
-  public BlazeExecutor(
-      FileSystem fileSystem,
-      Path execRoot,
-      Reporter reporter,
-      Clock clock,
-      BugReporter bugReporter,
-      OptionsProvider options,
-      ModuleActionContextRegistry actionContextRegistry,
-      SpawnStrategyRegistry spawnStrategyRegistry) {
-    ExecutionOptions executionOptions = checkNotNull(options.getOptions(ExecutionOptions.class));
-    this.showSubcommands = executionOptions.getShowSubcommands();
-    this.fileSystem = fileSystem;
-    this.execRoot = execRoot;
-    this.clock = clock;
-    this.bugReporter = bugReporter;
-    this.options = options;
-    this.actionContextRegistry = actionContextRegistry;
+        spawnStrategyRegistry.logSpawnStrategies()
+        actionContextRegistry.logActionContexts()
 
-    spawnStrategyRegistry.logSpawnStrategies();
-    actionContextRegistry.logActionContexts();
+        actionContextRegistry.notifyUsed()
+        spawnStrategyRegistry.notifyUsed(actionContextRegistry)
+    }
 
-    actionContextRegistry.notifyUsed();
-    spawnStrategyRegistry.notifyUsed(actionContextRegistry);
-  }
+    public override fun getFileSystem(): com.google.devtools.build.lib.vfs.FileSystem? {
+        return fileSystem
+    }
 
-  @Override
-  public FileSystem getFileSystem() {
-    return fileSystem;
-  }
+    public override fun getExecRoot(): com.google.devtools.build.lib.vfs.Path? {
+        return execRoot
+    }
 
-  @Override
-  public Path getExecRoot() {
-    return execRoot;
-  }
+    public override fun getClock(): com.google.devtools.build.lib.clock.Clock? {
+        return clock
+    }
 
-  @Override
-  public Clock getClock() {
-    return clock;
-  }
+    public override fun getBugReporter(): BugReporter? {
+        return bugReporter
+    }
 
-  @Override
-  public BugReporter getBugReporter() {
-    return bugReporter;
-  }
+    public override fun reportsSubcommands(): ShowSubcommands? {
+        return showSubcommands
+    }
 
-  @Override
-  public ShowSubcommands reportsSubcommands() {
-    return showSubcommands;
-  }
+    public override fun <T : ActionContext?> getContext(type: java.lang.Class<T?>?): T? {
+        return actionContextRegistry.getContext(type)
+    }
 
-  @Override
-  @Nullable
-  public <T extends ActionContext> T getContext(Class<T> type) {
-    return actionContextRegistry.getContext(type);
-  }
-
-  /** Returns the options associated with the execution. */
-  @Override
-  public OptionsProvider getOptions() {
-    return options;
-  }
+    /** Returns the options associated with the execution.  */
+    public override fun getOptions(): com.google.devtools.common.options.OptionsProvider {
+        return options
+    }
 }

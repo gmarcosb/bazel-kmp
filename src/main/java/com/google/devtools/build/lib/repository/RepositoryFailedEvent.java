@@ -46,7 +46,7 @@ public final class RepositoryFailedEvent implements BuildEvent {
 
   @Override
   public BuildEventId getEventId() {
-    String strippedRepoName = repo.getName();
+    String strippedRepoName = repo.name;
     try {
       Label label = Label.create(EXTERNAL_PACKAGE_IDENTIFIER, strippedRepoName);
       return BuildEventIdUtil.unconfiguredLabelId(label);

@@ -11,19 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-/** This event is fired just after target pattern evaluation is completed. */
-public class TargetParsingPhaseTimeEvent implements Postable {
-  private final long timeInMs;
+/** This event is fired just after target pattern evaluation is completed.  */
+class TargetParsingPhaseTimeEvent(timeInMs: Long) : Postable {
+    private val timeInMs: Long
 
-  public TargetParsingPhaseTimeEvent(long timeInMs) {
-    this.timeInMs = timeInMs;
-  }
+    init {
+        this.timeInMs = timeInMs
+    }
 
-  public long getTimeInMs() {
-    return timeInMs;
-  }
+    fun getTimeInMs(): Long {
+        return timeInMs
+    }
 }

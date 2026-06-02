@@ -11,55 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.rules.genrule;
+package com.google.devtools.build.lib.bazel.rules.genrule
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.TRISTATE;
-
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.analysis.config.ExecutionTransitionFactory;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.TriState;
-import com.google.devtools.build.lib.rules.genrule.GenRuleBaseRule;
+import com.google.devtools.build.lib.analysis.RuleDefinition
+import com.google.devtools.build.lib.cmdline.Label
+import com.google.devtools.build.lib.packages.Attribute
+import com.google.devtools.build.lib.packages.TriState
 
 /**
  * Rule definition for genrule for Bazel.
  */
-public final class BazelGenRuleRule implements RuleDefinition {
-  private static final String GENRULE_SETUP_LABEL = "//tools/genrule:genrule-setup.sh";
-
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    /* <!-- #BLAZE_RULE(genrule).NAME -->
+class BazelGenRuleRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment): RuleClass {
+        /* <!-- #BLAZE_RULE(genrule).NAME -->
     <br/>You may refer to this rule by name in the
     <code>srcs</code> or <code>deps</code> section of other <code>BUILD</code>
     rules. If the rule generates source files, you should use the
     <code>srcs</code> attribute.
     <!-- #END_BLAZE_RULE.NAME --> */
-    return builder
-        .setOutputToGenfiles()
-        .add(
-            attr("$genrule_setup", LABEL)
-                .cfg(ExecutionTransitionFactory.createFactory())
-                .value(env.getToolsLabel(GENRULE_SETUP_LABEL)))
-        .add(attr("stamp", TRISTATE).value(TriState.NO))
-        .build();
-  }
+        return builder
+            .setOutputToGenfiles()
+            .add<TYPE?>(
+                Attribute.attr<Label?>("\$genrule_setup", BuildType.LABEL)
+                    .cfg(ExecutionTransitionFactory.createFactory())
+                    .value(env.getToolsLabel(GENRULE_SETUP_LABEL))
+            )
+            .add<TriState?>(Attribute.attr<TriState?>("stamp", BuildType.TRISTATE).value(TriState.NO))
+            .build()
+    }
 
-  @Override
-  public RuleDefinition.Metadata getMetadata() {
-    return RuleDefinition.Metadata.builder()
-        .name("genrule")
-        .ancestors(GenRuleBaseRule.class)
-        .factoryClass(BazelGenRule.class)
-        .build();
-  }
+    val metadata: RuleDefinition.Metadata
+        get() = RuleDefinition.Metadata.builder()
+            .name("genrule")
+            .ancestors(GenRuleBaseRule::class.java)
+            .factoryClass(BazelGenRule::class.java)
+            .build()
 
-}
-
-/*<!-- #BLAZE_RULE (NAME = genrule, FAMILY = General)[GENERIC_RULE] -->
+    companion object {
+        private const val GENRULE_SETUP_LABEL = "//tools/genrule:genrule-setup.sh"
+    }
+} /*<!-- #BLAZE_RULE (NAME = genrule, FAMILY = General)[GENERIC_RULE] -->
 
 <p>A <code>genrule</code> generates one or more files using a user-defined Bash command.</p>
 
@@ -237,3 +228,4 @@ genrule(
 </pre>
 
 <!-- #END_BLAZE_RULE -->*/
+

@@ -98,6 +98,6 @@ final class GenQueryPackageProvider implements PackageProvider, CachingPackageLo
     // TODO(b/123795023): we should have the data here but we don't have all packages for Starlark
     //  loads present here.
     Package pkg = pkgMap.get(packageName);
-    return pkg == null ? null : pkg.getBuildFileLabel().getName();
+    return pkg == null ? null : pkg.getBuildFileLabel().name;
   }
 }

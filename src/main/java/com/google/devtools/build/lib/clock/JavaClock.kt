@@ -11,26 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.clock;
+package com.google.devtools.build.lib.clock
 
 /**
- * Class provides a simple clock implementation used by the tool. By default it uses {@link System}
+ * Class provides a simple clock implementation used by the tool. By default it uses [System]
  * class.
  */
-public class JavaClock implements Clock {
+class JavaClock : Clock {
+    override fun currentTimeMillis(): Long {
+        return System.currentTimeMillis()
+    }
 
-  public JavaClock() {
-  }
-
-  @Override
-  public long currentTimeMillis() {
-    return System.currentTimeMillis();
-  }
-
-  @Override
-  public long nanoTime() {
-    // Note that some JVM implementations of System#nanoTime don't yield a non-decreasing
-    // sequence of values.
-    return System.nanoTime();
-  }
+    override fun nanoTime(): Long {
+        // Note that some JVM implementations of System#nanoTime don't yield a non-decreasing
+        // sequence of values.
+        return System.nanoTime()
+    }
 }

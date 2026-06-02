@@ -562,7 +562,7 @@ public final class CppConfiguration extends Fragment
     if (stripBinaries) {
       boolean warn = cppOptions.getCoptList().contains("-g");
       for (PerLabelOptions opt : cppOptions.getPerFileCopts()) {
-        warn |= opt.getOptions().contains("-g");
+        warn |= opt.options.contains("-g");
       }
       if (warn) {
         reporter.handle(

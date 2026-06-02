@@ -202,7 +202,7 @@ public class BazelRuleClassProviderTest extends BuildViewTestCase {
         AnalysisTestUtil.execOptions(options, skyframeExecutor, reporter)
             .get(StrictActionEnvOptions.class);
 
-    assertThat(h.getUseStrictActionEnv()).isTrue();
+    assertThat(h.useStrictActionEnv).isTrue();
   }
 
   @Test

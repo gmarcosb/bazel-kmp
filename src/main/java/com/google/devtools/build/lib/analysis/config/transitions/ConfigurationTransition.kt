@@ -11,93 +11,97 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config.transitions
 
-package com.google.devtools.build.lib.analysis.config.transitions;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.RequiredConfigFragmentsProvider;
-import com.google.devtools.build.lib.analysis.config.BuildOptionDetails;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.events.EventHandler;
-import java.util.Map;
+import com.google.devtools.build.lib.analysis.config.BuildOptionDetails
 
 /**
  * A configuration transition.
  */
-public interface ConfigurationTransition {
-  /**
-   * A designated key string for patch transitions. See {@link ConfigurationTransition#apply} for
-   * its usage.
-   */
-  String PATCH_TRANSITION_KEY = "";
+interface ConfigurationTransition {
+    /**
+     * Declares the [FragmentOptions] this transition may read.
+     * 
+     * 
+     * Blaze throws an [IllegalArgumentException] if [.apply] is called on an options
+     * fragment that isn't declared here.
+     */
+    fun requiresOptionFragments(): com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?>? {
+        return com.google.common.collect.ImmutableSet.of<java.lang.Class<out FragmentOptions?>?>()
+    }
 
-  /**
-   * Declares the {@link FragmentOptions} this transition may read.
-   *
-   * <p>Blaze throws an {@link IllegalArgumentException} if {@link #apply} is called on an options
-   * fragment that isn't declared here.
-   */
-  default ImmutableSet<Class<? extends FragmentOptions>> requiresOptionFragments() {
-    return ImmutableSet.of();
-  }
+    /**
+     * Adds required configuration fragments to the given [ ].
+     * 
+     * 
+     * A [BuildOptionDetails] instance is provided for Starlark transitions, which need to
+     * map required options to their [FragmentOptions].
+     * 
+     * 
+     * Non-Starlark transitions should override [.requiresOptionFragments] and keep the
+     * default implementation of this method.
+     */
+    fun addRequiredFragments(
+        requiredFragments: RequiredConfigFragmentsProvider.Builder, optionDetails: BuildOptionDetails?
+    ) {
+        requiredFragments.addOptionsClasses(requiresOptionFragments())
+    }
 
-  /**
-   * Adds required configuration fragments to the given {@link
-   * RequiredConfigFragmentsProvider.Builder}.
-   *
-   * <p>A {@link BuildOptionDetails} instance is provided for Starlark transitions, which need to
-   * map required options to their {@link FragmentOptions}.
-   *
-   * <p>Non-Starlark transitions should override {@link #requiresOptionFragments} and keep the
-   * default implementation of this method.
-   */
-  default void addRequiredFragments(
-      RequiredConfigFragmentsProvider.Builder requiredFragments, BuildOptionDetails optionDetails) {
-    requiredFragments.addOptionsClasses(requiresOptionFragments());
-  }
+    /**
+     * Returns the map of `BuildOptions` after applying this transition. The returned map keys
+     * are only used for dealing with split transitions. Patch transitions, including internal, native
+     * Patch transitions, should return a single entry map with key `PATCH_TRANSITION_KEY`.
+     * 
+     * 
+     * Blaze throws an [IllegalArgumentException] if this method reads any options fragment
+     * not declared in [.requiresOptionFragments].
+     * 
+     * 
+     * Returning an empty or null map triggers a [RuntimeException].
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun apply(
+        buildOptions: BuildOptionsView?,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler?
+    ): MutableMap<String?, BuildOptions?>?
 
-  /**
-   * Returns the map of {@code BuildOptions} after applying this transition. The returned map keys
-   * are only used for dealing with split transitions. Patch transitions, including internal, native
-   * Patch transitions, should return a single entry map with key {@code PATCH_TRANSITION_KEY}.
-   *
-   * <p>Blaze throws an {@link IllegalArgumentException} if this method reads any options fragment
-   * not declared in {@link #requiresOptionFragments}.
-   *
-   * <p>Returning an empty or null map triggers a {@link RuntimeException}.
-   */
-  Map<String, BuildOptions> apply(BuildOptionsView buildOptions, EventHandler eventHandler)
-      throws InterruptedException;
+    /**
+     * We want to keep the number of transition interfaces no larger than what's necessary to maintain
+     * a clear configuration API.
+     * 
+     * 
+     * This method provides a speed bump against creating new interfaces too casually. While we
+     * could provide stronger enforcement by making [ConfigurationTransition] an abstract class
+     * with a limited access constructor, keeping it as an interface supports defining transitions
+     * with lambdas.
+     * 
+     * 
+     * If you're considering adding a new override, contact bazel-discuss@googlegroups.com to
+     * discuss.
+     */
+    @Suppress("unused")
+    fun reasonForOverride(): String?
 
-  /**
-   * We want to keep the number of transition interfaces no larger than what's necessary to maintain
-   * a clear configuration API.
-   *
-   * <p>This method provides a speed bump against creating new interfaces too casually. While we
-   * could provide stronger enforcement by making {@link ConfigurationTransition} an abstract class
-   * with a limited access constructor, keeping it as an interface supports defining transitions
-   * with lambdas.
-   *
-   * <p>If you're considering adding a new override, contact bazel-discuss@googlegroups.com to
-   * discuss.
-   */
-  @SuppressWarnings("unused")
-  String reasonForOverride();
+    val name: String?
+        get() = this.javaClass.getSimpleName()
 
-  default String getName() {
-    return this.getClass().getSimpleName();
-  }
+    /** Allows the given [Visitor] to inspect this transition.  */
+    @Throws(E::class)
+    fun <E : java.lang.Exception?> visit(visitor: Visitor<E?>) {
+        visitor.accept(this)
+    }
 
-  /** Allows the given {@link Visitor} to inspect this transition. */
-  default <E extends Exception> void visit(Visitor<E> visitor) throws E {
-    visitor.accept(this);
-  }
+    /** Helper object that can be used to inspect [ConfigurationTransition] instances.  */
+    fun interface Visitor<E : java.lang.Exception?> {
+        @Throws(E::class)
+        fun accept(transition: ConfigurationTransition?)
+    }
 
-  /** Helper object that can be used to inspect {@link ConfigurationTransition} instances. */
-  @FunctionalInterface
-  interface Visitor<E extends Exception> {
-    void accept(ConfigurationTransition transition) throws E;
-  }
+    companion object {
+        /**
+         * A designated key string for patch transitions. See [ConfigurationTransition.apply] for
+         * its usage.
+         */
+        const val PATCH_TRANSITION_KEY: String = ""
+    }
 }

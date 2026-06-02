@@ -11,22 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
 /**
- * Helper for extracting a key of type {@code K} from an element of type {@code T}.
- *
- * <p>Depending on the choice of {@code K}, this enables potential memory optimizations.
+ * Helper for extracting a key of type `K` from an element of type `T`.
+ * 
+ * 
+ * Depending on the choice of `K`, this enables potential memory optimizations.
  */
 @ThreadSafe
-public interface KeyExtractor<T, K> {
-  /** Extracts an unique key that can be used to dedupe the given {@code element}. */
-  K extractKey(T element);
+interface KeyExtractor<T, K> {
+    /** Extracts an unique key that can be used to dedupe the given `element`.  */
+    fun extractKey(element: T?): K?
 
-  static <T1, T2, K> KeyExtractor<T1, K> compose(
-      KeyExtractor<T1, ? extends T2> inner, KeyExtractor<T2, K> outer) {
-    return t1 -> outer.extractKey(inner.extractKey(t1));
-  }
+    companion object {
+        fun <T1, T2, K> compose(
+            inner: KeyExtractor<T1?, out T2?>, outer: KeyExtractor<T2?, K?>
+        ): KeyExtractor<T1?, K?> {
+            return KeyExtractor { t1: T1? -> outer.extractKey(inner.extractKey(t1)) }
+        }
+    }
 }

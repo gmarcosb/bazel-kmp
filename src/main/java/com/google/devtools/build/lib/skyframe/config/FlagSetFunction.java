@@ -492,7 +492,7 @@ public final class FlagSetFunction implements SkyFunction {
             (PackageValue)
                 evaluated.getOrThrow(
                     flagLabel.getKey().getPackageIdentifier(), NoSuchPackageException.class);
-        var target = pkg.getPackage().getTarget(flagLabel.getKey().getName());
+        var target = pkg.getPackage().getTarget(flagLabel.getKey().name);
         if (!target.isRule() || !((Rule) target).isBuildSetting()) {
           badFlags.add(flagLabel.getValue());
         }

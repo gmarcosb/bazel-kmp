@@ -11,67 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsCache;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.RunUnder;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
 /**
- * Contains the pure logic for trimming test configuration from non-test targets that backs {@link
- * com.google.devtools.build.lib.analysis.test.TestTrimmingTransitionFactory}.
+ * Contains the pure logic for trimming test configuration from non-test targets that backs [ ].
  */
-public final class TestTrimmingLogic {
+object TestTrimmingLogic {
+    val REQUIRED_FRAGMENTS: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> =
+        com.google.common.collect.ImmutableSet.of<E?>(
+            CoreOptions::class.java,
+            com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions::class.java
+        )
 
-  static final ImmutableSet<Class<? extends FragmentOptions>> REQUIRED_FRAGMENTS =
-      ImmutableSet.of(CoreOptions.class, TestOptions.class);
-
-  // This cache is to prevent major slowdowns when using --trim_test_configuration. This
-  // transition is always invoked on every target in the top-level invocation. Thus, a wide
-  // invocation, like //..., will cause the transition to be invoked on a large number of targets
-  // leading to significant performance degradation. (Notably, the transition itself is somewhat
-  // fast; however, the post-processing of the BuildOptions into the actual BuildConfigurationValue
-  // takes a significant amount of time).
-  //
-  // Test any caching changes for performance impact in a longwide scenario with
-  // --trim_test_configuration on versus off.
-  // LINT.IfChange
-  private static final BuildOptionsCache<Boolean> CACHE =
-      new BuildOptionsCache<>(
-          (options, unused, unusedNonEventHandler) -> {
-            BuildOptions.Builder builder = options.underlying().toBuilder();
-            builder.removeFragmentOptions(TestOptions.class);
+    // This cache is to prevent major slowdowns when using --trim_test_configuration. This
+    // transition is always invoked on every target in the top-level invocation. Thus, a wide
+    // invocation, like //..., will cause the transition to be invoked on a large number of targets
+    // leading to significant performance degradation. (Notably, the transition itself is somewhat
+    // fast; however, the post-processing of the BuildOptions into the actual BuildConfigurationValue
+    // takes a significant amount of time).
+    //
+    // Test any caching changes for performance impact in a longwide scenario with
+    // --trim_test_configuration on versus off.
+    // LINT.IfChange
+    private val CACHE: BuildOptionsCache<Boolean?> = BuildOptionsCache(
+        { options, unused, unusedNonEventHandler ->
+            val builder: BuildOptions.Builder = options.underlying().toBuilder()
+            builder.removeFragmentOptions(com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions::class.java)
             // Only the label of the --run_under target (if any) needs to be part of the
             // configuration for non-test targets, all other information is directly obtained
             // from the options in RunCommand.
-            CoreOptions coreOptions = builder.getFragmentOptions(CoreOptions.class);
+            val coreOptions: CoreOptions = builder.getFragmentOptions(CoreOptions::class.java)
             coreOptions.setRunUnder(
-                RunUnder.trimForNonTestConfiguration(coreOptions.getRunUnder()));
-            return builder.build();
-          });
+                RunUnder.trimForNonTestConfiguration(coreOptions.getRunUnder())
+            )
+            builder.build()
+        })
 
-  // LINT.ThenChange(TestConfiguration.java)
-
-  /** Returns a new {@link BuildOptions} instance with test configuration removed. */
-  public static BuildOptions trim(BuildOptions buildOptions) {
-    return trim(new BuildOptionsView(buildOptions, REQUIRED_FRAGMENTS));
-  }
-
-  /** Returns a new {@link BuildOptions} instance with test configuration removed. */
-  static BuildOptions trim(BuildOptionsView buildOptions) {
-    try {
-      return CACHE.applyTransition(buildOptions, Boolean.TRUE, /* eventHandler= */ null);
-    } catch (InterruptedException e) {
-      // The transition logic doesn't throw InterruptedException.
-      throw new IllegalStateException(e);
+    // LINT.ThenChange(TestConfiguration.java)
+    /** Returns a new [BuildOptions] instance with test configuration removed.  */
+    fun trim(buildOptions: BuildOptions?): BuildOptions {
+        return TestTrimmingLogic.trim(BuildOptionsView(buildOptions, REQUIRED_FRAGMENTS))
     }
-  }
 
-  private TestTrimmingLogic() {}
+    /** Returns a new [BuildOptions] instance with test configuration removed.  */
+    fun trim(buildOptions: BuildOptionsView?): BuildOptions {
+        try {
+            return CACHE.applyTransition(buildOptions, java.lang.Boolean.TRUE,  /* eventHandler= */null)
+        } catch (e: java.lang.InterruptedException) {
+            // The transition logic doesn't throw InterruptedException.
+            throw java.lang.IllegalStateException(e)
+        }
+    }
 }

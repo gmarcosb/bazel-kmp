@@ -11,186 +11,185 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
+import com.google.devtools.build.lib.buildeventstream.BuildEventContext.OutputGroupFileMode
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext.OutputGroupFileMode;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters.AssignmentConverter;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-
-/** Options used to configure the build event protocol. */
-@OptionsClass
-public abstract class BuildEventProtocolOptions extends OptionsBase {
-
-  @Option(
-      name = "legacy_important_outputs",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+/** Options used to configure the build event protocol.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class BuildEventProtocolOptions : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "legacy_important_outputs",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Use this to suppress generation of the legacy `important_outputs` field in the
           `TargetComplete` event. `important_outputs` are required for Bazel to ResultStore/BTX
           integration.
-          """)
-  public abstract boolean getLegacyImportantOutputs();
+          
+          """.trimIndent()
+    )
+    abstract val legacyImportantOutputs: Boolean
 
-  @Option(
-      name = "experimental_build_event_upload_strategy",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_build_event_upload_strategy",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Selects how to upload artifacts referenced in the build event protocol. In Bazel
           the valid options include `local` and `remote`. The default value is `local`.
-          """)
-  public abstract String getBuildEventUploadStrategy();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventUploadStrategy: String?
 
-  @Option(
-      name = "build_event_upload_max_retries",
-      oldName = "experimental_build_event_upload_max_retries",
-      defaultValue = "4",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help = "The maximum number of times Bazel should retry uploading a build event.")
-  public abstract int getBesUploadMaxRetries();
+    @get:com.google.devtools.common.options.Option(
+        name = "build_event_upload_max_retries",
+        oldName = "experimental_build_event_upload_max_retries",
+        defaultValue = "4",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = "The maximum number of times Bazel should retry uploading a build event."
+    )
+    abstract val besUploadMaxRetries: Int
 
-  @Option(
-      name = "experimental_build_event_upload_retry_minimum_delay",
-      defaultValue = "1s",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help =
-          "Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent:"
-              + " 1.6)")
-  public abstract Duration getBesUploadRetryInitialDelay();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_build_event_upload_retry_minimum_delay",
+        defaultValue = "1s",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = ("Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent:"
+                + " 1.6)")
+    )
+    abstract val besUploadRetryInitialDelay: java.time.Duration?
 
-  @Option(
-      name = "experimental_stream_log_file_uploads",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "Stream log file uploads directly to the remote storage rather than writing them to"
-              + " disk.")
-  public abstract boolean getStreamingLogFileUploads();
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_stream_log_file_uploads",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = ("Stream log file uploads directly to the remote storage rather than writing them to"
+                + " disk.")
+    )
+    abstract val streamingLogFileUploads: Boolean
 
-  @Option(
-      name = "experimental_build_event_expand_filesets",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help = "If true, expand Filesets in the BEP when presenting output files.")
-  public abstract boolean getExpandFilesets();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_build_event_expand_filesets",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = "If true, expand Filesets in the BEP when presenting output files."
+    )
+    abstract val expandFilesets: Boolean
 
-  @Option(
-      name = "experimental_bep_target_summary",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Whether to publish `TargetSummary` events.")
-  public abstract boolean getPublishTargetSummary();
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_bep_target_summary",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = "Whether to publish `TargetSummary` events."
+    )
+    abstract val publishTargetSummary: Boolean
 
-  @Option(
-      name = "experimental_run_bep_event_include_residue",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "Whether to include the command-line residue in run build events which could contain the"
-              + " residue. By default, the residue is not included in run command build events that"
-              + " could contain the residue.")
-  public abstract boolean getIncludeResidueInRunBepEvent();
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_run_bep_event_include_residue",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = ("Whether to include the command-line residue in run build events which could contain the"
+                + " residue. By default, the residue is not included in run command build events that"
+                + " could contain the residue.")
+    )
+    abstract val includeResidueInRunBepEvent: Boolean
 
-  /** Simple String to {@link OutputGroupFileMode} Converter. */
-  static final class OutputGroupFileModeConverter extends EnumConverter<OutputGroupFileMode> {
-    public OutputGroupFileModeConverter() {
-      super(OutputGroupFileMode.class, "Output group file reporting mode");
+    /** Simple String to [OutputGroupFileMode] Converter.  */
+    internal class OutputGroupFileModeConverter :
+        com.google.devtools.common.options.EnumConverter<OutputGroupFileMode?>(
+            OutputGroupFileMode::class.java,
+            "Output group file reporting mode"
+        )
+
+    /**
+     * Options converter that parses the assignment of an [OutputGroupFileMode] for an output
+     * group by name, e.g. `default=fileset` or `baseline.lcov=inline`.
+     */
+    internal class BuildEventOutputGroupModeConverter
+
+        :
+        com.google.devtools.common.options.Converter.Contextless<MutableMap.MutableEntry<String?, OutputGroupFileMode?>?>() {
+        private val assignmentConverter: com.google.devtools.common.options.Converters.AssignmentConverter =
+            com.google.devtools.common.options.Converters.AssignmentConverter()
+        private val modeConverter = OutputGroupFileModeConverter()
+
+        val typeDescription: String
+            get() = "an output group name followed by an OutputGroupFileMode, e.g. default=both"
+
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): MutableMap.MutableEntry<String?, OutputGroupFileMode?> {
+            val entry: MutableMap.MutableEntry<String?, String?> = assignmentConverter.convert(input)
+            val mode: OutputGroupFileMode? = modeConverter.convert(entry.getValue())
+            return com.google.common.collect.Maps.immutableEntry<String?, OutputGroupFileMode?>(entry.getKey(), mode)
+        }
     }
-  }
 
-  /**
-   * Options converter that parses the assignment of an {@link OutputGroupFileMode} for an output
-   * group by name, e.g. {@code default=fileset} or {@code baseline.lcov=inline}.
-   */
-  static final class BuildEventOutputGroupModeConverter
-      extends Converter.Contextless<Map.Entry<String, OutputGroupFileMode>> {
-    private final AssignmentConverter assignmentConverter = new AssignmentConverter();
-    private final OutputGroupFileModeConverter modeConverter = new OutputGroupFileModeConverter();
+    /**
+     * A mapping from output group name to the [OutputGroupFileMode] to use for that output
+     * group.
+     */
+    fun interface OutputGroupFileModes {
+        fun getMode(outputGroup: String?): OutputGroupFileMode?
 
-    @Override
-    public String getTypeDescription() {
-      return "an output group name followed by an OutputGroupFileMode, e.g. default=both";
+        companion object {
+            @kotlin.jvm.JvmField
+            val DEFAULT: OutputGroupFileModes =
+                OutputGroupFileModes { outputGroup: String? -> OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY }
+        }
     }
 
-    @Override
-    public Map.Entry<String, OutputGroupFileMode> convert(String input)
-        throws OptionsParsingException {
-      Entry<String, String> entry = assignmentConverter.convert(input);
-      OutputGroupFileMode mode = modeConverter.convert(entry.getValue());
-      return Maps.immutableEntry(entry.getKey(), mode);
-    }
-  }
+    val outputGroupFileModesMapping: OutputGroupFileModes
+        /**
+         * Collects the values in [.outputGroupFileModes] into a map and returns a [ ] backed by that map and defaulting to [ ] for out groups not in that map.
+         * 
+         * 
+         * This also implements the default value of the `--experimental_build_event_output_group_mode` option, which as an `allowMultiple` option
+         * cannot specify a default value. The default value sets the mode for coverage artifacts to BOTH:
+         * `--experimental_build_event_output_group_mode=baseline.lcov=both`.
+         */
+        get() {
+            val modeMap: com.google.common.collect.ImmutableMap<String?, OutputGroupFileMode?> =
+                com.google.common.collect.ImmutableMap.builder<String?, OutputGroupFileMode?>()
+                    .putAll(this.outputGroupFileModes)
+                    .buildKeepingLast()
+            return OutputGroupFileModes { outputGroup: String? ->
+                modeMap.getOrDefault(
+                    outputGroup,
+                    OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY
+                )
+            }
+        }
 
-  /**
-   * A mapping from output group name to the {@link OutputGroupFileMode} to use for that output
-   * group.
-   */
-  @FunctionalInterface
-  public interface OutputGroupFileModes {
-    OutputGroupFileMode getMode(String outputGroup);
-
-    OutputGroupFileModes DEFAULT = (outputGroup) -> OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY;
-  }
-
-  /**
-   * Collects the values in {@link #outputGroupFileModes} into a map and returns a {@link
-   * OutputGroupFileModes} backed by that map and defaulting to {@link
-   * OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY} for out groups not in that map.
-   *
-   * <p>This also implements the default value of the {@code
-   * --experimental_build_event_output_group_mode} option, which as an {@code allowMultiple} option
-   * cannot specify a default value. The default value sets the mode for coverage artifacts to BOTH:
-   * {@code --experimental_build_event_output_group_mode=baseline.lcov=both}.
-   */
-  public OutputGroupFileModes getOutputGroupFileModesMapping() {
-    var modeMap =
-        ImmutableMap.<String, OutputGroupFileMode>builder()
-            .putAll(getOutputGroupFileModes())
-            .buildKeepingLast();
-    return (outputGroup) ->
-        modeMap.getOrDefault(outputGroup, OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY);
-  }
-
-  @Option(
-      name = "experimental_build_event_output_group_mode",
-      defaultValue = "null",
-      converter = BuildEventOutputGroupModeConverter.class,
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_build_event_output_group_mode",
+        defaultValue = "null",
+        converter = BuildEventOutputGroupModeConverter::class,
+        allowMultiple = true,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Specify how an output group's files will be represented in `TargetComplete`/`AspectComplete`
           BEP events. Values are an assignment of an output group name to one of
           `NAMED_SET_OF_FILES_ONLY`, `INLINE_ONLY`, or `BOTH`. The default value is
           `NAMED_SET_OF_FILES_ONLY`. If an output group is repeated, the final value to
           appear is used. The default value sets the mode for coverage artifacts to BOTH:
           `--experimental_build_event_output_group_mode=baseline.lcov=both`
-          """)
-  public abstract List<Map.Entry<String, OutputGroupFileMode>> getOutputGroupFileModes();
+          
+          """.trimIndent()
+    )
+    abstract val outputGroupFileModes: MutableList<MutableMap.MutableEntry<String?, OutputGroupFileMode>?>?
 }

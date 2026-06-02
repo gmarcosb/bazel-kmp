@@ -11,486 +11,478 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.remote.util.DigestUtil.isOldStyleDigestFunction;
-import static com.google.devtools.build.lib.remote.util.RxFutures.toCompletable;
-import static com.google.devtools.build.lib.remote.util.RxFutures.toListenableFuture;
-import static com.google.devtools.build.lib.remote.util.RxFutures.toSingle;
-import static com.google.devtools.build.lib.remote.util.Utils.grpcAwareErrorMessage;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.DigestFunction;
-import build.bazel.remote.execution.v2.RequestMetadata;
-import com.google.common.base.Ascii;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.PathConverter;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext.CachePolicy;
-import com.google.devtools.build.lib.remote.options.RemoteBuildEventUploadMode;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.XattrProvider;
-import io.netty.util.AbstractReferenceCounted;
-import io.netty.util.ReferenceCounted;
-import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Scheduler;
-import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.schedulers.Schedulers;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import javax.annotation.Nullable;
+/** A [BuildEventArtifactUploader] backed by [CombinedCache].  */
+internal class ByteStreamBuildEventArtifactUploader(
+    executor: java.util.concurrent.Executor?,
+    reporter: ExtendedEventHandler,
+    verboseFailures: Boolean,
+    combinedCache: CombinedCache,
+    remoteInstanceName: String?,
+    remoteBytestreamUriPrefix: String?,
+    buildRequestId: String?,
+    commandId: String?,
+    xattrProvider: XattrProvider?,
+    remoteBuildEventUploadMode: RemoteBuildEventUploadMode?
+) : io.netty.util.AbstractReferenceCounted(), BuildEventArtifactUploader {
+    private val executor: java.util.concurrent.Executor?
+    private val reporter: ExtendedEventHandler
+    private val verboseFailures: Boolean
+    private val combinedCache: CombinedCache
+    private val buildRequestId: String?
+    private val commandId: String?
+    private val remoteInstanceName: String?
+    private val remoteBytestreamUriPrefix: String?
 
-/** A {@link BuildEventArtifactUploader} backed by {@link CombinedCache}. */
-class ByteStreamBuildEventArtifactUploader extends AbstractReferenceCounted
-    implements BuildEventArtifactUploader {
-  private static final Pattern TEST_LOG_PATTERN = Pattern.compile(".*/bazel-out/[^/]*/testlogs/.*");
-  private static final Pattern BUILD_LOG_PATTERN =
-      Pattern.compile(".*/bazel-out/_tmp/actions/std(err|out)-.*");
+    private val shutdown: AtomicBoolean = AtomicBoolean()
+    private val scheduler: io.reactivex.rxjava3.core.Scheduler
 
-  private final Executor executor;
-  private final ExtendedEventHandler reporter;
-  private final boolean verboseFailures;
-  private final CombinedCache combinedCache;
-  private final String buildRequestId;
-  private final String commandId;
-  private final String remoteInstanceName;
-  private final String remoteBytestreamUriPrefix;
+    private val xattrProvider: XattrProvider?
+    private val remoteBuildEventUploadMode: RemoteBuildEventUploadMode?
 
-  private final AtomicBoolean shutdown = new AtomicBoolean();
-  private final Scheduler scheduler;
-
-  private final XattrProvider xattrProvider;
-  private final RemoteBuildEventUploadMode remoteBuildEventUploadMode;
-
-  ByteStreamBuildEventArtifactUploader(
-      Executor executor,
-      ExtendedEventHandler reporter,
-      boolean verboseFailures,
-      CombinedCache combinedCache,
-      String remoteInstanceName,
-      String remoteBytestreamUriPrefix,
-      String buildRequestId,
-      String commandId,
-      XattrProvider xattrProvider,
-      RemoteBuildEventUploadMode remoteBuildEventUploadMode) {
-    this.executor = executor;
-    this.reporter = reporter;
-    this.verboseFailures = verboseFailures;
-    this.combinedCache = combinedCache;
-    this.buildRequestId = buildRequestId;
-    this.commandId = commandId;
-    this.remoteInstanceName = remoteInstanceName;
-    this.remoteBytestreamUriPrefix = remoteBytestreamUriPrefix;
-    this.scheduler = Schedulers.from(executor);
-    this.xattrProvider = xattrProvider;
-    this.remoteBuildEventUploadMode = remoteBuildEventUploadMode;
-  }
-
-  /** Returns {@code true} if Bazel knows that the file is stored on a remote system. */
-  private static boolean isRemoteFile(Path file) throws IOException {
-    return file.getFileSystem() instanceof RemoteActionFileSystem
-        && ((RemoteActionFileSystem) file.getFileSystem()).isRemote(file);
-  }
-
-  private static final class PathMetadata {
-
-    private final Path path;
-    private final Digest digest;
-    private final boolean directory;
-    private final boolean symlink;
-    private final boolean remote;
-    private final boolean isBuildToolLog;
-    private final DigestFunction.Value digestFunction;
-
-    PathMetadata(
-        Path path,
-        Digest digest,
-        boolean directory,
-        boolean symlink,
-        boolean remote,
-        boolean isBuildToolLog,
-        DigestFunction.Value digestFunction) {
-      this.path = path;
-      this.digest = digest;
-      this.directory = directory;
-      this.symlink = symlink;
-      this.remote = remote;
-      this.isBuildToolLog = isBuildToolLog;
-      this.digestFunction = digestFunction;
+    init {
+        this.executor = executor
+        this.reporter = reporter
+        this.verboseFailures = verboseFailures
+        this.combinedCache = combinedCache
+        this.buildRequestId = buildRequestId
+        this.commandId = commandId
+        this.remoteInstanceName = remoteInstanceName
+        this.remoteBytestreamUriPrefix = remoteBytestreamUriPrefix
+        this.scheduler = Schedulers.from(executor)
+        this.xattrProvider = xattrProvider
+        this.remoteBuildEventUploadMode = remoteBuildEventUploadMode
     }
 
-    public Path getPath() {
-      return path;
+    private class PathMetadata(
+        path: com.google.devtools.build.lib.vfs.Path?,
+        digest: Digest,
+        directory: Boolean,
+        symlink: Boolean,
+        remote: Boolean,
+        isBuildToolLog: Boolean,
+        digestFunction: DigestFunction.Value
+    ) {
+        private val path: com.google.devtools.build.lib.vfs.Path?
+        private val digest: Digest
+        val isDirectory: Boolean
+        val isSymlink: Boolean
+        val isRemote: Boolean
+        val isBuildToolLog: Boolean
+        private val digestFunction: DigestFunction.Value
+
+        init {
+            this.path = path
+            this.digest = digest
+            this.isDirectory = directory
+            this.isSymlink = symlink
+            this.isRemote = remote
+            this.isBuildToolLog = isBuildToolLog
+            this.digestFunction = digestFunction
+        }
+
+        fun getPath(): com.google.devtools.build.lib.vfs.Path? {
+            return path
+        }
+
+        fun getDigest(): Digest {
+            return digest
+        }
+
+        fun getDigestFunction(): DigestFunction.Value {
+            return digestFunction
+        }
     }
 
-    public Digest getDigest() {
-      return digest;
+    /**
+     * Collects metadata for `file`. Depending on the underlying filesystem used this method
+     * might do I/O.
+     */
+    @Throws(IOException::class)
+    private fun readPathMetadata(path: com.google.devtools.build.lib.vfs.Path, file: LocalFile): PathMetadata {
+        val digestUtil: DigestUtil = DigestUtil(xattrProvider, path.getFileSystem().getDigestFunction())
+
+        if (file.type === LocalFileType.OUTPUT_DIRECTORY
+            || ((file.type === LocalFileType.SUCCESSFUL_TEST_OUTPUT
+                    || file.type === LocalFileType.FAILED_TEST_OUTPUT)
+                    && path.isDirectory())
+        ) {
+            return PathMetadata(
+                path,  /* digest= */
+                null,  /* directory= */
+                true,  /* symlink= */
+                false,  /* remote= */
+                false,  /* isBuildToolLog= */
+                false,  /* digestFunction= */
+                digestUtil.getDigestFunction()
+            )
+        }
+        if (file.type === LocalFileType.OUTPUT_SYMLINK) {
+            return PathMetadata(
+                path,  /* digest= */
+                null,  /* directory= */
+                false,  /* symlink= */
+                true,  /* remote= */
+                false,  /* isBuildToolLog= */
+                false,  /* digestFunction= */
+                digestUtil.getDigestFunction()
+            )
+        }
+
+        val digest: Digest = digestUtil.compute(path)
+        val isBuildToolLog =
+            file.type === LocalFileType.LOG || file.type === LocalFileType.PERFORMANCE_LOG
+        return PathMetadata(
+            path,
+            digest,  /* directory= */
+            false,  /* symlink= */
+            false,
+            isRemoteFile(path),
+            isBuildToolLog,
+            digestUtil.getDigestFunction()
+        )
     }
 
-    public boolean isDirectory() {
-      return directory;
+    private fun shouldUpload(path: PathMetadata): Boolean {
+        var result =
+            path.getDigest() != null && !path.isRemote && !path.isDirectory && !path.isSymlink
+
+        if (remoteBuildEventUploadMode == RemoteBuildEventUploadMode.MINIMAL) {
+            result = result && (path.isBuildToolLog || isBuildOrTestLog(path))
+        }
+
+        return result
     }
 
-    public boolean isSymlink() {
-      return symlink;
+    private fun isBuildOrTestLog(path: PathMetadata): Boolean {
+        return TEST_LOG_PATTERN.matcher(path.getPath().getPathString()).matches()
+                || BUILD_LOG_PATTERN.matcher(path.getPath().getPathString()).matches()
     }
 
-    public boolean isRemote() {
-      return remote;
+    private fun queryCombinedCache(
+        combinedCache: CombinedCache, context: RemoteActionExecutionContext?, paths: MutableList<PathMetadata>
+    ): Single<MutableList<PathMetadata?>?>? {
+        val knownPaths: MutableList<PathMetadata?> = java.util.ArrayList<PathMetadata?>(paths.size())
+        val filesToQuery: MutableList<PathMetadata> = java.util.ArrayList<PathMetadata>()
+        val digestsToQuery: MutableSet<Digest?> = HashSet<Digest?>()
+        for (path in paths) {
+            if (shouldUpload(path)) {
+                filesToQuery.add(path)
+                digestsToQuery.add(path.getDigest())
+            } else {
+                knownPaths.add(path)
+            }
+        }
+
+        if (digestsToQuery.isEmpty()) {
+            return Single.just<MutableList<PathMetadata?>?>(knownPaths)
+        }
+        return RxFutures.toSingle<com.google.common.collect.ImmutableSet<Digest?>?>(io.reactivex.rxjava3.functions.Supplier {
+            combinedCache.findMissingDigests(
+                context,
+                digestsToQuery
+            )
+        }, executor)
+            .onErrorResumeNext(
+                io.reactivex.rxjava3.functions.Function { error: Throwable? ->
+                    reportUploadError(error, null, null)
+                    Single.just<com.google.common.collect.ImmutableSet<Digest?>?>(
+                        com.google.common.collect.ImmutableSet.copyOf<Digest?>(
+                            digestsToQuery
+                        )
+                    )
+                })
+            .map<MutableList<PathMetadata?>?>(
+                io.reactivex.rxjava3.functions.Function { missingDigests: com.google.common.collect.ImmutableSet<Digest?>? ->
+                    processQueryResult(missingDigests, filesToQuery, knownPaths)
+                    knownPaths
+                })
     }
 
-    public boolean isBuildToolLog() {
-      return isBuildToolLog;
-    }
+    private fun reportUploadError(error: Throwable?, path: com.google.devtools.build.lib.vfs.Path?, digest: Digest?) {
+        if (error is CancellationException) {
+            return
+        }
 
-    public DigestFunction.Value getDigestFunction() {
-      return digestFunction;
-    }
-  }
-
-  /**
-   * Collects metadata for {@code file}. Depending on the underlying filesystem used this method
-   * might do I/O.
-   */
-  private PathMetadata readPathMetadata(Path path, LocalFile file) throws IOException {
-    DigestUtil digestUtil = new DigestUtil(xattrProvider, path.getFileSystem().getDigestFunction());
-
-    if (file.type == LocalFileType.OUTPUT_DIRECTORY
-        || ((file.type == LocalFileType.SUCCESSFUL_TEST_OUTPUT
-                || file.type == LocalFileType.FAILED_TEST_OUTPUT)
-            && path.isDirectory())) {
-      return new PathMetadata(
-          path,
-          /* digest= */ null,
-          /* directory= */ true,
-          /* symlink= */ false,
-          /* remote= */ false,
-          /* isBuildToolLog= */ false,
-          /* digestFunction= */ digestUtil.getDigestFunction());
-    }
-    if (file.type == LocalFileType.OUTPUT_SYMLINK) {
-      return new PathMetadata(
-          path,
-          /* digest= */ null,
-          /* directory= */ false,
-          /* symlink= */ true,
-          /* remote= */ false,
-          /* isBuildToolLog= */ false,
-          /* digestFunction= */ digestUtil.getDigestFunction());
-    }
-
-    Digest digest = digestUtil.compute(path);
-    boolean isBuildToolLog =
-        file.type == LocalFileType.LOG || file.type == LocalFileType.PERFORMANCE_LOG;
-    return new PathMetadata(
-        path,
-        digest,
-        /* directory= */ false,
-        /* symlink= */ false,
-        isRemoteFile(path),
-        isBuildToolLog,
-        digestUtil.getDigestFunction());
-  }
-
-  private static void processQueryResult(
-      ImmutableSet<Digest> missingDigests,
-      List<PathMetadata> filesToQuery,
-      List<PathMetadata> knownRemotePaths) {
-    for (PathMetadata file : filesToQuery) {
-      if (missingDigests.contains(file.getDigest())) {
-        knownRemotePaths.add(file);
-      } else {
-        PathMetadata remotePathMetadata =
-            new PathMetadata(
-                file.getPath(),
-                file.getDigest(),
-                file.isDirectory(),
-                file.isSymlink(),
-                /* remote= */ true,
-                file.isBuildToolLog(),
-                file.getDigestFunction());
-        knownRemotePaths.add(remotePathMetadata);
-      }
-    }
-  }
-
-  private boolean shouldUpload(PathMetadata path) {
-    boolean result =
-        path.getDigest() != null && !path.isRemote() && !path.isDirectory() && !path.isSymlink();
-
-    if (remoteBuildEventUploadMode == RemoteBuildEventUploadMode.MINIMAL) {
-      result = result && (path.isBuildToolLog() || isBuildOrTestLog(path));
-    }
-
-    return result;
-  }
-
-  private boolean isBuildOrTestLog(PathMetadata path) {
-    return TEST_LOG_PATTERN.matcher(path.getPath().getPathString()).matches()
-        || BUILD_LOG_PATTERN.matcher(path.getPath().getPathString()).matches();
-  }
-
-  private Single<List<PathMetadata>> queryCombinedCache(
-      CombinedCache combinedCache, RemoteActionExecutionContext context, List<PathMetadata> paths) {
-    List<PathMetadata> knownPaths = new ArrayList<>(paths.size());
-    List<PathMetadata> filesToQuery = new ArrayList<>();
-    Set<Digest> digestsToQuery = new HashSet<>();
-    for (PathMetadata path : paths) {
-      if (shouldUpload(path)) {
-        filesToQuery.add(path);
-        digestsToQuery.add(path.getDigest());
-      } else {
-        knownPaths.add(path);
-      }
-    }
-
-    if (digestsToQuery.isEmpty()) {
-      return Single.just(knownPaths);
-    }
-    return toSingle(() -> combinedCache.findMissingDigests(context, digestsToQuery), executor)
-        .onErrorResumeNext(
-            error -> {
-              reportUploadError(error, null, null);
-              // Assuming all digests are missing if failed to query
-              return Single.just(ImmutableSet.copyOf(digestsToQuery));
-            })
-        .map(
-            missingDigests -> {
-              processQueryResult(missingDigests, filesToQuery, knownPaths);
-              return knownPaths;
-            });
-  }
-
-  private void reportUploadError(Throwable error, Path path, Digest digest) {
-    if (error instanceof CancellationException) {
-      return;
-    }
-
-    String errorMessage = "Uploading BEP referenced local file";
-    if (path != null) {
-      errorMessage += " " + path;
-    }
-    if (digest != null) {
-      errorMessage += " " + digest;
-    }
-    errorMessage += ": " + grpcAwareErrorMessage(error, verboseFailures);
-
-    reporter.handle(Event.warn(errorMessage));
-  }
-
-  private Single<List<PathMetadata>> uploadLocalFiles(
-      CombinedCache combinedCache, RemoteActionExecutionContext context, List<PathMetadata> paths) {
-    return Flowable.fromIterable(paths)
-        .flatMapSingle(
-            path -> {
-              if (!shouldUpload(path)) {
-                return Single.just(path);
-              }
-
-              return toCompletable(
-                      () -> combinedCache.uploadFile(context, path.getDigest(), path.getPath()),
-                      executor)
-                  .toSingle(
-                      () ->
-                          new PathMetadata(
-                              path.getPath(),
-                              path.getDigest(),
-                              path.isDirectory(),
-                              path.isSymlink(),
-                              // set remote to true so the PathConverter will use bytestream://
-                              // scheme to convert the URI for this file
-                              /* remote= */ true,
-                              path.isBuildToolLog(),
-                              path.getDigestFunction()))
-                  .onErrorResumeNext(
-                      error -> {
-                        reportUploadError(error, path.getPath(), path.getDigest());
-                        return Single.just(path);
-                      });
-            })
-        .collect(Collectors.toList());
-  }
-
-  private Single<String> getRemoteServerInstanceName(CombinedCache combinedCache) {
-    if (!Strings.isNullOrEmpty(remoteBytestreamUriPrefix)) {
-      return Single.just(remoteBytestreamUriPrefix);
-    }
-
-    return toSingle(combinedCache::getRemoteAuthority, directExecutor())
-        .map(
-            a -> {
-              if (!Strings.isNullOrEmpty(remoteInstanceName)) {
-                return a + "/" + remoteInstanceName;
-              }
-              return a;
-            });
-  }
-
-  private Single<PathConverter> doUpload(Map<Path, LocalFile> files) {
-    if (files.isEmpty()) {
-      return Single.just(PathConverter.NO_CONVERSION);
-    }
-
-    RequestMetadata metadata =
-        TracingMetadataUtils.buildMetadata(buildRequestId, commandId, "bes-upload", null);
-    RemoteActionExecutionContext context =
-        RemoteActionExecutionContext.create(metadata)
-            .withWriteCachePolicy(CachePolicy.REMOTE_CACHE_ONLY);
-
-    return Single.using(
-        combinedCache::retain,
-        combinedCache ->
-            Flowable.fromIterable(files.entrySet())
-                .map(
-                    entry -> {
-                      Path path = entry.getKey();
-                      LocalFile file = entry.getValue();
-                      try {
-                        return readPathMetadata(path, file);
-                      } catch (IOException e) {
-                        reportUploadError(e, path, null);
-                        return new PathMetadata(
-                            path,
-                            /* digest= */ null,
-                            /* directory= */ false,
-                            /* symlink= */ false,
-                            /* remote= */ false,
-                            /* isBuildToolLog= */ false,
-                            DigestFunction.Value.SHA256);
-                      }
-                    })
-                .collect(Collectors.toList())
-                .flatMap(paths -> queryCombinedCache(combinedCache, context, paths))
-                .flatMap(paths -> uploadLocalFiles(combinedCache, context, paths))
-                .flatMap(
-                    paths ->
-                        getRemoteServerInstanceName(combinedCache)
-                            .map(
-                                remoteServerInstanceName ->
-                                    new PathConverterImpl(
-                                        remoteServerInstanceName,
-                                        paths,
-                                        remoteBuildEventUploadMode))),
-        CombinedCache::release);
-  }
-
-  @Override
-  public ListenableFuture<PathConverter> upload(Map<Path, LocalFile> files) {
-    return toListenableFuture(doUpload(files).subscribeOn(scheduler));
-  }
-
-  @Override
-  public boolean mayBeSlow() {
-    return true;
-  }
-
-  @Override
-  protected void deallocate() {
-    if (shutdown.getAndSet(true)) {
-      return;
-    }
-    combinedCache.release();
-  }
-
-  @Override
-  public ReferenceCounted touch(Object o) {
-    return this;
-  }
-
-  private static class PathConverterImpl implements PathConverter {
-
-    private final String remoteServerInstanceName;
-    private final Map<Path, PathMetadata> pathToMetadata;
-    private final Set<Path> skippedPaths;
-    private final Set<Path> localPaths;
-
-    PathConverterImpl(
-        String remoteServerInstanceName,
-        List<PathMetadata> uploads,
-        RemoteBuildEventUploadMode remoteBuildEventUploadMode) {
-      Preconditions.checkNotNull(uploads);
-      this.remoteServerInstanceName = remoteServerInstanceName;
-      pathToMetadata = Maps.newHashMapWithExpectedSize(uploads.size());
-      ImmutableSet.Builder<Path> skippedPaths = ImmutableSet.builder();
-      ImmutableSet.Builder<Path> localPaths = ImmutableSet.builder();
-      for (PathMetadata metadata : uploads) {
-        Path path = metadata.getPath();
-        Digest digest = metadata.getDigest();
+        var errorMessage = "Uploading BEP referenced local file"
+        if (path != null) {
+            errorMessage += " " + path
+        }
         if (digest != null) {
-          // Always use bytestream:// in MINIMAL mode
-          if (remoteBuildEventUploadMode == RemoteBuildEventUploadMode.MINIMAL) {
-            pathToMetadata.put(path, metadata);
-          } else if (metadata.isRemote()) {
-            pathToMetadata.put(path, metadata);
-          } else {
-            localPaths.add(path);
-          }
-        } else {
-          skippedPaths.add(path);
+            errorMessage += " " + digest
         }
-      }
-      this.skippedPaths = skippedPaths.build();
-      this.localPaths = localPaths.build();
+        errorMessage += ": " + com.google.devtools.build.lib.remote.util.Utils.grpcAwareErrorMessage(
+            error,
+            verboseFailures
+        )
+
+        reporter.handle(com.google.devtools.build.lib.events.Event.warn(errorMessage))
     }
 
-    @Override
-    @Nullable
-    public String apply(Path path) {
-      Preconditions.checkNotNull(path);
-
-      if (localPaths.contains(path)) {
-        return String.format("file://%s", path.getPathString());
-      }
-
-      PathMetadata metadata = pathToMetadata.get(path);
-      if (metadata == null) {
-        if (skippedPaths.contains(path)) {
-          return null;
-        }
-        // It's a programming error to reference a file that has not been uploaded.
-        throw new IllegalStateException(
-            String.format("Illegal file reference: '%s'", path.getPathString()));
-      }
-
-      Digest digest = metadata.getDigest();
-      DigestFunction.Value digestFunction = metadata.getDigestFunction();
-      String out;
-      if (isOldStyleDigestFunction(digestFunction)) {
-        out =
-            String.format(
-                "bytestream://%s/blobs/%s/%d",
-                remoteServerInstanceName, digest.getHash(), digest.getSizeBytes());
-      } else {
-        out =
-            String.format(
-                "bytestream://%s/blobs/%s/%s/%d",
-                remoteServerInstanceName,
-                Ascii.toLowerCase(digestFunction.getValueDescriptor().getName()),
-                digest.getHash(),
-                digest.getSizeBytes());
-      }
-      return out;
+    private fun uploadLocalFiles(
+        combinedCache: CombinedCache, context: RemoteActionExecutionContext?, paths: MutableList<PathMetadata?>
+    ): Single<MutableList<PathMetadata?>?>? {
+        return Flowable.fromIterable<PathMetadata?>(paths)
+            .flatMapSingle<PathMetadata?>(
+                io.reactivex.rxjava3.functions.Function { path: PathMetadata? ->
+                    if (!shouldUpload(path!!)) {
+                        return@flatMapSingle Single.just<PathMetadata?>(path)
+                    }
+                    RxFutures.toCompletable(
+                        io.reactivex.rxjava3.functions.Supplier {
+                            combinedCache.uploadFile(
+                                context,
+                                path.getDigest(),
+                                path.getPath()
+                            )
+                        },
+                        executor
+                    )
+                        .toSingle<PathMetadata?>(
+                            io.reactivex.rxjava3.functions.Supplier {
+                                PathMetadata(
+                                    path.getPath(),
+                                    path.getDigest(),
+                                    path.isDirectory,
+                                    path.isSymlink,  // set remote to true so the PathConverter will use bytestream://
+                                    // scheme to convert the URI for this file
+                                    /* remote= */
+                                    true,
+                                    path.isBuildToolLog,
+                                    path.getDigestFunction()
+                                )
+                            })
+                        .onErrorResumeNext(
+                            io.reactivex.rxjava3.functions.Function { error: Throwable? ->
+                                reportUploadError(error, path.getPath(), path.getDigest())
+                                Single.just<PathMetadata?>(path)
+                            })
+                })
+            .collect<MutableList<PathMetadata?>?, Any?>(Collectors.toList())
     }
-  }
+
+    private fun getRemoteServerInstanceName(combinedCache: CombinedCache): Single<String?>? {
+        if (!com.google.common.base.Strings.isNullOrEmpty(remoteBytestreamUriPrefix)) {
+            return Single.just<String?>(remoteBytestreamUriPrefix)
+        }
+
+        return RxFutures.toSingle<String?>(
+            io.reactivex.rxjava3.functions.Supplier { combinedCache.getRemoteAuthority() },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+            .map<String?>(
+                io.reactivex.rxjava3.functions.Function { a: String? ->
+                    if (!com.google.common.base.Strings.isNullOrEmpty(remoteInstanceName)) {
+                        return@map a + "/" + remoteInstanceName
+                    }
+                    a
+                })
+    }
+
+    private fun doUpload(files: MutableMap<com.google.devtools.build.lib.vfs.Path?, LocalFile?>): Single<PathConverter?>? {
+        if (files.isEmpty()) {
+            return Single.just<PathConverter?>(PathConverter.NO_CONVERSION)
+        }
+
+        val metadata: RequestMetadata? =
+            TracingMetadataUtils.buildMetadata(buildRequestId, commandId, "bes-upload", null)
+        val context: RemoteActionExecutionContext? =
+            RemoteActionExecutionContext.Companion.create(metadata)
+                .withWriteCachePolicy(CachePolicy.REMOTE_CACHE_ONLY)
+
+        return Single.using<T?, CombinedCache?>(
+            io.reactivex.rxjava3.functions.Supplier { combinedCache.retain() },
+            io.reactivex.rxjava3.functions.Function { combinedCache: CombinedCache? ->
+                Flowable.fromIterable<MutableMap.MutableEntry<com.google.devtools.build.lib.vfs.Path, LocalFile>?>(files.entrySet())
+                    .map<PathMetadata?>(
+                        io.reactivex.rxjava3.functions.Function { entry: MutableMap.MutableEntry<com.google.devtools.build.lib.vfs.Path, LocalFile>? ->
+                            val path: com.google.devtools.build.lib.vfs.Path = entry.getKey()
+                            val file: LocalFile = entry.getValue()
+                            try {
+                                return@map readPathMetadata(path, file)
+                            } catch (e: IOException) {
+                                reportUploadError(e, path, null)
+                                return@map PathMetadata(
+                                    path,  /* digest= */
+                                    null,  /* directory= */
+                                    false,  /* symlink= */
+                                    false,  /* remote= */
+                                    false,  /* isBuildToolLog= */
+                                    false,
+                                    DigestFunction.Value.SHA256
+                                )
+                            }
+                        })
+                    .collect<MutableList<PathMetadata?>?, Any?>(Collectors.toList())
+                    .flatMap<MutableList<PathMetadata?>?>(io.reactivex.rxjava3.functions.Function { paths: MutableList<PathMetadata>? ->
+                        queryCombinedCache(
+                            combinedCache,
+                            context,
+                            paths!!
+                        )
+                    })
+                    .flatMap<MutableList<PathMetadata?>?>(io.reactivex.rxjava3.functions.Function { paths: MutableList<PathMetadata?>? ->
+                        uploadLocalFiles(
+                            combinedCache,
+                            context,
+                            paths!!
+                        )
+                    })
+                    .flatMap<PathConverterImpl?>(
+                        io.reactivex.rxjava3.functions.Function { paths: MutableList<PathMetadata?>? ->
+                            getRemoteServerInstanceName(combinedCache)
+                                .map<PathConverterImpl?>(
+                                    io.reactivex.rxjava3.functions.Function { remoteServerInstanceName: String? ->
+                                        PathConverterImpl(
+                                            remoteServerInstanceName,
+                                            paths,
+                                            remoteBuildEventUploadMode
+                                        )
+                                    })
+                        })
+            },
+            io.reactivex.rxjava3.functions.Consumer { obj: CombinedCache? -> obj.release() })
+    }
+
+    public override fun upload(files: MutableMap<com.google.devtools.build.lib.vfs.Path?, LocalFile?>): com.google.common.util.concurrent.ListenableFuture<PathConverter?> {
+        return RxFutures.toListenableFuture<PathConverter?>(doUpload(files).subscribeOn(scheduler))
+    }
+
+    public override fun mayBeSlow(): Boolean {
+        return true
+    }
+
+    override fun deallocate() {
+        if (shutdown.getAndSet(true)) {
+            return
+        }
+        combinedCache.release()
+    }
+
+    override fun touch(o: Any?): io.netty.util.ReferenceCounted {
+        return this
+    }
+
+    private class PathConverterImpl(
+        remoteServerInstanceName: String?,
+        uploads: MutableList<PathMetadata>?,
+        remoteBuildEventUploadMode: RemoteBuildEventUploadMode?
+    ) : PathConverter {
+        private val remoteServerInstanceName: String?
+        private val pathToMetadata: MutableMap<com.google.devtools.build.lib.vfs.Path?, PathMetadata?>
+        private val skippedPaths: MutableSet<com.google.devtools.build.lib.vfs.Path?>
+        private val localPaths: MutableSet<com.google.devtools.build.lib.vfs.Path?>
+
+        init {
+            com.google.common.base.Preconditions.checkNotNull<MutableList<PathMetadata?>?>(uploads)
+            this.remoteServerInstanceName = remoteServerInstanceName
+            pathToMetadata =
+                com.google.common.collect.Maps.newHashMapWithExpectedSize<com.google.devtools.build.lib.vfs.Path?, PathMetadata?>(
+                    uploads.size()
+                )
+            val skippedPaths: com.google.common.collect.ImmutableSet.Builder<com.google.devtools.build.lib.vfs.Path?> =
+                com.google.common.collect.ImmutableSet.builder<com.google.devtools.build.lib.vfs.Path?>()
+            val localPaths: com.google.common.collect.ImmutableSet.Builder<com.google.devtools.build.lib.vfs.Path?> =
+                com.google.common.collect.ImmutableSet.builder<com.google.devtools.build.lib.vfs.Path?>()
+            for (metadata in uploads!!) {
+                val path: com.google.devtools.build.lib.vfs.Path? = metadata.getPath()
+                val digest: Digest? = metadata.getDigest()
+                if (digest != null) {
+                    // Always use bytestream:// in MINIMAL mode
+                    if (remoteBuildEventUploadMode == RemoteBuildEventUploadMode.MINIMAL) {
+                        pathToMetadata.put(path, metadata)
+                    } else if (metadata.isRemote) {
+                        pathToMetadata.put(path, metadata)
+                    } else {
+                        localPaths.add(path)
+                    }
+                } else {
+                    skippedPaths.add(path)
+                }
+            }
+            this.skippedPaths = skippedPaths.build()
+            this.localPaths = localPaths.build()
+        }
+
+        public override fun apply(path: com.google.devtools.build.lib.vfs.Path?): String? {
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.Path?>(path)
+
+            if (localPaths.contains(path)) {
+                return java.lang.String.format("file://%s", path.getPathString())
+            }
+
+            val metadata = pathToMetadata.get(path)
+            if (metadata == null) {
+                if (skippedPaths.contains(path)) {
+                    return null
+                }
+                // It's a programming error to reference a file that has not been uploaded.
+                throw java.lang.IllegalStateException(
+                    java.lang.String.format("Illegal file reference: '%s'", path.getPathString())
+                )
+            }
+
+            val digest: Digest = metadata.getDigest()
+            val digestFunction: DigestFunction.Value = metadata.getDigestFunction()
+            val out: String?
+            if (DigestUtil.isOldStyleDigestFunction(digestFunction)) {
+                out =
+                    java.lang.String.format(
+                        "bytestream://%s/blobs/%s/%d",
+                        remoteServerInstanceName, digest.getHash(), digest.getSizeBytes()
+                    )
+            } else {
+                out =
+                    java.lang.String.format(
+                        "bytestream://%s/blobs/%s/%s/%d",
+                        remoteServerInstanceName,
+                        com.google.common.base.Ascii.toLowerCase(digestFunction.getValueDescriptor().getName()),
+                        digest.getHash(),
+                        digest.getSizeBytes()
+                    )
+            }
+            return out
+        }
+    }
+
+    companion object {
+        private val TEST_LOG_PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile(".*/bazel-out/[^/]*/testlogs/.*")
+        private val BUILD_LOG_PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile(".*/bazel-out/_tmp/actions/std(err|out)-.*")
+
+        /** Returns `true` if Bazel knows that the file is stored on a remote system.  */
+        @Throws(IOException::class)
+        private fun isRemoteFile(file: com.google.devtools.build.lib.vfs.Path): Boolean {
+            return file.getFileSystem() is RemoteActionFileSystem
+                    && (file.getFileSystem() as RemoteActionFileSystem).isRemote(file)
+        }
+
+        private fun processQueryResult(
+            missingDigests: com.google.common.collect.ImmutableSet<Digest?>,
+            filesToQuery: MutableList<PathMetadata>,
+            knownRemotePaths: MutableList<PathMetadata?>
+        ) {
+            for (file in filesToQuery) {
+                if (missingDigests.contains(file.getDigest())) {
+                    knownRemotePaths.add(file)
+                } else {
+                    val remotePathMetadata =
+                        PathMetadata(
+                            file.getPath(),
+                            file.getDigest(),
+                            file.isDirectory,
+                            file.isSymlink,  /* remote= */
+                            true,
+                            file.isBuildToolLog,
+                            file.getDigestFunction()
+                        )
+                    knownRemotePaths.add(remotePathMetadata)
+                }
+            }
+        }
+    }
 }

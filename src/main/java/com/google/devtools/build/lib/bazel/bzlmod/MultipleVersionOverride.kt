@@ -12,34 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
+import com.google.devtools.build.lib.bazel.bzlmod.RegistryOverride
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
  * Specifies that the module should still come from a registry, but multiple versions of it should
  * be allowed to coexist.
- *
+ * 
  * @param versions The versions of this module that should coexist.
  */
 @AutoCodec
-public record MultipleVersionOverride(ImmutableList<Version> versions, String registry)
-    implements RegistryOverride {
-  public MultipleVersionOverride {
-    requireNonNull(versions, "versions");
-    requireNonNull(registry, "registry");
-  }
+class MultipleVersionOverride(
+    versions: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Version?>?,
+    val registry: String?
+) : RegistryOverride {
+    override fun getRegistry(): String? {
+        return this.registry
+    }
 
-  @Override
-  public String getRegistry() {
-    return registry();
-  }
+    val versions: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Version?>?
 
-  public static MultipleVersionOverride create(ImmutableList<Version> versions, String registry) {
-    return new MultipleVersionOverride(versions, registry);
-  }
+    init {
+        this.versions = versions
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Version?>?>(
+            versions,
+            "versions"
+        )
+        java.util.Objects.requireNonNull<String?>(registry, "registry")
+    }
+
+    companion object {
+        fun create(
+            versions: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Version?>?,
+            registry: String?
+        ): MultipleVersionOverride {
+            return MultipleVersionOverride(versions, registry)
+        }
+    }
 }

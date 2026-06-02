@@ -11,159 +11,137 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.base.Predicate;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterators;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.FilteringQueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.server.FailureDetails.Query;
-import java.util.Iterator;
-import java.util.List;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
-import javax.annotation.Nullable;
+import com.google.common.base.Predicate
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterators
+import com.google.devtools.build.lib.server.FailureDetails.Query
+import java.util.regex.Pattern
 
 /**
  * An abstract class that provides generic regex filter expression. Actual expression are
  * implemented by the subclasses.
  */
-public abstract class RegexFilterExpression extends FilteringQueryFunction {
-  protected final boolean invert;
-
-  protected RegexFilterExpression(boolean invert) {
-    this.invert = invert;
-  }
-
-  @Override
-  public <T> QueryTaskFuture<Void> eval(
-      final QueryEnvironment<T> env,
-      QueryExpressionContext<T> context,
-      QueryExpression expression,
-      final List<Argument> args,
-      Callback<T> callback) {
-    String rawPattern = getPattern(args);
-    final Pattern compiledPattern;
-    try {
-      compiledPattern = Pattern.compile(rawPattern);
-    } catch (PatternSyntaxException e) {
-      return env.immediateFailedFuture(
-          new QueryException(
-              expression,
-              String.format(
-                  "illegal '%s' pattern regexp '%s': %s", getName(), rawPattern, e.getMessage()),
-              Query.Code.SYNTAX_ERROR));
-    }
-
-    // Note that Patttern#matcher is thread-safe and so this Predicate can safely be used
-    // concurrently.
-    final Predicate<T> matchFilter =
-        target -> {
-          for (String str : getFilterStrings(env, args, target)) {
-            if ((str != null) && compiledPattern.matcher(str).find()) {
-              return !invert;
-            }
-          }
-          return invert;
-        };
-
-    return env.eval(
-        args.get(getExpressionToFilterIndex()).getExpression(),
-        context,
-        new FilteredCallback<>(callback, matchFilter));
-  }
-
-  @Override
-  public final int getExpressionToFilterIndex() {
-    return getMandatoryArguments() - 1;
-  }
-
-  /**
-   * Returns string for the given target that must be matched against pattern.
-   * May return null, in which case matching is guaranteed to fail.
-   */
-  protected abstract <T> String getFilterString(
-      QueryEnvironment<T> env, List<Argument> args, T target);
-
-  /**
-   * Returns a list of strings for the given target that must be matched against
-   * pattern. The filter matches if *any* of these strings matches.
-   *
-   * <p>Unless subclasses have an explicit reason to override this method, it's fine
-   * to keep the default implementation that just delegates to {@link #getFilterString}.
-   * Overriding this method is useful for subclasses that want to match against a
-   * universe of possible values. For example, with configurable attributes, an
-   * attribute might have different values depending on the build configuration. One
-   * may wish the filter to match if *any* of those values matches.
-   */
-  protected <T> Iterable<String> getFilterStrings(
-      QueryEnvironment<T> env, List<Argument> args, T target) {
-    String filterString = getFilterString(env, args, target);
-    return filterString == null ? ImmutableList.<String>of() : ImmutableList.of(filterString);
-  }
-
-  protected abstract String getPattern(List<Argument> args);
-
-  private static final class FilteredCallback<T> implements Callback<T> {
-    private final Callback<T> parentCallback;
-    private final Predicate<T> retainIfTrue;
-
-    private FilteredCallback(Callback<T> parentCallback, Predicate<T> retainIfTrue) {
-      this.parentCallback = parentCallback;
-      this.retainIfTrue = retainIfTrue;
-    }
-
-    @Override
-    public void process(Iterable<T> partialResult) throws QueryException, InterruptedException {
-      // Consume as much of the iterable as possible here. The parent callback may be synchronized,
-      // so we can avoid calling it at all if everything gets filtered out.
-      Iterator<T> it = partialResult.iterator();
-      while (it.hasNext()) {
-        T next = it.next();
-        if (retainIfTrue.apply(next)) {
-          Iterator<T> rest =
-              Iterators.concat(
-                  Iterators.singletonIterator(next), Iterators.filter(it, retainIfTrue));
-          parentCallback.process(new InProgressIterable<>(rest, partialResult, retainIfTrue));
-          break;
+abstract class RegexFilterExpression protected constructor(protected val invert: Boolean) : FilteringQueryFunction() {
+    override fun <T> eval(
+        env: QueryEnvironment<T?>,
+        context: QueryExpressionContext<T?>?,
+        expression: QueryExpression?,
+        args: MutableList<QueryEnvironment.Argument?>,
+        callback: Callback<T?>
+    ): QueryTaskFuture<Void?>? {
+        val rawPattern = getPattern(args)
+        val compiledPattern: Pattern
+        try {
+            compiledPattern = Pattern.compile(rawPattern)
+        } catch (e: PatternSyntaxException) {
+            return env.immediateFailedFuture<Void?>(
+                QueryException(
+                    expression,
+                    String.format(
+                        "illegal '%s' pattern regexp '%s': %s", getName(), rawPattern, e.message
+                    ),
+                    Query.Code.SYNTAX_ERROR
+                )
+            )
         }
-      }
+
+        // Note that Patttern#matcher is thread-safe and so this Predicate can safely be used
+        // concurrently.
+        val matchFilter =
+            Predicate { target: T? ->
+                for (str in getFilterStrings<T?>(env, args, target)!!) {
+                    if ((str != null) && compiledPattern.matcher(str).find()) {
+                        return@Predicate !invert
+                    }
+                }
+                invert
+            }
+
+        return env.eval(
+            args.get(this.expressionToFilterIndex)!!.getExpression(),
+            context,
+            FilteredCallback<T?>(callback, matchFilter)
+        )
     }
 
-    @Override
-    public String toString() {
-      return "filtered parentCallback of : " + retainIfTrue;
-    }
+    val expressionToFilterIndex: Int
+        get() = getMandatoryArguments() - 1
 
     /**
-     * Specialized {@link Iterable} to resume an in-progress iteration on the first call to {@link
-     * #iterator}.
+     * Returns string for the given target that must be matched against pattern.
+     * May return null, in which case matching is guaranteed to fail.
      */
-    private static final class InProgressIterable<T> implements Iterable<T> {
-      @Nullable private Iterator<T> inProgress;
-      private final Iterable<T> original;
-      private final Predicate<T> retainIfTrue;
+    protected abstract fun <T> getFilterString(
+        env: QueryEnvironment<T?>?, args: MutableList<QueryEnvironment.Argument?>?, target: T?
+    ): String?
 
-      private InProgressIterable(
-          Iterator<T> inProgress, Iterable<T> original, Predicate<T> retainIfTrue) {
-        this.inProgress = inProgress;
-        this.original = original;
-        this.retainIfTrue = retainIfTrue;
-      }
-
-      @Override
-      public Iterator<T> iterator() {
-        synchronized (this) {
-          if (inProgress != null) {
-            Iterator<T> it = inProgress;
-            inProgress = null;
-            return it;
-          }
-        }
-        return Iterators.filter(original.iterator(), retainIfTrue);
-      }
+    /**
+     * Returns a list of strings for the given target that must be matched against
+     * pattern. The filter matches if *any* of these strings matches.
+     * 
+     * 
+     * Unless subclasses have an explicit reason to override this method, it's fine
+     * to keep the default implementation that just delegates to [.getFilterString].
+     * Overriding this method is useful for subclasses that want to match against a
+     * universe of possible values. For example, with configurable attributes, an
+     * attribute might have different values depending on the build configuration. One
+     * may wish the filter to match if *any* of those values matches.
+     */
+    protected open fun <T> getFilterStrings(
+        env: QueryEnvironment<T?>?, args: MutableList<QueryEnvironment.Argument?>?, target: T?
+    ): Iterable<String?>? {
+        val filterString = getFilterString<T?>(env, args, target)
+        return if (filterString == null) ImmutableList.of<String?>() else ImmutableList.of<String?>(filterString)
     }
-  }
+
+    protected abstract fun getPattern(args: MutableList<QueryEnvironment.Argument?>?): String?
+
+    private class FilteredCallback<T>(
+        private val parentCallback: Callback<T?>,
+        private val retainIfTrue: Predicate<T?>
+    ) : Callback<T?> {
+        @Throws(QueryException::class, InterruptedException::class)
+        override fun process(partialResult: Iterable<T?>) {
+            // Consume as much of the iterable as possible here. The parent callback may be synchronized,
+            // so we can avoid calling it at all if everything gets filtered out.
+            val it: MutableIterator<T?> = partialResult.iterator()
+            while (it.hasNext()) {
+                val next = it.next()
+                if (retainIfTrue.apply(next)) {
+                    val rest =
+                        Iterators.concat<T?>(
+                            Iterators.singletonIterator<T?>(next), Iterators.filter<T?>(it, retainIfTrue)
+                        )
+                    parentCallback.process(InProgressIterable<T?>(rest, partialResult, retainIfTrue))
+                    break
+                }
+            }
+        }
+
+        override fun toString(): String {
+            return "filtered parentCallback of : " + retainIfTrue
+        }
+
+        /**
+         * Specialized [Iterable] to resume an in-progress iteration on the first call to [ ][.iterator].
+         */
+        private class InProgressIterable<T>(
+            private var inProgress: MutableIterator<T?>?,
+            private val original: Iterable<T?>,
+            private val retainIfTrue: Predicate<T?>
+        ) : Iterable<T?> {
+            override fun iterator(): MutableIterator<T?> {
+                synchronized(this) {
+                    if (inProgress != null) {
+                        val it = inProgress
+                        inProgress = null
+                        return it!!
+                    }
+                }
+                return Iterators.filter<T?>(original.iterator(), retainIfTrue)
+            }
+        }
+    }
 }

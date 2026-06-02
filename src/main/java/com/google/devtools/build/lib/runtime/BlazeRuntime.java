@@ -379,10 +379,10 @@ public final class BlazeRuntime implements BugReport.BlazeRuntimeInterface {
         if (commandOptions.getProfilePath() == null) {
           String profileName = "command.profile.gz";
           format = Format.JSON_TRACE_FILE_COMPRESSED_FORMAT;
-          if (bepOptions != null && bepOptions.getStreamingLogFileUploads()) {
+          if (bepOptions != null && bepOptions.streamingLogFileUploads) {
             profile =
                 instrumentationOutputFactory.createBuildEventArtifactInstrumentationOutput(
-                    profileName, newUploader(env, bepOptions.getBuildEventUploadStrategy()));
+                    profileName, newUploader(env, bepOptions.buildEventUploadStrategy));
           } else if (commandOptions.getRedirectLocalInstrumentationOutputWrites()) {
             profile =
                 instrumentationOutputFactory.createInstrumentationOutput(
@@ -422,7 +422,7 @@ public final class BlazeRuntime implements BugReport.BlazeRuntimeInterface {
         }
         out = profile.createOutputStream();
         for (ProfilerTask profilerTask : ProfilerTask.values()) {
-          if (!profilerTask.isVfs()
+          if (!profilerTask.isVfs
               // CRITICAL_PATH corresponds to writing the file.
               && profilerTask != ProfilerTask.CRITICAL_PATH
               && profilerTask != ProfilerTask.SKYFUNCTION) {
@@ -956,7 +956,7 @@ public final class BlazeRuntime implements BugReport.BlazeRuntimeInterface {
     } catch (RuntimeException | Error e) { // A definite bug...
       Crash crash = Crash.from(e);
       BugReport.handleCrash(crash, CrashContext.keepAlive().withArgs(args));
-      exit(crash.getDetailedExitCode().getExitCode().getNumericExitCode());
+      exit(crash.detailedExitCode.getExitCode().getNumericExitCode());
     }
   }
 
@@ -1666,11 +1666,10 @@ public final class BlazeRuntime implements BugReport.BlazeRuntimeInterface {
     }
     CommonCommandOptions options = localEnv.getOptions().getOptions(CommonCommandOptions.class);
     if (options.getHeapDumpOnOom()) {
-      ctx.setHeapDumpPath(
-          workspace
-              .getOutputBase()
-              .getRelative(env.getCommandId() + ".heapdump.hprof") // Must end in .hprof.
-              .getPathString());
+      ctx.heapDumpPath = workspace
+          .getOutputBase()
+          .getRelative(env.getCommandId() + ".heapdump.hprof") // Must end in .hprof.
+          .getPathString();
     }
     ctx.withExtraOomInfo(options.getOomMessage()).reportingTo(localEnv.getReporter());
   }

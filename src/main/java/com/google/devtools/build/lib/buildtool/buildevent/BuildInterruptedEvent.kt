@@ -11,12 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
 /**
- * This event is fired from {@code AbstractBuildCommand#doBuild} to indicate
+ * This event is fired from `AbstractBuildCommand#doBuild` to indicate
  * that the user interrupted the build with control-C.
  */
-public class BuildInterruptedEvent {
-}
+class BuildInterruptedEvent 

@@ -11,26 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+import com.google.devtools.build.lib.analysis.config.FragmentOptions
+import kotlin.reflect.KClass
 
 /**
- * Interface for a {@link Fragment} object to declare which {@link FragmentOptions} it needs for
+ * Interface for a [Fragment] object to declare which [FragmentOptions] it needs for
  * construction.
- *
- * <p>Blaze instantiates {@link Fragment} with a {@link BuildOptions} that only contains the {@link
- * FragmentOptions} specified here.
+ * 
+ * 
+ * Blaze instantiates [Fragment] with a [BuildOptions] that only contains the [ ] specified here.
  */
-@Target(ElementType.TYPE)
-@Retention(RetentionPolicy.RUNTIME)
-public @interface RequiresOptions {
-  /** The options required by the annotated fragment. By default, fragments require no options. */
-  Class<? extends FragmentOptions>[] options() default {};
-
-  /** Whether the annotated fragment requires access to starlark options. */
-  boolean starlark() default false;
-}
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class RequiresOptions(
+    /** The options required by the annotated fragment. By default, fragments require no options.  */
+    val options: Array<KClass<out FragmentOptions?>> = [],
+    /** Whether the annotated fragment requires access to starlark options.  */
+    val starlark: Boolean = false
+)

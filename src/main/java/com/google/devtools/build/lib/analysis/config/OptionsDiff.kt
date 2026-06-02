@@ -11,252 +11,273 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.SetMultimap;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.OrderedSetMultimap;
-import com.google.devtools.common.options.OptionDefinition;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.SequencedMap;
-import java.util.Set;
+import com.google.devtools.build.lib.analysis.config.FragmentOptions
+import com.google.devtools.build.lib.util.OrderedSetMultimap
+import java.util.HashSet
+import java.util.LinkedHashMap
+import java.util.SequencedMap
 
 /**
- * A diff class for BuildOptions. Fields are meant to be populated and returned by {@link
- * OptionsDiff#diff}.
+ * A diff class for BuildOptions. Fields are meant to be populated and returned by [ ][OptionsDiff.diff].
  */
-public final class OptionsDiff {
-  /** Returns the difference between two BuildOptions in a new {@link OptionsDiff}. */
-  public static OptionsDiff diff(BuildOptions first, BuildOptions second) {
-    return diff(new OptionsDiff(), first, second);
-  }
+class OptionsDiff {
+    private val differingOptions: com.google.common.collect.ListMultimap<java.lang.Class<out FragmentOptions?>?, com.google.devtools.common.options.OptionDefinition?> =
+        com.google.common.collect.ArrayListMultimap.create<java.lang.Class<out FragmentOptions?>?, com.google.devtools.common.options.OptionDefinition?>()
 
-  /**
-   * Returns the difference between two BuildOptions in a pre-existing {@link OptionsDiff}.
-   *
-   * <p>In a single pass through this method, the method can only compare a single "first" {@link
-   * BuildOptions} and single "second" BuildOptions; but an OptionsDiff instance can store the diff
-   * between a single "first" BuildOptions and multiple "second" BuildOptions. Being able to
-   * maintain a single OptionsDiff over multiple calls to diff is useful for, for example,
-   * aggregating the difference between a single BuildOptions and the results of applying a {@link
-   * com.google.devtools.build.lib.analysis.config.transitions.SplitTransition}) to it.
-   */
-  @SuppressWarnings("ReferenceEquality") // See comment above == comparison.
-  public static OptionsDiff diff(OptionsDiff diff, BuildOptions first, BuildOptions second) {
-    checkArgument(
-        !diff.hasStarlarkOptions,
-        "OptionsDiff cannot handle multiple 'second' BuildOptions with Starlark options and is"
-            + " trying to diff against %s",
-        diff);
-    checkNotNull(first);
-    checkNotNull(second);
-    if (first.equals(second)) {
-      return diff;
+    // The keyset for the {@link first} and {@link second} maps are identical and indicate which
+    // specific options differ between the first and second built options.
+    private val first: MutableMap<com.google.devtools.common.options.OptionDefinition?, Any?> =
+        LinkedHashMap<com.google.devtools.common.options.OptionDefinition?, Any?>()
+
+    // Since this class can be used to track the result of transitions, {@link second} is a multimap
+    // to be able to handle {@link SplitTransition}s.
+    private val second: com.google.common.collect.SetMultimap<com.google.devtools.common.options.OptionDefinition?, Any?> =
+        OrderedSetMultimap.create<com.google.devtools.common.options.OptionDefinition?, Any?>()
+
+    // List of "extra" fragments for each BuildOption aka fragments that were trimmed off one
+    // BuildOption but not the other.
+    private val extraFirstFragments: MutableSet<java.lang.Class<out FragmentOptions?>?> =
+        HashSet<java.lang.Class<out FragmentOptions?>?>()
+    private val extraSecondFragments: MutableSet<FragmentOptions?> = HashSet<FragmentOptions?>()
+
+    private val starlarkFirst: MutableMap<com.google.devtools.build.lib.cmdline.Label?, Any?> =
+        LinkedHashMap<com.google.devtools.build.lib.cmdline.Label?, Any?>()
+
+    // TODO(b/112041323): This should also be multimap but we don't diff multiple times with
+    // Starlark options anywhere yet so add that feature when necessary.
+    private val starlarkSecond: MutableMap<com.google.devtools.build.lib.cmdline.Label?, Any?> =
+        LinkedHashMap<com.google.devtools.build.lib.cmdline.Label?, Any?>()
+
+    private val extraStarlarkOptionsFirst: MutableList<com.google.devtools.build.lib.cmdline.Label?> =
+        java.util.ArrayList<com.google.devtools.build.lib.cmdline.Label?>()
+    private val extraStarlarkOptionsSecond: SequencedMap<com.google.devtools.build.lib.cmdline.Label?, Any?> =
+        LinkedHashMap<com.google.devtools.build.lib.cmdline.Label?, Any?>()
+
+    private var hasStarlarkOptions = false
+
+    @com.google.common.annotations.VisibleForTesting
+    fun getExtraFirstFragmentClassesForTesting(): MutableSet<java.lang.Class<out FragmentOptions?>?> {
+        return extraFirstFragments
     }
 
-    // Check and report if either class has been trimmed of an options class that exists in the
-    // other.
-    ImmutableSet<Class<? extends FragmentOptions>> firstOptionClasses =
-        first.getNativeOptions().stream()
-            .map(FragmentOptions::getOptionsClass)
-            .collect(ImmutableSet.toImmutableSet());
-    ImmutableSet<Class<? extends FragmentOptions>> secondOptionClasses =
-        second.getNativeOptions().stream()
-            .map(FragmentOptions::getOptionsClass)
-            .collect(ImmutableSet.toImmutableSet());
-    Sets.difference(firstOptionClasses, secondOptionClasses).forEach(diff::addExtraFirstFragment);
-    Sets.difference(secondOptionClasses, firstOptionClasses).stream()
-        .map(second::get)
-        .forEach(diff::addExtraSecondFragment);
+    @com.google.common.annotations.VisibleForTesting
+    fun getExtraSecondFragmentsForTesting(): MutableSet<FragmentOptions?> {
+        return extraSecondFragments
+    }
 
-    // For fragments in common, report differences.
-    for (Class<? extends FragmentOptions> clazz :
-        Sets.intersection(firstOptionClasses, secondOptionClasses)) {
-      FragmentOptions firstOptions = first.get(clazz);
-      FragmentOptions secondOptions = second.get(clazz);
-      // We avoid calling #equals because we are going to do a field-by-field comparison anyway.
-      if (firstOptions == secondOptions) {
-        continue;
-      }
-      for (OptionDefinition definition : OptionDefinition.getOptionDefinitions(clazz)) {
-        Object firstValue = definition.getValue(firstOptions);
-        Object secondValue = definition.getValue(secondOptions);
-        if (!Objects.equals(firstValue, secondValue)) {
-          diff.addDiff(clazz, definition, firstValue, secondValue);
+    fun getFirst(): MutableMap<com.google.devtools.common.options.OptionDefinition?, Any?> {
+        return first
+    }
+
+    fun getSecond(): com.google.common.collect.Multimap<com.google.devtools.common.options.OptionDefinition?, Any?> {
+        return second
+    }
+
+    private fun addDiff(
+        fragmentOptionsClass: java.lang.Class<out FragmentOptions?>?,
+        option: com.google.devtools.common.options.OptionDefinition?,
+        firstValue: Any?,
+        secondValue: Any?
+    ) {
+        differingOptions.put(fragmentOptionsClass, option)
+        first.put(option, firstValue)
+        second.put(option, secondValue)
+    }
+
+    private fun addExtraFirstFragment(options: java.lang.Class<out FragmentOptions?>?) {
+        extraFirstFragments.add(options)
+    }
+
+    private fun addExtraSecondFragment(options: FragmentOptions?) {
+        extraSecondFragments.add(options)
+    }
+
+    private fun putStarlarkDiff(
+        buildSetting: com.google.devtools.build.lib.cmdline.Label?,
+        firstValue: Any?,
+        secondValue: Any?
+    ) {
+        starlarkFirst.put(buildSetting, firstValue)
+        starlarkSecond.put(buildSetting, secondValue)
+        hasStarlarkOptions = true
+    }
+
+    private fun addExtraFirstStarlarkOption(buildSetting: com.google.devtools.build.lib.cmdline.Label?) {
+        extraStarlarkOptionsFirst.add(buildSetting)
+        hasStarlarkOptions = true
+    }
+
+    private fun addExtraSecondStarlarkOption(buildSetting: com.google.devtools.build.lib.cmdline.Label?, value: Any?) {
+        extraStarlarkOptionsSecond.put(buildSetting, value)
+        hasStarlarkOptions = true
+    }
+
+    /**
+     * Returns the labels of all starlark options that caused a difference between the first and
+     * second options set.
+     */
+    fun getChangedStarlarkOptions(): com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.cmdline.Label?> {
+        return com.google.common.collect.ImmutableSet.builder<com.google.devtools.build.lib.cmdline.Label?>()
+            .addAll(starlarkFirst.keys)
+            .addAll(starlarkSecond.keys)
+            .addAll(extraStarlarkOptionsFirst)
+            .addAll(extraStarlarkOptionsSecond.keys)
+            .build()
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun getStarlarkFirstForTesting(): MutableMap<com.google.devtools.build.lib.cmdline.Label?, Any?> {
+        return starlarkFirst
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun getStarlarkSecondForTesting(): MutableMap<com.google.devtools.build.lib.cmdline.Label?, Any?> {
+        return starlarkSecond
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun getExtraStarlarkOptionsFirstForTesting(): MutableList<com.google.devtools.build.lib.cmdline.Label?> {
+        return extraStarlarkOptionsFirst
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun getExtraStarlarkOptionsSecondForTesting(): MutableMap<com.google.devtools.build.lib.cmdline.Label?, Any?> {
+        return extraStarlarkOptionsSecond
+    }
+
+    /**
+     * Note: it's not enough for first and second to be empty, with trimming, they must also contain
+     * the same options classes.
+     */
+    fun areSame(): Boolean {
+        return first.isEmpty()
+                && second.isEmpty()
+                && extraSecondFragments.isEmpty()
+                && extraFirstFragments.isEmpty()
+                && differingOptions.isEmpty()
+                && starlarkFirst.isEmpty()
+                && starlarkSecond.isEmpty()
+                && extraStarlarkOptionsFirst.isEmpty()
+                && extraStarlarkOptionsSecond.isEmpty()
+    }
+
+    fun prettyPrint(): String {
+        val toReturn: java.lang.StringBuilder = java.lang.StringBuilder()
+        for (diff in getPrettyPrintList()) {
+            toReturn.append(diff).append("\n")
         }
-      }
+        return toReturn.toString()
     }
 
-    // Compare Starlark options for the two classes.
-    ImmutableMap<Label, Object> starlarkFirst = first.getStarlarkOptions();
-    ImmutableMap<Label, Object> starlarkSecond = second.getStarlarkOptions();
-    for (Label buildSetting : Sets.union(starlarkFirst.keySet(), starlarkSecond.keySet())) {
-      if (starlarkFirst.get(buildSetting) == null) {
-        diff.addExtraSecondStarlarkOption(buildSetting, starlarkSecond.get(buildSetting));
-      } else if (starlarkSecond.get(buildSetting) == null) {
-        diff.addExtraFirstStarlarkOption(buildSetting);
-      } else if (!starlarkFirst.get(buildSetting).equals(starlarkSecond.get(buildSetting))) {
-        diff.putStarlarkDiff(
-            buildSetting, starlarkFirst.get(buildSetting), starlarkSecond.get(buildSetting));
-      }
+    fun getPrettyPrintList(): MutableList<String?> {
+        val toReturn: MutableList<String?> = java.util.ArrayList<String?>()
+        first.forEach { (option: com.google.devtools.common.options.OptionDefinition?, value: Any?) ->
+            toReturn.add(
+                option.getOptionName() + ":" + value + " -> " + second.get(option)
+            )
+        }
+        starlarkFirst.forEach { (option: com.google.devtools.build.lib.cmdline.Label?, value: Any?) ->
+            toReturn.add(
+                option.toString() + ":" + value + starlarkSecond.get(option)
+            )
+        }
+        return toReturn
     }
-    return diff;
-  }
 
-  private final ListMultimap<Class<? extends FragmentOptions>, OptionDefinition> differingOptions =
-      ArrayListMultimap.create();
-  // The keyset for the {@link first} and {@link second} maps are identical and indicate which
-  // specific options differ between the first and second built options.
-  private final Map<OptionDefinition, Object> first = new LinkedHashMap<>();
-  // Since this class can be used to track the result of transitions, {@link second} is a multimap
-  // to be able to handle {@link SplitTransition}s.
-  private final SetMultimap<OptionDefinition, Object> second = OrderedSetMultimap.create();
-  // List of "extra" fragments for each BuildOption aka fragments that were trimmed off one
-  // BuildOption but not the other.
-  private final Set<Class<? extends FragmentOptions>> extraFirstFragments = new HashSet<>();
-  private final Set<FragmentOptions> extraSecondFragments = new HashSet<>();
+    companion object {
+        /** Returns the difference between two BuildOptions in a new [OptionsDiff].  */
+        fun diff(first: BuildOptions?, second: BuildOptions?): OptionsDiff {
+            return diff(OptionsDiff(), first, second)
+        }
 
-  private final Map<Label, Object> starlarkFirst = new LinkedHashMap<>();
-  // TODO(b/112041323): This should also be multimap but we don't diff multiple times with
-  // Starlark options anywhere yet so add that feature when necessary.
-  private final Map<Label, Object> starlarkSecond = new LinkedHashMap<>();
+        /**
+         * Returns the difference between two BuildOptions in a pre-existing [OptionsDiff].
+         * 
+         * 
+         * In a single pass through this method, the method can only compare a single "first" [ ] and single "second" BuildOptions; but an OptionsDiff instance can store the diff
+         * between a single "first" BuildOptions and multiple "second" BuildOptions. Being able to
+         * maintain a single OptionsDiff over multiple calls to diff is useful for, for example,
+         * aggregating the difference between a single BuildOptions and the results of applying a [ ]) to it.
+         */
+        // See comment above == comparison.
+        fun diff(diff: OptionsDiff, first: BuildOptions?, second: BuildOptions?): OptionsDiff {
+            com.google.common.base.Preconditions.checkArgument(
+                !diff.hasStarlarkOptions,
+                "OptionsDiff cannot handle multiple 'second' BuildOptions with Starlark options and is"
+                        + " trying to diff against %s",
+                diff
+            )
+            com.google.common.base.Preconditions.checkNotNull<Any?>(first)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(second)
+            if (first.equals(second)) {
+                return diff
+            }
 
-  private final List<Label> extraStarlarkOptionsFirst = new ArrayList<>();
-  private final SequencedMap<Label, Object> extraStarlarkOptionsSecond = new LinkedHashMap<>();
+            // Check and report if either class has been trimmed of an options class that exists in the
+            // other.
+            val firstOptionClasses: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> =
+                first.getNativeOptions().stream()
+                    .map(FragmentOptions::getOptionsClass)
+                    .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+            val secondOptionClasses: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> =
+                second.getNativeOptions().stream()
+                    .map(FragmentOptions::getOptionsClass)
+                    .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+            com.google.common.collect.Sets.difference<java.lang.Class<out FragmentOptions?>?>(
+                firstOptionClasses,
+                secondOptionClasses
+            ).forEach(java.util.function.Consumer { options: java.lang.Class<out FragmentOptions?>? ->
+                diff.addExtraFirstFragment(options)
+            })
+            com.google.common.collect.Sets.difference<java.lang.Class<out FragmentOptions?>?>(
+                secondOptionClasses,
+                firstOptionClasses
+            ).stream()
+                .map<Any?>(second::get)
+                .forEach { options: Any? -> diff.addExtraSecondFragment(options) }
 
-  private boolean hasStarlarkOptions = false;
+            // For fragments in common, report differences.
+            for (clazz in com.google.common.collect.Sets.intersection<java.lang.Class<out FragmentOptions?>?>(
+                firstOptionClasses,
+                secondOptionClasses
+            )) {
+                val firstOptions: FragmentOptions? = first.get(clazz)
+                val secondOptions: FragmentOptions? = second.get(clazz)
+                // We avoid calling #equals because we are going to do a field-by-field comparison anyway.
+                if (firstOptions === secondOptions) {
+                    continue
+                }
+                for (definition in com.google.devtools.common.options.OptionDefinition.getOptionDefinitions(clazz)) {
+                    val firstValue: Any? = definition.getValue(firstOptions)
+                    val secondValue: Any? = definition.getValue(secondOptions)
+                    if (firstValue != secondValue) {
+                        diff.addDiff(clazz, definition, firstValue, secondValue)
+                    }
+                }
+            }
 
-  @VisibleForTesting
-  Set<Class<? extends FragmentOptions>> getExtraFirstFragmentClassesForTesting() {
-    return extraFirstFragments;
-  }
-
-  @VisibleForTesting
-  Set<FragmentOptions> getExtraSecondFragmentsForTesting() {
-    return extraSecondFragments;
-  }
-
-  public Map<OptionDefinition, Object> getFirst() {
-    return first;
-  }
-
-  public Multimap<OptionDefinition, Object> getSecond() {
-    return second;
-  }
-
-  private void addDiff(
-      Class<? extends FragmentOptions> fragmentOptionsClass,
-      OptionDefinition option,
-      Object firstValue,
-      Object secondValue) {
-    differingOptions.put(fragmentOptionsClass, option);
-    first.put(option, firstValue);
-    second.put(option, secondValue);
-  }
-
-  private void addExtraFirstFragment(Class<? extends FragmentOptions> options) {
-    extraFirstFragments.add(options);
-  }
-
-  private void addExtraSecondFragment(FragmentOptions options) {
-    extraSecondFragments.add(options);
-  }
-
-  private void putStarlarkDiff(Label buildSetting, Object firstValue, Object secondValue) {
-    starlarkFirst.put(buildSetting, firstValue);
-    starlarkSecond.put(buildSetting, secondValue);
-    hasStarlarkOptions = true;
-  }
-
-  private void addExtraFirstStarlarkOption(Label buildSetting) {
-    extraStarlarkOptionsFirst.add(buildSetting);
-    hasStarlarkOptions = true;
-  }
-
-  private void addExtraSecondStarlarkOption(Label buildSetting, Object value) {
-    extraStarlarkOptionsSecond.put(buildSetting, value);
-    hasStarlarkOptions = true;
-  }
-
-  /**
-   * Returns the labels of all starlark options that caused a difference between the first and
-   * second options set.
-   */
-  public ImmutableSet<Label> getChangedStarlarkOptions() {
-    return ImmutableSet.<Label>builder()
-        .addAll(starlarkFirst.keySet())
-        .addAll(starlarkSecond.keySet())
-        .addAll(extraStarlarkOptionsFirst)
-        .addAll(extraStarlarkOptionsSecond.keySet())
-        .build();
-  }
-
-  @VisibleForTesting
-  Map<Label, Object> getStarlarkFirstForTesting() {
-    return starlarkFirst;
-  }
-
-  @VisibleForTesting
-  Map<Label, Object> getStarlarkSecondForTesting() {
-    return starlarkSecond;
-  }
-
-  @VisibleForTesting
-  List<Label> getExtraStarlarkOptionsFirstForTesting() {
-    return extraStarlarkOptionsFirst;
-  }
-
-  @VisibleForTesting
-  Map<Label, Object> getExtraStarlarkOptionsSecondForTesting() {
-    return extraStarlarkOptionsSecond;
-  }
-
-  /**
-   * Note: it's not enough for first and second to be empty, with trimming, they must also contain
-   * the same options classes.
-   */
-  boolean areSame() {
-    return first.isEmpty()
-        && second.isEmpty()
-        && extraSecondFragments.isEmpty()
-        && extraFirstFragments.isEmpty()
-        && differingOptions.isEmpty()
-        && starlarkFirst.isEmpty()
-        && starlarkSecond.isEmpty()
-        && extraStarlarkOptionsFirst.isEmpty()
-        && extraStarlarkOptionsSecond.isEmpty();
-  }
-
-  public String prettyPrint() {
-    StringBuilder toReturn = new StringBuilder();
-    for (String diff : getPrettyPrintList()) {
-      toReturn.append(diff).append("\n");
+            // Compare Starlark options for the two classes.
+            val starlarkFirst: com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.cmdline.Label?, Any?> =
+                first.getStarlarkOptions()
+            val starlarkSecond: com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.cmdline.Label?, Any?> =
+                second.getStarlarkOptions()
+            for (buildSetting in com.google.common.collect.Sets.union<com.google.devtools.build.lib.cmdline.Label?>(
+                starlarkFirst.keys,
+                starlarkSecond.keys
+            )) {
+                if (starlarkFirst.get(buildSetting) == null) {
+                    diff.addExtraSecondStarlarkOption(buildSetting, starlarkSecond.get(buildSetting))
+                } else if (starlarkSecond.get(buildSetting) == null) {
+                    diff.addExtraFirstStarlarkOption(buildSetting)
+                } else if (starlarkFirst.get(buildSetting) != starlarkSecond.get(buildSetting)) {
+                    diff.putStarlarkDiff(
+                        buildSetting, starlarkFirst.get(buildSetting), starlarkSecond.get(buildSetting)
+                    )
+                }
+            }
+            return diff
+        }
     }
-    return toReturn.toString();
-  }
-
-  public List<String> getPrettyPrintList() {
-    List<String> toReturn = new ArrayList<>();
-    first.forEach(
-        (option, value) ->
-            toReturn.add(option.getOptionName() + ":" + value + " -> " + second.get(option)));
-    starlarkFirst.forEach(
-        (option, value) -> toReturn.add(option + ":" + value + starlarkSecond.get(option)));
-    return toReturn;
-  }
 }

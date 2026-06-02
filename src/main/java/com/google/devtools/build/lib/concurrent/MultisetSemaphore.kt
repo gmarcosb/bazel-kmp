@@ -11,192 +11,194 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.Multiset;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Set;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.Semaphore
+import java.util.function.ToIntFunction
 
 /**
  * A concurrency primitive for managing access to at most K unique things at once, for a fixed K.
- *
- * <p>You can think of this as a pair of a {@link Semaphore} with K total permits and a
- * {@link Multiset}, with permits being doled out and returned based on the current contents of the
- * {@link Multiset}.
+ * 
+ * 
+ * You can think of this as a pair of a [Semaphore] with K total permits and a
+ * [Multiset], with permits being doled out and returned based on the current contents of the
+ * [Multiset].
  */
-@ThreadSafe
-public abstract class MultisetSemaphore<T> {
-  /**
-   * Blocks until permits are available for all the values in {@code valuesToAcquire}, and then
-   * atomically acquires these permits.
-   *
-   * <p>{@code acquireAll(valuesToAcquire)} atomically does the following
-   * <ol>
-   *   <li>Computes {@code m}, the number of values in {@code valuesToAcquire} that are not
-   *   currently in the backing {@link Multiset}.
-   *   <li>Adds {@code valuesToAcquire} to the backing {@link Multiset}.
-   *   <li>Blocks until {@code m} permits are available from the backing {@link Semaphore}.
-   *   <li>Acquires these permits.
-   * </ol>
-   */
-  public abstract void acquireAll(Set<T> valuesToAcquire) throws InterruptedException;
-
-  /**
-   * Atomically releases permits for all the values in {@code valuesToAcquire}.
-   *
-   * <p>{@code releaseAll(valuesToRelease)} atomically does the following
-   * <ol>
-   *   <li>Computes {@code m}, the number of values in {@code valuesToRelease} that are currently in
-   *   the backing {@link Multiset} with multiplicity 1.
-   *   <li>Removes {@code valuesToRelease} from the backing {@link Multiset}.
-   *   <li>Release {@code m} permits from the backing {@link Semaphore}.
-   * </ol>
-   *
-   * <p>Assumes that this {@link MultisetSemaphore} has already given out permits for all the
-   * values in {@code valuesToAcquire}.
-   */
-  public abstract void releaseAll(Set<T> valuesToRelease);
-
-  public abstract int estimateCurrentNumUniqueValues();
-
-  /**
-   * Returns a {@link MultisetSemaphore} with a backing {@link Semaphore} that has an unbounded
-   * number of permits; that is, {@link #acquireAll} will never block.
-   */
-  public static <T> MultisetSemaphore<T> unbounded() {
-    return UnboundedMultisetSemaphore.instance();
-  }
-
-  /** Builder for {@link MultisetSemaphore} instances. */
-  public static class Builder {
-    private static final int UNSET_INT = -1;
-
-    private int maxNumUniqueValues = UNSET_INT;
-
-    private Builder() {
-    }
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+abstract class MultisetSemaphore<T> {
+    /**
+     * Blocks until permits are available for all the values in `valuesToAcquire`, and then
+     * atomically acquires these permits.
+     * 
+     * 
+     * `acquireAll(valuesToAcquire)` atomically does the following
+     * 
+     *  1. Computes `m`, the number of values in `valuesToAcquire` that are not
+     * currently in the backing [Multiset].
+     *  1. Adds `valuesToAcquire` to the backing [Multiset].
+     *  1. Blocks until `m` permits are available from the backing [Semaphore].
+     *  1. Acquires these permits.
+     * 
+     */
+    @Throws(java.lang.InterruptedException::class)
+    abstract fun acquireAll(valuesToAcquire: MutableSet<T?>?)
 
     /**
-     * Sets the maximum number of unique values for which permits can be held at once in the
-     * to-be-constructed {@link MultisetSemaphore}.
+     * Atomically releases permits for all the values in `valuesToAcquire`.
+     * 
+     * 
+     * `releaseAll(valuesToRelease)` atomically does the following
+     * 
+     *  1. Computes `m`, the number of values in `valuesToRelease` that are currently in
+     * the backing [Multiset] with multiplicity 1.
+     *  1. Removes `valuesToRelease` from the backing [Multiset].
+     *  1. Release `m` permits from the backing [Semaphore].
+     * 
+     * 
+     * 
+     * Assumes that this [MultisetSemaphore] has already given out permits for all the
+     * values in `valuesToAcquire`.
      */
-    @CanIgnoreReturnValue
-    public Builder maxNumUniqueValues(int maxNumUniqueValues) {
-      Preconditions.checkState(
-          maxNumUniqueValues > 0,
-          "maxNumUniqueValues must be positive (was %s)",
-          maxNumUniqueValues);
-      this.maxNumUniqueValues = maxNumUniqueValues;
-      return this;
-    }
+    abstract fun releaseAll(valuesToRelease: MutableSet<T?>?)
 
-    public <T> MultisetSemaphore<T> build() {
-      Preconditions.checkState(
-          maxNumUniqueValues != UNSET_INT,
-          "maxNumUniqueValues(int) must be specified");
-      return new NaiveMultisetSemaphore<>(maxNumUniqueValues);
-    }
-  }
+    abstract fun estimateCurrentNumUniqueValues(): Int
 
-  /** Returns a fresh {@link Builder}. */
-  public static Builder newBuilder() {
-    return new Builder();
-  }
+    /** Builder for [MultisetSemaphore] instances.  */
+    class Builder private constructor() {
+        private var maxNumUniqueValues: Int =
+            com.google.devtools.build.lib.concurrent.MultisetSemaphore.Builder.Companion.UNSET_INT
 
-  private static class UnboundedMultisetSemaphore<T> extends MultisetSemaphore<T> {
-    private static final UnboundedMultisetSemaphore<Object> INSTANCE =
-        new UnboundedMultisetSemaphore<Object>();
-
-    private UnboundedMultisetSemaphore() {
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> UnboundedMultisetSemaphore<T> instance() {
-      return (UnboundedMultisetSemaphore<T>) INSTANCE;
-    }
-
-    @Override
-    public void acquireAll(Set<T> valuesToAcquire) throws InterruptedException {
-    }
-
-    @Override
-    public void releaseAll(Set<T> valuesToRelease) {
-    }
-
-    @Override
-    public int estimateCurrentNumUniqueValues() {
-      // We can't give a good estimate since we don't track values at all.
-      return 0;
-    }
-  }
-
-  private static class NaiveMultisetSemaphore<T> extends MultisetSemaphore<T> {
-    private final int maxNumUniqueValues;
-    private final Semaphore semaphore;
-    private final Object lock = new Object();
-    // Protected by 'lock'.
-    private final HashMultiset<T> actualValues = HashMultiset.create();
-
-    private NaiveMultisetSemaphore(int maxNumUniqueValues) {
-      this.maxNumUniqueValues = maxNumUniqueValues;
-      this.semaphore = new Semaphore(maxNumUniqueValues);
-    }
-
-    @Override
-    public void acquireAll(Set<T> valuesToAcquire) throws InterruptedException {
-      int oldNumNeededPermits;
-      synchronized (lock) {
-        oldNumNeededPermits = computeNumNeededPermitsLocked(valuesToAcquire);
-      }
-      while (true) {
-        semaphore.acquire(oldNumNeededPermits);
-        synchronized (lock) {
-          int newNumNeededPermits = computeNumNeededPermitsLocked(valuesToAcquire);
-          if (newNumNeededPermits != oldNumNeededPermits) {
-            // While we were doing 'acquire' above, another thread won the race to acquire the first
-            // usage of one of the values in 'valuesToAcquire' or release the last usage of one of
-            // the values. This means we either acquired too many or too few permits, respectively,
-            // above. Release the permits we did acquire, in order to restore the accuracy of the
-            // semaphore's current count, and then try again.
-            semaphore.release(oldNumNeededPermits);
-            oldNumNeededPermits = newNumNeededPermits;
-            continue;
-          } else {
-            // Our modification to the semaphore was correct, so it's sound to update the multiset.
-            valuesToAcquire.forEach(actualValues::add);
-            return;
-          }
+        /**
+         * Sets the maximum number of unique values for which permits can be held at once in the
+         * to-be-constructed [MultisetSemaphore].
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun maxNumUniqueValues(maxNumUniqueValues: Int): Builder {
+            com.google.common.base.Preconditions.checkState(
+                maxNumUniqueValues > 0,
+                "maxNumUniqueValues must be positive (was %s)",
+                maxNumUniqueValues
+            )
+            this.maxNumUniqueValues = maxNumUniqueValues
+            return this
         }
-      }
+
+        fun <T> build(): MultisetSemaphore<T?> {
+            com.google.common.base.Preconditions.checkState(
+                maxNumUniqueValues != com.google.devtools.build.lib.concurrent.MultisetSemaphore.Builder.Companion.UNSET_INT,
+                "maxNumUniqueValues(int) must be specified"
+            )
+            return com.google.devtools.build.lib.concurrent.MultisetSemaphore.NaiveMultisetSemaphore<T?>(
+                maxNumUniqueValues
+            )
+        }
+
+        companion object {
+            private val UNSET_INT = -1
+        }
     }
 
-    private int computeNumNeededPermitsLocked(Set<T> valuesToAcquire) {
-      // We need a permit for each value that is not already in the multiset.
-      return (int) valuesToAcquire.stream()
-          .filter(v -> actualValues.count(v) == 0)
-          .count();
+    private class UnboundedMultisetSemaphore<T> : MultisetSemaphore<T?>() {
+        @Throws(java.lang.InterruptedException::class)
+        override fun acquireAll(valuesToAcquire: MutableSet<T?>?) {
+        }
+
+        override fun releaseAll(valuesToRelease: MutableSet<T?>?) {
+        }
+
+        override fun estimateCurrentNumUniqueValues(): Int {
+            // We can't give a good estimate since we don't track values at all.
+            return 0
+        }
+
+        companion object {
+            private val INSTANCE: UnboundedMultisetSemaphore<Any?> =
+                com.google.devtools.build.lib.concurrent.MultisetSemaphore.UnboundedMultisetSemaphore<Any?>()
+
+            private fun <T> instance(): UnboundedMultisetSemaphore<T?>? {
+                return com.google.devtools.build.lib.concurrent.MultisetSemaphore.UnboundedMultisetSemaphore.Companion.INSTANCE as UnboundedMultisetSemaphore<T?>?
+            }
+        }
     }
 
-    @Override
-    public void releaseAll(Set<T> valuesToRelease) {
-      synchronized (lock) {
-        // We need to release a permit for each value that currently has multiplicity 1.
-        int numPermitsToRelease =
-            valuesToRelease
-                .stream()
-                .mapToInt(v -> actualValues.remove(v, 1) == 1 ? 1 : 0)
-                .sum();
-        semaphore.release(numPermitsToRelease);
-      }
+    private class NaiveMultisetSemaphore<T>(private val maxNumUniqueValues: Int) : MultisetSemaphore<T?>() {
+        private val semaphore: Semaphore
+        private val lock = Any()
+
+        // Protected by 'lock'.
+        private val actualValues: com.google.common.collect.HashMultiset<T?> =
+            com.google.common.collect.HashMultiset.create<T?>()
+
+        init {
+            this.semaphore = Semaphore(maxNumUniqueValues)
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun acquireAll(valuesToAcquire: MutableSet<T?>) {
+            var oldNumNeededPermits: Int
+            synchronized(lock) {
+                oldNumNeededPermits = computeNumNeededPermitsLocked(valuesToAcquire)
+            }
+            while (true) {
+                semaphore.acquire(oldNumNeededPermits)
+                synchronized(lock) {
+                    val newNumNeededPermits = computeNumNeededPermitsLocked(valuesToAcquire)
+                    if (newNumNeededPermits != oldNumNeededPermits) {
+                        // While we were doing 'acquire' above, another thread won the race to acquire the first
+                        // usage of one of the values in 'valuesToAcquire' or release the last usage of one of
+                        // the values. This means we either acquired too many or too few permits, respectively,
+                        // above. Release the permits we did acquire, in order to restore the accuracy of the
+                        // semaphore's current count, and then try again.
+                        semaphore.release(oldNumNeededPermits)
+                        oldNumNeededPermits = newNumNeededPermits
+                        continue
+                    } else {
+                        // Our modification to the semaphore was correct, so it's sound to update the multiset.
+                        valuesToAcquire.forEach(java.util.function.Consumer { element: T? -> actualValues.add(element) })
+                        return
+                    }
+                }
+            }
+        }
+
+        fun computeNumNeededPermitsLocked(valuesToAcquire: MutableSet<T?>): Int {
+            // We need a permit for each value that is not already in the multiset.
+            return valuesToAcquire.stream()
+                .filter(java.util.function.Predicate { v: T? -> actualValues.count(v) == 0 })
+                .count().toInt()
+        }
+
+        override fun releaseAll(valuesToRelease: MutableSet<T?>) {
+            synchronized(lock) {
+                // We need to release a permit for each value that currently has multiplicity 1.
+                val numPermitsToRelease: Int =
+                    valuesToRelease
+                        .stream()
+                        .mapToInt(ToIntFunction { v: T? -> if (actualValues.remove(v, 1) == 1) 1 else 0 })
+                        .sum()
+                semaphore.release(numPermitsToRelease)
+            }
+        }
+
+        override fun estimateCurrentNumUniqueValues(): Int {
+            return maxNumUniqueValues - semaphore.availablePermits()
+        }
     }
 
-    @Override
-    public int estimateCurrentNumUniqueValues() {
-      return maxNumUniqueValues - semaphore.availablePermits();
+    companion object {
+        /**
+         * Returns a [MultisetSemaphore] with a backing [Semaphore] that has an unbounded
+         * number of permits; that is, [.acquireAll] will never block.
+         */
+        @kotlin.jvm.JvmStatic
+        fun <T> unbounded(): MultisetSemaphore<T?>? {
+            return com.google.devtools.build.lib.concurrent.MultisetSemaphore.UnboundedMultisetSemaphore.Companion.instance<T?>()
+        }
+
+        /** Returns a fresh [Builder].  */
+        @kotlin.jvm.JvmStatic
+        fun newBuilder(): Builder {
+            return com.google.devtools.build.lib.concurrent.MultisetSemaphore.Builder()
+        }
     }
-  }
 }

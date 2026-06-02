@@ -265,7 +265,7 @@ public final class GraphBackedRecursivePackageProvider extends AbstractRecursive
       inUniverse = true;
     } else {
       for (TargetPattern pattern : universeTargetPatterns.patterns()) {
-        if (!pattern.getType().equals(TargetPattern.Type.TARGETS_BELOW_DIRECTORY)) {
+        if (!pattern.type.equals(TargetPattern.Type.TARGETS_BELOW_DIRECTORY)) {
           continue;
         }
         PackageIdentifier packageIdentifier = PackageIdentifier.create(repository, directory);

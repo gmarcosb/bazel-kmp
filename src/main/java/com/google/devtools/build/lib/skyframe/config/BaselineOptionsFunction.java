@@ -57,7 +57,7 @@ public final class BaselineOptionsFunction implements SkyFunction {
     BaselineOptionsValue.Key key = (BaselineOptionsValue.Key) skyKey.argument();
 
     BuildOptions rawBaselineOptions;
-    if (key.afterExecTransition()) {
+    if (key.afterExecTransition) {
       // Use the precomputed baseline exec
       rawBaselineOptions = BASELINE_EXEC_CONFIGURATION.get(env);
     } else {
@@ -72,7 +72,7 @@ public final class BaselineOptionsFunction implements SkyFunction {
       return BaselineOptionsValue.create(rawBaselineOptions);
     }
 
-    if (key.trimTestOptions()) {
+    if (key.trimTestOptions) {
       rawBaselineOptions = TestTrimmingLogic.trim(rawBaselineOptions);
     }
 

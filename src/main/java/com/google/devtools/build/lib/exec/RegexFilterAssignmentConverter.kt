@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import com.google.devtools.build.lib.util.RegexFilter;
-import com.google.devtools.build.lib.util.RegexFilter.RegexFilterConverter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.Converters.AssignmentToListOfValuesConverter;
+import com.google.devtools.build.lib.util.RegexFilter.RegexFilterConverter
 
-/** A converter for options of the form RegexFilter=String. */
-public class RegexFilterAssignmentConverter
-    extends AssignmentToListOfValuesConverter<RegexFilter, String> {
+/** A converter for options of the form RegexFilter=String.  */
+class RegexFilterAssignmentConverter
 
-  public RegexFilterAssignmentConverter() {
-    super(new RegexFilterConverter(), new Converters.StringConverter(), AllowEmptyKeys.NO);
-  }
-
-  @Override
-  public String getTypeDescription() {
-    return "a '<RegexFilter>=value[,value]' assignment";
-  }
+    :
+    com.google.devtools.common.options.Converters.AssignmentToListOfValuesConverter<com.google.devtools.build.lib.util.RegexFilter?, String?>(
+        RegexFilterConverter(),
+        com.google.devtools.common.options.Converters.StringConverter(),
+        com.google.devtools.common.options.Converters.AssignmentToListOfValuesConverter.AllowEmptyKeys.NO
+    ) {
+    val typeDescription: String
+        get() = "a '<RegexFilter>=value[,value]' assignment"
 }

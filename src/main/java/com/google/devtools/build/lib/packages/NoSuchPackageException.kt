@@ -11,80 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.PackageLoading;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * Exception indicating an attempt to access a package which is not found, does not exist, or can't
  * be parsed into a package.
- *
- * <p>Prefer using more-specific subclasses, when appropriate.
+ * 
+ * 
+ * Prefer using more-specific subclasses, when appropriate.
  */
-public class NoSuchPackageException extends NoSuchThingException {
+open class NoSuchPackageException : NoSuchThingException {
+    private val packageId: PackageIdentifier?
 
-  private final PackageIdentifier packageId;
+    constructor(packageId: PackageIdentifier?, message: String?) : super(message) {
+        this.packageId = packageId
+    }
 
-  public NoSuchPackageException(PackageIdentifier packageId, String message) {
-    super(message);
-    this.packageId = packageId;
-  }
+    constructor(packageId: PackageIdentifier?, message: String?, cause: java.lang.Exception?) : super(message, cause) {
+        this.packageId = packageId
+    }
 
-  public NoSuchPackageException(PackageIdentifier packageId, String message, Exception cause) {
-    super(message, cause);
-    this.packageId = packageId;
-  }
+    constructor(packageId: PackageIdentifier?, message: String?, detailedExitCode: DetailedExitCode?) : super(
+        message,
+        detailedExitCode
+    ) {
+        this.packageId = packageId
+    }
 
-  public NoSuchPackageException(
-      PackageIdentifier packageId, String message, DetailedExitCode detailedExitCode) {
-    super(message, detailedExitCode);
-    this.packageId = packageId;
-  }
+    constructor(
+        packageId: PackageIdentifier?,
+        message: String?,
+        cause: java.lang.Exception?,
+        detailedExitCode: DetailedExitCode?
+    ) : super(message, cause, detailedExitCode) {
+        this.packageId = packageId
+    }
 
-  public NoSuchPackageException(
-      PackageIdentifier packageId,
-      String message,
-      Exception cause,
-      DetailedExitCode detailedExitCode) {
-    super(message, cause, detailedExitCode);
-    this.packageId = packageId;
-  }
+    fun getPackageId(): PackageIdentifier? {
+        return packageId
+    }
 
-  public PackageIdentifier getPackageId() {
-    return packageId;
-  }
+    fun getRawMessage(): String? {
+        return super.getMessage()
+    }
 
-  String getRawMessage() {
-    return super.getMessage();
-  }
+    override fun getMessage(): String? {
+        return java.lang.String.format("no such package '%s': %s", packageId, getRawMessage())
+    }
 
-  @Override
-  public String getMessage() {
-    return String.format("no such package '%s': %s", packageId, getRawMessage());
-  }
+    fun hasExplicitDetailedExitCode(): Boolean {
+        return getUncheckedDetailedExitCode() != null
+    }
 
-  public boolean hasExplicitDetailedExitCode() {
-    return getUncheckedDetailedExitCode() != null;
-  }
+    override fun getDetailedExitCode(): DetailedExitCode {
+        val uncheckedDetailedExitCode: DetailedExitCode? = getUncheckedDetailedExitCode()
+        return if (uncheckedDetailedExitCode != null)
+            uncheckedDetailedExitCode
+        else
+            defaultDetailedExitCode()
+    }
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    DetailedExitCode uncheckedDetailedExitCode = getUncheckedDetailedExitCode();
-    return uncheckedDetailedExitCode != null
-        ? uncheckedDetailedExitCode
-        : defaultDetailedExitCode();
-  }
-
-  private DetailedExitCode defaultDetailedExitCode() {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(getMessage())
-            .setPackageLoading(
-                PackageLoading.newBuilder().setCode(PackageLoading.Code.PACKAGE_MISSING).build())
-            .build());
-  }
+    private fun defaultDetailedExitCode(): DetailedExitCode {
+        return DetailedExitCode.of(
+            FailureDetail.newBuilder()
+                .setMessage(getMessage())
+                .setPackageLoading(
+                    PackageLoading.newBuilder().setCode(PackageLoading.Code.PACKAGE_MISSING).build()
+                )
+                .build()
+        )
+    }
 }

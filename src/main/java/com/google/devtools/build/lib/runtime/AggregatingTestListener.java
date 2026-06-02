@@ -93,7 +93,7 @@ public final class AggregatingTestListener {
     AggregationPolicy policy =
         new AggregationPolicy(
             eventBus,
-            executionOptions.getTestCheckUpToDate(),
+                executionOptions.testCheckUpToDate,
             summaryOptions.getTestVerboseTimeoutWarnings());
     // Add all target runs to the map, assuming 1:1 status artifact <-> result.
     for (ConfiguredTarget target : event.getTestTargets()) {
@@ -137,7 +137,7 @@ public final class AggregatingTestListener {
                 event.buildConfigurationValue(),
                 new AggregationPolicy(
                     eventBus,
-                    executionOptions.getTestCheckUpToDate(),
+                        executionOptions.testCheckUpToDate,
                     summaryOptions.getTestVerboseTimeoutWarnings()),
                 event.isSkipped()));
   }
@@ -209,7 +209,7 @@ public final class AggregatingTestListener {
     if (result.wasCatastrophe()) {
       blazeHalted = true;
     }
-    skipTargetsOnFailure = result.getStopOnFirstFailure();
+    skipTargetsOnFailure = result.stopOnFirstFailure;
     buildComplete(
         result.getActualTargets(), result.getSkippedTargets(), result.getSuccessfulTargets());
   }

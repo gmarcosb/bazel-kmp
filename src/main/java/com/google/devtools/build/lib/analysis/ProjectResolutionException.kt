@@ -11,13 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-/** Exception thrown when a project file cannot be parsed. */
-public final class ProjectResolutionException extends Exception {
-
-  public ProjectResolutionException(String msg, Throwable cause) {
-    super(msg, cause);
-  }
-}
+/** Exception thrown when a project file cannot be parsed.  */
+class ProjectResolutionException(msg: String?, cause: Throwable?) : java.lang.Exception(msg, cause)

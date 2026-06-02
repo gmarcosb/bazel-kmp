@@ -196,7 +196,7 @@ public abstract class CcModule
         ((BazelModuleContext)
                 Module.ofInnermostEnclosingStarlarkFunction(thread, 1).getClientData())
             .label();
-    return label.getPackageIdentifier().getRepository().getName().equals("_builtins");
+    return label.getPackageIdentifier().getRepository().name.equals("_builtins");
   }
 
   protected static void isCalledFromStarlarkCcCommon(StarlarkThread thread) throws EvalException {

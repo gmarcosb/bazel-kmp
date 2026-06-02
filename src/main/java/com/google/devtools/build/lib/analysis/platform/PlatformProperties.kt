@@ -11,87 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.platform;
+package com.google.devtools.build.lib.analysis.platform
 
-import com.google.auto.value.AutoValue;
-import com.google.auto.value.extension.memoized.Memoized;
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableMap;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.SequencedMap;
-import javax.annotation.Nullable;
+import com.google.auto.value.AutoValue
+import com.google.auto.value.extension.memoized.Memoized
+import java.util.LinkedHashMap
+import java.util.SequencedMap
 
-/** Proepeties set on a specific {@link PlatformInfo}. */
+/** Proepeties set on a specific [PlatformInfo].  */
 @AutoValue
-public abstract class PlatformProperties {
-  public abstract ImmutableMap<String, String> properties();
+abstract class PlatformProperties {
+    abstract fun properties(): com.google.common.collect.ImmutableMap<String?, String?>?
 
-  @Override
-  @Memoized
-  public abstract int hashCode();
+    @Memoized
+    abstract override fun hashCode(): Int
 
-  public boolean isEmpty() {
-    return properties().isEmpty();
-  }
+    val isEmpty: Boolean
+        get() = properties().isEmpty()
 
-  /** Returns a new {@link Builder} for creating a fresh {@link PlatformProperties} instance. */
-  public static Builder builder() {
-    return new Builder();
-  }
+    /** Builder class to facilitate creating valid [PlatformProperties] instances.  */
+    class Builder {
+        private var parent: PlatformProperties? = null
+        private var properties: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>()
 
-  /** Builder class to facilitate creating valid {@link PlatformProperties} instances. */
-  public static final class Builder {
-    @Nullable private PlatformProperties parent = null;
-    private ImmutableMap<String, String> properties = ImmutableMap.of();
-
-    @CanIgnoreReturnValue
-    public Builder setParent(@Nullable PlatformProperties parent) {
-      this.parent = parent;
-      return this;
-    }
-
-    /** Returns the current properties (but not any from the parent), for validation. */
-    ImmutableMap<String, String> getProperties() {
-      return this.properties;
-    }
-
-    @CanIgnoreReturnValue
-    public Builder setProperties(Map<String, String> properties) {
-      this.properties = ImmutableMap.copyOf(properties);
-      return this;
-    }
-
-    public PlatformProperties build() {
-      ImmutableMap<String, String> properties = mergeParent(parent, this.properties);
-
-      return new AutoValue_PlatformProperties(properties);
-    }
-
-    @Nullable
-    private static ImmutableMap<String, String> mergeParent(
-        PlatformProperties parent, ImmutableMap<String, String> properties) {
-      if (parent == null || parent.isEmpty()) {
-        return properties;
-      }
-
-      SequencedMap<String, String> result = new LinkedHashMap<>();
-      if (!parent.properties().isEmpty()) {
-        result.putAll(parent.properties());
-      }
-
-      if (!properties.isEmpty()) {
-        for (Map.Entry<String, String> entry : properties.entrySet()) {
-          if (Strings.isNullOrEmpty(entry.getValue())) {
-            result.remove(entry.getKey());
-          } else {
-            result.put(entry.getKey(), entry.getValue());
-          }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setParent(parent: PlatformProperties?): Builder {
+            this.parent = parent
+            return this
         }
-      }
 
-      return ImmutableMap.copyOf(result);
+        /** Returns the current properties (but not any from the parent), for validation.  */
+        fun getProperties(): com.google.common.collect.ImmutableMap<String?, String?> {
+            return this.properties
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setProperties(properties: MutableMap<String?, String?>): Builder {
+            this.properties = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(properties)
+            return this
+        }
+
+        fun build(): PlatformProperties {
+            val properties: com.google.common.collect.ImmutableMap<String?, String?>? =
+                com.google.devtools.build.lib.analysis.platform.PlatformProperties.Builder.Companion.mergeParent(
+                    parent,
+                    this.properties
+                )
+
+            return AutoValue_PlatformProperties(properties)
+        }
+
+        companion object {
+            private fun mergeParent(
+                parent: PlatformProperties?, properties: com.google.common.collect.ImmutableMap<String?, String?>
+            ): com.google.common.collect.ImmutableMap<String?, String?>? {
+                if (parent == null || parent.isEmpty) {
+                    return properties
+                }
+
+                val result: SequencedMap<String?, String?> = LinkedHashMap<String?, String?>()
+                if (!parent.properties().isEmpty()) {
+                    result.putAll(parent.properties())
+                }
+
+                if (!properties.isEmpty()) {
+                    for (entry in properties.entries) {
+                        if (com.google.common.base.Strings.isNullOrEmpty(entry.value)) {
+                            result.remove(entry.key)
+                        } else {
+                            result.put(entry.key, entry.value)
+                        }
+                    }
+                }
+
+                return com.google.common.collect.ImmutableMap.copyOf<String?, String?>(result)
+            }
+        }
     }
-  }
+
+    companion object {
+        /** Returns a new [Builder] for creating a fresh [PlatformProperties] instance.  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.analysis.platform.PlatformProperties.Builder()
+        }
+    }
 }

@@ -11,24 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.packages.AspectClass
+import com.google.devtools.build.lib.packages.AspectParameters
+import com.google.devtools.build.lib.starlarkbuildapi.StarlarkAspectApi
 
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.starlarkbuildapi.StarlarkAspectApi;
+/** Represents an aspect which can be attached to a Starlark-defined rule attribute.  */
+interface StarlarkAspect : StarlarkAspectApi {
+    /** Returns the aspect class for this aspect.  */
+    fun getAspectClass(): AspectClass?
 
-/** Represents an aspect which can be attached to a Starlark-defined rule attribute. */
-public interface StarlarkAspect extends StarlarkAspectApi {
-  /** Returns the aspect class for this aspect. */
-  AspectClass getAspectClass();
+    /** Returns a set of the names of parameters required to create this aspect.  */
+    fun getParamAttributes(): com.google.common.collect.ImmutableSet<String?>?
 
-  /** Returns a set of the names of parameters required to create this aspect. */
-  ImmutableSet<String> getParamAttributes();
+    /** Returns the name of this aspect.  */
+    fun getName(): String?
 
-  /** Returns the name of this aspect. */
-  String getName();
-
-  /** Returns a function to extract the aspect parameters values from its base rule. */
-  Function<Rule, AspectParameters> getDefaultParametersExtractor();
+    /** Returns a function to extract the aspect parameters values from its base rule.  */
+    fun getDefaultParametersExtractor(): com.google.common.base.Function<com.google.devtools.build.lib.packages.Rule?, AspectParameters?>?
 }

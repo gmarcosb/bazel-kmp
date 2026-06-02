@@ -11,51 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.PackageLoadingListener.Metrics;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-/** Provides loaded-package validation functionality. */
-public interface PackageValidator {
+/** Provides loaded-package validation functionality.  */
+interface PackageValidator {
+    /** Thrown when a package is deemed invalid.  */
+    class InvalidPackageException : NoSuchPackageException {
+        constructor(pkgId: PackageIdentifier?, message: String?) : super(pkgId, message)
 
-  /** No-op implementation of {@link PackageValidator}. */
-  PackageValidator NOOP_VALIDATOR = (pkg, metrics, eventHandler) -> {};
-
-  /** Thrown when a package is deemed invalid. */
-  class InvalidPackageException extends NoSuchPackageException {
-    public InvalidPackageException(PackageIdentifier pkgId, String message) {
-      super(pkgId, message);
+        constructor(pkgId: PackageIdentifier?, message: String?, detailedExitCode: DetailedExitCode?) : super(
+            pkgId,
+            message,
+            detailedExitCode
+        )
     }
 
-    public InvalidPackageException(
-        PackageIdentifier pkgId, String message, DetailedExitCode detailedExitCode) {
-      super(pkgId, message, detailedExitCode);
+    /** Thrown when a package piece is deemed invalid.  */
+    class InvalidPackagePieceException : NoSuchPackagePieceException {
+        constructor(packagePieceId: PackagePieceIdentifier?, message: String?) : super(packagePieceId, message)
+
+        constructor(
+            packagePieceId: PackagePieceIdentifier?,
+            message: String?,
+            detailedExitCode: DetailedExitCode?
+        ) : super(packagePieceId, message, detailedExitCode)
     }
-  }
 
-  /** Thrown when a package piece is deemed invalid. */
-  class InvalidPackagePieceException extends NoSuchPackagePieceException {
-    public InvalidPackagePieceException(PackagePieceIdentifier packagePieceId, String message) {
-      super(packagePieceId, message);
+    fun getPackageLimits(): PackageLimits {
+        return PackageLimits.Companion.DEFAULTS
     }
 
-    public InvalidPackagePieceException(
-        PackagePieceIdentifier packagePieceId, String message, DetailedExitCode detailedExitCode) {
-      super(packagePieceId, message, detailedExitCode);
+    /**
+     * Validates a loaded package. Throws [InvalidPackageException] if the package is deemed
+     * invalid.
+     */
+    @Throws(InvalidPackageException::class)
+    fun validate(
+        pkg: com.google.devtools.build.lib.packages.Package?,
+        metrics: com.google.devtools.build.lib.packages.PackageLoadingListener.Metrics?,
+        eventHandler: ExtendedEventHandler?
+    )
+
+    companion object {
+        /** No-op implementation of [PackageValidator].  */
+        @kotlin.jvm.JvmField
+        val NOOP_VALIDATOR: PackageValidator =
+            PackageValidator { pkg: com.google.devtools.build.lib.packages.Package?, metrics: com.google.devtools.build.lib.packages.PackageLoadingListener.Metrics?, eventHandler: ExtendedEventHandler? -> }
     }
-  }
-
-  default Package.Builder.PackageLimits getPackageLimits() {
-    return Package.Builder.PackageLimits.DEFAULTS;
-  }
-
-  /**
-   * Validates a loaded package. Throws {@link InvalidPackageException} if the package is deemed
-   * invalid.
-   */
-  void validate(Package pkg, Metrics metrics, ExtendedEventHandler eventHandler)
-      throws InvalidPackageException;
 }

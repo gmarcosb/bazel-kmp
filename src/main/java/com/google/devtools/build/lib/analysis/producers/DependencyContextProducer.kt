@@ -11,131 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
-import com.google.devtools.build.lib.analysis.ToolchainCollection;
-import com.google.devtools.build.lib.analysis.TransitiveDependencyState;
-import com.google.devtools.build.lib.analysis.config.ConfigConditions;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.toolchains.ToolchainException;
-import com.google.devtools.build.lib.skyframe.toolchains.UnloadedToolchainContext;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.ConfigConditions
 
 /**
- * This class computes the unloaded toolchain context and {@link ConfigConditions}.
- *
- * <p>It uses {@link PlatformInfo} derived from the unloaded toolchain contexts to compute config
+ * This class computes the unloaded toolchain context and [ConfigConditions].
+ * 
+ * 
+ * It uses [PlatformInfo] derived from the unloaded toolchain contexts to compute config
  * conditions, creating a sequential dependency between the two.
- *
- * <p>It's possible to use {@link DependencyContextProducerWithCompatibilityCheck} here instead but
- * that necessarily evaluates {@link ConfigConditions} before computing the unloaded toolchain
- * contexts, which in turn requires evaluating {@link PlatformInfo} in advance. This ordering is
+ * 
+ * 
+ * It's possible to use [DependencyContextProducerWithCompatibilityCheck] here instead but
+ * that necessarily evaluates [ConfigConditions] before computing the unloaded toolchain
+ * contexts, which in turn requires evaluating [PlatformInfo] in advance. This ordering is
  * necessary because the compatibility check must precede the unloaded toolchain contexts
  * computation.
- *
- * <p>This producer optimizes for the case where no compatibility check is needed and saves memory
- * by using the {@link PlatformInfo} computed as a side effect of the unloaded toolchain contexts.
+ * 
+ * 
+ * This producer optimizes for the case where no compatibility check is needed and saves memory
+ * by using the [PlatformInfo] computed as a side effect of the unloaded toolchain contexts.
  */
-public final class DependencyContextProducer
-    implements StateMachine,
-        UnloadedToolchainContextsProducer.ResultSink,
-        ConfigConditionsProducer.ResultSink {
-  /**
-   * Accepts results for both {@link DependencyContextProducer} and {@link
-   * DependencyContextProducerWithCompatibilityCheck}.
-   */
-  public interface ResultSink {
-    void acceptDependencyContext(DependencyContext value);
+class DependencyContextProducer
+    (
+    unloadedToolchainContextsInputs: UnloadedToolchainContextsInputs?,
+    targetAndConfiguration: TargetAndConfiguration,
+    buildConfigurationKey: BuildConfigurationKey?,
+    transitiveState: TransitiveDependencyState?,
+    sink: ResultSink
+) : StateMachine, com.google.devtools.build.lib.analysis.producers.UnloadedToolchainContextsProducer.ResultSink,
+    com.google.devtools.build.lib.analysis.producers.ConfigConditionsProducer.ResultSink {
+    /**
+     * Accepts results for both [DependencyContextProducer] and [ ].
+     */
+    interface ResultSink {
+        fun acceptDependencyContext(value: DependencyContext?)
 
-    void acceptDependencyContextError(DependencyContextError error);
-  }
-
-  // -------------------- Input --------------------
-  private final UnloadedToolchainContextsInputs unloadedToolchainContextsInputs;
-  private final TargetAndConfiguration targetAndConfiguration;
-  private final BuildConfigurationKey buildConfigurationKey;
-  private final TransitiveDependencyState transitiveState;
-
-  // -------------------- Output --------------------
-  private final ResultSink sink;
-
-  // -------------------- Internal State --------------------
-  @Nullable // Will be null if the target doesn't require toolchain resolution.
-  private ToolchainCollection<UnloadedToolchainContext> unloadedToolchainContexts;
-  private ConfigConditions configConditions;
-  boolean hasError = false;
-
-  public DependencyContextProducer(
-      UnloadedToolchainContextsInputs unloadedToolchainContextsInputs,
-      TargetAndConfiguration targetAndConfiguration,
-      BuildConfigurationKey buildConfigurationKey,
-      TransitiveDependencyState transitiveState,
-      ResultSink sink) {
-    this.unloadedToolchainContextsInputs = unloadedToolchainContextsInputs;
-    this.buildConfigurationKey = buildConfigurationKey;
-    this.unloadedToolchainContexts = null;
-    this.targetAndConfiguration = targetAndConfiguration;
-    this.transitiveState = transitiveState;
-    this.sink = sink;
-  }
-
-  @Override
-  public StateMachine step(Tasks tasks) {
-    return new UnloadedToolchainContextsProducer(
-        unloadedToolchainContextsInputs,
-        (UnloadedToolchainContextsProducer.ResultSink) this,
-        /* runAfter= */ this::computeConfigConditions);
-  }
-
-  @Override
-  public void acceptUnloadedToolchainContexts(
-      @Nullable ToolchainCollection<UnloadedToolchainContext> unloadedToolchainContexts) {
-    this.unloadedToolchainContexts = unloadedToolchainContexts;
-  }
-
-  @Override
-  public void acceptUnloadedToolchainContextsError(ToolchainException error) {
-    this.hasError = true;
-    sink.acceptDependencyContextError(DependencyContextError.of(error));
-  }
-
-  private StateMachine computeConfigConditions(Tasks tasks) {
-    if (hasError) {
-      return DONE;
+        fun acceptDependencyContextError(error: DependencyContextError?)
     }
 
-    return new ConfigConditionsProducer(
-        targetAndConfiguration.getTarget(),
-        targetAndConfiguration.getTarget().getLabel(),
-        buildConfigurationKey,
-        unloadedToolchainContexts == null ? null : unloadedToolchainContexts.getTargetPlatform(),
-        transitiveState,
-        (ConfigConditionsProducer.ResultSink) this,
-        /* runAfter= */ this::constructResult);
-  }
+    // -------------------- Input --------------------
+    private val unloadedToolchainContextsInputs: UnloadedToolchainContextsInputs?
+    private val targetAndConfiguration: TargetAndConfiguration
+    private val buildConfigurationKey: BuildConfigurationKey?
+    private val transitiveState: TransitiveDependencyState?
 
-  @Override
-  public void acceptConfigConditions(ConfigConditions configConditions) {
-    this.configConditions = configConditions;
-  }
+    // -------------------- Output --------------------
+    private val sink: ResultSink
 
-  @Override
-  public void acceptConfigConditionsError(ConfiguredValueCreationException error) {
-    this.hasError = true;
-    sink.acceptDependencyContextError(DependencyContextError.of(error));
-  }
+    // -------------------- Internal State --------------------
+    // Will be null if the target doesn't require toolchain resolution.
+    private var unloadedToolchainContexts: ToolchainCollection<UnloadedToolchainContext?>?
+    private var configConditions: ConfigConditions? = null
+    var hasError: Boolean = false
 
-  private StateMachine constructResult(Tasks tasks) {
-    if (hasError) {
-      return DONE;
+    init {
+        this.unloadedToolchainContextsInputs = unloadedToolchainContextsInputs
+        this.buildConfigurationKey = buildConfigurationKey
+        this.unloadedToolchainContexts = null
+        this.targetAndConfiguration = targetAndConfiguration
+        this.transitiveState = transitiveState
+        this.sink = sink
     }
 
-    sink.acceptDependencyContext(
-        DependencyContext.create(unloadedToolchainContexts, configConditions));
-    return DONE;
-  }
+    override fun step(tasks: StateMachine.Tasks?): StateMachine {
+        return UnloadedToolchainContextsProducer(
+            unloadedToolchainContextsInputs,
+            this as com.google.devtools.build.lib.analysis.producers.UnloadedToolchainContextsProducer.ResultSink,  /* runAfter= */
+            StateMachine { tasks: StateMachine.Tasks? -> this.computeConfigConditions(tasks) })
+    }
+
+    override fun acceptUnloadedToolchainContexts(
+        unloadedToolchainContexts: ToolchainCollection<UnloadedToolchainContext?>?
+    ) {
+        this.unloadedToolchainContexts = unloadedToolchainContexts
+    }
+
+    override fun acceptUnloadedToolchainContextsError(error: ToolchainException?) {
+        this.hasError = true
+        sink.acceptDependencyContextError(DependencyContextError.Companion.of(error))
+    }
+
+    private fun computeConfigConditions(tasks: StateMachine.Tasks?): StateMachine {
+        if (hasError) {
+            return StateMachine.DONE
+        }
+
+        return ConfigConditionsProducer(
+            targetAndConfiguration.getTarget(),
+            targetAndConfiguration.getTarget().getLabel(),
+            buildConfigurationKey,
+            if (unloadedToolchainContexts == null) null else unloadedToolchainContexts.getTargetPlatform(),
+            transitiveState,
+            this as com.google.devtools.build.lib.analysis.producers.ConfigConditionsProducer.ResultSink,  /* runAfter= */
+            StateMachine { tasks: StateMachine.Tasks? -> this.constructResult(tasks) })
+    }
+
+    override fun acceptConfigConditions(configConditions: ConfigConditions?) {
+        this.configConditions = configConditions
+    }
+
+    override fun acceptConfigConditionsError(error: ConfiguredValueCreationException?) {
+        this.hasError = true
+        sink.acceptDependencyContextError(DependencyContextError.Companion.of(error))
+    }
+
+    private fun constructResult(tasks: StateMachine.Tasks?): StateMachine {
+        if (hasError) {
+            return StateMachine.DONE
+        }
+
+        sink.acceptDependencyContext(
+            DependencyContext.Companion.create(unloadedToolchainContexts, configConditions)
+        )
+        return StateMachine.DONE
+    }
 }

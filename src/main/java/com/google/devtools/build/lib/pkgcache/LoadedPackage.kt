@@ -11,36 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.devtools.build.lib.events.Event;
+import com.google.devtools.build.lib.events.Event
 
 /**
  * A loaded package that can verify whether it is still up to date.
  */
-interface LoadedPackage {
-  /**
-   * Returns the actual loaded {@link Package} object.
-   */
-  Package getPackage();
+internal interface LoadedPackage {
+    /**
+     * Returns the actual loaded [Package] object.
+     */
+    fun getPackage(): java.lang.Package?
 
-  /**
-   * Returns true iff the entry is still valid.
-   *
-   * <p>An entry is valid when the package it denotes has not been moved, deleted, or changed. This
-   * requires disk I/O to fetch metadata and re-evaluate globs.
-   */
-  boolean isValid() throws InterruptedException;
+    /**
+     * Returns true iff the entry is still valid.
+     * 
+     * 
+     * An entry is valid when the package it denotes has not been moved, deleted, or changed. This
+     * requires disk I/O to fetch metadata and re-evaluate globs.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun isValid(): Boolean
 
-  /**
-   * Returns true iff the contents of the package are guaranteed not to have changed after between
-   * {@link #isValid()} calls and syncs of the associated package loader.
-   */
-  boolean contentsCouldNotHaveChanged();
+    /**
+     * Returns true iff the contents of the package are guaranteed not to have changed after between
+     * [.isValid] calls and syncs of the associated package loader.
+     */
+    fun contentsCouldNotHaveChanged(): Boolean
 
-  /**
-   * Returns the set of events (sorted by the order they were reported) that occurred during the
-   * loading of the package.
-   */
-  Iterable<Event> getEvents();
+    /**
+     * Returns the set of events (sorted by the order they were reported) that occurred during the
+     * loading of the package.
+     */
+    fun getEvents(): Iterable<Event?>?
 }

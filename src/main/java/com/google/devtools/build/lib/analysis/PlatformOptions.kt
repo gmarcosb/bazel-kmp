@@ -11,265 +11,248 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelConverter
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
+/** Command-line options for platform-related configuration.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class PlatformOptions : FragmentOptions() {
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "host_platform",
+        oldName = "experimental_host_platform",
+        converter = HostPlatformConverter::class,
+        defaultValue = DEFAULT_HOST_PLATFORM,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+        ],
+        help = "The label of a platform rule that describes the host system."
+    )
+    abstract val hostPlatform: com.google.devtools.build.lib.cmdline.Label?
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelConverter;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelListConverter;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.config.PlatformMappingKey;
-import com.google.devtools.build.lib.util.OptionsUtils.PathFragmentConverter;
-import com.google.devtools.build.lib.util.RegexFilter;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.List;
-import javax.annotation.Nullable;
+    abstract fun setHostPlatform(value: com.google.devtools.build.lib.cmdline.Label?)
 
-/** Command-line options for platform-related configuration. */
-@OptionsClass
-public abstract class PlatformOptions extends FragmentOptions {
-
-  private static final ImmutableSet<String> DEFAULT_PLATFORM_NAMES =
-      ImmutableSet.of("host", "host_platform", "target_platform", "default_host", "default_target");
-
-  public static final String DEFAULT_HOST_PLATFORM = "@bazel_tools//tools:host_platform";
-
-  public static boolean platformIsDefault(Label platform) {
-    return DEFAULT_PLATFORM_NAMES.contains(platform.getName());
-  }
-
-  @Option(
-      name = "host_platform",
-      oldName = "experimental_host_platform",
-      converter = HostPlatformConverter.class,
-      defaultValue = DEFAULT_HOST_PLATFORM,
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {
-        OptionEffectTag.AFFECTS_OUTPUTS,
-        OptionEffectTag.CHANGES_INPUTS,
-        OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      help = "The label of a platform rule that describes the host system.")
-  public abstract Label getHostPlatform();
-
-  public abstract void setHostPlatform(Label value);
-
-  @Option(
-      name = "extra_execution_platforms",
-      converter = CommaSeparatedOptionListConverter.class,
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {OptionEffectTag.EXECUTION},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "extra_execution_platforms",
+        converter = com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter::class,
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.EXECUTION],
+        help = """
           The platforms that are available as execution platforms to run actions.
           Platforms can be specified by exact target, or as a target pattern.
           These platforms will be considered before those declared in the `WORKSPACE` file by
           `register_execution_platforms()`. This option may only be set once; later
           instances will override earlier flag settings.
-          """)
-  public abstract List<String> getExtraExecutionPlatforms();
+          
+          """.trimIndent()
+    )
+    abstract val extraExecutionPlatforms: MutableList<String?>?
 
-  @Option(
-      name = "platforms",
-      oldName = "experimental_platforms",
-      converter = LabelListConverter.class,
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {
-        OptionEffectTag.AFFECTS_OUTPUTS,
-        OptionEffectTag.CHANGES_INPUTS,
-        OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      help =
-          "The labels of the platform rules describing the target platforms for the current "
-              + "command.")
-  public abstract List<Label> getPlatforms();
+    @get:com.google.devtools.common.options.Option(
+        name = "platforms",
+        oldName = "experimental_platforms",
+        converter = LabelListConverter::class,
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+        ],
+        help = ("The labels of the platform rules describing the target platforms for the current "
+                + "command.")
+    )
+    abstract val platforms: MutableList<com.google.devtools.build.lib.cmdline.Label>?
 
-  public abstract void setPlatforms(List<Label> value);
+    abstract fun setPlatforms(value: MutableList<com.google.devtools.build.lib.cmdline.Label?>?)
 
-  @Option(
-      name = "extra_toolchains",
-      defaultValue = "null",
-      converter = CommaSeparatedOptionListConverter.class,
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      allowMultiple = true,
-      effectTags = {
-        OptionEffectTag.AFFECTS_OUTPUTS,
-        OptionEffectTag.CHANGES_INPUTS,
-        OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "extra_toolchains",
+        defaultValue = "null",
+        converter = com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.TOOLCHAIN,
+        allowMultiple = true,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+        ],
+        help = """
           The toolchain rules to be considered during toolchain resolution.
           Toolchains can be specified by exact target, or as a target pattern.
           These toolchains will be considered before those declared in the `WORKSPACE` file
           by `register_toolchains()`.
-          """)
-  public abstract List<String> getExtraToolchains();
+          
+          """.trimIndent()
+    )
+    abstract var extraToolchains: MutableList<String?>?
 
-  public abstract void setExtraToolchains(List<String> value);
+    @get:com.google.devtools.common.options.Option(
+        name = "toolchain_resolution_debug",
+        defaultValue = "-.*",
+        converter = RegexFilterConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.TERMINAL_OUTPUT],
+        help = ("Print debug information during toolchain resolution. The flag takes a regex, which is"
+                + " checked against toolchain types and specific targets to see which to debug. "
+                + "Multiple regexes may be  separated by commas, and then each regex is checked "
+                + "separately. Note: The output of this flag is very complex and will likely only be "
+                + "useful to experts in toolchain resolution.")
+    )
+    abstract val toolchainResolutionDebug: com.google.devtools.build.lib.util.RegexFilter?
 
-  @Option(
-      name = "toolchain_resolution_debug",
-      defaultValue = "-.*", // By default, exclude everything.
-      converter = RegexFilter.RegexFilterConverter.class,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.TERMINAL_OUTPUT},
-      help =
-          "Print debug information during toolchain resolution. The flag takes a regex, which is"
-              + " checked against toolchain types and specific targets to see which to debug. "
-              + "Multiple regexes may be  separated by commas, and then each regex is checked "
-              + "separately. Note: The output of this flag is very complex and will likely only be "
-              + "useful to experts in toolchain resolution.")
-  public abstract RegexFilter getToolchainResolutionDebug();
+    @get:com.google.devtools.common.options.Option(
+        name = "incompatible_use_toolchain_resolution_for_java_rules",
+        defaultValue = "true",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = "No-op. Kept here for backwards compatibility."
+    )
+    abstract val useToolchainResolutionForJavaRules: Boolean
 
-  @Option(
-      name = "incompatible_use_toolchain_resolution_for_java_rules",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = OptionEffectTag.UNKNOWN,
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help = "No-op. Kept here for backwards compatibility.")
-  public abstract boolean getUseToolchainResolutionForJavaRules();
-
-  @Option(
-      name = "platform_mappings",
-      converter = PlatformMappingKeyConverter.class,
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {
-        OptionEffectTag.AFFECTS_OUTPUTS,
-        OptionEffectTag.CHANGES_INPUTS,
-        OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      metadataTags = {
-        OptionMetadataTag.NON_CONFIGURABLE,
-      },
-      help =
-          """
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "platform_mappings",
+        converter = PlatformMappingKeyConverter::class,
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+        ],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.NON_CONFIGURABLE
+        ],
+        help = """
           The location of a mapping file that describes which platform to use if none is set or
           which flags to set when a platform already exists. Must be relative to the main
           workspace root. Defaults to `platform_mappings` (a file directly under the
           workspace root).
-          """)
-  public abstract PlatformMappingKey getPlatformMappingKey();
+          
+          """.trimIndent()
+    )
+    abstract val platformMappingKey: PlatformMappingKey?
 
-  /**
-   * Deduplicate the given list, keeping the last copy of any duplicates.
-   *
-   * <p>Example: [a, b, a, c, b] -> [a, c, b]
-   */
-  private static ImmutableList<String> dedupeKeepingLast(ImmutableList<String> values) {
-    // Check common cases.
-    if (values.size() <= 1) {
-      return values;
+    val normalized: PlatformOptions
+        get() {
+            val result = clone() as PlatformOptions
+            result.extraToolchains = dedupeKeepingLast(
+                if (result.extraToolchains == null)
+                    com.google.common.collect.ImmutableList.of<String?>()
+                else
+                    com.google.common.collect.ImmutableList.copyOf<String?>(result.extraToolchains)
+            )
+            // Only the first entry of platforms is used (it should have been Label and not List<Label>)
+            // So drop all but the first entry.
+            if (result.platforms!!.size > 1) {
+                result.setPlatforms(
+                    com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.cmdline.Label?>(
+                        result.platforms!!.get(0)
+                    )
+                )
+            }
+            return result
+        }
+
+    /** Returns the intended target platform value based on options defined in this fragment.  */
+    fun computeTargetPlatform(): com.google.devtools.build.lib.cmdline.Label? {
+        if (!this.platforms!!.isEmpty()) {
+            return com.google.common.collect.Iterables.getFirst<com.google.devtools.build.lib.cmdline.Label?>(
+                this.platforms,
+                null
+            )
+        } else {
+            // Default to the host platform, whatever it is.
+            return this.hostPlatform
+        }
     }
 
-    // Reverse the list and then deduplicate.
-    ImmutableList<String> reversedResult =
-        values.reverse().stream().distinct().collect(toImmutableList());
-
-    // If there were no duplicates, return the exact same instance we got.
-    if (reversedResult.size() == values.size()) {
-      return values;
+    /**
+     * Converter for `--host_platform` that returns the default host platform if the flag is set
+     * to empty string.
+     */
+    private class HostPlatformConverter : LabelConverter() {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        public override fun convert(
+            input: String,
+            conversionContext: Any?
+        ): com.google.devtools.build.lib.cmdline.Label? {
+            if (input.isEmpty()) {
+                return super.convert(DEFAULT_HOST_PLATFORM, conversionContext)
+            }
+            return super.convert(input, conversionContext)
+        }
     }
 
-    // Reverse the result to get back to the original order.
-    return reversedResult.reverse();
-  }
+    /**
+     * Converter for `--platform_mappings` that creates a canonical [PlatformMappingKey]
+     * for the build.
+     */
+    private class PlatformMappingKeyConverter : com.google.devtools.common.options.Converter<PlatformMappingKey?> {
+        private val pathConverter: OptionsUtils.PathFragmentConverter = OptionsUtils.PathFragmentConverter()
 
-  @Override
-  public PlatformOptions getNormalized() {
-    PlatformOptions result = (PlatformOptions) clone();
-    result.setExtraToolchains(
-        dedupeKeepingLast(
-            result.getExtraToolchains() == null
-                ? ImmutableList.of()
-                : ImmutableList.copyOf(result.getExtraToolchains())));
-    // Only the first entry of platforms is used (it should have been Label and not List<Label>)
-    // So drop all but the first entry.
-    if (result.getPlatforms().size() > 1) {
-      result.setPlatforms(ImmutableList.of(result.getPlatforms().get(0)));
-    }
-    return result;
-  }
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String, conversionContext: Any?): PlatformMappingKey? {
+            if (input.isEmpty()) {
+                return PlatformMappingKey.DEFAULT
+            }
+            val path: PathFragment = pathConverter.convert(input)
+            if (path.isAbsolute()) {
+                throw com.google.devtools.common.options.OptionsParsingException("Expected relative path but got '" + input + "'.")
+            }
+            return PlatformMappingKey.createExplicitlySet(path)
+        }
 
-  /** Returns the intended target platform value based on options defined in this fragment. */
-  public Label computeTargetPlatform() {
-    if (!getPlatforms().isEmpty()) {
-      return Iterables.getFirst(getPlatforms(), null);
-    } else {
-      // Default to the host platform, whatever it is.
-      return getHostPlatform();
-    }
-  }
+        override fun starlarkConvertible(): Boolean {
+            return true
+        }
 
-  /**
-   * Converter for {@code --host_platform} that returns the default host platform if the flag is set
-   * to empty string.
-   */
-  private static final class HostPlatformConverter extends LabelConverter {
-    @Override
-    @Nullable
-    public Label convert(String input, Object conversionContext) throws OptionsParsingException {
-      if (input.isEmpty()) {
-        return super.convert(DEFAULT_HOST_PLATFORM, conversionContext);
-      }
-      return super.convert(input, conversionContext);
-    }
-  }
+        override fun reverseForStarlark(converted: Any?): String? {
+            val key: PlatformMappingKey = converted as PlatformMappingKey
+            return if (key == PlatformMappingKey.DEFAULT)
+                ""
+            else
+                key.getWorkspaceRelativeMappingPath().getPathString()
+        }
 
-  /**
-   * Converter for {@code --platform_mappings} that creates a canonical {@link PlatformMappingKey}
-   * for the build.
-   */
-  private static final class PlatformMappingKeyConverter implements Converter<PlatformMappingKey> {
-    private final PathFragmentConverter pathConverter = new PathFragmentConverter();
-
-    @Override
-    public PlatformMappingKey convert(String input, @Nullable Object conversionContext)
-        throws OptionsParsingException {
-      if (input.isEmpty()) {
-        return PlatformMappingKey.DEFAULT;
-      }
-      PathFragment path = pathConverter.convert(input);
-      if (path.isAbsolute()) {
-        throw new OptionsParsingException("Expected relative path but got '" + input + "'.");
-      }
-      return PlatformMappingKey.createExplicitlySet(path);
+        val typeDescription: String
+            get() = "a main workspace-relative path"
     }
 
-    @Override
-    public boolean starlarkConvertible() {
-      return true;
-    }
+    companion object {
+        private val DEFAULT_PLATFORM_NAMES: com.google.common.collect.ImmutableSet<String?> =
+            com.google.common.collect.ImmutableSet.of<String?>(
+                "host",
+                "host_platform",
+                "target_platform",
+                "default_host",
+                "default_target"
+            )
 
-    @Override
-    public String reverseForStarlark(Object converted) {
-      var key = (PlatformMappingKey) converted;
-      return key.equals(PlatformMappingKey.DEFAULT)
-          ? ""
-          : key.getWorkspaceRelativeMappingPath().getPathString();
-    }
+        const val DEFAULT_HOST_PLATFORM: String = "@bazel_tools//tools:host_platform"
 
-    @Override
-    public String getTypeDescription() {
-      return "a main workspace-relative path";
-    }
-  }
+        fun platformIsDefault(platform: com.google.devtools.build.lib.cmdline.Label): Boolean {
+            return DEFAULT_PLATFORM_NAMES.contains(platform.getName())
+        }
 
+        /**
+         * Deduplicate the given list, keeping the last copy of any duplicates.
+         * 
+         * 
+         * Example: [a, b, a, c, b] -> [a, c, b]
+         */
+        private fun dedupeKeepingLast(values: com.google.common.collect.ImmutableList<String?>): com.google.common.collect.ImmutableList<String?> {
+            // Check common cases.
+            if (values.size <= 1) {
+                return values
+            }
+
+            // Reverse the list and then deduplicate.
+            val reversedResult: com.google.common.collect.ImmutableList<String?> =
+                values.reverse().stream().distinct()
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+
+            // If there were no duplicates, return the exact same instance we got.
+            if (reversedResult.size == values.size) {
+                return values
+            }
+
+            // Reverse the result to get back to the original order.
+            return reversedResult.reverse()
+        }
+    }
 }

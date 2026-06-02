@@ -11,95 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.metrics;
+package com.google.devtools.build.lib.packages.metrics
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.packages.Package.Builder.PackageSettings;
-import com.google.devtools.build.lib.packages.PackageLoadingListener;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import javax.annotation.Nullable;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
+import com.google.devtools.build.lib.vfs.FileSystem
+import com.google.devtools.common.options.*
 
-/** Provides logging for extreme package-loading events. */
-public class PackageMetricsModule extends BlazeModule {
-  /** Options for {@link PackageMetricsModule}. */
-  @OptionsClass
-  public abstract static class Options extends OptionsBase {
-    @Option(
-        name = "log_top_n_packages",
-        defaultValue = "10",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.BAZEL_MONITORING},
-        help = "Configures number of packages included in top-package INFO logging, <= 0 disables.")
-    public abstract int getNumberOfPackagesToTrack();
+/** Provides logging for extreme package-loading events.  */
+class PackageMetricsModule @VisibleForTesting internal constructor(private val packageLoadingListener: PackageMetricsPackageLoadingListener) :
+    BlazeModule() {
+    /** Options for [PackageMetricsModule].  */
+    @OptionsClass
+    abstract class Options : OptionsBase() {
+        @Option(
+            name = "log_top_n_packages",
+            defaultValue = "10",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.BAZEL_MONITORING],
+            help = "Configures number of packages included in top-package INFO logging, <= 0 disables."
+        )
+        abstract fun getNumberOfPackagesToTrack(): Int
 
-    @Option(
-        name = "record_metrics_for_all_packages",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.BAZEL_MONITORING},
-        help =
-            "Configures PackageMetrics to record all metrics for all packages. Disables Top-n INFO"
-                + " logging.")
-    public abstract boolean getEnableAllMetrics();
+        @Option(
+            name = "record_metrics_for_all_packages",
+            defaultValue = "false",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.BAZEL_MONITORING],
+            help = ("Configures PackageMetrics to record all metrics for all packages. Disables Top-n INFO"
+                    + " logging.")
+        )
+        abstract fun getEnableAllMetrics(): Boolean
 
-    @Option(
-        name = "experimental_publish_package_metrics_in_bep",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.BAZEL_MONITORING},
-        help = "Whether to publish package metrics in the BEP.")
-    public abstract boolean getPublishPackageMetricsInBep();
-  }
-
-  private final PackageMetricsPackageLoadingListener packageLoadingListener;
-
-  public PackageMetricsModule() {
-    this(PackageMetricsPackageLoadingListener.getInstance());
-  }
-
-  @VisibleForTesting
-  PackageMetricsModule(PackageMetricsPackageLoadingListener packageLoadingListener) {
-    this.packageLoadingListener = packageLoadingListener;
-  }
-
-  @Nullable
-  @Override
-  public PackageLoadingListener getPackageLoadingListener(
-      PackageSettings packageSettings,
-      ConfiguredRuleClassProvider ruleClassProvider,
-      FileSystem fs) {
-    return packageLoadingListener;
-  }
-
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getCommonCommandOptions() {
-    return ImmutableList.of(Options.class);
-  }
-
-  @Override
-  public void beforeCommand(CommandEnvironment commandEnvironment) {
-    Options options = commandEnvironment.getOptions().getOptions(Options.class);
-    PackageMetricsRecorder recorder =
-        options.getEnableAllMetrics()
-            ? new CompletePackageMetricsRecorder()
-            : new ExtremaPackageMetricsRecorder(Math.max(options.getNumberOfPackagesToTrack(), 0));
-    packageLoadingListener.setPackageMetricsRecorder(recorder);
-    packageLoadingListener.setPublishPackageMetricsInBep(options.getPublishPackageMetricsInBep());
-  }
-
-  @Override
-  public void afterCommand() {
-    if (packageLoadingListener.getPackageMetricsRecorder() != null) {
-      packageLoadingListener.getPackageMetricsRecorder().loadingFinished();
+        @Option(
+            name = "experimental_publish_package_metrics_in_bep",
+            defaultValue = "false",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.BAZEL_MONITORING],
+            help = "Whether to publish package metrics in the BEP."
+        )
+        abstract fun getPublishPackageMetricsInBep(): Boolean
     }
-  }
+
+    constructor() : this(PackageMetricsPackageLoadingListener.Companion.getInstance())
+
+    override fun getPackageLoadingListener(
+        packageSettings: PackageSettings?,
+        ruleClassProvider: ConfiguredRuleClassProvider?,
+        fs: FileSystem?
+    ): PackageLoadingListener? {
+        return packageLoadingListener
+    }
+
+    override fun getCommonCommandOptions(): Iterable<Class<out OptionsBase?>?> {
+        return ImmutableList.of<Class<out OptionsBase?>?>(Options::class.java)
+    }
+
+    override fun beforeCommand(commandEnvironment: CommandEnvironment) {
+        val options: Options? = commandEnvironment.getOptions().getOptions<Options?>(Options::class.java)
+        val recorder =
+            if (options!!.getEnableAllMetrics())
+                CompletePackageMetricsRecorder()
+            else
+                ExtremaPackageMetricsRecorder(Math.max(options.getNumberOfPackagesToTrack(), 0))
+        packageLoadingListener.setPackageMetricsRecorder(recorder)
+        packageLoadingListener.setPublishPackageMetricsInBep(options.getPublishPackageMetricsInBep())
+    }
+
+    override fun afterCommand() {
+        if (packageLoadingListener.getPackageMetricsRecorder() != null) {
+            packageLoadingListener.getPackageMetricsRecorder().loadingFinished()
+        }
+    }
 }

@@ -391,7 +391,7 @@ public class InMemoryGraphImpl implements InMemoryGraph {
     checkState(value instanceof PackageoidValue, value);
     ImmutableSortedMap<String, Target> targets =
         ((PackageoidValue) value).getPackageoid().getTargets();
-    Target target = targets.get(sample.getName());
+    Target target = targets.get(sample.name);
     return target != null ? target.getLabel() : null;
   }
 }

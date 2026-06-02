@@ -11,181 +11,129 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.packages.LabelConverter;
-import com.google.devtools.build.lib.server.FailureDetails.ExternalDeps.Code;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkValue;
-import net.starlark.java.eval.Structure;
-import net.starlark.java.spelling.SpellChecker;
-
-/** A Starlark object representing a Bazel module in the external dependency graph. */
-@StarlarkBuiltin(
+/** A Starlark object representing a Bazel module in the external dependency graph.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "bazel_module",
-    category = DocCategory.BUILTIN,
-    doc = "Represents a Bazel module in the external dependency graph.")
-public class StarlarkBazelModule implements StarlarkValue {
-  private final String name;
-  private final String version;
-  private final Tags tags;
-  private final boolean isRootModule;
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = "Represents a Bazel module in the external dependency graph."
+)
+class StarlarkBazelModule private constructor(
+  @kotlin.jvm.JvmField private val name: String?,
+  @kotlin.jvm.JvmField private val version: String?,
+  @kotlin.jvm.JvmField private val tags: Tags?,
+  private val isRootModule: Boolean
+) : net.starlark.java.eval.StarlarkValue {
+    @net.starlark.java.annot.StarlarkBuiltin(
+        name = "bazel_module_tags", category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN, doc = """
+          Contains the tags in a module for the module extension currently being processed. This object has a field for each tag class of the extension, and the value of the field is a list containing an object for each tag instance. This "tag instance" object in turn has a field for each attribute of the tag class.
+          <p>When passed as positional arguments to <code>print()</code> or <code>fail()</code>, tag instance objects turn into a meaningful string representation of the form "'install' tag at /home/user/workspace/MODULE.bazel:3:4". This can be used to construct error messages that point to the location of the tag in the module file, e.g. <code>fail("Conflict between", tag1, "and", tag2)</code>.
+          """.trimIndent()
+    )
+    internal class Tags private constructor(typeCheckedTags: MutableMap<String?, net.starlark.java.eval.StarlarkList<TypeCheckedTag?>?>) :
+        net.starlark.java.eval.Structure {
+        private val typeCheckedTags: com.google.common.collect.ImmutableMap<String?, net.starlark.java.eval.StarlarkList<TypeCheckedTag?>?>
 
-  @StarlarkBuiltin(
-      name = "bazel_module_tags",
-      category = DocCategory.BUILTIN,
-      doc =
-          """
-          Contains the tags in a module for the module extension currently being processed. This \
-          object has a field for each tag class of the extension, and the value of the field is a \
-          list containing an object for each tag instance. This "tag instance" object in turn has \
-          a field for each attribute of the tag class.
-          <p>When passed as positional arguments to <code>print()</code> or <code>fail()</code>, \
-          tag instance objects turn into a meaningful string representation of the form "'install' \
-          tag at /home/user/workspace/MODULE.bazel:3:4". This can be used to construct error \
-          messages that point to the location of the tag in the module file, e.g. \
-          <code>fail("Conflict between", tag1, "and", tag2)</code>.\
-          """)
-  static class Tags implements Structure {
-    private final ImmutableMap<String, StarlarkList<TypeCheckedTag>> typeCheckedTags;
+        init {
+            this.typeCheckedTags =
+                com.google.common.collect.ImmutableMap.copyOf<String?, net.starlark.java.eval.StarlarkList<TypeCheckedTag?>?>(
+                    typeCheckedTags
+                )
+        }
 
-    private Tags(Map<String, StarlarkList<TypeCheckedTag>> typeCheckedTags) {
-      this.typeCheckedTags = ImmutableMap.copyOf(typeCheckedTags);
+        override fun isImmutable(): Boolean {
+            return true
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        override fun getValue(name: String?): Any? {
+            return typeCheckedTags.get(name)
+        }
+
+        override fun getFieldNames(): com.google.common.collect.ImmutableCollection<String?> {
+            return typeCheckedTags.keySet()
+        }
+
+        override fun getErrorMessageForUnknownField(field: String?): String? {
+            return "unknown tag class " + field
+        }
     }
 
-    @Override
-    public boolean isImmutable() {
-      return true;
+    override fun isImmutable(): Boolean {
+        return true
     }
 
-    @Nullable
-    @Override
-    public Object getValue(String name) throws EvalException {
-      return typeCheckedTags.get(name);
+    @net.starlark.java.annot.StarlarkMethod(name = "name", structField = true, doc = "The name of the module.")
+    fun getName(): String? {
+        return name
     }
 
-    @Override
-    public ImmutableCollection<String> getFieldNames() {
-      return typeCheckedTags.keySet();
+    @net.starlark.java.annot.StarlarkMethod(name = "version", structField = true, doc = "The version of the module.")
+    fun getVersion(): String? {
+        return version
     }
 
-    @Nullable
-    @Override
-    public String getErrorMessageForUnknownField(String field) {
-      return "unknown tag class " + field;
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "tags",
+        structField = true,
+        doc = "The tags in the module related to the module extension currently being processed."
+    )
+    fun getTags(): Tags? {
+        return tags
     }
-  }
 
-  private StarlarkBazelModule(String name, String version, Tags tags, boolean isRootModule) {
-    this.name = name;
-    this.version = version;
-    this.tags = tags;
-    this.isRootModule = isRootModule;
-  }
-
-  /**
-   * Creates a new {@link StarlarkBazelModule} object representing the given {@link AbridgedModule},
-   * with its scope limited to the given {@link ModuleExtension}. It'll be populated with the tags
-   * present in the given {@link ModuleExtensionUsage}. Any labels present in tags will be converted
-   * using the given {@link RepositoryMapping}.
-   */
-  public static StarlarkBazelModule create(
-      AbridgedModule module,
-      ModuleExtension extension,
-      RepositoryMapping repoMapping,
-      @Nullable ModuleExtensionUsage usage,
-      Label.RepoMappingRecorder repoMappingRecorder,
-      int moduleIndex)
-      throws ExternalDepsException {
-    LabelConverter labelConverter =
-        new LabelConverter(
-            PackageIdentifier.create(repoMapping.contextRepo(), PathFragment.EMPTY_FRAGMENT),
-            repoMapping,
-            repoMappingRecorder);
-    ImmutableList<Tag> tags = usage == null ? ImmutableList.of() : usage.getTags();
-    HashMap<String, ArrayList<TypeCheckedTag>> typeCheckedTags = new HashMap<>();
-    for (String tagClassName : extension.tagClasses().keySet()) {
-      typeCheckedTags.put(tagClassName, new ArrayList<>());
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "is_root",
+        structField = true,
+        doc = "Whether this module is the root module."
+    )
+    fun isRoot(): Boolean {
+        return isRootModule
     }
-    for (int tagIndex = 0; tagIndex < tags.size(); tagIndex++) {
-      Tag tag = tags.get(tagIndex);
-      TagClass tagClass = extension.tagClasses().get(tag.getTagName());
-      if (tagClass == null) {
-        throw ExternalDepsException.withMessage(
-            Code.BAD_MODULE,
-            "The module extension defined at %s does not have a tag class named %s, but its use is"
-                + " attempted at %s%s",
-            extension.location(),
-            tag.getTagName(),
-            tag.getLocation(),
-            SpellChecker.didYouMean(tag.getTagName(), extension.tagClasses().keySet()));
-      }
 
-      // Now we need to type-check the attribute values and convert them into "build language types"
-      // (for example, String to Label).
-      typeCheckedTags
-          .get(tag.getTagName())
-          .add(
-              TypeCheckedTag.create(
-                  tagClass,
-                  tag,
-                  labelConverter,
-                  module.getKey().toDisplayString(),
-                  moduleIndex,
-                  tagIndex));
+    companion object {
+        /**
+         * Creates a new [StarlarkBazelModule] object representing the given [AbridgedModule],
+         * with its scope limited to the given [ModuleExtension]. It'll be populated with the tags
+         * present in the given [ModuleExtensionUsage]. Any labels present in tags will be converted
+         * using the given [RepositoryMapping].
+         */
+        @Throws(ExternalDepsException::class)
+        fun create(
+            module: AbridgedModule,
+            extension: ModuleExtension,
+            repoMapping: com.google.devtools.build.lib.cmdline.RepositoryMapping,
+            usage: ModuleExtensionUsage?,
+            repoMappingRecorder: RepoMappingRecorder?,
+            moduleIndex: Int
+        ): StarlarkBazelModule {
+            val labelConverter: LabelConverter =
+                LabelConverter(
+                    PackageIdentifier.create(repoMapping.contextRepo(), PathFragment.EMPTY_FRAGMENT),
+                    repoMapping,
+                    repoMappingRecorder
+                )
+            val tags: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.bazel.bzlmod.Tag> =
+                if (usage == null) com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.bazel.bzlmod.Tag?>() else usage.getTags()
+            val typeCheckedTags: HashMap<String?, java.util.ArrayList<TypeCheckedTag?>?> =
+                HashMap<String?, java.util.ArrayList<TypeCheckedTag?>?>()
+            for (tagClassName in extension.tagClasses.keySet()) {
+                typeCheckedTags.put(tagClassName, java.util.ArrayList<TypeCheckedTag?>())
+            }
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return StarlarkBazelModule(
+                module.getName(),
+                module.getVersion().getNormalized(),
+                com.google.devtools.build.lib.bazel.bzlmod.StarlarkBazelModule.Tags(
+                    com.google.common.collect.Maps.transformValues<String?, java.util.ArrayList<TypeCheckedTag?>?, net.starlark.java.eval.StarlarkList<TypeCheckedTag?>?>(
+                        typeCheckedTags,
+                        com.google.common.base.Function { elems: java.util.ArrayList<TypeCheckedTag?>? ->
+                            net.starlark.java.eval.StarlarkList.immutableCopyOf(elems)
+                        })
+                ),
+                module.getKey() == ModuleKey.Companion.ROOT
+            )
+        }
     }
-    return new StarlarkBazelModule(
-        module.getName(),
-        module.getVersion().getNormalized(),
-        new Tags(Maps.transformValues(typeCheckedTags, StarlarkList::immutableCopyOf)),
-        module.getKey().equals(ModuleKey.ROOT));
-  }
-
-  @Override
-  public boolean isImmutable() {
-    return true;
-  }
-
-  @StarlarkMethod(name = "name", structField = true, doc = "The name of the module.")
-  public String getName() {
-    return name;
-  }
-
-  @StarlarkMethod(name = "version", structField = true, doc = "The version of the module.")
-  public String getVersion() {
-    return version;
-  }
-
-  @StarlarkMethod(
-      name = "tags",
-      structField = true,
-      doc = "The tags in the module related to the module extension currently being processed.")
-  public Tags getTags() {
-    return tags;
-  }
-
-  @StarlarkMethod(
-      name = "is_root",
-      structField = true,
-      doc = "Whether this module is the root module.")
-  public boolean isRoot() {
-    return isRootModule;
-  }
 }

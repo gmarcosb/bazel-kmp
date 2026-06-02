@@ -11,60 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinWorkerThread;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.ForkJoinPool.ForkJoinWorkerThreadFactory
+import java.util.concurrent.ForkJoinWorkerThread
+import java.util.concurrent.atomic.AtomicLong
 
-/** A {@link ForkJoinPool} with support for thread naming. */
-public class NamedForkJoinPool extends ForkJoinPool {
-
-  /**
-   * Creates a new NamedForkJoinPool.
-   *
-   * @param name A string identifying the pool. This string must not contain any formatting
-   *     parameters.
-   * @param numThreads The maximum number of threads to create, see {@link ForkJoinPool}.
-   */
-  public static NamedForkJoinPool newNamedPool(String name, int numThreads) {
-    return new NamedForkJoinPool(name, numThreads);
-  }
-
-  private NamedForkJoinPool(String name, int poolSize) {
-    super(
-        poolSize,
-        new NamedForkJoinWorkerThreadFactory(name + "-%s"),
-        null, // Uncaught exception handler.
-        /* asyncMode= */ false);
-  }
-
-  /** A {@link ForkJoinWorkerThread} named on construction. */
-  private static class NamedForkJoinWorkerThread extends ForkJoinWorkerThread {
-
-    public NamedForkJoinWorkerThread(ForkJoinPool forkJoinPool, String name) {
-      super(forkJoinPool);
-      this.setName(name);
-    }
-  }
-
-  /**
-   * A factory for {@link NamedForkJoinWorkerThread}s that names those threads using a
-   * client-provided name format that consumes a thread index.
-   */
-  private static class NamedForkJoinWorkerThreadFactory implements ForkJoinWorkerThreadFactory {
-
-    private final String nameFormat;
-    private final AtomicLong nextUnusedThreadIndex = new AtomicLong(0L);
-
-    NamedForkJoinWorkerThreadFactory(String nameFormat) {
-      this.nameFormat = nameFormat;
+/** A [ForkJoinPool] with support for thread naming.  */
+class NamedForkJoinPool private constructor(name: String?, poolSize: Int) : ForkJoinPool(
+    poolSize,
+    com.google.devtools.build.lib.concurrent.NamedForkJoinPool.NamedForkJoinWorkerThreadFactory(name + "-%s"),
+    null,  // Uncaught exception handler.
+    /* asyncMode= */
+    false
+) {
+    /** A [ForkJoinWorkerThread] named on construction.  */
+    private class NamedForkJoinWorkerThread(forkJoinPool: ForkJoinPool, name: String) :
+        ForkJoinWorkerThread(forkJoinPool) {
+        init {
+            this.setName(name)
+        }
     }
 
-    @Override
-    public ForkJoinWorkerThread newThread(ForkJoinPool forkJoinPool) {
-      return new NamedForkJoinWorkerThread(
-          forkJoinPool, String.format(nameFormat, nextUnusedThreadIndex.getAndIncrement()));
+    /**
+     * A factory for [NamedForkJoinWorkerThread]s that names those threads using a
+     * client-provided name format that consumes a thread index.
+     */
+    private class NamedForkJoinWorkerThreadFactory(private val nameFormat: String) : ForkJoinWorkerThreadFactory {
+        private val nextUnusedThreadIndex: AtomicLong = AtomicLong(0L)
+
+        override fun newThread(forkJoinPool: ForkJoinPool): ForkJoinWorkerThread {
+            return com.google.devtools.build.lib.concurrent.NamedForkJoinPool.NamedForkJoinWorkerThread(
+                forkJoinPool, java.lang.String.format(nameFormat, nextUnusedThreadIndex.getAndIncrement())
+            )
+        }
     }
-  }
+
+    companion object {
+        /**
+         * Creates a new NamedForkJoinPool.
+         * 
+         * @param name A string identifying the pool. This string must not contain any formatting
+         * parameters.
+         * @param numThreads The maximum number of threads to create, see [ForkJoinPool].
+         */
+        @kotlin.jvm.JvmStatic
+        fun newNamedPool(name: String?, numThreads: Int): NamedForkJoinPool {
+            return com.google.devtools.build.lib.concurrent.NamedForkJoinPool(name, numThreads)
+        }
+    }
 }

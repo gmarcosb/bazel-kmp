@@ -12,67 +12,72 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.bazel.bzlmod.BazelFetchAllValue
+import com.google.devtools.build.lib.cmdline.RepositoryName
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
  * Empty result of running Bazel fetch all dependencies, to indicate that all repos have been
  * fetched successfully.
  */
-public record BazelFetchAllValue(ImmutableList<RepositoryName> reposToVendor) implements SkyValue {
-  public BazelFetchAllValue {
-    requireNonNull(reposToVendor, "reposToVendor");
-  }
+class BazelFetchAllValue(reposToVendor: com.google.common.collect.ImmutableList<RepositoryName?>?) : SkyValue {
+    /** Key type for BazelFetchAllValue.  */
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    class Key private constructor(arg: Boolean?) : AbstractSkyKey<Boolean?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.BAZEL_FETCH_ALL
+        }
 
-  /** Creates a key from the given repository name. */
-  public static BazelFetchAllValue.Key key(Boolean configureEnabled) {
-    return BazelFetchAllValue.Key.create(configureEnabled);
-  }
+        override fun getSkyKeyInterner(): SkyKeyInterner<Key?> {
+            return com.google.devtools.build.lib.bazel.bzlmod.BazelFetchAllValue.Key.Companion.interner
+        }
 
-  public static BazelFetchAllValue create(ImmutableList<RepositoryName> reposToVendor) {
-    return new BazelFetchAllValue(reposToVendor);
-  }
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
 
-  /** Key type for BazelFetchAllValue. */
-  @VisibleForSerialization
-  @AutoCodec
-  public static class Key extends AbstractSkyKey<Boolean> {
-    private static final SkyKeyInterner<BazelFetchAllValue.Key> interner = SkyKey.newInterner();
+            private fun create(arg: Boolean?): Key? {
+                return com.google.devtools.build.lib.bazel.bzlmod.BazelFetchAllValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.bazel.bzlmod.BazelFetchAllValue.Key(
+                        arg
+                    )
+                )
+            }
 
-    private Key(Boolean arg) {
-      super(arg);
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key? {
+                return com.google.devtools.build.lib.bazel.bzlmod.BazelFetchAllValue.Key.Companion.interner.intern(key)
+            }
+        }
     }
 
-    private static BazelFetchAllValue.Key create(Boolean arg) {
-      return interner.intern(new BazelFetchAllValue.Key(arg));
+    val reposToVendor: com.google.common.collect.ImmutableList<RepositoryName?>?
+
+    init {
+        this.reposToVendor = reposToVendor
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<RepositoryName?>?>(
+            reposToVendor,
+            "reposToVendor"
+        )
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
-    }
+    companion object {
+        /** Creates a key from the given repository name.  */
+        fun key(configureEnabled: Boolean?): Key? {
+            return com.google.devtools.build.lib.bazel.bzlmod.BazelFetchAllValue.Key.Companion.create(configureEnabled)
+        }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.BAZEL_FETCH_ALL;
+        fun create(reposToVendor: com.google.common.collect.ImmutableList<RepositoryName?>?): BazelFetchAllValue {
+            return BazelFetchAllValue(reposToVendor)
+        }
     }
-
-    @Override
-    public SkyKeyInterner<BazelFetchAllValue.Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
 }

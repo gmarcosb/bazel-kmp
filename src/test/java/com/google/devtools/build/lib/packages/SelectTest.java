@@ -73,14 +73,14 @@ public class SelectTest {
   @Test
   public void testSelect() throws Exception {
     SelectorList result = (SelectorList) eval("select({'a': 1})");
-    assertThat(((SelectorValue) Iterables.getOnlyElement(result.getElements())).getDictionary())
+    assertThat(((SelectorValue) Iterables.getOnlyElement(result.elements)).getDictionary())
         .containsExactly("a", StarlarkInt.of(1));
   }
 
   @Test
   public void testPlus() throws Exception {
     SelectorList x = (SelectorList) eval("select({'foo': ['FOO'], 'bar': ['BAR']}) + []");
-    List<Object> elements = x.getElements();
+    List<Object> elements = x.elements;
     assertThat(elements).hasSize(2);
     assertThat(elements.get(0)).isInstanceOf(SelectorValue.class);
     assertThat((Iterable<?>) elements.get(1)).isEmpty();
@@ -183,7 +183,7 @@ public class SelectTest {
         (SelectorList)
             eval("select({'a': 1, '//pkg:b': 2, '@other_repo//:file': 3})", semantics, ctx);
     var selectDict =
-        ((SelectorValue) Iterables.getOnlyElement(result.getElements())).getDictionary();
+        ((SelectorValue) Iterables.getOnlyElement(result.elements)).getDictionary();
     if (resolveSelectKeysEagerly) {
       assertThat(selectDict)
           .containsExactly(

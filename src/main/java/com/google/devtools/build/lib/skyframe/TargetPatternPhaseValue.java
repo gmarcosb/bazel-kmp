@@ -72,7 +72,7 @@ public final class TargetPatternPhaseValue implements SkyValue {
         result.add(
             packageManager
                 .getPackage(eventHandler, label.getPackageIdentifier())
-                .getTarget(label.getName()));
+                .getTarget(label.name));
       } catch (NoSuchTargetException | NoSuchPackageException e) {
         throw new IllegalStateException(
             "Failed to get preloaded package from TargetPatternPhaseValue for " + label, e);

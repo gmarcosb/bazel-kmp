@@ -11,21 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.ListenableFuture;
+import build.bazel.remote.execution.v2.Digest
 
-/** Supports querying a remote cache whether it contains a list of blobs. */
-public interface MissingDigestsFinder {
-
-  /**
-   * Returns a set of digests that the remote cache does not know about. The returned set is
-   * guaranteed to be a subset of {@code digests}.
-   *
-   * @param digests The list of digests to look for.
-   */
-  ListenableFuture<ImmutableSet<Digest>> findMissingDigests(
-      RemoteActionExecutionContext context, Iterable<Digest> digests);
+/** Supports querying a remote cache whether it contains a list of blobs.  */
+interface MissingDigestsFinder {
+    /**
+     * Returns a set of digests that the remote cache does not know about. The returned set is
+     * guaranteed to be a subset of `digests`.
+     * 
+     * @param digests The list of digests to look for.
+     */
+    fun findMissingDigests(
+        context: RemoteActionExecutionContext?, digests: Iterable<Digest?>?
+    ): com.google.common.util.concurrent.ListenableFuture<com.google.common.collect.ImmutableSet<Digest?>?>?
 }

@@ -11,64 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.util
 
-package com.google.devtools.build.lib.remote.util;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hasher;
-import java.io.FilterOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import javax.annotation.WillCloseWhenClosed;
+import build.bazel.remote.execution.v2.Digest
 
 /**
- * An {@link OutputStream} that maintains a {@link Digest} of the data written to it.
- *
- * <p>Similar to Guava's {@link com.google.common.hash.HashingOutputStream}, but for computing the
- * {@link Digest} of the written data as specified by the remote execution protocol.
+ * An [OutputStream] that maintains a [Digest] of the data written to it.
+ * 
+ * 
+ * Similar to Guava's [com.google.common.hash.HashingOutputStream], but for computing the
+ * [Digest] of the written data as specified by the remote execution protocol.
  */
-public final class DigestOutputStream extends FilterOutputStream {
-  private final Hasher hasher;
-  private long size = 0;
+class DigestOutputStream(
+    hashFunction: com.google.common.hash.HashFunction,
+    @javax.annotation.WillCloseWhenClosed out: java.io.OutputStream?
+) : FilterOutputStream(com.google.common.base.Preconditions.checkNotNull<java.io.OutputStream?>(out)) {
+    private val hasher: com.google.common.hash.Hasher
+    private var size: Long = 0
 
-  /**
-   * Creates an output stream that creates an {@link Digest} using the given {@link HashFunction},
-   * and forwards all data written to it to the underlying {@link OutputStream}.
-   *
-   * <p>The {@link OutputStream} should not be written to before or after the hand-off.
-   */
-  public DigestOutputStream(HashFunction hashFunction, @WillCloseWhenClosed OutputStream out) {
-    super(checkNotNull(out));
-    this.hasher = checkNotNull(hashFunction.newHasher());
-  }
+    /**
+     * Creates an output stream that creates an [Digest] using the given [HashFunction],
+     * and forwards all data written to it to the underlying [OutputStream].
+     * 
+     * 
+     * The [OutputStream] should not be written to before or after the hand-off.
+     */
+    init {
+        this.hasher =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.hash.Hasher>(hashFunction.newHasher())
+    }
 
-  @Override
-  public void write(int b) throws IOException {
-    size++;
-    hasher.putByte((byte) b);
-    out.write(b);
-  }
+    @Throws(IOException::class)
+    override fun write(b: Int) {
+        size++
+        hasher.putByte(b.toByte())
+        out.write(b)
+    }
 
-  @Override
-  public void write(byte[] bytes, int off, int len) throws IOException {
-    size += len;
-    hasher.putBytes(bytes, off, len);
-    out.write(bytes, off, len);
-  }
+    @Throws(IOException::class)
+    override fun write(bytes: ByteArray, off: Int, len: Int) {
+        size += len.toLong()
+        hasher.putBytes(bytes, off, len)
+        out.write(bytes, off, len)
+    }
 
-  /**
-   * Returns the {@link Digest} of the data written to this stream. The result is unspecified if
-   * this method is called more than once on the same instance.
-   */
-  public Digest digest() {
-    return Digest.newBuilder().setHash(hasher.hash().toString()).setSizeBytes(size).build();
-  }
+    /**
+     * Returns the [Digest] of the data written to this stream. The result is unspecified if
+     * this method is called more than once on the same instance.
+     */
+    fun digest(): Digest {
+        return Digest.newBuilder().setHash(hasher.hash().toString()).setSizeBytes(size).build()
+    }
 
-  @Override
-  public void close() throws IOException {
-    out.close();
-  }
+    @Throws(IOException::class)
+    override fun close() {
+        out.close()
+    }
 }

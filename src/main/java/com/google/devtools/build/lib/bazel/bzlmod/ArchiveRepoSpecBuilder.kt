@@ -12,103 +12,119 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkList;
+import com.google.devtools.build.lib.bazel.bzlmod.RepoRuleId
+import com.google.devtools.build.lib.bazel.bzlmod.RepoSpec
 
 /**
- * Builder for a {@link RepoSpec} object that indicates how to materialize a repo corresponding to
- * an {@code http_archive} repo rule call.
+ * Builder for a [RepoSpec] object that indicates how to materialize a repo corresponding to
+ * an `http_archive` repo rule call.
  */
-public class ArchiveRepoSpecBuilder {
+class ArchiveRepoSpecBuilder {
+    private val attrBuilder: net.starlark.java.eval.Dict.Builder<String?, Any?> =
+        net.starlark.java.eval.Dict.builder<String?, Any?>()
 
-  public static final RepoRuleId HTTP_ARCHIVE =
-      new RepoRuleId(
-          Label.parseCanonicalUnchecked("@@bazel_tools//tools/build_defs/repo:http.bzl"),
-          "http_archive");
-
-  private final Dict.Builder<String, Object> attrBuilder = Dict.builder();
-
-  public ArchiveRepoSpecBuilder() {}
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setUrls(ImmutableList<String> urls) {
-    attrBuilder.put("urls", StarlarkList.immutableCopyOf(urls));
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setIntegrity(String integrity) {
-    attrBuilder.put("integrity", integrity);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setStripPrefix(String stripPrefix) {
-    attrBuilder.put("strip_prefix", stripPrefix);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setPatches(ImmutableList<Label> patches) {
-    attrBuilder.put("patches", StarlarkList.immutableCopyOf(patches));
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setRemotePatches(ImmutableMap<String, String> remotePatches) {
-    attrBuilder.put("remote_patches", Dict.immutableCopyOf(remotePatches));
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setOverlay(ImmutableMap<String, RemoteFile> overlay) {
-    var remoteFiles = Maps.transformValues(overlay, rf -> StarlarkList.immutableCopyOf(rf.urls()));
-    var remoteFilesIntegrity = Maps.transformValues(overlay, RemoteFile::integrity);
-    attrBuilder.put("remote_file_urls", Dict.immutableCopyOf(remoteFiles));
-    attrBuilder.put("remote_file_integrity", Dict.immutableCopyOf(remoteFilesIntegrity));
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setRemoteModuleFile(RemoteFile remoteModuleFile) {
-    attrBuilder.put(
-        "remote_module_file_urls", StarlarkList.immutableCopyOf(remoteModuleFile.urls()));
-    attrBuilder.put("remote_module_file_integrity", remoteModuleFile.integrity());
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setRemotePatchStrip(int remotePatchStrip) {
-    attrBuilder.put("remote_patch_strip", StarlarkInt.of(remotePatchStrip));
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public ArchiveRepoSpecBuilder setArchiveType(String archiveType) {
-    if (!Strings.isNullOrEmpty(archiveType)) {
-      attrBuilder.put("type", archiveType);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setUrls(urls: com.google.common.collect.ImmutableList<String?>?): ArchiveRepoSpecBuilder {
+        attrBuilder.put("urls", net.starlark.java.eval.StarlarkList.immutableCopyOf<String?>(urls))
+        return this
     }
-    return this;
-  }
 
-  public RepoSpec build() {
-    return new RepoSpec(HTTP_ARCHIVE, AttributeValues.create(attrBuilder.buildImmutable()));
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setIntegrity(integrity: String?): ArchiveRepoSpecBuilder {
+        attrBuilder.put("integrity", integrity)
+        return this
+    }
 
-  /**
-   * A simple pojo to track remote files that are offered at multiple urls (mirrors) with a single
-   * integrity. We split up the file here to simplify the dependency.
-   */
-  public record RemoteFile(String integrity, List<String> urls) {}
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setStripPrefix(stripPrefix: String?): ArchiveRepoSpecBuilder {
+        attrBuilder.put("strip_prefix", stripPrefix)
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setPatches(patches: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.cmdline.Label?>?): ArchiveRepoSpecBuilder {
+        attrBuilder.put(
+            "patches",
+            net.starlark.java.eval.StarlarkList.immutableCopyOf<com.google.devtools.build.lib.cmdline.Label?>(patches)
+        )
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemotePatches(remotePatches: com.google.common.collect.ImmutableMap<String?, String?>?): ArchiveRepoSpecBuilder {
+        attrBuilder.put("remote_patches", net.starlark.java.eval.Dict.immutableCopyOf<String?, String?>(remotePatches))
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setOverlay(overlay: com.google.common.collect.ImmutableMap<String?, RemoteFile?>): ArchiveRepoSpecBuilder {
+        val remoteFiles: MutableMap<String?, net.starlark.java.eval.StarlarkList<String?>?> =
+            com.google.common.collect.Maps.transformValues<String?, RemoteFile?, net.starlark.java.eval.StarlarkList<String?>?>(
+                overlay,
+                com.google.common.base.Function { rf: RemoteFile? ->
+                    net.starlark.java.eval.StarlarkList.immutableCopyOf<String?>(rf!!.urls)
+                })
+        val remoteFilesIntegrity: MutableMap<String?, String?> =
+            com.google.common.collect.Maps.transformValues<String?, RemoteFile?, String?>(
+                overlay,
+                RemoteFile::integrity
+            )
+        attrBuilder.put(
+            "remote_file_urls",
+            net.starlark.java.eval.Dict.immutableCopyOf<String?, net.starlark.java.eval.StarlarkList<String?>?>(
+                remoteFiles
+            )
+        )
+        attrBuilder.put(
+            "remote_file_integrity",
+            net.starlark.java.eval.Dict.immutableCopyOf<String?, String?>(remoteFilesIntegrity)
+        )
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemoteModuleFile(remoteModuleFile: RemoteFile): ArchiveRepoSpecBuilder {
+        attrBuilder.put(
+            "remote_module_file_urls",
+            net.starlark.java.eval.StarlarkList.immutableCopyOf<String?>(remoteModuleFile.urls)
+        )
+        attrBuilder.put("remote_module_file_integrity", remoteModuleFile.integrity)
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemotePatchStrip(remotePatchStrip: Int): ArchiveRepoSpecBuilder {
+        attrBuilder.put("remote_patch_strip", net.starlark.java.eval.StarlarkInt.of(remotePatchStrip))
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setArchiveType(archiveType: String?): ArchiveRepoSpecBuilder {
+        if (!com.google.common.base.Strings.isNullOrEmpty(archiveType)) {
+            attrBuilder.put("type", archiveType)
+        }
+        return this
+    }
+
+    fun build(): RepoSpec {
+        return RepoSpec(
+            HTTP_ARCHIVE,
+            com.google.devtools.build.lib.bazel.bzlmod.AttributeValues.Companion.create(attrBuilder.buildImmutable())
+        )
+    }
+
+    /**
+     * A simple pojo to track remote files that are offered at multiple urls (mirrors) with a single
+     * integrity. We split up the file here to simplify the dependency.
+     */
+    @kotlin.jvm.JvmRecord
+    data class RemoteFile(val integrity: String?, val urls: MutableList<String?>?)
+    companion object {
+        val HTTP_ARCHIVE: RepoRuleId = RepoRuleId(
+            com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked("@@bazel_tools//tools/build_defs/repo:http.bzl"),
+            "http_archive"
+        )
+    }
 }

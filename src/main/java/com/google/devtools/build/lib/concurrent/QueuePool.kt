@@ -11,49 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.devtools.build.lib.concurrent.RequestBatching.Operation;
-import java.util.ArrayList;
-import java.util.List;
+package com.google.devtools.build.lib.concurrent
 
 /**
- * A shared, thread-local pool of {@link ArrayList} containing {@code Operation} instances.
- *
- * <p>This pool is designed to be shared across multiple {@link EagerRequestBatcher} instances. It
+ * A shared, thread-local pool of [ArrayList] containing `Operation` instances.
+ * 
+ * 
+ * This pool is designed to be shared across multiple [EagerRequestBatcher] instances. It
  * eliminates churn by reusing the same thread-local list allocations.
  */
-public final class QueuePool<RequestT, ResponseT> {
-  private final ThreadLocal<List<Operation<RequestT, ResponseT>>> pool;
-  private final int maxBatchSize;
+class QueuePool<RequestT, ResponseT>(maxBatchSize: Int) {
+    private val pool: java.lang.ThreadLocal<MutableList<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>?>
+    val maxBatchSize: Int
 
-  public QueuePool(int maxBatchSize) {
-    checkArgument(maxBatchSize >= 1, "maxBatchSize must be >= 1");
-    this.maxBatchSize = maxBatchSize;
-    this.pool =
-        ThreadLocal.withInitial(() -> new ArrayList<Operation<RequestT, ResponseT>>(maxBatchSize));
-  }
+    init {
+        com.google.common.base.Preconditions.checkArgument(maxBatchSize >= 1, "maxBatchSize must be >= 1")
+        this.maxBatchSize = maxBatchSize
+        this.pool =
+            java.lang.ThreadLocal.withInitial<MutableList<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>?>(
+                java.util.function.Supplier {
+                    java.util.ArrayList<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>(
+                        maxBatchSize
+                    )
+                })
+    }
 
-  /**
-   * Gets a list from the pool for the current thread.
-   *
-   * <p>IMPORTANT: if the caller modifies or takes ownership of this list, it must recycle a
-   * different, unowned, list. Otherwise, a later call to {@code getQueue} could return the same
-   * list and cause an aliasing bug.
-   */
-  List<Operation<RequestT, ResponseT>> getQueue() {
-    return pool.get();
-  }
+    val queue: MutableList<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>>?
+        /**
+         * Gets a list from the pool for the current thread.
+         * 
+         * 
+         * IMPORTANT: if the caller modifies or takes ownership of this list, it must recycle a
+         * different, unowned, list. Otherwise, a later call to `getQueue` could return the same
+         * list and cause an aliasing bug.
+         */
+        get() = pool.get()
 
-  /** Clears the list and returns it to the pool for the current thread. */
-  void recycleQueue(List<Operation<RequestT, ResponseT>> queue) {
-    queue.clear();
-    pool.set(queue);
-  }
-
-  public int getMaxBatchSize() {
-    return maxBatchSize;
-  }
+    /** Clears the list and returns it to the pool for the current thread.  */
+    fun recycleQueue(queue: MutableList<com.google.devtools.build.lib.concurrent.RequestBatching.Operation<RequestT?, ResponseT?>?>) {
+        queue.clear()
+        pool.set(queue)
+    }
 }

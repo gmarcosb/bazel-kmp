@@ -12,168 +12,163 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.ryanharter.auto.value.gson.GenerateTypeAdapter;
-import java.util.Optional;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.bazel.bzlmod.Facts
+import com.google.devtools.build.lib.bazel.bzlmod.LockFileModuleExtension
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionEvalFactors
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import com.ryanharter.auto.value.gson.GenerateTypeAdapter
 
 /**
  * The result of reading a lockfile. Contains the lockfile version as well as registry and module
  * extensions data (ID, usages hash, generated repos, ...).
- *
- * <p>Bazel maintains two separate lockfiles:
- *
- * <ul>
- *   <li>the (regular) lockfile stored as MODULE.bazel.lock under the workspace directory;
- *   <li>the hidden lockfile stored as MODULE.bazel.lock under the output base.
- * </ul>
- *
- * See the javadoc of the two {@link SkyKey}s for more information.
+ * 
+ * 
+ * Bazel maintains two separate lockfiles:
+ * 
+ * 
+ *  * the (regular) lockfile stored as MODULE.bazel.lock under the workspace directory;
+ *  * the hidden lockfile stored as MODULE.bazel.lock under the output base.
+ * 
+ * 
+ * See the javadoc of the two [SkyKey]s for more information.
  */
 @AutoValue
 @GenerateTypeAdapter
-public abstract class BazelLockFileValue implements SkyValue {
+abstract class BazelLockFileValue : SkyValue {
+    /** Current version of the lock file  */
+    abstract fun getLockFileVersion(): Int
 
-  // NOTE: See "HACK" note on 7.x:
-  // https://cs.opensource.google/bazel/bazel/+/release-7.3.0:src/main/java/com/google/devtools/build/lib/bazel/bzlmod/BazelLockFileModule.java;l=120-127;drc=5f5355b75c7c93fba1e15f6658f308953f4baf51
-  // While this hack exists on 7.x, lockfile version increments should be done 2 at a time (i.e.
-  // keep this number even).
-  public static final int LOCK_FILE_VERSION = 28;
+    /** Hashes of files retrieved from registries.  */
+    abstract fun getRegistryFileHashes(): com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?
 
-  /** A valid empty lockfile. */
-  public static final BazelLockFileValue EMPTY_LOCKFILE = builder().build();
+    /**
+     * Selected module versions that are known to be yanked (and hence must have been explicitly
+     * allowed by the user).
+     */
+    abstract fun getSelectedYankedVersions(): com.google.common.collect.ImmutableMap<ModuleKey?, String?>?
 
-  /**
-   * The (regular) lockfile, stored as MODULE.bazel.lock under the workspace directory. This file is
-   * visible to the user and meant to be committed to source control. Thus, it
-   *
-   * <ul>
-   *   <li>should only contain the minimal amount of information necessary to make module resolution
-   *       and module extension evaluation deterministic;
-   *   <li>should be as deterministic as possible to reduce the risk of merge conflicts.
-   * </ul>
-   */
-  @SerializationConstant
-  public static final SkyKey KEY =
-      new SkyKey() {
-        @Override
-        public SkyFunctionName functionName() {
-          return SkyFunctions.BAZEL_LOCK_FILE;
+    /** Mapping the extension id to the module extension data  */
+    abstract fun getModuleExtensions(): com.google.common.collect.ImmutableMap<ModuleExtensionId?, com.google.common.collect.ImmutableMap<ModuleExtensionEvalFactors?, LockFileModuleExtension?>?>?
+
+    /**
+     * Per-extension perpetually true facts that are passed to extensions at evaluation time without
+     * any invalidation (except for [.getFactsVersions]).
+     * 
+     * 
+     * These are not stored in LockFileModuleExtension as they are intended to be independent of
+     * the eval factors.
+     */
+    abstract fun getFacts(): com.google.common.collect.ImmutableMap<ModuleExtensionId?, Facts?>?
+
+    /**
+     * The `factsVersion` parameter that `module_extension` declared at the time the
+     * corresponding [.getFacts] entry was written. Compared against the current value before
+     * an extension runs; on mismatch the persisted facts are discarded and the extension is invoked
+     * with empty facts. Missing entries default to version 0.
+     * 
+     * 
+     * This is not stored in Facts to ensure a legible, mergeable JSON representation for facts
+     * that is only as indented as absolutely necessary.
+     */
+    abstract fun getFactsVersions(): com.google.common.collect.ImmutableMap<ModuleExtensionId?, Int?>?
+
+    abstract fun toBuilder(): Builder?
+
+    /** Builder type for [BazelLockFileValue].  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun setLockFileVersion(value: Int): Builder?
+
+        abstract fun setRegistryFileHashes(value: com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?): Builder?
+
+        abstract fun setSelectedYankedVersions(value: com.google.common.collect.ImmutableMap<ModuleKey?, String?>?): Builder?
+
+        abstract fun setModuleExtensions(
+            value: com.google.common.collect.ImmutableMap<ModuleExtensionId?, com.google.common.collect.ImmutableMap<ModuleExtensionEvalFactors?, LockFileModuleExtension?>?>?
+        ): Builder?
+
+        abstract fun setFacts(value: com.google.common.collect.ImmutableMap<ModuleExtensionId?, Facts?>?): Builder?
+
+        abstract fun setFactsVersions(value: com.google.common.collect.ImmutableMap<ModuleExtensionId?, Int?>?): Builder?
+
+        abstract fun build(): BazelLockFileValue?
+    }
+
+    companion object {
+        // NOTE: See "HACK" note on 7.x:
+        // https://cs.opensource.google/bazel/bazel/+/release-7.3.0:src/main/java/com/google/devtools/build/lib/bazel/bzlmod/BazelLockFileModule.java;l=120-127;drc=5f5355b75c7c93fba1e15f6658f308953f4baf51
+        // While this hack exists on 7.x, lockfile version increments should be done 2 at a time (i.e.
+        // keep this number even).
+        const val LOCK_FILE_VERSION: Int = 28
+
+        /** A valid empty lockfile.  */
+        val EMPTY_LOCKFILE: BazelLockFileValue? = builder().build()
+
+        /**
+         * The (regular) lockfile, stored as MODULE.bazel.lock under the workspace directory. This file is
+         * visible to the user and meant to be committed to source control. Thus, it
+         * 
+         * 
+         *  * should only contain the minimal amount of information necessary to make module resolution
+         * and module extension evaluation deterministic;
+         *  * should be as deterministic as possible to reduce the risk of merge conflicts.
+         * 
+         */
+        @SerializationConstant
+        val KEY: SkyKey = object : SkyKey {
+            override fun functionName(): SkyFunctionName? {
+                return SkyFunctions.BAZEL_LOCK_FILE
+            }
+
+            override fun toString(): String {
+                return "BazelLockFileValue.KEY"
+            }
         }
 
-        @Override
-        public String toString() {
-          return "BazelLockFileValue.KEY";
-        }
-      };
+        /**
+         * The hidden lockfile, stored as MODULE.bazel.lock under the output base. This file is not
+         * visible to the user and is only removed on a `bazel clean --expunge`, similar to the
+         * persistent action cache. Thus, it
+         * 
+         * 
+         *  * should only contain information known to be correct indefinitely and never needs to be
+         * invalidated for a correct build;
+         *  * is not subject to the same space and mergeability constraints as the regular lockfile and
+         * can thus contain more extensive information;
+         *  * may differ between users and checkouts of the same project as long as it doesn't affect
+         * the outcome of the build, with one exception: the build may fail with an error due to
+         * additional information in the hidden lockfile, e.g. if a module in a registry is changed
+         * retroactively and thus causes a mismatch with the hash in the persistent lockfile.
+         * 
+         */
+        @SerializationConstant
+        val HIDDEN_KEY: SkyKey = object : SkyKey {
+            override fun functionName(): SkyFunctionName? {
+                return SkyFunctions.BAZEL_LOCK_FILE
+            }
 
-  /**
-   * The hidden lockfile, stored as MODULE.bazel.lock under the output base. This file is not
-   * visible to the user and is only removed on a {@code bazel clean --expunge}, similar to the
-   * persistent action cache. Thus, it
-   *
-   * <ul>
-   *   <li>should only contain information known to be correct indefinitely and never needs to be
-   *       invalidated for a correct build;
-   *   <li>is not subject to the same space and mergeability constraints as the regular lockfile and
-   *       can thus contain more extensive information;
-   *   <li>may differ between users and checkouts of the same project as long as it doesn't affect
-   *       the outcome of the build, with one exception: the build may fail with an error due to
-   *       additional information in the hidden lockfile, e.g. if a module in a registry is changed
-   *       retroactively and thus causes a mismatch with the hash in the persistent lockfile.
-   * </ul>
-   */
-  @SerializationConstant
-  public static final SkyKey HIDDEN_KEY =
-      new SkyKey() {
-        @Override
-        public SkyFunctionName functionName() {
-          return SkyFunctions.BAZEL_LOCK_FILE;
+            override fun toString(): String {
+                return "BazelLockFileValue.HIDDEN_KEY"
+            }
         }
 
-        @Override
-        public String toString() {
-          return "BazelLockFileValue.HIDDEN_KEY";
+        fun builder(): Builder {
+            return Builder()
+                .setLockFileVersion(BazelLockFileValue.Companion.LOCK_FILE_VERSION)
+                .setRegistryFileHashes(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .setSelectedYankedVersions(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .setModuleExtensions(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .setFacts(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .setFactsVersions(com.google.common.collect.ImmutableMap.of<K?, V?>())!!
         }
-      };
-
-  static Builder builder() {
-    return new AutoValue_BazelLockFileValue.Builder()
-        .setLockFileVersion(LOCK_FILE_VERSION)
-        .setRegistryFileHashes(ImmutableMap.of())
-        .setSelectedYankedVersions(ImmutableMap.of())
-        .setModuleExtensions(ImmutableMap.of())
-        .setFacts(ImmutableMap.of())
-        .setFactsVersions(ImmutableMap.of());
-  }
-
-  /** Current version of the lock file */
-  public abstract int getLockFileVersion();
-
-  /** Hashes of files retrieved from registries. */
-  public abstract ImmutableMap<String, Optional<Checksum>> getRegistryFileHashes();
-
-  /**
-   * Selected module versions that are known to be yanked (and hence must have been explicitly
-   * allowed by the user).
-   */
-  public abstract ImmutableMap<ModuleKey, String> getSelectedYankedVersions();
-
-  /** Mapping the extension id to the module extension data */
-  public abstract ImmutableMap<
-          ModuleExtensionId, ImmutableMap<ModuleExtensionEvalFactors, LockFileModuleExtension>>
-      getModuleExtensions();
-
-  /**
-   * Per-extension perpetually true facts that are passed to extensions at evaluation time without
-   * any invalidation (except for {@link #getFactsVersions()}).
-   *
-   * <p>These are not stored in LockFileModuleExtension as they are intended to be independent of
-   * the eval factors.
-   */
-  public abstract ImmutableMap<ModuleExtensionId, Facts> getFacts();
-
-  /**
-   * The {@code factsVersion} parameter that {@code module_extension} declared at the time the
-   * corresponding {@link #getFacts()} entry was written. Compared against the current value before
-   * an extension runs; on mismatch the persisted facts are discarded and the extension is invoked
-   * with empty facts. Missing entries default to version 0.
-   *
-   * <p>This is not stored in Facts to ensure a legible, mergeable JSON representation for facts
-   * that is only as indented as absolutely necessary.
-   */
-  public abstract ImmutableMap<ModuleExtensionId, Integer> getFactsVersions();
-
-  public abstract Builder toBuilder();
-
-  /** Builder type for {@link BazelLockFileValue}. */
-  @AutoValue.Builder
-  public abstract static class Builder {
-    public abstract Builder setLockFileVersion(int value);
-
-    public abstract Builder setRegistryFileHashes(ImmutableMap<String, Optional<Checksum>> value);
-
-    public abstract Builder setSelectedYankedVersions(ImmutableMap<ModuleKey, String> value);
-
-    public abstract Builder setModuleExtensions(
-        ImmutableMap<
-                ModuleExtensionId,
-                ImmutableMap<ModuleExtensionEvalFactors, LockFileModuleExtension>>
-            value);
-
-    public abstract Builder setFacts(ImmutableMap<ModuleExtensionId, Facts> value);
-
-    public abstract Builder setFactsVersions(ImmutableMap<ModuleExtensionId, Integer> value);
-
-    public abstract BazelLockFileValue build();
-  }
+    }
 }

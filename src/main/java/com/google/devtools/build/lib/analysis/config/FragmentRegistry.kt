@@ -11,83 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config
 
-package com.google.devtools.build.lib.analysis.config;
+import com.google.devtools.build.lib.analysis.config.FragmentClassSet
+import com.google.devtools.build.lib.analysis.config.FragmentOptions
 
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Sets;
-import java.util.List;
+/** A registry of all [Fragment] and [FragmentOptions] classes registered at startup.  */
+class FragmentRegistry private constructor(
+    allFragments: FragmentClassSet?,
+    universalFragments: FragmentClassSet?,
+    optionsClasses: com.google.common.collect.ImmutableSortedSet<java.lang.Class<out FragmentOptions?>?>?
+) {
+    private val allFragments: FragmentClassSet?
+    private val universalFragments: FragmentClassSet?
+    private val optionsClasses: com.google.common.collect.ImmutableSortedSet<java.lang.Class<out FragmentOptions?>?>?
 
-/** A registry of all {@link Fragment} and {@link FragmentOptions} classes registered at startup. */
-public final class FragmentRegistry {
-
-  /**
-   * Creates a {@code FragmentRegistry}.
-   *
-   * <p>Order of elements in the given lists does not matter - the resulting registry will contain
-   * deterministically ordered sets.
-   *
-   * @param allFragments all registered fragment classes, including {@code universalFragments}
-   * @param universalFragments fragment classes that should be available to all rules even when not
-   *     explicitly required
-   * @param additionalOptions any additional options classes not accounted for by a {@link
-   *     RequiresOptions} annotation on a {@link Fragment} class in {@code allFragments}
-   */
-  public static FragmentRegistry create(
-      List<Class<? extends Fragment>> allFragments,
-      List<Class<? extends Fragment>> universalFragments,
-      List<Class<? extends FragmentOptions>> additionalOptions) {
-    FragmentClassSet allFragmentsSet = FragmentClassSet.of(allFragments);
-    FragmentClassSet universalFragmentsSet = FragmentClassSet.of(universalFragments);
-    if (!allFragmentsSet.containsAll(universalFragmentsSet)) {
-      throw new IllegalArgumentException(
-          "Missing universally required fragments: "
-              + Sets.difference(universalFragmentsSet, allFragmentsSet));
+    init {
+        this.allFragments = allFragments
+        this.universalFragments = universalFragments
+        this.optionsClasses = optionsClasses
     }
 
-    ImmutableSortedSet.Builder<Class<? extends FragmentOptions>> optionsClasses =
-        ImmutableSortedSet.orderedBy(BuildOptions.LEXICAL_FRAGMENT_OPTIONS_COMPARATOR);
-    for (Class<? extends Fragment> fragment : allFragmentsSet) {
-      optionsClasses.addAll(Fragment.requiredOptions(fragment));
+    /** Returns the set of all registered configuration fragments.  */
+    fun getAllFragments(): FragmentClassSet? {
+        return allFragments
     }
-    optionsClasses.addAll(additionalOptions);
 
-    return new FragmentRegistry(allFragmentsSet, universalFragmentsSet, optionsClasses.build());
-  }
+    /**
+     * Returns a subset of [.getAllFragments] that should be available to all rules even when
+     * not explicitly required.
+     */
+    fun getUniversalFragments(): FragmentClassSet? {
+        return universalFragments
+    }
 
-  private final FragmentClassSet allFragments;
-  private final FragmentClassSet universalFragments;
-  private final ImmutableSortedSet<Class<? extends FragmentOptions>> optionsClasses;
+    /**
+     * Returns the set of all registered [FragmentOptions] classes.
+     * 
+     * 
+     * Includes at least all options classes [required][RequiresOptions] by fragments in
+     * [.getAllFragments].
+     */
+    fun getOptionsClasses(): com.google.common.collect.ImmutableSortedSet<java.lang.Class<out FragmentOptions?>?>? {
+        return optionsClasses
+    }
 
-  private FragmentRegistry(
-      FragmentClassSet allFragments,
-      FragmentClassSet universalFragments,
-      ImmutableSortedSet<Class<? extends FragmentOptions>> optionsClasses) {
-    this.allFragments = allFragments;
-    this.universalFragments = universalFragments;
-    this.optionsClasses = optionsClasses;
-  }
+    companion object {
+        /**
+         * Creates a `FragmentRegistry`.
+         * 
+         * 
+         * Order of elements in the given lists does not matter - the resulting registry will contain
+         * deterministically ordered sets.
+         * 
+         * @param allFragments all registered fragment classes, including `universalFragments`
+         * @param universalFragments fragment classes that should be available to all rules even when not
+         * explicitly required
+         * @param additionalOptions any additional options classes not accounted for by a [     ] annotation on a [Fragment] class in `allFragments`
+         */
+        fun create(
+            allFragments: MutableList<java.lang.Class<out Fragment?>?>?,
+            universalFragments: MutableList<java.lang.Class<out Fragment?>?>?,
+            additionalOptions: MutableList<java.lang.Class<out FragmentOptions?>?>
+        ): FragmentRegistry {
+            val allFragmentsSet: FragmentClassSet = FragmentClassSet.Companion.of(allFragments)
+            val universalFragmentsSet: FragmentClassSet = FragmentClassSet.Companion.of(universalFragments)
+            require(allFragmentsSet.containsAll(universalFragmentsSet)) {
+                ("Missing universally required fragments: "
+                        + com.google.common.collect.Sets.difference<java.lang.Class<out Fragment?>?>(
+                    universalFragmentsSet,
+                    allFragmentsSet
+                ))
+            }
 
-  /** Returns the set of all registered configuration fragments. */
-  public FragmentClassSet getAllFragments() {
-    return allFragments;
-  }
+            val optionsClasses: com.google.common.collect.ImmutableSortedSet.Builder<java.lang.Class<out FragmentOptions?>?> =
+                com.google.common.collect.ImmutableSortedSet.orderedBy<java.lang.Class<out FragmentOptions?>?>(
+                    BuildOptions.LEXICAL_FRAGMENT_OPTIONS_COMPARATOR
+                )
+            for (fragment in allFragmentsSet) {
+                optionsClasses.addAll(Fragment.requiredOptions(fragment))
+            }
+            optionsClasses.addAll(additionalOptions)
 
-  /**
-   * Returns a subset of {@link #getAllFragments} that should be available to all rules even when
-   * not explicitly required.
-   */
-  public FragmentClassSet getUniversalFragments() {
-    return universalFragments;
-  }
-
-  /**
-   * Returns the set of all registered {@link FragmentOptions} classes.
-   *
-   * <p>Includes at least all options classes {@linkplain RequiresOptions required} by fragments in
-   * {@link #getAllFragments}.
-   */
-  public ImmutableSortedSet<Class<? extends FragmentOptions>> getOptionsClasses() {
-    return optionsClasses;
-  }
+            return FragmentRegistry(allFragmentsSet, universalFragmentsSet, optionsClasses.build())
+        }
+    }
 }

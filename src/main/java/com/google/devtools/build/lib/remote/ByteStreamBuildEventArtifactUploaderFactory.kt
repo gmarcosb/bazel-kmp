@@ -11,75 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.base.Preconditions.checkState;
+import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.remote.options.RemoteBuildEventUploadMode;
-import com.google.devtools.build.lib.runtime.BuildEventArtifactUploaderFactory;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import java.util.concurrent.Executor;
-import javax.annotation.Nullable;
+/** A factory for [ByteStreamBuildEventArtifactUploader].  */
+internal class ByteStreamBuildEventArtifactUploaderFactory(
+    executor: java.util.concurrent.Executor?,
+    reporter: ExtendedEventHandler?,
+    verboseFailures: Boolean,
+    combinedCache: CombinedCache,
+    remoteInstanceName: String?,
+    remoteBytestreamUriPrefix: String?,
+    buildRequestId: String?,
+    commandId: String?,
+    remoteBuildEventUploadMode: RemoteBuildEventUploadMode?
+) : BuildEventArtifactUploaderFactory {
+    private val executor: java.util.concurrent.Executor?
+    private val reporter: ExtendedEventHandler?
+    private val verboseFailures: Boolean
+    private val combinedCache: CombinedCache
+    private val remoteInstanceName: String?
+    private val remoteBytestreamUriPrefix: String?
+    private val buildRequestId: String?
+    private val commandId: String?
+    private val remoteBuildEventUploadMode: RemoteBuildEventUploadMode?
 
-/** A factory for {@link ByteStreamBuildEventArtifactUploader}. */
-class ByteStreamBuildEventArtifactUploaderFactory implements BuildEventArtifactUploaderFactory {
+    private var uploader: ByteStreamBuildEventArtifactUploader? = null
 
-  private final Executor executor;
-  private final ExtendedEventHandler reporter;
-  private final boolean verboseFailures;
-  private final CombinedCache combinedCache;
-  private final String remoteInstanceName;
-  private final String remoteBytestreamUriPrefix;
-  private final String buildRequestId;
-  private final String commandId;
-  private final RemoteBuildEventUploadMode remoteBuildEventUploadMode;
+    init {
+        this.executor = executor
+        this.reporter = reporter
+        this.verboseFailures = verboseFailures
+        this.combinedCache = combinedCache
+        this.remoteInstanceName = remoteInstanceName
+        this.remoteBytestreamUriPrefix = remoteBytestreamUriPrefix
+        this.buildRequestId = buildRequestId
+        this.commandId = commandId
+        this.remoteBuildEventUploadMode = remoteBuildEventUploadMode
+    }
 
-  @Nullable private ByteStreamBuildEventArtifactUploader uploader;
+    override fun create(env: CommandEnvironment): BuildEventArtifactUploader? {
+        com.google.common.base.Preconditions.checkState(uploader == null, "Already created")
+        uploader =
+            ByteStreamBuildEventArtifactUploader(
+                executor,
+                reporter,
+                verboseFailures,
+                combinedCache.retain(),
+                remoteInstanceName,
+                remoteBytestreamUriPrefix,
+                buildRequestId,
+                commandId,
+                env.getXattrProvider(),
+                remoteBuildEventUploadMode
+            )
+        env.getEventBus().register(uploader)
+        return uploader
+    }
 
-  ByteStreamBuildEventArtifactUploaderFactory(
-      Executor executor,
-      ExtendedEventHandler reporter,
-      boolean verboseFailures,
-      CombinedCache combinedCache,
-      String remoteInstanceName,
-      String remoteBytestreamUriPrefix,
-      String buildRequestId,
-      String commandId,
-      RemoteBuildEventUploadMode remoteBuildEventUploadMode) {
-    this.executor = executor;
-    this.reporter = reporter;
-    this.verboseFailures = verboseFailures;
-    this.combinedCache = combinedCache;
-    this.remoteInstanceName = remoteInstanceName;
-    this.remoteBytestreamUriPrefix = remoteBytestreamUriPrefix;
-    this.buildRequestId = buildRequestId;
-    this.commandId = commandId;
-    this.remoteBuildEventUploadMode = remoteBuildEventUploadMode;
-  }
-
-  @Override
-  public BuildEventArtifactUploader create(CommandEnvironment env) {
-    checkState(uploader == null, "Already created");
-    uploader =
-        new ByteStreamBuildEventArtifactUploader(
-            executor,
-            reporter,
-            verboseFailures,
-            combinedCache.retain(),
-            remoteInstanceName,
-            remoteBytestreamUriPrefix,
-            buildRequestId,
-            commandId,
-            env.getXattrProvider(),
-            remoteBuildEventUploadMode);
-    env.getEventBus().register(uploader);
-    return uploader;
-  }
-
-  @Nullable
-  public ByteStreamBuildEventArtifactUploader get() {
-    return uploader;
-  }
+    fun get(): ByteStreamBuildEventArtifactUploader? {
+        return uploader
+    }
 }

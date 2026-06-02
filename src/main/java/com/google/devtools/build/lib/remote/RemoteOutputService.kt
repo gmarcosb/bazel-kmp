@@ -11,231 +11,203 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
+import com.google.devtools.build.lib.actions.Action
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Output service implementation for the remote build without local output service daemon.  */
+class RemoteOutputService internal constructor(directories: BlazeDirectories?, private val rewindLostInputs: Boolean) :
+    OutputService {
+    private val directories: BlazeDirectories
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionInputMap;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactPathResolver;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.LostInputsActionExecutionException;
-import com.google.devtools.build.lib.actions.OutputChecker;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.buildtool.buildevent.ExecutionPhaseCompleteEvent;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.server.FailureDetails.Execution;
-import com.google.devtools.build.lib.server.FailureDetails.Execution.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.vfs.BatchStat;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import java.io.IOException;
-import java.util.Map;
-import java.util.UUID;
-import javax.annotation.Nullable;
+    private var rewoundActionSynchronizer: RewoundActionSynchronizer = RewoundActionSynchronizer.NOOP
 
-/** Output service implementation for the remote build without local output service daemon. */
-public class RemoteOutputService implements OutputService {
+    private var remoteOutputChecker: RemoteOutputChecker? = null
+    private var actionInputFetcher: RemoteActionInputFetcher? = null
+    private var leaseService: LeaseService? = null
 
-  private final BlazeDirectories directories;
-  private final boolean rewindLostInputs;
-
-  private RewoundActionSynchronizer rewoundActionSynchronizer = RewoundActionSynchronizer.NOOP;
-
-  @Nullable private RemoteOutputChecker remoteOutputChecker;
-  @Nullable private RemoteActionInputFetcher actionInputFetcher;
-  @Nullable private LeaseService leaseService;
-
-  RemoteOutputService(BlazeDirectories directories, boolean rewindLostInputs) {
-    this.directories = checkNotNull(directories);
-    this.rewindLostInputs = rewindLostInputs;
-  }
-
-  void setRemoteOutputChecker(RemoteOutputChecker remoteOutputChecker) {
-    this.remoteOutputChecker = remoteOutputChecker;
-  }
-
-  void setActionInputFetcher(RemoteActionInputFetcher actionInputFetcher) {
-    this.actionInputFetcher = checkNotNull(actionInputFetcher, "actionInputFetcher");
-    if (rewindLostInputs) {
-      this.rewoundActionSynchronizer = new RemoteRewoundActionSynchronizer(actionInputFetcher);
-    }
-  }
-
-  void setLeaseService(LeaseService leaseService) {
-    this.leaseService = leaseService;
-  }
-
-  @Override
-  public ActionFileSystemType actionFileSystemType() {
-    return actionInputFetcher != null
-        ? ActionFileSystemType.REMOTE_FILE_SYSTEM
-        : ActionFileSystemType.DISABLED;
-  }
-
-  @Nullable
-  @Override
-  public FileSystem createActionFileSystem(
-      FileSystem delegateFileSystem,
-      PathFragment execRootFragment,
-      String relativeOutputPath,
-      ImmutableList<Root> sourceRoots,
-      InputMetadataProvider inputArtifactData,
-      Iterable<Artifact> outputArtifacts,
-      boolean rewindingEnabled) {
-    checkNotNull(actionInputFetcher, "actionInputFetcher");
-    return new RemoteActionFileSystem(
-        delegateFileSystem,
-        execRootFragment,
-        relativeOutputPath,
-        inputArtifactData,
-        actionInputFetcher);
-  }
-
-  @Override
-  public void updateActionFileSystemContext(
-      ActionExecutionMetadata action,
-      FileSystem actionFileSystem,
-      OutputMetadataStore outputMetadataStore) {
-    ((RemoteActionFileSystem) actionFileSystem).updateContext(action);
-  }
-
-  @Override
-  public String getFileSystemName(String outputBaseFileSystemName) {
-    return "remoteActionFS";
-  }
-
-  @Override
-  public ModifiedFileSet startBuild(
-      UUID buildId, String workspaceName, EventHandler eventHandler, boolean finalizeActions)
-      throws AbruptExitException {
-    // One of the responsibilities of OutputService.startBuild() is that it ensures the output path
-    // is valid. If the previous OutputService redirected the output path to a remote location, we
-    // must undo this.
-    Path outputPath = directories.getOutputPath(workspaceName);
-    if (outputPath.isSymbolicLink()) {
-      try {
-        outputPath.delete();
-      } catch (IOException e) {
-        throw new AbruptExitException(
-            DetailedExitCode.of(
-                FailureDetail.newBuilder()
-                    .setMessage(
-                        String.format("Couldn't remove output path symlink: %s", e.getMessage()))
-                    .setExecution(
-                        Execution.newBuilder().setCode(Code.LOCAL_OUTPUT_DIRECTORY_SYMLINK_FAILURE))
-                    .build()),
-            e);
-      }
-    }
-    return ModifiedFileSet.EVERYTHING_MODIFIED;
-  }
-
-  @Override
-  public void flushOutputTree() throws InterruptedException {
-    if (actionInputFetcher != null) {
-      actionInputFetcher.flushOutputTree();
-    }
-  }
-
-  @Override
-  public void finalizeBuild(boolean buildSuccessful) {
-    // Intentionally left empty.
-  }
-
-  @Subscribe
-  public void onExecutionPhaseCompleteEvent(ExecutionPhaseCompleteEvent event) {
-    if (leaseService != null) {
-      leaseService.finalizeExecution();
-    }
-  }
-
-  @Override
-  public void finalizeAction(Action action, OutputMetadataStore outputMetadataStore)
-      throws IOException, InterruptedException {
-    if (actionInputFetcher != null) {
-      actionInputFetcher.finalizeAction(action, outputMetadataStore);
+    init {
+        this.directories = com.google.common.base.Preconditions.checkNotNull<BlazeDirectories>(directories)
     }
 
-    if (leaseService != null) {
-      leaseService.finalizeAction();
+    fun setRemoteOutputChecker(remoteOutputChecker: RemoteOutputChecker?) {
+        this.remoteOutputChecker = remoteOutputChecker
     }
-  }
 
-  @Override
-  public boolean shouldStoreRemoteOutputMetadataInActionCache() {
-    return true;
-  }
-
-  @Override
-  public OutputChecker getOutputChecker() {
-    return checkNotNull(remoteOutputChecker, "remoteOutputChecker must not be null");
-  }
-
-  @Nullable
-  @Override
-  public BatchStat getBatchStatter() {
-    return null;
-  }
-
-  @Override
-  public boolean canCreateSymlinkTree() {
-    /* TODO(buchgr): Optimize symlink creation for remote execution */
-    return false;
-  }
-
-  @Override
-  public void createSymlinkTree(
-      Map<PathFragment, PathFragment> symlinks, PathFragment symlinkTreeRoot) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public void clean() {
-    // Intentionally left empty.
-  }
-
-  @Override
-  public boolean supportsPathResolverForArtifactValues() {
-    return actionFileSystemType() != ActionFileSystemType.DISABLED;
-  }
-
-  @Override
-  public ArtifactPathResolver createPathResolverForArtifactValues(
-      PathFragment execRoot,
-      String relativeOutputPath,
-      FileSystem fileSystem,
-      ImmutableList<Root> pathEntries,
-      ActionInputMap actionInputMap) {
-    FileSystem remoteFileSystem =
-        new RemoteActionFileSystem(
-            fileSystem, execRoot, relativeOutputPath, actionInputMap, actionInputFetcher);
-    return ArtifactPathResolver.createPathResolver(remoteFileSystem, fileSystem.getPath(execRoot));
-  }
-
-  @Override
-  public void checkActionFileSystemForLostInputs(FileSystem actionFileSystem, Action action)
-      throws LostInputsActionExecutionException {
-    if (actionFileSystem instanceof RemoteActionFileSystem remoteFileSystem) {
-      remoteFileSystem.checkForLostInputs(action);
+    fun setActionInputFetcher(actionInputFetcher: RemoteActionInputFetcher?) {
+        this.actionInputFetcher = com.google.common.base.Preconditions.checkNotNull<RemoteActionInputFetcher?>(
+            actionInputFetcher,
+            "actionInputFetcher"
+        )
+        if (rewindLostInputs) {
+            this.rewoundActionSynchronizer = RemoteRewoundActionSynchronizer(actionInputFetcher)
+        }
     }
-  }
 
-  @Override
-  public RewoundActionSynchronizer getRewoundActionSynchronizer() {
-    return rewoundActionSynchronizer;
-  }
+    fun setLeaseService(leaseService: LeaseService?) {
+        this.leaseService = leaseService
+    }
+
+    override fun actionFileSystemType(): ActionFileSystemType {
+        return if (actionInputFetcher != null)
+            ActionFileSystemType.REMOTE_FILE_SYSTEM
+        else
+            ActionFileSystemType.DISABLED
+    }
+
+    override fun createActionFileSystem(
+        delegateFileSystem: com.google.devtools.build.lib.vfs.FileSystem,
+        execRootFragment: PathFragment?,
+        relativeOutputPath: String?,
+        sourceRoots: com.google.common.collect.ImmutableList<Root?>?,
+        inputArtifactData: InputMetadataProvider?,
+        outputArtifacts: Iterable<Artifact?>?,
+        rewindingEnabled: Boolean
+    ): com.google.devtools.build.lib.vfs.FileSystem? {
+        com.google.common.base.Preconditions.checkNotNull<RemoteActionInputFetcher?>(
+            actionInputFetcher,
+            "actionInputFetcher"
+        )
+        return RemoteActionFileSystem(
+            delegateFileSystem,
+            execRootFragment,
+            relativeOutputPath,
+            inputArtifactData,
+            actionInputFetcher
+        )
+    }
+
+    override fun updateActionFileSystemContext(
+        action: ActionExecutionMetadata?,
+        actionFileSystem: com.google.devtools.build.lib.vfs.FileSystem,
+        outputMetadataStore: OutputMetadataStore?
+    ) {
+        (actionFileSystem as RemoteActionFileSystem).updateContext(action)
+    }
+
+    override fun getFileSystemName(outputBaseFileSystemName: String?): String {
+        return "remoteActionFS"
+    }
+
+    @Throws(AbruptExitException::class)
+    public override fun startBuild(
+        buildId: UUID?,
+        workspaceName: String?,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler?,
+        finalizeActions: Boolean
+    ): ModifiedFileSet {
+        // One of the responsibilities of OutputService.startBuild() is that it ensures the output path
+        // is valid. If the previous OutputService redirected the output path to a remote location, we
+        // must undo this.
+        val outputPath: com.google.devtools.build.lib.vfs.Path = directories.getOutputPath(workspaceName)
+        if (outputPath.isSymbolicLink()) {
+            try {
+                outputPath.delete()
+            } catch (e: IOException) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                java.lang.String.format("Couldn't remove output path symlink: %s", e.getMessage())
+                            )
+                            .setExecution(
+                                Execution.newBuilder().setCode(Code.LOCAL_OUTPUT_DIRECTORY_SYMLINK_FAILURE)
+                            )
+                            .build()
+                    ),
+                    e
+                )
+            }
+        }
+        return ModifiedFileSet.EVERYTHING_MODIFIED
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun flushOutputTree() {
+        if (actionInputFetcher != null) {
+            actionInputFetcher.flushOutputTree()
+        }
+    }
+
+    override fun finalizeBuild(buildSuccessful: Boolean) {
+        // Intentionally left empty.
+    }
+
+    @com.google.common.eventbus.Subscribe
+    fun onExecutionPhaseCompleteEvent(event: ExecutionPhaseCompleteEvent?) {
+        if (leaseService != null) {
+            leaseService.finalizeExecution()
+        }
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun finalizeAction(action: Action, outputMetadataStore: OutputMetadataStore?) {
+        if (actionInputFetcher != null) {
+            actionInputFetcher.finalizeAction(action, outputMetadataStore)
+        }
+
+        if (leaseService != null) {
+            leaseService.finalizeAction()
+        }
+    }
+
+    override fun shouldStoreRemoteOutputMetadataInActionCache(): Boolean {
+        return true
+    }
+
+    val outputChecker: OutputChecker?
+        get() = com.google.common.base.Preconditions.checkNotNull<RemoteOutputChecker?>(
+            remoteOutputChecker,
+            "remoteOutputChecker must not be null"
+        )
+
+    val batchStatter: BatchStat?
+        get() = null
+
+    override fun canCreateSymlinkTree(): Boolean {
+        /* TODO(buchgr): Optimize symlink creation for remote execution */
+        return false
+    }
+
+    override fun createSymlinkTree(
+        symlinks: MutableMap<PathFragment?, PathFragment?>?, symlinkTreeRoot: PathFragment?
+    ) {
+        throw java.lang.UnsupportedOperationException()
+    }
+
+    override fun clean() {
+        // Intentionally left empty.
+    }
+
+    override fun supportsPathResolverForArtifactValues(): Boolean {
+        return actionFileSystemType() != ActionFileSystemType.DISABLED
+    }
+
+    override fun createPathResolverForArtifactValues(
+        execRoot: PathFragment?,
+        relativeOutputPath: String?,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem,
+        pathEntries: com.google.common.collect.ImmutableList<Root?>?,
+        actionInputMap: ActionInputMap?
+    ): ArtifactPathResolver {
+        val remoteFileSystem: com.google.devtools.build.lib.vfs.FileSystem =
+            RemoteActionFileSystem(
+                fileSystem, execRoot, relativeOutputPath, actionInputMap, actionInputFetcher
+            )
+        return ArtifactPathResolver.createPathResolver(remoteFileSystem, fileSystem.getPath(execRoot))
+    }
+
+    @Throws(LostInputsActionExecutionException::class)
+    override fun checkActionFileSystemForLostInputs(
+        actionFileSystem: com.google.devtools.build.lib.vfs.FileSystem?,
+        action: Action?
+    ) {
+        if (actionFileSystem is RemoteActionFileSystem) {
+            actionFileSystem.checkForLostInputs(action)
+        }
+    }
+
+    override fun getRewoundActionSynchronizer(): RewoundActionSynchronizer {
+        return rewoundActionSynchronizer
+    }
 }

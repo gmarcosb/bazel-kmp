@@ -11,53 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import java.io.IOException;
-import java.util.List;
+import java.io.IOException
 
-/** Interface for evaluating globs during package loading. */
-public interface Globber {
-  /** An opaque token for fetching the result of a glob computation. */
-  abstract class Token {}
+/** Interface for evaluating globs during package loading.  */
+interface Globber {
+    /** An opaque token for fetching the result of a glob computation.  */
+    class Token
 
-  /** Indicates the type of globbing operations we are doing. */
-  enum Operation {
-    // Return only files.
-    FILES,
-    // Return files and directories, but not sub-packages.
-    FILES_AND_DIRS,
-    // Return only sub-packages.
-    SUBPACKAGES,
-  }
+    /** Indicates the type of globbing operations we are doing.  */
+    enum class Operation {
+        // Return only files.
+        FILES,
 
-  /** Used to indicate an invalid glob pattern. */
-  class BadGlobException extends Exception {
-    public BadGlobException(String message) {
-      super(message);
+        // Return files and directories, but not sub-packages.
+        FILES_AND_DIRS,
+
+        // Return only sub-packages.
+        SUBPACKAGES,
     }
-  }
 
-  /**
-   * Asynchronously starts the given glob computation and returns a token for fetching the result.
-   *
-   * @throws BadGlobException if any of the patterns in {@code includes} or {@code excludes} are
-   *     invalid.
-   */
-  Token runAsync(
-      List<String> includes, List<String> excludes, Operation operation, boolean allowEmpty)
-      throws BadGlobException, InterruptedException;
+    /** Used to indicate an invalid glob pattern.  */
+    class BadGlobException(message: String?) : java.lang.Exception(message)
 
-  /**
-   * Fetches the result of a previously started glob computation. The returned list has an arbitrary
-   * order.
-   */
-  List<String> fetchUnsorted(Token token)
-      throws BadGlobException, IOException, InterruptedException;
+    /**
+     * Asynchronously starts the given glob computation and returns a token for fetching the result.
+     * 
+     * @throws BadGlobException if any of the patterns in `includes` or `excludes` are
+     * invalid.
+     */
+    @Throws(BadGlobException::class, java.lang.InterruptedException::class)
+    fun runAsync(
+        includes: MutableList<String?>?, excludes: MutableList<String?>?, operation: Operation?, allowEmpty: Boolean
+    ): Token?
 
-  /** Should be called when the globber is about to be discarded due to an interrupt. */
-  void onInterrupt();
+    /**
+     * Fetches the result of a previously started glob computation. The returned list has an arbitrary
+     * order.
+     */
+    @Throws(BadGlobException::class, IOException::class, java.lang.InterruptedException::class)
+    fun fetchUnsorted(token: Token?): MutableList<String?>?
 
-  /** Should be called when the globber is no longer needed. */
-  void onCompletion();
+    /** Should be called when the globber is about to be discarded due to an interrupt.  */
+    fun onInterrupt()
+
+    /** Should be called when the globber is no longer needed.  */
+    fun onCompletion()
 }

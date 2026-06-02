@@ -60,7 +60,7 @@ public final class RuleInfoExtractor {
     // ... but record the origin rule key for cross references.
     OriginKey.Builder originKeyBuilder =
         OriginKey.newBuilder().setName(internalToUnicode(ruleClass.getName()));
-    if (ruleClass.isStarlark()) {
+    if (ruleClass.isStarlark) {
       if (ruleClass.getStarlarkExtensionLabel() != null) {
         // Most common case: exported Starlark-defined rule class
         originKeyBuilder.setFile(
@@ -81,8 +81,8 @@ public final class RuleInfoExtractor {
     }
     ruleInfoBuilder.setOriginKey(originKeyBuilder.build());
 
-    if (ruleClass.getStarlarkDocumentation() != null) {
-      ruleInfoBuilder.setDocString(internalToUnicode(ruleClass.getStarlarkDocumentation()));
+    if (ruleClass.starlarkDocumentation != null) {
+      ruleInfoBuilder.setDocString(internalToUnicode(ruleClass.starlarkDocumentation));
     }
 
     if (ruleClass.getRuleClassType() == RuleClassType.TEST) {

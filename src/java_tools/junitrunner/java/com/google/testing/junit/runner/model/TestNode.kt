@@ -11,76 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.model
 
-package com.google.testing.junit.runner.model;
-
-import com.google.testing.junit.runner.util.TestClock.TestInstant;
-import java.util.List;
-import javax.annotation.Nullable;
-import org.junit.runner.Description;
+import com.google.testing.junit.runner.util.TestClock.TestInstant
+import org.junit.runner.Description
 
 /**
  * A node in a test suite.
  */
-public abstract class TestNode {
-  private final Description description;
-  @Nullable private TestResult result = null;
+abstract class TestNode internal constructor(description: Description) {
+    /**
+     * [Description] of this test node.
+     */
+    val description: Description
+    var result: TestResult? = null
+        get() {
+            if (field == null) {
+                field = buildResult()
+            }
+            return field
+        }
+        private set
 
-  TestNode(Description description) {
-    if (description == null) {
-      throw new NullPointerException();
+    init {
+        if (description == null) {
+            throw NullPointerException()
+        }
+        this.description = description
     }
-    this.description = description;
-  }
 
-  /**
-   * {@link Description} of this test node.
-   */
-  public final Description getDescription() {
-    return description;
-  }
+    /**
+     * Returns this node's children (test suites or tests cases).
+     */
+    // VisibleForTesting
+    abstract val children: MutableList<TestNode?>?
+        /**
+         * Returns this node's children (test suites or tests cases).
+         */
+        get
 
-  /**
-   * Returns this node's children (test suites or tests cases).
-   */
-  // VisibleForTesting
-  public abstract List<TestNode> getChildren();
+    /**
+     * Returns true if this node is a test case (e.g. junit4 test), false otherwise (e.g. junit4 test
+     * suite). The [TestSuiteModel] distinguishes between test cases and suites based on the
+     * value returned by [Description.isTest].
+     */
+    abstract fun isTestCase(): Boolean
 
-  /**
-   * Returns true if this node is a test case (e.g. junit4 test), false otherwise (e.g. junit4 test
-   * suite). The {@link TestSuiteModel} distinguishes between test cases and suites based on the
-   * value returned by {@link Description#isTest()}.
-   */
-  public abstract boolean isTestCase();
+    /** Indicates that the test represented by this node was skipped.  */
+    abstract fun testSkipped(now: TestInstant?)
 
-  /** Indicates that the test represented by this node was skipped. */
-  public abstract void testSkipped(TestInstant now);
+    /**
+     * Indicates that the test represented by this node was ignored or suppressed due to being
+     * annotated with `@Ignore` or `@Suppress`.
+     */
+    abstract fun testSuppressed(now: TestInstant?)
 
-  /**
-   * Indicates that the test represented by this node was ignored or suppressed due to being
-   * annotated with {@code @Ignore} or {@code @Suppress}.
-   */
-  public abstract void testSuppressed(TestInstant now);
+    /** Indicates that the test represented by this node was interrupted.  */
+    abstract fun testInterrupted(now: TestInstant?)
 
-  /** Indicates that the test represented by this node was interrupted. */
-  public abstract void testInterrupted(TestInstant now);
+    /** Adds a failure to the test represented by this node.  */
+    abstract fun testFailure(throwable: Throwable?, now: TestInstant?)
 
-  /** Adds a failure to the test represented by this node. */
-  public abstract void testFailure(Throwable throwable, TestInstant now);
+    /** Indicates that a dynamically generated test case or suite failed.  */
+    abstract fun dynamicTestFailure(test: Description?, throwable: Throwable?, now: TestInstant?)
 
-  /** Indicates that a dynamically generated test case or suite failed. */
-  public abstract void dynamicTestFailure(Description test, Throwable throwable, TestInstant now);
-
-  /**
-   * Template-method that creates a {@link TestResult} object that represents the test outcome of
-   * this node.
-   */
-  protected abstract TestResult buildResult();
-
-  public final TestResult getResult() {
-    if (result == null) {
-      result = buildResult();
-    }
-    return result;
-  }
+    /**
+     * Template-method that creates a [TestResult] object that represents the test outcome of
+     * this node.
+     */
+    protected abstract fun buildResult(): TestResult?
 }

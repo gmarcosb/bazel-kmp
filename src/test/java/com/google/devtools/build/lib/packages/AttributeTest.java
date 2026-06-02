@@ -59,7 +59,7 @@ public final class AttributeTest {
   @Test
   public void testBasics() {
     Attribute attr = attr("foo", Type.INTEGER).mandatory().value(StarlarkInt.of(3)).build();
-    assertThat(attr.getName()).isEqualTo("foo");
+    assertThat(attr.name).isEqualTo("foo");
     assertThat(attr.getDefaultValue(null)).isEqualTo(StarlarkInt.of(3));
     assertThat(attr.getType()).isEqualTo(Type.INTEGER);
     assertThat(attr.isMandatory()).isTrue();
@@ -81,7 +81,7 @@ public final class AttributeTest {
   @Test
   public void testNonEmpty() {
     Attribute attr = attr("foo", BuildType.LABEL_LIST).nonEmpty().legacyAllowAnyFileType().build();
-    assertThat(attr.getName()).isEqualTo("foo");
+    assertThat(attr.name).isEqualTo("foo");
     assertThat(attr.getType()).isEqualTo(BuildType.LABEL_LIST);
     assertThat(attr.isNonEmpty()).isTrue();
   }
@@ -189,7 +189,7 @@ public final class AttributeTest {
 
     {
       Attribute childAttr1 = parentAttr.cloneBuilder().build();
-      assertThat(childAttr1.getName()).isEqualTo("x");
+      assertThat(childAttr1.name).isEqualTo("x");
       assertThat(childAttr1.getAllowedFileTypesPredicate()).isEqualTo(txtFiles);
       assertThat(childAttr1.getAllowedRuleClassObjectPredicate())
           .isEqualTo(Predicates.alwaysTrue());
@@ -206,7 +206,7 @@ public final class AttributeTest {
               .allowedRuleClasses(ruleClasses)
               .aspect(TestAspects.ERROR_ASPECT)
               .build();
-      assertThat(childAttr2.getName()).isEqualTo("x");
+      assertThat(childAttr2.name).isEqualTo("x");
       assertThat(childAttr2.getAllowedFileTypesPredicate()).isEqualTo(txtFiles);
       assertThat(childAttr2.getAllowedRuleClassObjectPredicate())
           .isEqualTo(ruleClasses.asPredicateOfRuleClassObject());

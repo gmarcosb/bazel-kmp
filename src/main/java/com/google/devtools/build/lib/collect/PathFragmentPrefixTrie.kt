@@ -11,211 +11,191 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect;
+package com.google.devtools.build.lib.collect
 
+import com.google.devtools.build.lib.vfs.PathFragment
+import java.util.HashSet
+import java.util.concurrent.ConcurrentHashMap
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A thread-safe PathFragment segment-based trie for inclusion checks.
- *
- * <p>The {@code put} operation is synchronized on the object, whereas the {@code includes}
- * retrieval operation do not block, and may overlap with {@code} put, and will reflect the results
- * of the most recently completed {@code put} operation. That is, if a {@code put} overlaps with an
- * {@code includes}, {@code includes} will return consistent results, either with the state before
- * or after the {@code put}.
+ * 
+ * 
+ * The `put` operation is synchronized on the object, whereas the `includes`
+ * retrieval operation do not block, and may overlap with `` put, and will reflect the results
+ * of the most recently completed `put` operation. That is, if a `put` overlaps with an
+ * `includes`, `includes` will return consistent results, either with the state before
+ * or after the `put`.
  */
-@ThreadSafe
-public final class PathFragmentPrefixTrie {
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class PathFragmentPrefixTrie {
+    private val includedPaths: MutableSet<PathFragment?> = HashSet<PathFragment?>()
+    private val excludedPaths: MutableSet<PathFragment?> = HashSet<PathFragment?>()
 
-  private final Set<PathFragment> includedPaths = new HashSet<>();
-  private final Set<PathFragment> excludedPaths = new HashSet<>();
+    private abstract class Segment {
+        val segmentMap: MutableMap<String?, Segment>?
 
-  private abstract static sealed class Segment
-      permits InterimSegment, ExcludedSegment, IncludedSegment {
-    private final Map<String, Segment> segmentMap;
+        private constructor() {
+            this.segmentMap = ConcurrentHashMap<String?, Segment>()
+        }
 
-    private Segment() {
-      this.segmentMap = new ConcurrentHashMap<>();
+        private constructor(segmentMap: MutableMap<String?, Segment>?) {
+            this.segmentMap = segmentMap
+        }
     }
 
-    private Segment(Map<String, Segment> segmentMap) {
-      this.segmentMap = segmentMap;
+    /** An interim segment. This segment has not been explicitly marked as included or excluded.  */
+    private class InterimSegment : Segment()
+
+    /** A segment that has been explicitly marked as excluded.  */
+    private class ExcludedSegment : Segment {
+        private constructor() : super()
+
+        private constructor(segmentMap: MutableMap<String?, Segment>?) : super(segmentMap)
     }
 
-    Map<String, Segment> getSegmentMap() {
-      return segmentMap;
-    }
-  }
+    /** A segment that has been explicitly marked as included.  */
+    private class IncludedSegment : Segment {
+        private constructor() : super()
 
-  /** An interim segment. This segment has not been explicitly marked as included or excluded. */
-  private static final class InterimSegment extends Segment {}
-
-  /** A segment that has been explicitly marked as excluded. */
-  private static final class ExcludedSegment extends Segment {
-    private ExcludedSegment() {
-      super();
+        private constructor(segmentMap: MutableMap<String?, Segment>?) : super(segmentMap)
     }
 
-    private ExcludedSegment(Map<String, Segment> segmentMap) {
-      super(segmentMap);
-    }
-  }
+    private val root: Segment
 
-  /** A segment that has been explicitly marked as included. */
-  private static final class IncludedSegment extends Segment {
-    private IncludedSegment() {
-      super();
+    init {
+        root = InterimSegment()
     }
 
-    private IncludedSegment(Map<String, Segment> segmentMap) {
-      super(segmentMap);
-    }
-  }
+    /** Puts the explicit inclusion or exclusion state for a [PathFragment] into the trie.  */
+    @kotlin.jvm.Synchronized
+    @Throws(PathFragmentPrefixTrieException::class)
+    fun put(pathFragment: PathFragment, included: Boolean) {
+        com.google.common.base.Preconditions.checkArgument(
+            pathFragment != PathFragment.EMPTY_FRAGMENT,
+            "path fragment cannot be the empty fragment."
+        )
 
-  private Segment root;
+        var current = root
 
-  public PathFragmentPrefixTrie() {
-    root = new InterimSegment();
-  }
+        val segments: MutableIterator<String> = pathFragment.segments().iterator()
+        while (segments.hasNext()) {
+            val nextSegment = segments.next()
+            if (segments.hasNext()) {
+                current =
+                    current.segmentMap
+                        .computeIfAbsent(nextSegment.intern()) { unused: String? -> InterimSegment() }
+                continue
+            }
 
-  public static PathFragmentPrefixTrie of(Collection<String> paths)
-      throws PathFragmentPrefixTrieException {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
-    for (String p : paths) {
-      if (p.startsWith("-")) {
-        // Exclusion
-        trie.put(PathFragment.create(p.substring(1)), false);
-      } else {
-        // Inclusion
-        trie.put(PathFragment.create(p), true);
-      }
-    }
-    return trie;
-  }
+            // This is the last segment.
+            val newChild =
+                when (current.segmentMap!!.get(nextSegment)) {
+                    -> if (included)
+                        IncludedSegment(segment.getSegmentMap())
+                    else
+                        ExcludedSegment(segment.getSegmentMap())
 
-  public static ImmutableMap<String, PathFragmentPrefixTrie> transformValues(
-      Map<String, Collection<String>> map) throws PathFragmentPrefixTrieException {
-    ImmutableMap.Builder<String, PathFragmentPrefixTrie> builder = ImmutableMap.builder();
-    for (Map.Entry<String, Collection<String>> entry : map.entrySet()) {
-      builder.put(entry.getKey(), PathFragmentPrefixTrie.of(entry.getValue()));
-    }
-    return builder.buildOrThrow();
-  }
+                    null -> if (included) IncludedSegment() else ExcludedSegment()
+                    -> throw PathFragmentAlreadyAddedException(pathFragment, false, toString())
+                    -> throw PathFragmentAlreadyAddedException(pathFragment, true, toString())
+                }
+            current.segmentMap.put(nextSegment.intern(), newChild)
+        }
 
-  /** Puts the explicit inclusion or exclusion state for a {@link PathFragment} into the trie. */
-  public synchronized void put(PathFragment pathFragment, boolean included)
-      throws PathFragmentPrefixTrieException {
-    Preconditions.checkArgument(
-        !pathFragment.equals(PathFragment.EMPTY_FRAGMENT),
-        "path fragment cannot be the empty fragment.");
-
-    Segment current = root;
-
-    Iterator<String> segments = pathFragment.segments().iterator();
-    while (segments.hasNext()) {
-      String nextSegment = segments.next();
-      if (segments.hasNext()) {
-        current =
-            current
-                .getSegmentMap()
-                .computeIfAbsent(nextSegment.intern(), unused -> new InterimSegment());
-        continue;
-      }
-
-      // This is the last segment.
-      Segment newChild =
-          switch (current.getSegmentMap().get(nextSegment)) {
-            case InterimSegment segment ->
-                included
-                    ? new IncludedSegment(segment.getSegmentMap())
-                    : new ExcludedSegment(segment.getSegmentMap());
-            case null -> included ? new IncludedSegment() : new ExcludedSegment();
-            case ExcludedSegment segment ->
-                throw new PathFragmentAlreadyAddedException(pathFragment, false, toString());
-            case IncludedSegment segment ->
-                throw new PathFragmentAlreadyAddedException(pathFragment, true, toString());
-          };
-      current.getSegmentMap().put(nextSegment.intern(), newChild);
+        if (included) {
+            includedPaths.add(pathFragment)
+        } else {
+            excludedPaths.add(pathFragment)
+        }
     }
 
-    if (included) {
-      includedPaths.add(pathFragment);
-    } else {
-      excludedPaths.add(pathFragment);
+    /**
+     * Checks if a PathFragment is included, after applying exclusion checks.
+     * 
+     * 
+     * If there is an exact match, its inclusion state will be returned.
+     * 
+     * 
+     * Otherwise, the result corresponds to the longest prefix's inclusion state explicitly defined
+     * in the trie. If the state is inconclusive (i.e. none of its ancestors are explicitly defined),
+     * then the default is false / excluded.
+     */
+    fun includes(pathFragment: PathFragment): Boolean {
+        if (pathFragment == PathFragment.EMPTY_FRAGMENT) {
+            return false
+        }
+
+        var current: Segment? = root
+        var lastSegment = current
+
+        for (nextSegment in pathFragment.segments()) {
+            current = current!!.segmentMap!!.get(nextSegment)
+            if (current == null) {
+                break
+            }
+
+            if (current !is InterimSegment) {
+                lastSegment = current // either Included or Excluded
+            }
+        }
+        return lastSegment is IncludedSegment
     }
-  }
 
-  /**
-   * Checks if a PathFragment is included, after applying exclusion checks.
-   *
-   * <p>If there is an exact match, its inclusion state will be returned.
-   *
-   * <p>Otherwise, the result corresponds to the longest prefix's inclusion state explicitly defined
-   * in the trie. If the state is inconclusive (i.e. none of its ancestors are explicitly defined),
-   * then the default is false / excluded.
-   */
-  public boolean includes(PathFragment pathFragment) {
-    if (pathFragment.equals(PathFragment.EMPTY_FRAGMENT)) {
-      return false;
+    override fun toString(): String {
+        return ("[included: "
+                + includedPaths.stream().sorted().toList()
+                + ", excluded: "
+                + excludedPaths.stream().sorted().toList()
+                + "]")
     }
 
-    Segment current = root;
-    Segment lastSegment = current;
+    /** Exception thrown by [PathFragmentPrefixTrie] methods.  */
+    open class PathFragmentPrefixTrieException internal constructor(message: String?) : java.lang.Exception(message)
 
-    for (String nextSegment : pathFragment.segments()) {
-      current = current.getSegmentMap().get(nextSegment);
-      if (current == null) {
-        break;
-      }
 
-      if (!(current instanceof InterimSegment)) {
-        lastSegment = current; // either Included or Excluded
-      }
+    /** Exception thrown when a path fragment is added that has already been explicitly added.  */
+    class PathFragmentAlreadyAddedException
+    internal constructor(pathFragment: PathFragment?, included: Boolean, trieString: String?) :
+        PathFragmentPrefixTrieException(
+            java.lang.String.format(
+                "%s has already been explicitly marked as %s. Current state: %s",
+                pathFragment, if (included) "included" else "excluded", trieString
+            )
+        )
+
+    /** Returns true if there are any included paths in the trie.  */
+    fun hasIncludedPaths(): Boolean {
+        return !includedPaths.isEmpty()
     }
-    return lastSegment instanceof IncludedSegment;
-  }
 
-  @Override
-  public String toString() {
-    return "[included: "
-        + includedPaths.stream().sorted().toList()
-        + ", excluded: "
-        + excludedPaths.stream().sorted().toList()
-        + "]";
-  }
+    companion object {
+        @Throws(PathFragmentPrefixTrieException::class)
+        fun of(paths: MutableCollection<String>): PathFragmentPrefixTrie {
+            val trie = PathFragmentPrefixTrie()
+            for (p in paths) {
+                if (p.startsWith("-")) {
+                    // Exclusion
+                    trie.put(PathFragment.create(p.substring(1)), false)
+                } else {
+                    // Inclusion
+                    trie.put(PathFragment.create(p), true)
+                }
+            }
+            return trie
+        }
 
-  /** Exception thrown by {@link PathFragmentPrefixTrie} methods. */
-  public static sealed class PathFragmentPrefixTrieException extends Exception
-      permits PathFragmentAlreadyAddedException {
-    PathFragmentPrefixTrieException(String message) {
-      super(message);
+        @Throws(PathFragmentPrefixTrieException::class)
+        fun transformValues(
+            map: MutableMap<String?, MutableCollection<String?>?>
+        ): com.google.common.collect.ImmutableMap<String?, PathFragmentPrefixTrie?> {
+            val builder: com.google.common.collect.ImmutableMap.Builder<String?, PathFragmentPrefixTrie?> =
+                com.google.common.collect.ImmutableMap.builder<String?, PathFragmentPrefixTrie?>()
+            for (entry in map.entrySet()) {
+                builder.put(entry.getKey(), of(entry.getValue()))
+            }
+            return builder.buildOrThrow()
+        }
     }
-  }
-
-  /** Exception thrown when a path fragment is added that has already been explicitly added. */
-  public static final class PathFragmentAlreadyAddedException
-      extends PathFragmentPrefixTrieException {
-    PathFragmentAlreadyAddedException(
-        PathFragment pathFragment, boolean included, String trieString) {
-      super(
-          String.format(
-              "%s has already been explicitly marked as %s. Current state: %s",
-              pathFragment, included ? "included" : "excluded", trieString));
-    }
-  }
-
-  /** Returns true if there are any included paths in the trie. */
-  public boolean hasIncludedPaths() {
-    return !includedPaths.isEmpty();
-  }
 }

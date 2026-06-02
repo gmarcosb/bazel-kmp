@@ -11,46 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.http;
+package com.google.devtools.build.lib.remote.http
 
-import com.google.common.base.Preconditions;
-import java.io.InputStream;
-import java.net.URI;
+import com.google.common.base.Preconditions
+import java.io.InputStream
+import java.net.URI
 
-/** Object sent through the channel pipeline to start an upload. */
-final class UploadCommand {
+/** Object sent through the channel pipeline to start an upload.  */
+internal class UploadCommand(
+    uri: URI?,
+    private val casUpload: Boolean,
+    hash: String?,
+    data: InputStream?,
+    private val contentLength: Long
+) {
+    private val uri: URI
+    private val hash: String
+    private val data: InputStream
 
-  private final URI uri;
-  private final boolean casUpload;
-  private final String hash;
-  private final InputStream data;
-  private final long contentLength;
+    init {
+        this.uri = Preconditions.checkNotNull<URI>(uri)
+        this.hash = Preconditions.checkNotNull<String>(hash)
+        this.data = Preconditions.checkNotNull<InputStream>(data)
+    }
 
-  UploadCommand(URI uri, boolean casUpload, String hash, InputStream data, long contentLength) {
-    this.uri = Preconditions.checkNotNull(uri);
-    this.casUpload = casUpload;
-    this.hash = Preconditions.checkNotNull(hash);
-    this.data = Preconditions.checkNotNull(data);
-    this.contentLength = contentLength;
-  }
+    fun uri(): URI {
+        return uri
+    }
 
-  public URI uri() {
-    return uri;
-  }
+    fun casUpload(): Boolean {
+        return casUpload
+    }
 
-  public boolean casUpload() {
-    return casUpload;
-  }
+    fun hash(): String {
+        return hash
+    }
 
-  public String hash() {
-    return hash;
-  }
+    fun data(): InputStream {
+        return data
+    }
 
-  public InputStream data() {
-    return data;
-  }
-
-  public long contentLength() {
-    return contentLength;
-  }
+    fun contentLength(): Long {
+        return contentLength
+    }
 }

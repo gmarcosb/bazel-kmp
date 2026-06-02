@@ -11,166 +11,153 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config
 
-package com.google.devtools.build.lib.analysis.config;
+import java.util.AbstractMap
+import java.util.LinkedHashMap
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.util.EnvVar;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsBase;
-import java.util.AbstractMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
-
-/** Command-line build options for a Blaze module. */
-public abstract class FragmentOptions extends OptionsBase implements Cloneable {
-
-  @Override
-  @SuppressWarnings("unchecked") // Reflection doesn't support generics
-  public Class<? extends FragmentOptions> getOptionsClass() {
-    return (Class<? extends FragmentOptions>) super.getOptionsClass();
-  }
-
-  @Override
-  public FragmentOptions clone() {
-    try {
-      return (FragmentOptions) super.clone();
-    } catch (CloneNotSupportedException e) {
-      // This can't happen.
-      throw new IllegalStateException(e);
-    }
-  }
-
-  /**
-   * Creates a new instance of this {@code FragmentOptions} with all flags set to their default
-   * values.
-   */
-  public FragmentOptions getDefault() {
-    return Options.getDefaults(getOptionsClass());
-  }
-
-  /**
-   * Returns an instance of {@code FragmentOptions} with all flags adjusted to be suitable for
-   * forming configurations.
-   *
-   * <p>If this instance is already suitable, it will be returned without creating a new instance.
-   *
-   * <p>Motivation: Sometimes a fragment's physical option values, as set by the options parser, do
-   * not correspond to their logical interpretation. For example, an option may need custom code to
-   * determine its logical default value at runtime, but it's limited to a single hard-coded
-   * physical default value in the {@link Option#defaultValue} annotation field. If two instances of
-   * the fragment have the same logical value but different physical values, a redundant
-   * configuration can be created, which results in an action conflict (particularly for unshareable
-   * actions; see #7808).
-   *
-   * <p>To solve this, we can distinguish between "normalized" and "non-normalized" instances of a
-   * fragment type, and preserve the invariant that configured targets only ever see normalized
-   * instances. This requires that 1) the top-level configuration is normalized, and 2) all
-   * transitions preserve normalization. Step 1) is ensured by {@link BuildOptions} calling this
-   * method. Step 2) is the responsibility of each transition implementation.
-   */
-  public FragmentOptions getNormalized() {
-    return this;
-  }
-
-  /** Converts the options to a string-keyed map. */
-  public Map<String, Object> asMap() {
-    return Options.toMap(this);
-  }
-
-  /**
-   * Helper method for subclasses to normalize set valued options. In addition to removing
-   * duplicates, it picks a deterministic ordering. The fact that the deterministic ordering is
-   * based on sorting is an accident and should NOT be relied upon.
-   */
-  protected static ImmutableList<String> dedupAndSort(@Nullable List<String> values) {
-    if (values == null || values.isEmpty()) {
-      return ImmutableList.of();
+/** Command-line build options for a Blaze module.  */
+abstract class FragmentOptions : com.google.devtools.common.options.OptionsBase(), Cloneable {
+    // Reflection doesn't support generics
+    override fun getOptionsClass(): java.lang.Class<out FragmentOptions?>? {
+        return super.getOptionsClass() as java.lang.Class<out FragmentOptions?>?
     }
 
-    ImmutableList<String> result =
-        values.stream()
-            // Use the natural String ordering.
-            .sorted()
-            .distinct()
-            .collect(toImmutableList());
-
-    // If the value is already deduped and sorted return the exact same instance we got.
-    return result.equals(values) ? ImmutableList.copyOf(values) : result;
-  }
-
-  /**
-   * Helper method for subclasses to normalize list of map entries by keeping only the last entry
-   * for each key. The order of the entries is preserved.
-   */
-  protected static <V> List<Map.Entry<String, V>> normalizeEntries(
-      List<Map.Entry<String, V>> entries) {
-    LinkedHashMap<String, V> normalizedEntries = new LinkedHashMap<>();
-    for (Map.Entry<String, V> entry : entries) {
-      normalizedEntries.put(entry.getKey(), entry.getValue());
-    }
-    // If we made no changes, return the same instance we got to reduce churn.
-    if (normalizedEntries.size() == entries.size()) {
-      return entries;
-    }
-    return normalizedEntries.entrySet().stream()
-        .map(AbstractMap.SimpleEntry::new)
-        .collect(toImmutableList());
-  }
-
-  /**
-   * Helper method for subclasses to normalize list of {@link EnvVar}s by keeping only the last
-   * entry for each key. The order of the entries is preserved.
-   */
-  protected static List<EnvVar> normalizeEnvVars(List<EnvVar> entries) {
-    LinkedHashMap<String, EnvVar> normalizedEntries = new LinkedHashMap<>();
-    for (var entry : entries) {
-      normalizedEntries.put(entry.name(), entry);
-    }
-    // If we made no changes, return the same instance we got to reduce churn.
-    if (normalizedEntries.size() == entries.size()) {
-      return entries;
-    }
-    return ImmutableList.copyOf(normalizedEntries.values());
-  }
-
-  /** Tracks limitations on referring to an option in a {@code config_setting}. */
-  // TODO(bazel-team): There will likely also be a need to customize whether or not an option is
-  // visible to users for setting on the command line (or perhaps even in a test of a Starlark
-  // rule). This class may be a good place to add this functionality.
-  public static final class SelectRestriction {
-
-    private final boolean visibleWithinToolsPackage;
-
-    @Nullable private final String errorMessage;
-
-    public SelectRestriction(boolean visibleWithinToolsPackage, @Nullable String errorMessage) {
-      this.visibleWithinToolsPackage = visibleWithinToolsPackage;
-      this.errorMessage = errorMessage;
+    public override fun clone(): FragmentOptions? {
+        try {
+            return super.clone() as FragmentOptions?
+        } catch (e: java.lang.CloneNotSupportedException) {
+            // This can't happen.
+            throw java.lang.IllegalStateException(e)
+        }
     }
 
     /**
-     * Whether the option can still be seen by {@code config_setting}s that are defined by packages
-     * underneath the tools repository's "tools" package, e.g. {@code @bazel_tools//tools/...}.
+     * Creates a new instance of this `FragmentOptions` with all flags set to their default
+     * values.
      */
-    public boolean isVisibleWithinToolsPackage() {
-      return visibleWithinToolsPackage;
+    fun getDefault(): FragmentOptions? {
+        return com.google.devtools.common.options.Options.getDefaults(getOptionsClass())
     }
 
     /**
-     * An additional explanation to append to the generic error message when a user attempts to use
-     * this option. Should explain why this option is unavailable.
-     *
-     * <p>If null, no content will be appended to the generic error message.
+     * Returns an instance of `FragmentOptions` with all flags adjusted to be suitable for
+     * forming configurations.
+     * 
+     * 
+     * If this instance is already suitable, it will be returned without creating a new instance.
+     * 
+     * 
+     * Motivation: Sometimes a fragment's physical option values, as set by the options parser, do
+     * not correspond to their logical interpretation. For example, an option may need custom code to
+     * determine its logical default value at runtime, but it's limited to a single hard-coded
+     * physical default value in the [Option.defaultValue] annotation field. If two instances of
+     * the fragment have the same logical value but different physical values, a redundant
+     * configuration can be created, which results in an action conflict (particularly for unshareable
+     * actions; see #7808).
+     * 
+     * 
+     * To solve this, we can distinguish between "normalized" and "non-normalized" instances of a
+     * fragment type, and preserve the invariant that configured targets only ever see normalized
+     * instances. This requires that 1) the top-level configuration is normalized, and 2) all
+     * transitions preserve normalization. Step 1) is ensured by [BuildOptions] calling this
+     * method. Step 2) is the responsibility of each transition implementation.
      */
-    @Nullable
-    public String getErrorMessage() {
-      return errorMessage;
+    open fun getNormalized(): FragmentOptions? {
+        return this
     }
-  }
+
+    /** Converts the options to a string-keyed map.  */
+    fun asMap(): MutableMap<String?, Any?> {
+        return com.google.devtools.common.options.Options.toMap<FragmentOptions?>(this)
+    }
+
+    /** Tracks limitations on referring to an option in a `config_setting`.  */ // TODO(bazel-team): There will likely also be a need to customize whether or not an option is
+    // visible to users for setting on the command line (or perhaps even in a test of a Starlark
+    // rule). This class may be a good place to add this functionality.
+    class SelectRestriction(private val visibleWithinToolsPackage: Boolean, private val errorMessage: String?) {
+        /**
+         * Whether the option can still be seen by `config_setting`s that are defined by packages
+         * underneath the tools repository's "tools" package, e.g. `@bazel_tools//tools/...`.
+         */
+        fun isVisibleWithinToolsPackage(): Boolean {
+            return visibleWithinToolsPackage
+        }
+
+        /**
+         * An additional explanation to append to the generic error message when a user attempts to use
+         * this option. Should explain why this option is unavailable.
+         * 
+         * 
+         * If null, no content will be appended to the generic error message.
+         */
+        fun getErrorMessage(): String? {
+            return errorMessage
+        }
+    }
+
+    companion object {
+        /**
+         * Helper method for subclasses to normalize set valued options. In addition to removing
+         * duplicates, it picks a deterministic ordering. The fact that the deterministic ordering is
+         * based on sorting is an accident and should NOT be relied upon.
+         */
+        protected fun dedupAndSort(values: MutableList<String?>?): com.google.common.collect.ImmutableList<String?> {
+            if (values == null || values.isEmpty()) {
+                return com.google.common.collect.ImmutableList.of<String?>()
+            }
+
+            val result: com.google.common.collect.ImmutableList<String?> =
+                values.stream() // Use the natural String ordering.
+                    .sorted()
+                    .distinct()
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+
+            // If the value is already deduped and sorted return the exact same instance we got.
+            return if (result == values) com.google.common.collect.ImmutableList.copyOf<String?>(values) else result
+        }
+
+        /**
+         * Helper method for subclasses to normalize list of map entries by keeping only the last entry
+         * for each key. The order of the entries is preserved.
+         */
+        protected fun <V> normalizeEntries(
+            entries: MutableList<MutableMap.MutableEntry<String?, V?>>
+        ): MutableList<MutableMap.MutableEntry<String?, V?>> {
+            val normalizedEntries: LinkedHashMap<String?, V?> = LinkedHashMap<String?, V?>()
+            for (entry in entries) {
+                normalizedEntries.put(entry.key, entry.value)
+            }
+            // If we made no changes, return the same instance we got to reduce churn.
+            if (normalizedEntries.size == entries.size) {
+                return entries
+            }
+            return normalizedEntries.entries.stream()
+                .map<AbstractMap.SimpleEntry<String?, V?>?> { entry: MutableMap.MutableEntry<String?, V?>? ->
+                    AbstractMap.SimpleEntry(
+                        entry
+                    )
+                }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<MutableMap.MutableEntry<String?, V?>?>())
+        }
+
+        /**
+         * Helper method for subclasses to normalize list of [EnvVar]s by keeping only the last
+         * entry for each key. The order of the entries is preserved.
+         */
+        protected fun normalizeEnvVars(entries: MutableList<com.google.devtools.build.lib.util.EnvVar>): MutableList<com.google.devtools.build.lib.util.EnvVar> {
+            val normalizedEntries: LinkedHashMap<String?, com.google.devtools.build.lib.util.EnvVar?> =
+                LinkedHashMap<String?, com.google.devtools.build.lib.util.EnvVar?>()
+            for (entry in entries) {
+                normalizedEntries.put(entry.name(), entry)
+            }
+            // If we made no changes, return the same instance we got to reduce churn.
+            if (normalizedEntries.size == entries.size) {
+                return entries
+            }
+            return com.google.common.collect.ImmutableList.copyOf<com.google.devtools.build.lib.util.EnvVar?>(
+                normalizedEntries.values
+            )
+        }
+    }
 }

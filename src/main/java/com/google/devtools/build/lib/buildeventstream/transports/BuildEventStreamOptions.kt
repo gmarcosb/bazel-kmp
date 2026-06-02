@@ -11,175 +11,179 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream.transports
 
-package com.google.devtools.build.lib.buildeventstream.transports;
+import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadMode
+import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadModeConverter
+import com.google.devtools.common.options.*
 
-import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadMode;
-import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadModeConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-
-/** Options used to configure BuildEventStreamer and its BuildEventTransports. */
+/** Options used to configure BuildEventStreamer and its BuildEventTransports.  */
 @OptionsClass
-public abstract class BuildEventStreamOptions extends OptionsBase {
+abstract class BuildEventStreamOptions : OptionsBase() {
+    @get:Option(
+        name = "build_event_text_file",
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = "If non-empty, write a textual representation of the build event protocol to that file"
+    )
+    abstract val buildEventTextFile: String?
 
-  @Option(
-      name = "build_event_text_file",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "If non-empty, write a textual representation of the build event protocol to that file")
-  public abstract String getBuildEventTextFile();
+    @get:Option(
+        name = "keep_backend_build_event_connections_alive",
+        defaultValue = "true",
+        metadataTags = [OptionMetadataTag.HIDDEN],
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "If enabled, keep connections to build event backend connections alive across builds."
+    )
+    abstract val keepBackendConnections: Boolean
 
-  @Option(
-      name = "keep_backend_build_event_connections_alive",
-      defaultValue = "true",
-      metadataTags = {OptionMetadataTag.HIDDEN},
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "If enabled, keep connections to build event backend connections alive across builds.")
-  public abstract boolean getKeepBackendConnections();
-
-  @Option(
-      name = "build_event_binary_file",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:Option(
+        name = "build_event_binary_file",
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           If non-empty, write a varint delimited binary representation of representation of the
           build event protocol to that file. This option implies
           `--bes_upload_mode=wait_for_upload_complete`.
-          """)
-  public abstract String getBuildEventBinaryFile();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventBinaryFile: String?
 
-  @Option(
-      name = "build_event_json_file",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:Option(
+        name = "build_event_json_file",
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           If non-empty, write a JSON serialisation of the build event protocol to that file.
           This option implies `--bes_upload_mode=wait_for_upload_complete`.
-          """)
-  public abstract String getBuildEventJsonFile();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventJsonFile: String?
 
-  @Option(
-      name = "build_event_text_file_upload_mode",
-      defaultValue = "wait_for_upload_complete",
-      converter = BesUploadModeConverter.class,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.EAGERNESS_TO_EXIT},
-      help =
-          """
+    @get:Option(
+        name = "build_event_text_file_upload_mode",
+        defaultValue = "wait_for_upload_complete",
+        converter = BesUploadModeConverter::class,
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.EAGERNESS_TO_EXIT],
+        help = """
           Specifies whether the Build Event Service upload for `--build_event_text_file` should
           block the build completion or should end the invocation immediately and finish
           the upload in the background. Either `wait_for_upload_complete` (default),
           `nowait_for_upload_complete`, or `fully_async`.
-          """)
-  public abstract BesUploadMode getBuildEventTextFileUploadMode();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventTextFileUploadMode: BesUploadMode?
 
-  @Option(
-      name = "build_event_binary_file_upload_mode",
-      defaultValue = "wait_for_upload_complete",
-      converter = BesUploadModeConverter.class,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.EAGERNESS_TO_EXIT},
-      help =
-          """
+    @get:Option(
+        name = "build_event_binary_file_upload_mode",
+        defaultValue = "wait_for_upload_complete",
+        converter = BesUploadModeConverter::class,
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.EAGERNESS_TO_EXIT],
+        help = """
           Specifies whether the Build Event Service upload for `--build_event_binary_file` should
           block the build completion or should end the invocation immediately and finish
           the upload in the background. Either `wait_for_upload_complete` (default),
           `nowait_for_upload_complete`, or `fully_async`.
-          """)
-  public abstract BesUploadMode getBuildEventBinaryFileUploadMode();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventBinaryFileUploadMode: BesUploadMode?
 
-  @Option(
-      name = "build_event_json_file_upload_mode",
-      defaultValue = "wait_for_upload_complete",
-      converter = BesUploadModeConverter.class,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.EAGERNESS_TO_EXIT},
-      help =
-          """
+    @get:Option(
+        name = "build_event_json_file_upload_mode",
+        defaultValue = "wait_for_upload_complete",
+        converter = BesUploadModeConverter::class,
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.EAGERNESS_TO_EXIT],
+        help = """
           Specifies whether the Build Event Service upload for `--build_event_json_file` should
           block the build completion or should end the invocation immediately and finish
           the upload in the background. Either `wait_for_upload_complete` (default),
           `nowait_for_upload_complete`, or `fully_async`.
-          """)
-  public abstract BesUploadMode getBuildEventJsonFileUploadMode();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventJsonFileUploadMode: BesUploadMode?
 
-  @Option(
-      name = "build_event_text_file_path_conversion",
-      oldName = "experimental_build_event_text_file_path_conversion",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:Option(
+        name = "build_event_text_file_path_conversion",
+        oldName = "experimental_build_event_text_file_path_conversion",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Convert paths in the text file representation of the build event protocol to more
           globally valid URIs whenever possible; if disabled, the `file://` uri scheme will
           always be used
-          """)
-  public abstract boolean getBuildEventTextFilePathConversion();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventTextFilePathConversion: Boolean
 
-  @Option(
-      name = "build_event_binary_file_path_conversion",
-      oldName = "experimental_build_event_binary_file_path_conversion",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:Option(
+        name = "build_event_binary_file_path_conversion",
+        oldName = "experimental_build_event_binary_file_path_conversion",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Convert paths in the binary file representation of the build event protocol to more
           globally valid URIs whenever possible; if disabled, the `file://` uri scheme will
           always be used
-          """)
-  public abstract boolean getBuildEventBinaryFilePathConversion();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventBinaryFilePathConversion: Boolean
 
-  @Option(
-      name = "build_event_json_file_path_conversion",
-      oldName = "experimental_build_event_json_file_path_conversion",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:Option(
+        name = "build_event_json_file_path_conversion",
+        oldName = "experimental_build_event_json_file_path_conversion",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Convert paths in the json file representation of the build event protocol to more
           globally valid URIs whenever possible; if disabled, the `file://` uri scheme will
           always be used
-          """)
-  public abstract boolean getBuildEventJsonFilePathConversion();
+          
+          """.trimIndent()
+    )
+    abstract val buildEventJsonFilePathConversion: Boolean
 
-  @Option(
-      name = "build_event_publish_all_actions",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help = "Whether all actions should be published.")
-  public abstract boolean getPublishAllActions();
+    @kotlin.jvm.JvmField
+    @get:Option(
+        name = "build_event_publish_all_actions",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = "Whether all actions should be published."
+    )
+    abstract var publishAllActions: Boolean
 
-  public abstract void setPublishAllActions(boolean value);
-
-  @Option(
-      name = "build_event_max_named_set_of_file_entries",
-      defaultValue = "5000",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @kotlin.jvm.JvmField
+    @get:Option(
+        name = "build_event_max_named_set_of_file_entries",
+        defaultValue = "5000",
+        documentationCategory = OptionDocumentationCategory.LOGGING,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           The maximum number of entries for a single `named_set_of_files` event; values smaller
           than 2 are ignored and no event splitting is performed. This is intended for
           limiting the maximum event size in the build event protocol, although it does not
           directly control event size. The total event size is a function of the structure
           of the set as well as the file and uri lengths, which may in turn depend on the
           hash function.
-          """)
-  public abstract int getMaxNamedSetEntries();
+          
+          """.trimIndent()
+    )
+    abstract val maxNamedSetEntries: Int
 }

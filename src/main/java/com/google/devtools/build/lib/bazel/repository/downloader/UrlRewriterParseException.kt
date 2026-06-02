@@ -11,27 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.repository.downloader;
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+import net.starlark.java.syntax.Location
 
-/** An {@link Exception} thrown when failed to parse {@link UrlRewriterConfig}. */
-public class UrlRewriterParseException extends Exception {
-
-  @Nullable private final Location location;
-
-  public UrlRewriterParseException(String message) {
-    this(message, /* location= */ null);
-  }
-
-  public UrlRewriterParseException(String message, @Nullable Location location) {
-    super(message);
-    this.location = location;
-  }
-
-  @Nullable
-  public Location getLocation() {
-    return location;
-  }
-}
+/** An [Exception] thrown when failed to parse [UrlRewriterConfig].  */
+class UrlRewriterParseException @kotlin.jvm.JvmOverloads constructor(message: String?, @kotlin.jvm.JvmField val location: Location? = null) :
+    Exception(message)

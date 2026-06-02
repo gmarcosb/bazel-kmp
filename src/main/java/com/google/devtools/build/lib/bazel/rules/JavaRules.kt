@@ -11,44 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.rules;
+package com.google.devtools.build.lib.bazel.rules
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
-import com.google.devtools.build.lib.bazel.rules.java.BazelJavaSemantics;
-import com.google.devtools.build.lib.rules.core.CoreRules;
-import com.google.devtools.build.lib.rules.extra.ActionListenerRule;
-import com.google.devtools.build.lib.rules.extra.ExtraActionRule;
-import com.google.devtools.build.lib.rules.java.JavaConfiguration;
-import com.google.devtools.build.lib.rules.java.JavaPluginsFlagAliasRule;
-import com.google.devtools.build.lib.rules.java.JavaStarlarkCommon;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
-/** Rules for Java support in Bazel. */
-public class JavaRules implements RuleSet {
-  public static final JavaRules INSTANCE = new JavaRules();
+/** Rules for Java support in Bazel.  */
+class JavaRules private constructor() : RuleSet {
+    public override fun init(builder: ConfiguredRuleClassProvider.Builder) {
+        builder.addConfigurationFragment(JavaConfiguration::class.java)
 
-  private JavaRules() {
-    // Use the static INSTANCE field instead.
-  }
+        builder.addRuleDefinition(JavaPluginsFlagAliasRule())
 
-  @Override
-  public void init(ConfiguredRuleClassProvider.Builder builder) {
-    builder.addConfigurationFragment(JavaConfiguration.class);
+        builder.addRuleDefinition(ExtraActionRule())
+        builder.addRuleDefinition(ActionListenerRule())
 
-    builder.addRuleDefinition(new JavaPluginsFlagAliasRule());
+        builder.addBzlToplevel("java_common", net.starlark.java.eval.Starlark.NONE)
+        builder.addStarlarkBuiltinsInternal(
+            "java_common_internal_do_not_use", JavaStarlarkCommon(BazelJavaSemantics.Companion.INSTANCE)
+        )
+    }
 
-    builder.addRuleDefinition(new ExtraActionRule());
-    builder.addRuleDefinition(new ActionListenerRule());
+    public override fun requires(): com.google.common.collect.ImmutableList<RuleSet?> {
+        return com.google.common.collect.ImmutableList.of<E?>(CoreRules.INSTANCE, CcRules.Companion.INSTANCE)
+    }
 
-    builder.addBzlToplevel("java_common", Starlark.NONE);
-    builder.addStarlarkBuiltinsInternal(
-        "java_common_internal_do_not_use", new JavaStarlarkCommon(BazelJavaSemantics.INSTANCE));
-  }
-
-  @Override
-  public ImmutableList<RuleSet> requires() {
-    return ImmutableList.of(CoreRules.INSTANCE, CcRules.INSTANCE);
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: JavaRules = JavaRules()
+    }
 }

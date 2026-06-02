@@ -11,43 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.constraints
 
-package com.google.devtools.build.lib.analysis.constraints;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
+import com.google.auto.value.AutoBuilder
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
 /**
  * Targets that have additional restrictions based on the current platform.
- *
+ * 
  * @param targetsToSkip Targets that need be skipped.
  * @param targetsWithErrors Targets that should be skipped, but were explicitly requested on the
- *     command line.
+ * command line.
  */
-public record PlatformRestrictionsResult(
-    ImmutableSet<ConfiguredTarget> targetsToSkip,
-    ImmutableSet<ConfiguredTarget> targetsWithErrors) {
-  public PlatformRestrictionsResult {
-    requireNonNull(targetsToSkip, "targetsToSkip");
-    requireNonNull(targetsWithErrors, "targetsWithErrors");
-  }
+class PlatformRestrictionsResult(
+    targetsToSkip: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+    targetsWithErrors: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?
+) {
+    /** [PlatformRestrictionsResult]Builder.  */
+    @AutoBuilder
+    interface Builder {
+        fun targetsToSkip(targetsToSkip: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?): Builder?
 
-  public static Builder builder() {
-    return new AutoBuilder_PlatformRestrictionsResult_Builder()
-        .targetsToSkip(ImmutableSet.of())
-        .targetsWithErrors(ImmutableSet.of());
-  }
+        fun targetsWithErrors(targetsWithErrors: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?): Builder?
 
-  /** {@link PlatformRestrictionsResult}Builder. */
-  @AutoBuilder
-  public interface Builder {
-    Builder targetsToSkip(ImmutableSet<ConfiguredTarget> targetsToSkip);
+        fun build(): PlatformRestrictionsResult?
+    }
 
-    Builder targetsWithErrors(ImmutableSet<ConfiguredTarget> targetsWithErrors);
+    val targetsToSkip: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?
+    val targetsWithErrors: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?
 
-    PlatformRestrictionsResult build();
-  }
+    init {
+        this.targetsWithErrors = targetsWithErrors
+        this.targetsToSkip = targetsToSkip
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<ConfiguredTarget?>?>(
+            targetsToSkip,
+            "targetsToSkip"
+        )
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<ConfiguredTarget?>?>(
+            targetsWithErrors,
+            "targetsWithErrors"
+        )
+    }
+
+    companion object {
+        fun builder(): Builder {
+            return AutoBuilder_PlatformRestrictionsResult_Builder()
+                .targetsToSkip(com.google.common.collect.ImmutableSet.of<E?>())
+                .targetsWithErrors(com.google.common.collect.ImmutableSet.of<E?>())
+        }
+    }
 }

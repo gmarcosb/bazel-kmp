@@ -95,7 +95,7 @@ class ServerWatcherRunnable implements Runnable {
 
     @Override
     boolean check() {
-      return SystemMemoryPressureMonitor.getInstance().level() != Level.NORMAL;
+      return SystemMemoryPressureMonitor.instance.level() != Level.NORMAL;
     }
   }
 

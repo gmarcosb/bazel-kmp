@@ -11,257 +11,256 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventservice.client
 
-package com.google.devtools.build.lib.buildeventservice.client;
+import com.google.devtools.build.v1.PublishBuildEventGrpc
 
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
+/** Implementation of BuildEventServiceClient that uploads data using gRPC.  */
+class BuildEventServiceGrpcClient : BuildEventServiceClient {
+    private val channel: ManagedChannel
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Strings;
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.v1.PublishBuildEventGrpc;
-import com.google.devtools.build.v1.PublishBuildEventGrpc.PublishBuildEventBlockingStub;
-import com.google.devtools.build.v1.PublishBuildEventGrpc.PublishBuildEventStub;
-import com.google.devtools.build.v1.PublishBuildToolEventStreamRequest;
-import com.google.devtools.build.v1.PublishBuildToolEventStreamResponse;
-import com.google.devtools.build.v1.PublishLifecycleEventRequest;
-import io.grpc.CallCredentials;
-import io.grpc.ClientInterceptor;
-import io.grpc.ManagedChannel;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
-import io.grpc.stub.AbstractStub;
-import io.grpc.stub.StreamObserver;
-import java.time.Duration;
-import javax.annotation.Nullable;
+    private val besAsync: PublishBuildEventStub
+    private val besBlocking: PublishBuildEventBlockingStub
 
-/** Implementation of BuildEventServiceClient that uploads data using gRPC. */
-public class BuildEventServiceGrpcClient implements BuildEventServiceClient {
-  private static final ImmutableSet<Status.Code> NON_RETRYABLE_STATUS_CODES =
-      ImmutableSet.of(Status.Code.INVALID_ARGUMENT, Status.Code.PERMISSION_DENIED);
-
-  /** Max wait time for a single non-streaming RPC to finish */
-  private static final Duration RPC_TIMEOUT = Duration.ofSeconds(15);
-
-  private final ManagedChannel channel;
-
-  private final PublishBuildEventStub besAsync;
-  private final PublishBuildEventBlockingStub besBlocking;
-
-  public BuildEventServiceGrpcClient(
-      ManagedChannel channel,
-      @Nullable CallCredentials callCredentials,
-      ClientInterceptor interceptor) {
-    this.besAsync =
-        configureStub(PublishBuildEventGrpc.newStub(channel), callCredentials, interceptor);
-    this.besBlocking =
-        configureStub(PublishBuildEventGrpc.newBlockingStub(channel), callCredentials, interceptor);
-    this.channel = channel;
-  }
-
-  @VisibleForTesting
-  protected BuildEventServiceGrpcClient(
-      PublishBuildEventStub besAsync,
-      PublishBuildEventBlockingStub besBlocking,
-      ManagedChannel channel) {
-    this.besAsync = besAsync;
-    this.besBlocking = besBlocking;
-    this.channel = channel;
-  }
-
-  private static <T extends AbstractStub<T>> T configureStub(
-      T stub, @Nullable CallCredentials callCredentials, @Nullable ClientInterceptor interceptor) {
-    stub = callCredentials != null ? stub.withCallCredentials(callCredentials) : stub;
-    stub = interceptor != null ? stub.withInterceptors(interceptor) : stub;
-    return stub;
-  }
-
-  @Override
-  public void publish(CommandContext commandContext, LifecycleEvent lifecycleEvent)
-      throws StreamException, InterruptedException {
-    PublishLifecycleEventRequest request =
-        BuildEventServiceProtoUtil.publishLifecycleEventRequest(commandContext, lifecycleEvent);
-    throwIfInterrupted();
-    try {
-      besBlocking
-          .withDeadlineAfter(RPC_TIMEOUT.toMillis(), MILLISECONDS)
-          .withInterceptors(
-              TracingMetadataUtils.attachMetadataInterceptor(
-                  TracingMetadataUtils.buildMetadata(
-                      commandContext.buildId(),
-                      commandContext.invocationId(),
-                      "publish_lifecycle_event",
-                      /* actionMetadata= */ null)))
-          .publishLifecycleEvent(request);
-    } catch (StatusRuntimeException e) {
-      Throwables.throwIfInstanceOf(Throwables.getRootCause(e), InterruptedException.class);
-      Status status = Status.fromThrowable(e);
-      throw new StreamException(new GrpcStreamStatus(status), e);
-    }
-  }
-
-  private static class BESGrpcStreamContext implements StreamContext {
-    private final StreamObserver<PublishBuildToolEventStreamRequest> stream;
-    private final SettableFuture<StreamStatus> streamStatus;
-    private final CommandContext commandContext;
-
-    public BESGrpcStreamContext(
-        PublishBuildEventStub besAsync, CommandContext commandContext, AckCallback ackCallback) {
-      this.commandContext = commandContext;
-      this.streamStatus = SettableFuture.create();
-      this.stream =
-          besAsync
-              .withInterceptors(
-                  TracingMetadataUtils.attachMetadataInterceptor(
-                      TracingMetadataUtils.buildMetadata(
-                          commandContext.buildId(),
-                          commandContext.invocationId(),
-                          "publish_build_tool_event_stream",
-                          /* actionMetadata= */ null)))
-              .publishBuildToolEventStream(
-                  new StreamObserver<PublishBuildToolEventStreamResponse>() {
-                    @Override
-                    public void onNext(PublishBuildToolEventStreamResponse response) {
-                      ackCallback.apply(response.getSequenceNumber());
-                    }
-
-                    @Override
-                    public void onError(Throwable t) {
-                      Status status = Status.fromThrowable(t);
-                      if (status.getCode() == Status.CANCELLED.getCode()
-                          && status.getCause() != null
-                          && Status.fromThrowable(status.getCause()).getCode()
-                              != Status.UNKNOWN.getCode()) {
-                        // gRPC likes to wrap Status(Runtime)Exceptions in StatusRuntimeExceptions.
-                        // If the status is cancelled and has a Status(Runtime)Exception as a cause,
-                        // it means the error was generated client side.
-                        status = Status.fromThrowable(status.getCause());
-                      }
-                      streamStatus.set(new GrpcStreamStatus(status));
-                    }
-
-                    @Override
-                    public void onCompleted() {
-                      streamStatus.set(GrpcStreamStatus.OK);
-                    }
-                  });
+    constructor(
+        channel: ManagedChannel,
+        callCredentials: CallCredentials?,
+        interceptor: ClientInterceptor?
+    ) {
+        this.besAsync =
+            Companion.configureStub<T>(PublishBuildEventGrpc.newStub(channel), callCredentials, interceptor)
+        this.besBlocking =
+            Companion.configureStub<T>(PublishBuildEventGrpc.newBlockingStub(channel), callCredentials, interceptor)
+        this.channel = channel
     }
 
-    @Override
-    public void sendOverStream(StreamEvent streamEvent) throws InterruptedException {
-      PublishBuildToolEventStreamRequest request =
-          BuildEventServiceProtoUtil.publishBuildToolEventStreamRequest(
-              commandContext, streamEvent);
-      throwIfInterrupted();
-      try {
-        stream.onNext(request);
-      } catch (StatusRuntimeException e) {
-        Throwables.throwIfInstanceOf(Throwables.getRootCause(e), InterruptedException.class);
-        streamStatus.set(new GrpcStreamStatus(Status.fromThrowable(e)));
-      }
+    @com.google.common.annotations.VisibleForTesting
+    protected constructor(
+        besAsync: PublishBuildEventStub,
+        besBlocking: PublishBuildEventBlockingStub,
+        channel: ManagedChannel
+    ) {
+        this.besAsync = besAsync
+        this.besBlocking = besBlocking
+        this.channel = channel
     }
 
-    @Override
-    public void halfCloseStream() {
-      stream.onCompleted();
+    @Throws(
+        com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.StreamException::class,
+        java.lang.InterruptedException::class
+    )
+    override fun publish(commandContext: CommandContext, lifecycleEvent: LifecycleEvent) {
+        val request: PublishLifecycleEventRequest? =
+            BuildEventServiceProtoUtil.publishLifecycleEventRequest(commandContext, lifecycleEvent)
+        throwIfInterrupted()
+        try {
+            besBlocking
+                .withDeadlineAfter(RPC_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                .withInterceptors(
+                    TracingMetadataUtils.attachMetadataInterceptor(
+                        TracingMetadataUtils.buildMetadata(
+                            commandContext.buildId,
+                            commandContext.invocationId,
+                            "publish_lifecycle_event",  /* actionMetadata= */
+                            null
+                        )
+                    )
+                )
+                .publishLifecycleEvent(request)
+        } catch (e: StatusRuntimeException) {
+            com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                com.google.common.base.Throwables.getRootCause(
+                    e
+                ), java.lang.InterruptedException::class.java
+            )
+            val status: io.grpc.Status = io.grpc.Status.fromThrowable(e)
+            throw com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.StreamException(
+                GrpcStreamStatus(status),
+                e
+            )
+        }
     }
 
-    @Override
-    public void abortStream(AbortReason reason, @Nullable String description) {
-      Status status =
-          switch (reason) {
-            case CANCELLED -> Status.CANCELLED;
-            case FAILED_PRECONDITION -> Status.FAILED_PRECONDITION;
-          };
-      if (description != null) {
-        status = status.withDescription(description);
-      }
-      stream.onError(status.asException());
-    }
+    private class BESGrpcStreamContext(
+        besAsync: PublishBuildEventStub,
+        commandContext: CommandContext,
+        ackCallback: AckCallback
+    ) : StreamContext {
+        private val stream: StreamObserver<PublishBuildToolEventStreamRequest?>
+        private val streamStatus: com.google.common.util.concurrent.SettableFuture<StreamStatus?>
+        private val commandContext: CommandContext?
 
-    @Override
-    public ListenableFuture<StreamStatus> getStatus() {
-      return streamStatus;
-    }
-  }
+        init {
+            this.commandContext = commandContext
+            this.streamStatus = com.google.common.util.concurrent.SettableFuture.create<StreamStatus?>()
+            this.stream =
+                besAsync
+                    .withInterceptors(
+                        TracingMetadataUtils.attachMetadataInterceptor(
+                            TracingMetadataUtils.buildMetadata(
+                                commandContext.buildId,
+                                commandContext.invocationId,
+                                "publish_build_tool_event_stream",  /* actionMetadata= */
+                                null
+                            )
+                        )
+                    )
+                    .publishBuildToolEventStream(
+                        object : StreamObserver<PublishBuildToolEventStreamResponse?>() {
+                            override fun onNext(response: PublishBuildToolEventStreamResponse) {
+                                ackCallback.apply(response.getSequenceNumber())
+                            }
 
-  @Override
-  public StreamContext openStream(CommandContext commandContext, AckCallback ackCallback)
-      throws InterruptedException {
-    try {
-      return new BESGrpcStreamContext(besAsync, commandContext, ackCallback);
-    } catch (StatusRuntimeException e) {
-      Throwables.throwIfInstanceOf(Throwables.getRootCause(e), InterruptedException.class);
-      ListenableFuture<StreamStatus> status =
-          immediateFuture(new GrpcStreamStatus(Status.fromThrowable(e)));
-      return new StreamContext() {
-        @Override
-        public ListenableFuture<StreamStatus> getStatus() {
-          return status;
+                            override fun onError(t: Throwable) {
+                                var status: io.grpc.Status = io.grpc.Status.fromThrowable(t)
+                                if (status.getCode() == io.grpc.Status.CANCELLED.getCode() && status.getCause() != null && (io.grpc.Status.fromThrowable(
+                                        status.getCause()
+                                    ).getCode()
+                                            != io.grpc.Status.UNKNOWN.getCode())
+                                ) {
+                                    // gRPC likes to wrap Status(Runtime)Exceptions in StatusRuntimeExceptions.
+                                    // If the status is cancelled and has a Status(Runtime)Exception as a cause,
+                                    // it means the error was generated client side.
+                                    status = io.grpc.Status.fromThrowable(status.getCause())
+                                }
+                                streamStatus.set(GrpcStreamStatus(status))
+                            }
+
+                            override fun onCompleted() {
+                                streamStatus.set(GrpcStreamStatus.Companion.OK)
+                            }
+                        })
         }
 
-        @Override
-        public void sendOverStream(StreamEvent streamEvent) {}
+        @Throws(java.lang.InterruptedException::class)
+        override fun sendOverStream(streamEvent: StreamEvent) {
+            val request: PublishBuildToolEventStreamRequest? =
+                BuildEventServiceProtoUtil.publishBuildToolEventStreamRequest(
+                    commandContext, streamEvent
+                )
+            throwIfInterrupted()
+            try {
+                stream.onNext(request)
+            } catch (e: StatusRuntimeException) {
+                com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                    com.google.common.base.Throwables.getRootCause(
+                        e
+                    ), java.lang.InterruptedException::class.java
+                )
+                streamStatus.set(GrpcStreamStatus(io.grpc.Status.fromThrowable(e)))
+            }
+        }
 
-        @Override
-        public void halfCloseStream() {}
+        override fun halfCloseStream() {
+            stream.onCompleted()
+        }
 
-        @Override
-        public void abortStream(AbortReason reason, @Nullable String description) {}
-      };
+        override fun abortStream(reason: AbortReason, description: String?) {
+            var status: io.grpc.Status =
+                when (reason) {
+                    AbortReason.CANCELLED -> io.grpc.Status.CANCELLED
+                    AbortReason.FAILED_PRECONDITION -> io.grpc.Status.FAILED_PRECONDITION
+                }
+            if (description != null) {
+                status = status.withDescription(description)
+            }
+            stream.onError(status.asException())
+        }
+
+        val status: com.google.common.util.concurrent.ListenableFuture<StreamStatus?>
+            get() = streamStatus
     }
-  }
 
-  private static final class GrpcStreamStatus implements StreamStatus {
-    private static final GrpcStreamStatus OK = new GrpcStreamStatus(Status.OK);
+    @Throws(java.lang.InterruptedException::class)
+    override fun openStream(commandContext: CommandContext, ackCallback: AckCallback): StreamContext {
+        try {
+            return BESGrpcStreamContext(besAsync, commandContext, ackCallback)
+        } catch (e: StatusRuntimeException) {
+            com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                com.google.common.base.Throwables.getRootCause(
+                    e
+                ), java.lang.InterruptedException::class.java
+            )
+            val status: com.google.common.util.concurrent.ListenableFuture<StreamStatus?> =
+                com.google.common.util.concurrent.Futures.immediateFuture<StreamStatus?>(
+                    GrpcStreamStatus(
+                        io.grpc.Status.fromThrowable(
+                            e
+                        )
+                    )
+                )
+            return object : StreamContext {
+                val status: com.google.common.util.concurrent.ListenableFuture<StreamStatus?>
+                    get() = status
 
-    private final Status status;
+                override fun sendOverStream(streamEvent: StreamEvent?) {}
 
-    GrpcStreamStatus(Status status) {
-      this.status = status;
+                override fun halfCloseStream() {}
+
+                override fun abortStream(reason: AbortReason?, description: String?) {}
+            }
+        }
     }
 
-    @Override
-    public boolean isOk() {
-      return status.isOk();
+    private class GrpcStreamStatus(status: io.grpc.Status) : StreamStatus {
+        private val status: io.grpc.Status
+
+        init {
+            this.status = status
+        }
+
+        val isOk: Boolean
+            get() = status.isOk()
+
+        val isRetriable: Boolean
+            get() = !status.isOk() && !NON_RETRYABLE_STATUS_CODES.contains(status.getCode()) && status.getCode() != io.grpc.Status.Code.FAILED_PRECONDITION
+
+        val isFailedPrecondition: Boolean
+            get() = status.getCode() == io.grpc.Status.Code.FAILED_PRECONDITION
+
+        val errorMessage: String
+            get() {
+                val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+                sb.append(status.getCode().name())
+                if (!com.google.common.base.Strings.isNullOrEmpty(status.getDescription())) {
+                    sb.append(": ").append(status.getDescription())
+                }
+                return sb.toString()
+            }
+
+        companion object {
+            private val OK = GrpcStreamStatus(io.grpc.Status.OK)
+        }
     }
 
-    @Override
-    public boolean isRetriable() {
-      return !status.isOk()
-          && !NON_RETRYABLE_STATUS_CODES.contains(status.getCode())
-          && status.getCode() != Status.Code.FAILED_PRECONDITION;
+    override fun shutdown() {
+        channel.shutdown()
     }
 
-    @Override
-    public boolean isFailedPrecondition() {
-      return status.getCode() == Status.Code.FAILED_PRECONDITION;
-    }
+    companion object {
+        private val NON_RETRYABLE_STATUS_CODES: com.google.common.collect.ImmutableSet<io.grpc.Status.Code?> =
+            com.google.common.collect.ImmutableSet.of<io.grpc.Status.Code?>(
+                io.grpc.Status.Code.INVALID_ARGUMENT,
+                io.grpc.Status.Code.PERMISSION_DENIED
+            )
 
-    @Override
-    public String getErrorMessage() {
-      StringBuilder sb = new StringBuilder();
-      sb.append(status.getCode().name());
-      if (!Strings.isNullOrEmpty(status.getDescription())) {
-        sb.append(": ").append(status.getDescription());
-      }
-      return sb.toString();
-    }
-  }
+        /** Max wait time for a single non-streaming RPC to finish  */
+        private val RPC_TIMEOUT: java.time.Duration = java.time.Duration.ofSeconds(15)
 
-  @Override
-  public void shutdown() {
-    channel.shutdown();
-  }
+        private fun <T : AbstractStub<T?>?> configureStub(
+            stub: T?, callCredentials: CallCredentials?, interceptor: ClientInterceptor?
+        ): T? {
+            var stub = stub
+            stub = if (callCredentials != null) stub.withCallCredentials(callCredentials) else stub
+            stub = if (interceptor != null) stub.withInterceptors(interceptor) else stub
+            return stub
+        }
 
-  private static void throwIfInterrupted() throws InterruptedException {
-    if (Thread.interrupted()) {
-      throw new InterruptedException();
+        @Throws(java.lang.InterruptedException::class)
+        private fun throwIfInterrupted() {
+            if (java.lang.Thread.interrupted()) {
+                throw java.lang.InterruptedException()
+            }
+        }
     }
-  }
 }

@@ -11,29 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public class NonDaemonThreadTest {
-
-  @Test
-  public void testNonDaemonThread() {
-    Thread thread =
-        new Thread(
-            () -> {
-              try {
-                // Simulate some work with sleep
-                Thread.sleep(5000);
-              } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-              }
-            });
-    thread.setDaemon(false); // Set the thread as non-daemon
-    thread.start();
-  }
+@RunWith(JUnit4::class)
+class NonDaemonThreadTest {
+    @Test
+    fun testNonDaemonThread() {
+        val thread =
+            Thread(
+                Runnable {
+                    try {
+                        // Simulate some work with sleep
+                        Thread.sleep(5000)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                })
+        thread.setDaemon(false) // Set the thread as non-daemon
+        thread.start()
+    }
 }

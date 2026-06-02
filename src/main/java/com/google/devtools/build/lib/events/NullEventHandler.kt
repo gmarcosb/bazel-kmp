@@ -11,19 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.events
 
-package com.google.devtools.build.lib.events;
+/** An ErrorEventListener which does nothing.  */
+class NullEventHandler private constructor() // Prevent instantiation
+    : com.google.devtools.build.lib.events.ExtendedEventHandler {
+    override fun handle(e: com.google.devtools.build.lib.events.Event?) {
+    }
 
-/** An ErrorEventListener which does nothing. */
-public final class NullEventHandler implements ExtendedEventHandler {
-  public static final ExtendedEventHandler INSTANCE = new NullEventHandler();
+    override fun post(e: com.google.devtools.build.lib.events.ExtendedEventHandler.Postable?) {}
 
-  private NullEventHandler() {}  // Prevent instantiation
-
-  @Override
-  public void handle(Event e) {
-  }
-
-  @Override
-  public void post(ExtendedEventHandler.Postable e) {}
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: com.google.devtools.build.lib.events.ExtendedEventHandler =
+            com.google.devtools.build.lib.events.NullEventHandler()
+    }
 }

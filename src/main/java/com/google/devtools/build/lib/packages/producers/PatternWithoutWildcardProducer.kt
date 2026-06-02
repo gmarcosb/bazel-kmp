@@ -11,89 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.producers;
+package com.google.devtools.build.lib.packages.producers
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.packages.producers.GlobComputationProducer.GlobDetail;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import java.util.Set;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.actions.FileValue
+import com.google.devtools.build.lib.util.Pair
+import java.util.function.Consumer
 
 /**
- * {@link PatternWithoutWildcardProducer} is a sub-{@link StateMachine} created by {@link
- * FragmentProducer}. It handles glob pattern fragment which does not contain any wildcard
- * characters ({@code *} or {@code **}).
- *
- * <p>When the pattern does not contain any wildcard character, the path is uniquely determined. So
- * it is only necessary to query the {@link FileValue} ending with this glob pattern fragment. If a
- * such file exists, we handle it by creating the {@link DirectoryDirentProducer} under this {@link
- * #filePath}.
+ * [PatternWithoutWildcardProducer] is a sub-[StateMachine] created by [ ]. It handles glob pattern fragment which does not contain any wildcard
+ * characters (`*` or `**`).
+ * 
+ * 
+ * When the pattern does not contain any wildcard character, the path is uniquely determined. So
+ * it is only necessary to query the [FileValue] ending with this glob pattern fragment. If a
+ * such file exists, we handle it by creating the [DirectoryDirentProducer] under this [ ][.filePath].
  */
-final class PatternWithoutWildcardProducer implements StateMachine, Consumer<SkyValue> {
+internal class PatternWithoutWildcardProducer(
+    globDetail: GlobDetail,
+    filePath: PathFragment,
+    fragmentIndex: Int,
+    resultSink: FragmentProducer.ResultSink,
+    visitedGlobSubTasks: MutableSet<Pair<PathFragment?, Int?>?>?
+) : StateMachine, Consumer<SkyValue?> {
+    // -------------------- Input --------------------
+    private val globDetail: GlobDetail
 
-  // -------------------- Input --------------------
-  private final GlobDetail globDetail;
+    /** The [PathFragment] of the file containing the package fragments.  */
+    private val filePath: PathFragment
 
-  /** The {@link PathFragment} of the file containing the package fragments. */
-  private final PathFragment filePath;
+    private val fragmentIndex: Int
 
-  private final int fragmentIndex;
+    // -------------------- Internal State --------------------
+    private var fileValue: FileValue? = null
+    private val visitedGlobSubTasks: MutableSet<Pair<PathFragment?, Int?>?>?
 
-  // -------------------- Internal State --------------------
-  private FileValue fileValue = null;
-  @Nullable private final Set<Pair<PathFragment, Integer>> visitedGlobSubTasks;
+    // -------------------- Output --------------------
+    private val resultSink: FragmentProducer.ResultSink
 
-  // -------------------- Output --------------------
-  private final FragmentProducer.ResultSink resultSink;
-
-  PatternWithoutWildcardProducer(
-      GlobDetail globDetail,
-      PathFragment filePath,
-      int fragmentIndex,
-      FragmentProducer.ResultSink resultSink,
-      @Nullable Set<Pair<PathFragment, Integer>> visitedGlobSubTasks) {
-    this.globDetail = globDetail;
-    this.filePath = filePath;
-    this.fragmentIndex = fragmentIndex;
-    this.resultSink = resultSink;
-    this.visitedGlobSubTasks = visitedGlobSubTasks;
-  }
-
-  @Override
-  public StateMachine step(Tasks tasks) {
-    tasks.lookUp(
-        FileValue.key(RootedPath.toRootedPath(globDetail.packageRoot(), filePath)),
-        (Consumer<SkyValue>) this);
-    return this::processFileValue;
-  }
-
-  @Override
-  public void accept(SkyValue skyValue) {
-    fileValue = (FileValue) skyValue;
-  }
-
-  /** Processes {@link FileValue} for the input {@link #filePath}. */
-  private StateMachine processFileValue(Tasks tasks) {
-    Preconditions.checkNotNull(fileValue);
-    if (!fileValue.exists()) {
-      // Early exit if fileValue is null due to exception thrown during computation or the file does
-      // not exist.
-      return DONE;
+    init {
+        this.globDetail = globDetail
+        this.filePath = filePath
+        this.fragmentIndex = fragmentIndex
+        this.resultSink = resultSink
+        this.visitedGlobSubTasks = visitedGlobSubTasks
     }
 
-    if (fileValue.isDirectory()) {
-      return new DirectoryDirentProducer(
-          globDetail, filePath, fragmentIndex, resultSink, visitedGlobSubTasks);
+    override fun step(tasks: StateMachine.Tasks): StateMachine {
+        tasks.lookUp(
+            FileValue.key(RootedPath.toRootedPath(globDetail.packageRoot, filePath)),
+            this as Consumer<SkyValue?>
+        )
+        return StateMachine { tasks: StateMachine.Tasks? -> this.processFileValue(tasks) }
     }
-    if (FragmentProducer.shouldAddFileMatchingToResult(fragmentIndex, globDetail)) {
-      resultSink.acceptPathFragmentWithPackageFragment(filePath);
+
+    override fun accept(skyValue: SkyValue?) {
+        fileValue = skyValue as FileValue?
     }
-    return DONE;
-  }
+
+    /** Processes [FileValue] for the input [.filePath].  */
+    private fun processFileValue(tasks: StateMachine.Tasks?): StateMachine {
+        Preconditions.checkNotNull<Any?>(fileValue)
+        if (!fileValue.exists()) {
+            // Early exit if fileValue is null due to exception thrown during computation or the file does
+            // not exist.
+            return StateMachine.DONE
+        }
+
+        if (fileValue.isDirectory()) {
+            return DirectoryDirentProducer(
+                globDetail, filePath, fragmentIndex, resultSink, visitedGlobSubTasks
+            )
+        }
+        if (FragmentProducer.Companion.shouldAddFileMatchingToResult(fragmentIndex, globDetail)) {
+            resultSink.acceptPathFragmentWithPackageFragment(filePath)
+        }
+        return StateMachine.DONE
+    }
 }

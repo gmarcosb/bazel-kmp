@@ -133,7 +133,8 @@ public class BuildEventServiceGrpcClientTest {
       ClientInterceptor interceptor = MetadataUtils.newAttachHeadersInterceptor(extraHeaders);
       BuildEventServiceGrpcClient grpcClient =
           new BuildEventServiceGrpcClient(server.getChannel(), null, interceptor);
-      assertThat(grpcClient.openStream(COMMAND_CONTEXT, ack -> {}).getStatus().get().isOk())
+      assertThat(grpcClient.openStream(COMMAND_CONTEXT, ack -> {
+      }).status.get().isOk)
           .isTrue();
       assertThat(seenHeaders).hasSize(1);
       Metadata headers = seenHeaders.get(0);
@@ -147,10 +148,9 @@ public class BuildEventServiceGrpcClientTest {
     try (TestServer server = startTestServer(NOOP_SERVER.bindService())) {
       assertThat(
               new BuildEventServiceGrpcClient(server.getChannel(), null, null)
-                  .openStream(COMMAND_CONTEXT, ack -> {})
-                  .getStatus()
-                  .get()
-                  .isOk())
+                      .openStream(COMMAND_CONTEXT, ack -> {
+                      }).status
+                  .get().isOk)
           .isTrue();
     }
   }
@@ -169,10 +169,9 @@ public class BuildEventServiceGrpcClientTest {
             }.bindService())) {
       assertThat(
               new BuildEventServiceGrpcClient(server.getChannel(), null, null)
-                  .openStream(COMMAND_CONTEXT, ack -> {})
-                  .getStatus()
-                  .get()
-                  .getErrorMessage())
+                      .openStream(COMMAND_CONTEXT, ack -> {
+                      }).status
+                  .get().errorMessage)
           .contains("INTERNAL");
     }
   }

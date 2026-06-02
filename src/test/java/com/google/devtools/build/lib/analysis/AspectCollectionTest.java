@@ -41,9 +41,9 @@ import org.junit.runners.JUnit4;
 /** Tests for {@link AspectCollection} */
 @RunWith(JUnit4.class)
 public class AspectCollectionTest {
-  private final Provider.Key a1Key = new BuiltinProvider<>("a1", StructImpl.class) {}.getKey();
-  private final Provider.Key a2Key = new BuiltinProvider<>("a2", StructImpl.class) {}.getKey();
-  private final Provider.Key a3Key = new BuiltinProvider<>("a3", StructImpl.class) {}.getKey();
+  private final Provider.Key a1Key = new BuiltinProvider<>("a1", StructImpl.class) {}.key;
+  private final Provider.Key a2Key = new BuiltinProvider<>("a2", StructImpl.class) {}.key;
+  private final Provider.Key a3Key = new BuiltinProvider<>("a3", StructImpl.class) {}.key;
 
   /** a3 wants a1 and a2, a1 and a2 want no one, path is a1, a2, a3. */
   @Test

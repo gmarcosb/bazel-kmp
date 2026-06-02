@@ -11,11 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
-/** A marker parent class for a {@link ThreadSafe} {@link OutputFormatterCallback}. */
+/** A marker parent class for a [ThreadSafe] [OutputFormatterCallback].  */
 @ThreadSafe
-public abstract class ThreadSafeOutputFormatterCallback<T> extends OutputFormatterCallback<T> {
-}
+abstract class ThreadSafeOutputFormatterCallback<T> : OutputFormatterCallback<T?>()

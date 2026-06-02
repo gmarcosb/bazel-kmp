@@ -11,23 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
+import com.google.devtools.build.lib.analysis.test.TestShardingStrategy
 
-import static java.lang.Math.max;
+internal enum class TestShardingStrategyNotForced : TestShardingStrategy {
+    EXPLICIT {
+        override fun getNumberOfShards(shardCountFromAttr: Int): Int {
+            return max(shardCountFromAttr, 0)
+        }
+    },
 
-enum TestShardingStrategyNotForced implements TestShardingStrategy {
-  EXPLICIT {
-    @Override
-    public int getNumberOfShards(int shardCountFromAttr) {
-      return max(shardCountFromAttr, 0);
+    DISABLED {
+        override fun getNumberOfShards(shardCountFromAttr: Int): Int {
+            return 0
+        }
     }
-  },
-
-  DISABLED {
-    @Override
-    public int getNumberOfShards(int shardCountFromAttr) {
-      return 0;
-    }
-  };
 }

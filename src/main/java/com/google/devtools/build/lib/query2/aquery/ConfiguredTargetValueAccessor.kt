@@ -11,171 +11,147 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.aquery;
+package com.google.devtools.build.lib.query2.aquery
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.query2.engine.KeyExtractor;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetLookup;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetNotFoundException;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QueryVisibility;
-import com.google.devtools.build.lib.server.FailureDetails.ActionQuery;
-import com.google.devtools.build.lib.server.FailureDetails.ConfigurableQuery;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
- * A {@link TargetAccessor} for {@link ConfiguredTargetValue} objects.
- *
- * <p>Incomplete; we'll implement getPrerequisites and getVisibility when needed.
+ * A [TargetAccessor] for [ConfiguredTargetValue] objects.
+ * 
+ * 
+ * Incomplete; we'll implement getPrerequisites and getVisibility when needed.
  */
-public class ConfiguredTargetValueAccessor implements TargetAccessor<ConfiguredTargetValue> {
+class ConfiguredTargetValueAccessor(
+    walkableGraph: WalkableGraph,
+    targetLookup: TargetLookup,
+    configuredTargetKeyExtractor: KeyExtractor<ConfiguredTargetValue?, ActionLookupKey>
+) : TargetAccessor<ConfiguredTargetValue?> {
+    private val walkableGraph: WalkableGraph
+    private val targetLookup: TargetLookup
+    private val configuredTargetKeyExtractor: KeyExtractor<ConfiguredTargetValue?, ActionLookupKey>
 
-  private final WalkableGraph walkableGraph;
-  private final TargetLookup targetLookup;
-  private final KeyExtractor<ConfiguredTargetValue, ActionLookupKey> configuredTargetKeyExtractor;
-
-  public ConfiguredTargetValueAccessor(
-      WalkableGraph walkableGraph,
-      TargetLookup targetLookup,
-      KeyExtractor<ConfiguredTargetValue, ActionLookupKey> configuredTargetKeyExtractor) {
-    this.walkableGraph = walkableGraph;
-    this.targetLookup = targetLookup;
-    this.configuredTargetKeyExtractor = configuredTargetKeyExtractor;
-  }
-
-  @Override
-  public String getTargetKind(ConfiguredTargetValue configuredTargetValue) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return actualTarget.getTargetKind();
-  }
-
-  @Override
-  public String getLabel(ConfiguredTargetValue configuredTargetValue) {
-    return configuredTargetValue.getConfiguredTarget().getLabel().toString();
-  }
-
-  @Override
-  public String getPackage(ConfiguredTargetValue configuredTargetValue) {
-    return configuredTargetValue
-        .getConfiguredTarget()
-        .getLabel()
-        .getPackageIdentifier()
-        .getPackageFragment()
-        .toString();
-  }
-
-  @Override
-  public boolean isRule(ConfiguredTargetValue configuredTargetValue) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return actualTarget instanceof Rule;
-  }
-
-  @Override
-  public boolean isExecutableNonTestRule(ConfiguredTargetValue configuredTargetValue) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return TargetUtils.isExecutableNonTestRule(actualTarget);
-  }
-
-  @Override
-  public boolean isTestRule(ConfiguredTargetValue configuredTargetValue) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return TargetUtils.isTestRule(actualTarget);
-  }
-
-  @Override
-  public boolean isTestSuite(ConfiguredTargetValue configuredTargetValue) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return TargetUtils.isTestSuiteRule(actualTarget);
-  }
-
-  @Override
-  public List<ConfiguredTargetValue> getPrerequisites(
-      QueryExpression caller,
-      ConfiguredTargetValue configuredTargetValue,
-      String attrName,
-      String errorMsgPrefix)
-      throws QueryException, InterruptedException {
-    // TODO(bazel-team): implement this if needed.
-    throw new QueryException(
-        "labels() is not supported for aquery", ActionQuery.Code.LABELS_FUNCTION_NOT_SUPPORTED);
-  }
-
-  @Override
-  public List<String> getStringListAttr(
-      ConfiguredTargetValue configuredTargetValue, String attrName) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return TargetUtils.getStringListAttr(actualTarget, attrName);
-  }
-
-  @Override
-  public String getStringAttr(ConfiguredTargetValue configuredTargetValue, String attrName) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return TargetUtils.getStringAttr(actualTarget, attrName);
-  }
-
-  @Override
-  public Iterable<String> getAttrAsString(
-      ConfiguredTargetValue configuredTargetValue, String attrName) {
-    Target actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue);
-    return TargetUtils.getAttrAsString(actualTarget, attrName);
-  }
-
-  @Override
-  public ImmutableSet<QueryVisibility<ConfiguredTargetValue>> getVisibility(
-      QueryExpression caller, ConfiguredTargetValue from) throws QueryException {
-    // TODO(bazel-team): implement this if needed.
-    throw new QueryException(
-        "visible() is not supported on configured targets",
-        ConfigurableQuery.Code.VISIBLE_FUNCTION_NOT_SUPPORTED);
-  }
-
-  private Target getTargetFromConfiguredTargetValue(ConfiguredTargetValue configuredTargetValue) {
-    // Dereference any aliases that might be present.
-    Label label = configuredTargetValue.getConfiguredTarget().getOriginalLabel();
-    try {
-      return targetLookup.getTarget(label);
-    } catch (InterruptedException e) {
-      throw new IllegalStateException("Thread interrupted in the middle of getting a Target.", e);
-    } catch (TargetNotFoundException e) {
-      throw new IllegalStateException("Unable to get target from package in accessor.", e);
+    init {
+        this.walkableGraph = walkableGraph
+        this.targetLookup = targetLookup
+        this.configuredTargetKeyExtractor = configuredTargetKeyExtractor
     }
-  }
 
-  /** Returns the AspectValues that are attached to the given configuredTarget. */
-  public Set<AspectValue> getAspectValues(ConfiguredTargetValue configuredTargetValue)
-      throws InterruptedException {
-    Set<AspectValue> result = new HashSet<>();
-    SkyKey skyKey = configuredTargetKeyExtractor.extractKey(configuredTargetValue);
-    Iterable<SkyKey> revDeps =
-        Iterables.concat(walkableGraph.getReverseDeps(ImmutableList.of(skyKey)).values());
-    Label label = configuredTargetValue.getConfiguredTarget().getLabel();
-    for (SkyKey revDep : revDeps) {
-      SkyFunctionName skyFunctionName = revDep.functionName();
-      if (SkyFunctions.ASPECT.equals(skyFunctionName)) {
-        AspectValue aspectValue = (AspectValue) walkableGraph.getValue(revDep);
-        if (aspectValue != null && ((AspectKey) revDep).getLabel().equals(label)) {
-          result.add(aspectValue);
+    override fun getTargetKind(configuredTargetValue: ConfiguredTargetValue): String {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return actualTarget.getTargetKind()
+    }
+
+    override fun getLabel(configuredTargetValue: ConfiguredTargetValue): String {
+        return configuredTargetValue.getConfiguredTarget().getLabel().toString()
+    }
+
+    override fun getPackage(configuredTargetValue: ConfiguredTargetValue): String {
+        return configuredTargetValue
+            .getConfiguredTarget()
+            .getLabel()
+            .getPackageIdentifier()
+            .getPackageFragment()
+            .toString()
+    }
+
+    override fun isRule(configuredTargetValue: ConfiguredTargetValue): Boolean {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return actualTarget is Rule
+    }
+
+    override fun isExecutableNonTestRule(configuredTargetValue: ConfiguredTargetValue): Boolean {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return TargetUtils.isExecutableNonTestRule(actualTarget)
+    }
+
+    override fun isTestRule(configuredTargetValue: ConfiguredTargetValue): Boolean {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return TargetUtils.isTestRule(actualTarget)
+    }
+
+    override fun isTestSuite(configuredTargetValue: ConfiguredTargetValue): Boolean {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return TargetUtils.isTestSuiteRule(actualTarget)
+    }
+
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class, java.lang.InterruptedException::class)
+    override fun getPrerequisites(
+        caller: QueryExpression?,
+        configuredTargetValue: ConfiguredTargetValue?,
+        attrName: String?,
+        errorMsgPrefix: String?
+    ): MutableList<ConfiguredTargetValue?>? {
+        // TODO(bazel-team): implement this if needed.
+        throw com.google.devtools.build.lib.query2.engine.QueryException(
+            "labels() is not supported for aquery", ActionQuery.Code.LABELS_FUNCTION_NOT_SUPPORTED
+        )
+    }
+
+    override fun getStringListAttr(
+        configuredTargetValue: ConfiguredTargetValue, attrName: String?
+    ): MutableList<String?> {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return TargetUtils.getStringListAttr(actualTarget, attrName)
+    }
+
+    override fun getStringAttr(configuredTargetValue: ConfiguredTargetValue, attrName: String?): String {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return TargetUtils.getStringAttr(actualTarget, attrName)
+    }
+
+    override fun getAttrAsString(
+        configuredTargetValue: ConfiguredTargetValue, attrName: String?
+    ): Iterable<String?> {
+        val actualTarget = getTargetFromConfiguredTargetValue(configuredTargetValue)
+        return TargetUtils.getAttrAsString(actualTarget, attrName)
+    }
+
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class)
+    override fun getVisibility(
+        caller: QueryExpression?, from: ConfiguredTargetValue?
+    ): com.google.common.collect.ImmutableSet<QueryVisibility<ConfiguredTargetValue?>?>? {
+        // TODO(bazel-team): implement this if needed.
+        throw com.google.devtools.build.lib.query2.engine.QueryException(
+            "visible() is not supported on configured targets",
+            ConfigurableQuery.Code.VISIBLE_FUNCTION_NOT_SUPPORTED
+        )
+    }
+
+    private fun getTargetFromConfiguredTargetValue(configuredTargetValue: ConfiguredTargetValue): Target {
+        // Dereference any aliases that might be present.
+        val label: Label? = configuredTargetValue.getConfiguredTarget().getOriginalLabel()
+        try {
+            return targetLookup.getTarget(label)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException("Thread interrupted in the middle of getting a Target.", e)
+        } catch (e: TargetNotFoundException) {
+            throw java.lang.IllegalStateException("Unable to get target from package in accessor.", e)
         }
-      }
     }
-    return result;
-  }
+
+    /** Returns the AspectValues that are attached to the given configuredTarget.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun getAspectValues(configuredTargetValue: ConfiguredTargetValue): MutableSet<AspectValue?> {
+        val result: MutableSet<AspectValue?> = HashSet<AspectValue?>()
+        val skyKey: SkyKey = configuredTargetKeyExtractor.extractKey(configuredTargetValue)
+        val revDeps: Iterable<SkyKey> =
+            com.google.common.collect.Iterables.concat<SkyKey?>(
+                walkableGraph.getReverseDeps(
+                    com.google.common.collect.ImmutableList.of<SkyKey?>(
+                        skyKey
+                    )
+                ).values
+            )
+        val label: Label? = configuredTargetValue.getConfiguredTarget().getLabel()
+        for (revDep in revDeps) {
+            val skyFunctionName: SkyFunctionName? = revDep.functionName()
+            if (SkyFunctions.ASPECT == skyFunctionName) {
+                val aspectValue: AspectValue? = walkableGraph.getValue(revDep) as AspectValue?
+                if (aspectValue != null && (revDep as AspectKey).getLabel().equals(label)) {
+                    result.add(aspectValue)
+                }
+            }
+        }
+        return result
+    }
 }

@@ -11,44 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream.transports
 
-package com.google.devtools.build.lib.buildeventstream.transports;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadMode;
-import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventTransport;
-import com.google.protobuf.TextFormat;
-import java.io.BufferedOutputStream;
+import java.nio.charset.StandardCharsets
 
 /**
- * A simple {@link BuildEventTransport} that writes the text representation of the protocol-buffer
+ * A simple [BuildEventTransport] that writes the text representation of the protocol-buffer
  * representation of the events to a file.
- *
- * <p>This class is used for debugging.
+ * 
+ * 
+ * This class is used for debugging.
  */
-public final class TextFormatFileTransport extends FileTransport {
-  public TextFormatFileTransport(
-      BufferedOutputStream outputStream,
-      BuildEventProtocolOptions options,
-      BuildEventArtifactUploader uploader,
-      ArtifactGroupNamer namer,
-      BesUploadMode besUploadMode) {
-    super(outputStream, options, uploader, namer, besUploadMode);
-  }
+class TextFormatFileTransport(
+    outputStream: BufferedOutputStream?,
+    options: BuildEventProtocolOptions?,
+    uploader: BuildEventArtifactUploader?,
+    namer: ArtifactGroupNamer?,
+    besUploadMode: BesUploadMode?
+) : FileTransport(outputStream, options, uploader, namer, besUploadMode) {
+    override fun name(): String {
+        return this.getClass().getSimpleName()
+    }
 
-  @Override
-  public String name() {
-    return this.getClass().getSimpleName();
-  }
-
-  @Override
-  protected byte[] serializeEvent(BuildEventStreamProtos.BuildEvent buildEvent) {
-    String protoTextRepresentation = TextFormat.printer().printToString(buildEvent);
-    return ("event {\n" + protoTextRepresentation + "}\n\n").getBytes(UTF_8);
-  }
+    override fun serializeEvent(buildEvent: BuildEvent?): ByteArray? {
+        val protoTextRepresentation: String? = TextFormat.printer().printToString(buildEvent)
+        return ("event {\n" + protoTextRepresentation + "}\n\n").getBytes(StandardCharsets.UTF_8)
+    }
 }

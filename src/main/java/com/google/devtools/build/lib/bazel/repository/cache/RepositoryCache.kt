@@ -11,52 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.cache
 
-package com.google.devtools.build.lib.bazel.repository.cache;
-
-import com.google.devtools.build.lib.vfs.Path;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache
+import com.google.devtools.build.lib.bazel.repository.cache.LocalRepoContentsCache
 
 /**
- * A cache directory related to repositories, containing both the {@link DownloadCache} and the
- * {@link LocalRepoContentsCache}.
+ * A cache directory related to repositories, containing both the [DownloadCache] and the
+ * [LocalRepoContentsCache].
  */
-public class RepositoryCache {
-  // Repository cache subdirectories
-  private static final String CAS_DIR = "content_addressable";
-  private static final String CONTENTS_DIR = "contents";
+class RepositoryCache {
+    private val downloadCache: DownloadCache
+    private val repoContentsCache: LocalRepoContentsCache
 
-  private final DownloadCache downloadCache;
-  private final LocalRepoContentsCache repoContentsCache;
+    private var path: com.google.devtools.build.lib.vfs.Path? = null
 
-  @Nullable private Path path;
-
-  public RepositoryCache() {
-    downloadCache = new DownloadCache();
-    repoContentsCache = new LocalRepoContentsCache();
-  }
-
-  public void setPath(@Nullable Path path) {
-    this.path = path;
-    if (path != null) {
-      downloadCache.setPath(path.getRelative(CAS_DIR));
-      repoContentsCache.setPath(path.getRelative(CONTENTS_DIR));
-    } else {
-      downloadCache.setPath(null);
-      repoContentsCache.setPath(null);
+    init {
+        downloadCache = DownloadCache()
+        repoContentsCache = LocalRepoContentsCache()
     }
-  }
 
-  public DownloadCache getDownloadCache() {
-    return downloadCache;
-  }
+    fun setPath(path: com.google.devtools.build.lib.vfs.Path?) {
+        this.path = path
+        if (path != null) {
+            downloadCache.setPath(path.getRelative(CAS_DIR))
+            repoContentsCache.setPath(path.getRelative(CONTENTS_DIR))
+        } else {
+            downloadCache.setPath(null)
+            repoContentsCache.setPath(null)
+        }
+    }
 
-  public LocalRepoContentsCache getRepoContentsCache() {
-    return repoContentsCache;
-  }
+    fun getDownloadCache(): DownloadCache {
+        return downloadCache
+    }
 
-  @Nullable
-  public Path getPath() {
-    return path;
-  }
+    fun getRepoContentsCache(): LocalRepoContentsCache {
+        return repoContentsCache
+    }
+
+    fun getPath(): com.google.devtools.build.lib.vfs.Path? {
+        return path
+    }
+
+    companion object {
+        // Repository cache subdirectories
+        private const val CAS_DIR = "content_addressable"
+        private const val CONTENTS_DIR = "contents"
+    }
 }

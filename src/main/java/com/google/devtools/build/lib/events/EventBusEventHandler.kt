@@ -11,43 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.events;
-
-import com.google.common.eventbus.EventBus;
+package com.google.devtools.build.lib.events
 
 /**
- * An event handler that forwards {@link Postable} events to an {@link EventBus}.
- *
- * <p>Lifetime: 1 command.
+ * An event handler that forwards [Postable] events to an [EventBus].
+ * 
+ * 
+ * Lifetime: 1 command.
  */
-public final class EventBusEventHandler implements ExtendedEventHandler {
-  // Non-final for cleanup.
-  private volatile EventBus eventBus;
+class EventBusEventHandler(eventBus: com.google.common.eventbus.EventBus?) :
+    com.google.devtools.build.lib.events.ExtendedEventHandler {
+    // Non-final for cleanup.
+    @kotlin.concurrent.Volatile
+    private var eventBus: com.google.common.eventbus.EventBus?
 
-  public EventBusEventHandler(EventBus eventBus) {
-    this.eventBus = eventBus;
-  }
-
-  /** Creates a {@link EventBusEventHandler} with a new {@link EventBus} enclosed. */
-  public static EventBusEventHandler createWithNewEventBus() {
-    return new EventBusEventHandler(new EventBus());
-  }
-
-  @Override
-  public void handle(Event event) {
-    // Do nothing. We only handle {@link Postable} events.
-  }
-
-  @Override
-  public void post(Postable obj) {
-    if (eventBus != null) {
-      eventBus.post(obj);
+    init {
+        this.eventBus = eventBus
     }
-  }
 
-  @Override
-  public void cleanup() {
-    eventBus = null;
-  }
+    override fun handle(event: com.google.devtools.build.lib.events.Event?) {
+        // Do nothing. We only handle {@link Postable} events.
+    }
+
+    override fun post(obj: com.google.devtools.build.lib.events.ExtendedEventHandler.Postable) {
+        if (eventBus != null) {
+            eventBus.post(obj)
+        }
+    }
+
+    override fun cleanup() {
+        eventBus = null
+    }
+
+    companion object {
+        /** Creates a [EventBusEventHandler] with a new [EventBus] enclosed.  */
+        @kotlin.jvm.JvmStatic
+        fun createWithNewEventBus(): EventBusEventHandler {
+            return EventBusEventHandler(com.google.common.eventbus.EventBus())
+        }
+    }
 }

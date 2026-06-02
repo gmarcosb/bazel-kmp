@@ -11,58 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
-
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisTestResultInfoApi;
+import com.google.devtools.build.lib.packages.BuiltinProvider
+import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisTestResultInfoApi
+import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisTestResultInfoApi.AnalysisTestResultInfoProviderApi
 
 /**
  * Encapsulates the result of analyis-phase testing. Build targets which return an instance of this
  * provider signal to the build system that it should generate 'stub' test executable.
  */
-public class AnalysisTestResultInfo implements Info, AnalysisTestResultInfoApi {
+class AnalysisTestResultInfo(@kotlin.jvm.JvmField val success: Boolean?, @kotlin.jvm.JvmField val message: String?) : com.google.devtools.build.lib.packages.Info,
+    AnalysisTestResultInfoApi {
+    /**
+     * Provider implementation for [AnalysisTestResultInfo].
+     */
+    class TestResultInfoProvider
 
-  /** Singleton provider instance for {@link AnalysisTestResultInfo}. */
-  public static final TestResultInfoProvider STARLARK_CONSTRUCTOR = new TestResultInfoProvider();
-
-  private final Boolean success;
-  private final String message;
-
-  public AnalysisTestResultInfo(Boolean success, String message) {
-    this.success = success;
-    this.message = message;
-  }
-
-  @Override
-  public TestResultInfoProvider getProvider() {
-    return STARLARK_CONSTRUCTOR;
-  }
-
-  @Override
-  public Boolean getSuccess() {
-    return success;
-  }
-
-  @Override
-  public String getMessage() {
-    return message;
-  }
-
-  /**
-   * Provider implementation for {@link AnalysisTestResultInfo}.
-   */
-  public static class TestResultInfoProvider
-      extends BuiltinProvider<AnalysisTestResultInfo> implements AnalysisTestResultInfoProviderApi {
-
-    public TestResultInfoProvider() {
-      super("AnalysisTestResultInfo", AnalysisTestResultInfo.class);
+        : BuiltinProvider<AnalysisTestResultInfo?>("AnalysisTestResultInfo", AnalysisTestResultInfo::class.java),
+        AnalysisTestResultInfoProviderApi {
+        override fun testResultInfo(success: Boolean?, message: String?): AnalysisTestResultInfoApi {
+            return AnalysisTestResultInfo(success, message)
+        }
     }
 
-    @Override
-    public AnalysisTestResultInfoApi testResultInfo(Boolean success, String message) {
-      return new AnalysisTestResultInfo(success, message);
+    companion object {
+        /** Singleton provider instance for [AnalysisTestResultInfo].  */
+        val provider: TestResultInfoProvider = TestResultInfoProvider()
+            get() = Companion.field
     }
-  }
 }

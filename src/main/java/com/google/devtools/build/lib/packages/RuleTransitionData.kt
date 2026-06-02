@@ -11,35 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.cmdline.Label;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider
 
 /**
- * Helper class which contains data used by a {@link TransitionFactory} to create a transition for
+ * Helper class which contains data used by a [TransitionFactory] to create a transition for
  * rules.
  */
-public record RuleTransitionData(
-    Rule rule,
-    @Nullable ImmutableMap<Label, ConfigMatchingProvider> configConditions,
-    String configHash)
-    implements TransitionFactory.Data {
-  public RuleTransitionData {
-    requireNonNull(rule, "rule");
-    requireNonNull(configHash, "configHash");
-  }
+@kotlin.jvm.JvmRecord
+data class RuleTransitionData(
+    rule: com.google.devtools.build.lib.packages.Rule?,
+    configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?,
+    configHash: String?
+) : TransitionFactory.Data {
+    val rule: com.google.devtools.build.lib.packages.Rule?
+    val configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?
+    val configHash: String?
 
-  public static RuleTransitionData create(
-      Rule rule,
-      @Nullable ImmutableMap<Label, ConfigMatchingProvider> configConditions,
-      String configHash) {
-    return new RuleTransitionData(rule, configConditions, configHash);
-  }
+    init {
+        this.configHash = configHash
+        this.configConditions = configConditions
+        this.rule = rule
+        java.util.Objects.requireNonNull<com.google.devtools.build.lib.packages.Rule?>(rule, "rule")
+        java.util.Objects.requireNonNull<String?>(configHash, "configHash")
+    }
 
+    companion object {
+        fun create(
+            rule: com.google.devtools.build.lib.packages.Rule?,
+            configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?,
+            configHash: String?
+        ): RuleTransitionData {
+            return RuleTransitionData(rule, configConditions, configHash)
+        }
+    }
 }

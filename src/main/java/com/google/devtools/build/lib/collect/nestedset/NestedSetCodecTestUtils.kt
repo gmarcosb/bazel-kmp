@@ -11,119 +11,134 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
+import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder
+import com.google.devtools.build.lib.collect.nestedset.NestedSetStore
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import java.io.IOException
 
-import com.google.common.base.Objects;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction;
-import java.io.IOException;
+/** Utilities for testing NestedSet serialization.  */
+object NestedSetCodecTestUtils {
+    private val SHARED_NESTED_SET: NestedSet<String?>? =
+        NestedSetBuilder.Companion.stableOrder<String?>().add("e").build()
 
-/** Utilities for testing NestedSet serialization. */
-public class NestedSetCodecTestUtils {
-
-  private static final NestedSet<String> SHARED_NESTED_SET =
-      NestedSetBuilder.<String>stableOrder().add("e").build();
-
-  private static class HasNestedSet {
-    private final NestedSet<String> nestedSetField;
-
-    HasNestedSet(NestedSet<String> nestedSetField) {
-      this.nestedSetField = nestedSetField;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      HasNestedSet that = (HasNestedSet) o;
-      return Objects.equal(nestedSetField.getChildren(), that.nestedSetField.getChildren());
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(nestedSetField);
-    }
-  }
-
-  /** Perform serialization/deserialization checks for several simple NestedSet examples. */
-  public static void checkCodec(
-      ObjectCodecs objectCodecs, boolean allowFutureBlocking, boolean assertSymmetricEquality)
-      throws Exception {
-    new SerializationTester(
-            NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            NestedSetBuilder.emptySet(Order.NAIVE_LINK_ORDER),
-            NestedSetBuilder.create(Order.STABLE_ORDER, "a"),
-            NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b", "c"),
-            NestedSetBuilder.<String>stableOrder()
+    /** Perform serialization/deserialization checks for several simple NestedSet examples.  */
+    @Throws(java.lang.Exception::class)
+    fun checkCodec(
+        objectCodecs: ObjectCodecs?, allowFutureBlocking: Boolean, assertSymmetricEquality: Boolean
+    ) {
+        com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester(
+            NestedSetBuilder.Companion.emptySet<Any?>(com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER),
+            NestedSetBuilder.Companion.emptySet<Any?>(com.google.devtools.build.lib.collect.nestedset.Order.NAIVE_LINK_ORDER),
+            NestedSetBuilder.Companion.create<String?>(
+                com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER,
+                "a"
+            ),
+            NestedSetBuilder.Companion.create<String?>(
+                com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER,
+                "a",
+                "b",
+                "c"
+            ),
+            NestedSetBuilder.Companion.stableOrder<String?>()
                 .add("a")
                 .add("b")
                 .addTransitive(
-                    NestedSetBuilder.<String>stableOrder()
+                    NestedSetBuilder.Companion.stableOrder<String?>()
                         .add("c")
                         .addTransitive(SHARED_NESTED_SET)
-                        .build())
+                        .build()
+                )
                 .addTransitive(
-                    NestedSetBuilder.<String>stableOrder()
+                    NestedSetBuilder.Companion.stableOrder<String?>()
                         .add("d")
                         .addTransitive(SHARED_NESTED_SET)
-                        .build())
-                .addTransitive(NestedSetBuilder.emptySet(Order.STABLE_ORDER))
+                        .build()
+                )
+                .addTransitive(NestedSetBuilder.Companion.emptySet<String?>(com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER))
                 .build(),
-            NestedSetBuilder.create(
-                Order.STABLE_ORDER,
-                new HasNestedSet(NestedSetBuilder.create(Order.STABLE_ORDER, "a"))))
-        .setObjectCodecs(objectCodecs)
-        .makeMemoizingAndAllowFutureBlocking(allowFutureBlocking)
-        .setVerificationFunction(verificationFunction(assertSymmetricEquality))
-        .runTests();
-  }
-
-  public static ListenableFuture<?> writeToStoreFuture(
-      NestedSetStore store, NestedSet<?> nestedSet, SerializationContext serializationContext)
-      throws IOException, SerializationException {
-    return store
-        .computeFingerprintAndStore((Object[]) nestedSet.getChildren(), serializationContext)
-        .writeStatus();
-  }
-
-  private static VerificationFunction<NestedSet<String>> verificationFunction(
-      boolean assertSymmetricEquality) {
-    return (subject, deserialized) -> {
-      if (assertSymmetricEquality) {
-        assertThat(deserialized).isEqualTo(subject);
-        assertThat(subject).isEqualTo(deserialized);
-      }
-      assertThat(subject.getOrder()).isEqualTo(deserialized.getOrder());
-      assertThat(subject.toSet()).isEqualTo(deserialized.toSet());
-      verifyStructure(subject.getChildren(), deserialized.getChildren());
-    };
-  }
-
-  private static void verifyStructure(Object lhs, Object rhs) {
-    if (lhs instanceof Object[] lhsArray) {
-      assertThat(rhs).isInstanceOf(Object[].class);
-      Object[] rhsArray = (Object[]) rhs;
-      int n = lhsArray.length;
-      assertThat(rhsArray).hasLength(n);
-      for (int i = 0; i < n; ++i) {
-        verifyStructure(lhsArray[i], rhsArray[i]);
-      }
-      if (lhsArray.length == 0) {
-        // Verify empty-children is optimized - we're not creating multiple empty arrays.
-        assertThat(lhsArray).isSameInstanceAs(rhsArray);
-      }
-    } else {
-      assertThat(lhs).isEqualTo(rhs);
+            NestedSetBuilder.Companion.create<HasNestedSet?>(
+                com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER,
+                HasNestedSet(
+                    NestedSetBuilder.Companion.create<String?>(
+                        com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER,
+                        "a"
+                    )
+                )
+            )
+        )
+            .setObjectCodecs(objectCodecs)
+            .makeMemoizingAndAllowFutureBlocking(allowFutureBlocking)
+            .setVerificationFunction<NestedSet<String?>?>(verificationFunction(assertSymmetricEquality))
+            .runTests()
     }
-  }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun writeToStoreFuture(
+        store: NestedSetStore, nestedSet: NestedSet<*>, serializationContext: SerializationContext?
+    ): com.google.common.util.concurrent.ListenableFuture<*>? {
+        return store
+            .computeFingerprintAndStore(nestedSet.getChildren() as Array<Any?>?, serializationContext)
+            .writeStatus
+    }
+
+    private fun verificationFunction(
+        assertSymmetricEquality: Boolean
+    ): com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction<NestedSet<String?>?> {
+        return com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction { subject: NestedSet<kotlin.String?>?, deserialized: NestedSet<kotlin.String?>? ->
+            if (assertSymmetricEquality) {
+                Truth.assertThat(deserialized).isEqualTo(subject)
+                Truth.assertThat(subject).isEqualTo(deserialized)
+            }
+            Truth.assertThat<com.google.devtools.build.lib.collect.nestedset.Order?>(subject.getOrder())
+                .isEqualTo(deserialized.getOrder())
+            Truth.assertThat(subject.toSet()).isEqualTo(deserialized.toSet())
+            verifyStructure(subject.getChildren(), deserialized.getChildren())
+        }
+    }
+
+    private fun verifyStructure(lhs: Any?, rhs: Any?) {
+        if (lhs is Array<Any>) {
+            Truth.assertThat(rhs).isInstanceOf(Array<Any>::class.java)
+            val rhsArray = rhs as Array<Any?>
+            val n: Int = lhs.length
+            Truth.assertThat<Any?>(rhsArray).hasLength(n)
+            for (i in 0..<n) {
+                verifyStructure(lhs[i], rhsArray[i])
+            }
+            if (lhs.length == 0) {
+                // Verify empty-children is optimized - we're not creating multiple empty arrays.
+                Truth.assertThat<Any?>(lhs).isSameInstanceAs(rhsArray)
+            }
+        } else {
+            Truth.assertThat(lhs).isEqualTo(rhs)
+        }
+    }
+
+    private class HasNestedSet(nestedSetField: NestedSet<String?>) {
+        private val nestedSetField: NestedSet<String?>
+
+        init {
+            this.nestedSetField = nestedSetField
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false
+            }
+            val that = o as HasNestedSet
+            return com.google.common.base.Objects.equal(nestedSetField.getChildren(), that.nestedSetField.getChildren())
+        }
+
+        override fun hashCode(): Int {
+            return com.google.common.base.Objects.hashCode(nestedSetField)
+        }
+    }
 }

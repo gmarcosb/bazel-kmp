@@ -11,671 +11,667 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.base.Throwables.throwIfInstanceOf;
-import static com.google.common.base.Throwables.throwIfUnchecked;
+import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+/** An API for structured concurrency, inspired by JDK's `StructuredTaskScope`.  */
+class TaskGroup<T, R> private constructor(
+    threadFactory: ThreadFactory,
+    policy: Policy<in T?>,
+    joiner: Joiner<in T?, out R?>
+) : java.lang.AutoCloseable {
+    private val threadFactory: ThreadFactory
+    private val policy: Policy<in T?>
+    private val joiner: Joiner<in T?, out R?>
 
-/** An API for structured concurrency, inspired by JDK's {@code StructuredTaskScope}. */
-public class TaskGroup<T, R> implements AutoCloseable {
-  private final ThreadFactory threadFactory;
-  private final Policy<? super T> policy;
-  private final Joiner<? super T, ? extends R> joiner;
+    private val owner: java.lang.Thread?
+    private val threads: MutableSet<java.lang.Thread?>
 
-  private final Thread owner;
-  private final Set<Thread> threads;
-
-  private enum TaskGroupState {
-    NEW,
-    FORKED, // subtasks forked, need to join.
-    JOIN_STARTED, // join started, can no longer fork
-    JOIN_COMPLETED, // join completed
-    CLOSED;
-  }
-
-  // state, only accessed by owner thread
-  private TaskGroupState state;
-
-  // set or read by any thread
-  private final AtomicBoolean cancelled;
-
-  // set to 1 + number of subtasks forked and not yet joined
-  private final IncrementableCountDownLatch latch;
-
-  private TaskGroup(
-      ThreadFactory threadFactory,
-      Policy<? super T> policy,
-      Joiner<? super T, ? extends R> joiner) {
-    this.threadFactory = threadFactory;
-    this.policy = policy;
-    this.joiner = joiner;
-    this.owner = Thread.currentThread();
-    this.threads = Sets.newConcurrentHashSet();
-    this.latch = new IncrementableCountDownLatch(1);
-    this.state = TaskGroupState.NEW;
-    this.cancelled = new AtomicBoolean(false);
-  }
-
-  private void ensureOwner() {
-    if (Thread.currentThread() != owner) {
-      throw new IllegalStateException("Current thread not owner");
-    }
-  }
-
-  private void ensureNotJoined() {
-    if (state.compareTo(TaskGroupState.FORKED) > 0) {
-      throw new IllegalStateException("Already joined or task group is closed");
-    }
-  }
-
-  private void ensureJoinedIfOwner() {
-    if (Thread.currentThread() == owner && state.compareTo(TaskGroupState.JOIN_STARTED) <= 0) {
-      throw new IllegalStateException("join not called");
-    }
-  }
-
-  private static ThreadFactory defaultThreadFactory() {
-    return Thread.ofVirtual().factory();
-  }
-
-  /** Similar to {@link #open(ThreadFactory, Policy, Joiner)}, but uses a default thread factory. */
-  public static <T, R> TaskGroup<T, R> open(
-      Policy<? super T> policy, Joiner<? super T, ? extends R> joiner) {
-    return new TaskGroup<>(defaultThreadFactory(), policy, joiner);
-  }
-
-  /**
-   * Opens a new task group with the given policy and joiner. It should be used with
-   * try-with-resources statement like:
-   *
-   * <pre>{@code
-   * try (var group = TaskGroup.open(policy, joiner)) {
-   *   ...
-   * }
-   * }</pre>
-   *
-   * <p>The calling thread becomes the task group's owner and is the only thread allowed to call
-   * {@link #fork}, {@link #join} or {@link #close} on it.
-   *
-   * <p>A new thread is created using the given {@code threadFactory} for each subtask. If the
-   * factory returns {@code null}, a {@link RejectedExecutionException} is thrown.
-   */
-  public static <T, R> TaskGroup<T, R> open(
-      ThreadFactory threadFactory,
-      Policy<? super T> policy,
-      Joiner<? super T, ? extends R> joiner) {
-    return new TaskGroup<>(threadFactory, policy, joiner);
-  }
-
-  /**
-   * Forks a subtask to be executed in a new thread. The new thread execute the subtasks
-   * concurrently with the current thread.
-   *
-   * <p>If a new thread cannot be created, a {@link RejectedExecutionException} is thrown.
-   *
-   * <p>If the task completes successfully, the result is available through {@link Subtask#get}. If
-   * the task fails, the exception is available through {@link Subtask#exception}. If the task group
-   * is cancelled, the task is not started, neither method can be used to obtain the outcome.
-   *
-   * @throws IllegalStateException if not called from the owner thread, or if the task group is
-   *     already joined.
-   */
-  @CanIgnoreReturnValue
-  public <U extends T> Subtask<U> fork(Callable<? extends U> task) {
-    ensureOwner();
-    ensureNotJoined();
-
-    var subtask = new SubtaskImpl<U>(this, task);
-
-    if (!cancelled.get()) {
-      var thread = threadFactory.newThread(subtask);
-      if (thread == null) {
-        throw new RejectedExecutionException("Rejected by thread factory");
-      }
-      latch.increment();
-      thread.start();
+    private enum class TaskGroupState {
+        NEW,
+        FORKED,  // subtasks forked, need to join.
+        JOIN_STARTED,  // join started, can no longer fork
+        JOIN_COMPLETED,  // join completed
+        CLOSED
     }
 
-    state = TaskGroupState.FORKED;
-    return subtask;
-  }
+    // state, only accessed by owner thread
+    private var state: TaskGroupState
 
-  @CanIgnoreReturnValue
-  public <U extends T> Subtask<U> fork(Runnable task) {
-    return fork(
-        () -> {
-          task.run();
-          return null;
-        });
-  }
+    // set or read by any thread
+    private val cancelled: AtomicBoolean
 
-  /**
-   * Returns a result or throws per the {@link Joiner}, after waiting for subtasks to complete per
-   * the {@link Policy}.
-   *
-   * <p>This method must be called if {@link #fork} has been called at least once. Once it returns
-   * without interruption, it must not be called again.
-   *
-   * @throws IllegalStateException if called from a thread other than the owner
-   * @throws InterruptedException if interrupted while waiting for subtasks to complete
-   */
-  @CanIgnoreReturnValue
-  public R join() throws ExecutionException, InterruptedException {
-    ensureOwner();
-    ensureNotJoined();
+    // set to 1 + number of subtasks forked and not yet joined
+    private val latch: com.google.devtools.build.lib.concurrent.IncrementableCountDownLatch
 
-    state = TaskGroupState.JOIN_STARTED;
-
-    latch.countDown();
-    // If the await is interrupted, the group will be cancelled inside {@link #close}.
-    latch.await();
-
-    state = TaskGroupState.JOIN_COMPLETED;
-
-    try {
-      return joiner.result();
-    } catch (Throwable e) {
-      throw new ExecutionException(e);
-    }
-  }
-
-  /**
-   * Similar to {@link #join}, but throws the checked exception from the subtasks instead of
-   * wrapping them in an {@link ExecutionException}. If a subtask throws an exception that doesn't
-   * match the given class, an {@link IllegalStateException} is thrown with the cause set to the
-   * actual exception.
-   */
-  public <E extends Exception> R joinOrThrow(Class<E> exceptionClass)
-      throws E, InterruptedException {
-    return joinOrThrowInternal(exceptionClass, null, null);
-  }
-
-  /**
-   * Similar to {@link #join}, but throws the checked exception from the subtasks instead of
-   * wrapping them in an {@link ExecutionException}. If a subtask throws an exception that doesn't
-   * match the given class, an {@link IllegalStateException} is thrown with the cause set to the
-   * actual exception.
-   */
-  public <E1 extends Exception, E2 extends Exception> R joinOrThrow(
-      Class<E1> exceptionClass1, Class<E2> exceptionClass2) throws E1, E2, InterruptedException {
-    return joinOrThrowInternal(exceptionClass1, exceptionClass2, null);
-  }
-
-  /**
-   * Similar to {@link #join}, but throws the checked exception from the subtasks instead of
-   * wrapping them in an {@link ExecutionException}. If a subtask throws an exception that doesn't
-   * match the given class, an {@link IllegalStateException} is thrown with the cause set to the
-   * actual exception.
-   */
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception> R joinOrThrow(
-      Class<E1> exceptionClass1, Class<E2> exceptionClass2, Class<E3> exceptionClass3)
-      throws E1, E2, E3, InterruptedException {
-    return joinOrThrowInternal(exceptionClass1, exceptionClass2, exceptionClass3);
-  }
-
-  private <E1 extends Exception, E2 extends Exception, E3 extends Exception> R joinOrThrowInternal(
-      @Nullable Class<E1> exceptionClass1,
-      @Nullable Class<E2> exceptionClass2,
-      @Nullable Class<E3> exceptionClass3)
-      throws E1, E2, E3, InterruptedException {
-    try {
-      return join();
-    } catch (ExecutionException e) {
-      var cause = e.getCause();
-      if (exceptionClass1 != null) {
-        throwIfInstanceOf(cause, exceptionClass1);
-      }
-      if (exceptionClass2 != null) {
-        throwIfInstanceOf(cause, exceptionClass2);
-      }
-      if (exceptionClass3 != null) {
-        throwIfInstanceOf(cause, exceptionClass3);
-      }
-      throwIfUnchecked(cause);
-      throw new IllegalStateException(cause);
-    }
-  }
-
-  /** Returns whether the group is cancelled or in the process of being cancelled. */
-  public boolean isCancelled() {
-    return cancelled.get();
-  }
-
-  private void onComplete(Subtask<? extends T> subtask, Thread thread) {
-    try {
-      if (subtask.state() != Subtask.State.UNAVAILABLE) {
-        // We want to call Joiner#onComplete first, so that if subtask failed and the policy decides
-        // to cancel the group, the joiner can see the exception from this subtask first. Otherwise,
-        // the exception from this subtask may race with the InterruptedException from other
-        // subtasks that are cancelled. This will cause the joiner to sometimes throw
-        // InterruptedException instead of the exception from this subtask, if the joiner only
-        // throws one exception.
-        joiner.onComplete(subtask);
-        if (policy.onComplete(subtask)) {
-          cancel();
-        }
-      }
-    } finally {
-      threads.remove(thread);
-      latch.countDown();
-    }
-  }
-
-  @SuppressWarnings("Interruption")
-  private void interruptAll() {
-    var currentThread = Thread.currentThread();
-    for (var thread : ImmutableSet.copyOf(threads)) {
-      if (thread != currentThread) {
-        thread.interrupt();
-      }
-    }
-  }
-
-  /**
-   * Cancels the task group if not already cancelled.
-   *
-   * <p>Cancellation will interrupt all subtask threads in the task group. No new subtasks can be
-   * forked after cancellation.
-   *
-   * <p>This method can be called by any subtask threads.
-   */
-  private void cancel() {
-    if (cancelled.compareAndSet(false, true)) {
-      interruptAll();
-    }
-  }
-
-  /**
-   * @throws IllegalStateException if {@link #fork} was called at least once and {@link #join} was
-   *     never called
-   */
-  @Override
-  public void close() {
-    ensureOwner();
-
-    TaskGroupState s = state;
-    boolean ownerDidNotJoin = false;
-    switch (s) {
-      case TaskGroupState.NEW -> {
-        // If the group is new, the latch was never decremented. We need to decrement it here
-        // because the latch is initialized with a count of 1.
-        latch.countDown();
-      }
-      case TaskGroupState.FORKED -> {
-        cancel();
-        // The latch is initialized with a count of 1 (the owner's share). In the FORKED state,
-        // join() was never called, so this initial count of 1 was never decremented. We must
-        // decrement it here, otherwise waiting for the subtasks to terminate will deadlock.
-        latch.countDown();
-        ownerDidNotJoin = true;
-      }
-      case TaskGroupState.JOIN_STARTED -> {
-        // Cancel the group if join did not complete.
-        cancel();
-      }
-      case TaskGroupState.JOIN_COMPLETED -> {}
-      case TaskGroupState.CLOSED -> {
-        return;
-      }
+    init {
+        this.threadFactory = threadFactory
+        this.policy = policy
+        this.joiner = joiner
+        this.owner = java.lang.Thread.currentThread()
+        this.threads = com.google.common.collect.Sets.newConcurrentHashSet<java.lang.Thread?>()
+        this.latch = com.google.devtools.build.lib.concurrent.IncrementableCountDownLatch(1)
+        this.state = com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.NEW
+        this.cancelled = AtomicBoolean(false)
     }
 
-    try {
-      latch.awaitUninterruptibly();
-    } finally {
-      state = TaskGroupState.CLOSED;
+    private fun ensureOwner() {
+        check(java.lang.Thread.currentThread() === owner) { "Current thread not owner" }
     }
 
-    // throw if the owner didn't join after forking
-    if (ownerDidNotJoin) {
-      throw new IllegalStateException("Owner did not join after forking");
-    }
-  }
-
-  @VisibleForTesting
-  ImmutableSet<Thread> getThreads() {
-    return ImmutableSet.copyOf(threads);
-  }
-
-  /** A subtask forked with {@link #fork}. */
-  public interface Subtask<T> extends Supplier<T> {
-    /** The state of the subtask. */
-    enum State {
-      UNAVAILABLE,
-      FAILED,
-      SUCCESS,
+    private fun ensureNotJoined() {
+        check(state.compareTo(com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.FORKED) <= 0) { "Already joined or task group is closed" }
     }
 
-    /** Returns the state of the subtask. */
-    State state();
+    private fun ensureJoinedIfOwner() {
+        check(!(java.lang.Thread.currentThread() === owner && state.compareTo(com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.JOIN_STARTED) <= 0)) { "join not called" }
+    }
 
     /**
-     * Returns the result of the subtask if it completed successfully.
-     *
-     * @throws IllegalStateException if the subtask has not completed, or did not complete
-     *     successfully.
+     * Forks a subtask to be executed in a new thread. The new thread execute the subtasks
+     * concurrently with the current thread.
+     * 
+     * 
+     * If a new thread cannot be created, a [RejectedExecutionException] is thrown.
+     * 
+     * 
+     * If the task completes successfully, the result is available through [Subtask.get]. If
+     * the task fails, the exception is available through [Subtask.exception]. If the task group
+     * is cancelled, the task is not started, neither method can be used to obtain the outcome.
+     * 
+     * @throws IllegalStateException if not called from the owner thread, or if the task group is
+     * already joined.
      */
-    @Override
-    T get();
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun <U : T?> fork(task: java.util.concurrent.Callable<out U?>): Subtask<U?> {
+        ensureOwner()
+        ensureNotJoined()
 
-    /**
-     * Returns the exception thrown by the subtask if it failed.
-     *
-     * @throws IllegalStateException if the subtask has not completed, or did not fail.
-     */
-    Throwable exception();
-  }
+        val subtask: SubtaskImpl<U?> = com.google.devtools.build.lib.concurrent.TaskGroup.SubtaskImpl<U?>(this, task)
 
-  private static final class SubtaskImpl<T> implements Subtask<T>, Runnable {
-    private static final NullOrExceptionResult RESULT_NULL = new NullOrExceptionResult(null);
-
-    private final TaskGroup<? super T, ?> taskGroup;
-    private final Callable<? extends T> task;
-
-    private volatile Object result;
-
-    private SubtaskImpl(TaskGroup<? super T, ?> taskGroup, Callable<? extends T> task) {
-      this.taskGroup = taskGroup;
-      this.task = task;
-    }
-
-    @Override
-    public void run() {
-      Thread thread = Thread.currentThread();
-      boolean added = taskGroup.threads.add(thread);
-      checkState(added);
-      try {
-        if (taskGroup.cancelled.get()) {
-          // If the task group was cancelled, skip the task. We must check the cancellation state
-          // after adding the thread to the set to avoid a race with {@link #cancel}.
-          return;
+        if (!cancelled.get()) {
+            val thread: java.lang.Thread = threadFactory.newThread(subtask)
+            if (thread == null) {
+                throw RejectedExecutionException("Rejected by thread factory")
+            }
+            latch.increment()
+            thread.start()
         }
 
-        T result = null;
-        Throwable ex = null;
+        state = com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.FORKED
+        return subtask
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun <U : T?> fork(task: java.lang.Runnable): Subtask<U?> {
+        return fork<U?>(
+            java.util.concurrent.Callable {
+                task.run()
+                null
+            })
+    }
+
+    /**
+     * Returns a result or throws per the [Joiner], after waiting for subtasks to complete per
+     * the [Policy].
+     * 
+     * 
+     * This method must be called if [.fork] has been called at least once. Once it returns
+     * without interruption, it must not be called again.
+     * 
+     * @throws IllegalStateException if called from a thread other than the owner
+     * @throws InterruptedException if interrupted while waiting for subtasks to complete
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(ExecutionException::class, java.lang.InterruptedException::class)
+    fun join(): R? {
+        ensureOwner()
+        ensureNotJoined()
+
+        state = com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.JOIN_STARTED
+
+        latch.countDown()
+        // If the await is interrupted, the group will be cancelled inside {@link #close}.
+        latch.await()
+
+        state = com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.JOIN_COMPLETED
+
         try {
-          result = task.call();
-        } catch (Throwable e) {
-          ex = e;
+            return joiner.result()
+        } catch (e: Throwable) {
+            throw ExecutionException(e)
         }
-
-        if (ex == null) {
-          this.result = result != null ? result : RESULT_NULL;
-        } else {
-          this.result = new NullOrExceptionResult(ex);
-        }
-      } finally {
-        taskGroup.onComplete(this, thread);
-      }
-    }
-
-    @Override
-    public Subtask.State state() {
-      Object result = this.result;
-      if (result == null) {
-        return State.UNAVAILABLE;
-      } else if (result instanceof NullOrExceptionResult nullOrExceptionResult) {
-        // null or failed
-        return nullOrExceptionResult.exception() == null ? State.SUCCESS : State.FAILED;
-      } else {
-        return State.SUCCESS;
-      }
-    }
-
-    @Override
-    public T get() {
-      taskGroup.ensureJoinedIfOwner();
-      Object result = this.result;
-      if (result instanceof NullOrExceptionResult nullOrExceptionResult) {
-        if (nullOrExceptionResult.exception() == null) {
-          return null;
-        }
-      } else if (result != null) {
-        @SuppressWarnings("unchecked")
-        T r = (T) result;
-        return r;
-      }
-      throw new IllegalStateException(
-          "Result is unavailable or subtask did not complete successfully");
-    }
-
-    @Override
-    public Throwable exception() {
-      taskGroup.ensureJoinedIfOwner();
-      Object result = this.result;
-      if (result instanceof NullOrExceptionResult nullOrExceptionResult) {
-        if (nullOrExceptionResult.exception() != null) {
-          return nullOrExceptionResult.exception();
-        }
-      }
-      throw new IllegalStateException(
-          "Result is unavailable or subtask did not complete with exception");
-    }
-
-    @Override
-    public String toString() {
-      String stateAsString =
-          switch (state()) {
-            case UNAVAILABLE -> "[Unavailable]";
-            case SUCCESS -> "[Completed successfully]";
-            case FAILED -> "[Failed: " + ((NullOrExceptionResult) result).exception() + "]";
-          };
-      return Objects.toIdentityString(this) + stateAsString;
-    }
-
-    /** A result of a subtask that is either null or an exception. */
-    private record NullOrExceptionResult(@Nullable Throwable exception) {}
-  }
-
-  /** An object that can be used to cancel the task group depending on the subtask state. */
-  public interface Policy<T> {
-    /**
-     * Called by the thread that started the subtask when it completes.
-     *
-     * @return true to cancel the task group.
-     */
-    default boolean onComplete(Subtask<? extends T> subtask) {
-      return false;
-    }
-  }
-
-  /** A collection of {@link Policy} implementations. */
-  public static class Policies {
-    private Policies() {}
-
-    /** Returns a policy that cancels the task group if any subtask fails. */
-    @SuppressWarnings("unchecked")
-    public static <T> Policy<T> allSuccessful() {
-      return (Policy<T>) ALL_SUCCESSFUL;
-    }
-
-    private static final Policy<Object> ALL_SUCCESSFUL =
-        new Policy<Object>() {
-          @Override
-          public boolean onComplete(Subtask<? extends Object> subtask) {
-            return subtask.state() == Subtask.State.FAILED;
-          }
-        };
-
-    /** Returns a policy that cancels the task group if any subtask succeeds. */
-    @SuppressWarnings("unchecked")
-    public static <T> Policy<T> anySuccessful() {
-      return (Policy<T>) ANY_SUCCESSFUL;
-    }
-
-    private static final Policy<Object> ANY_SUCCESSFUL =
-        new Policy<Object>() {
-          @Override
-          public boolean onComplete(Subtask<? extends Object> subtask) {
-            return subtask.state() == Subtask.State.SUCCESS;
-          }
-        };
-
-    /** Returns a policy that waits for all subtasks to complete, no matter their state. */
-    @SuppressWarnings("unchecked")
-    public static <T> Policy<T> allCompleted() {
-      return (Policy<T>) ALL_COMPLETED;
-    }
-
-    private static final Policy<Object> ALL_COMPLETED = new Policy<Object>() {};
-  }
-
-  /**
-   * An object used to process the result of subtasks and produce the final result for the task
-   * group.
-   */
-  public interface Joiner<T, R> {
-    /** Called by the thread that started the subtask when it completes. */
-    void onComplete(Subtask<? extends T> subtask);
-
-    /**
-     * Called by {@link #join} to get the final result after waiting for all subtasks to complete.
-     * The result from this method is returned by {@link #join}. If this method throws, then {@link
-     * #join} throws an {@link ExecutionException} which the exception thrown by this method as the
-     * cause.
-     */
-    R result() throws Throwable;
-  }
-
-  /** A collection of {@link Joiner} implementations. */
-  public static class Joiners {
-    private Joiners() {}
-
-    /**
-     * Returns a joiner that returns the result of all subtasks that complete successfully.
-     *
-     * <p>If any subtask fails, the joiner causes {@link #join} to throw.
-     *
-     * <p>The order of the items in the returned list is undefined - it is not guaranteed to be the
-     * same as the order in which the subtasks were forked.
-     */
-    public static <T> Joiner<T, List<T>> allSuccessfulOrThrow() {
-      return new AllSuccessfulOrThrow<T>();
-    }
-
-    private static final class AllSuccessfulOrThrow<T> implements Joiner<T, List<T>> {
-      private final ConcurrentLinkedDeque<T> results = new ConcurrentLinkedDeque<>();
-      private volatile Throwable error;
-
-      @Override
-      public void onComplete(Subtask<? extends T> subtask) {
-        Subtask.State state = subtask.state();
-        if (state == Subtask.State.FAILED) {
-          if (error == null) {
-            // There might be a race here, but it doesn't matter which error got set.
-            error = subtask.exception();
-          }
-        } else {
-          results.add(subtask.get());
-        }
-      }
-
-      @Override
-      public ImmutableList<T> result() throws Throwable {
-        Throwable e = error;
-        if (e != null) {
-          throw e;
-        } else {
-          return ImmutableList.copyOf(results);
-        }
-      }
     }
 
     /**
-     * Returns a joiner that returns the result of an arbitrarily chosen subtask that completes
-     * successfully.
-     *
-     * <p>If all subtasks fail, the joiner causes {@link #join} to throw {@link
-     * NoSuchElementException}.
+     * Similar to [.join], but throws the checked exception from the subtasks instead of
+     * wrapping them in an [ExecutionException]. If a subtask throws an exception that doesn't
+     * match the given class, an [IllegalStateException] is thrown with the cause set to the
+     * actual exception.
      */
-    public static <T> Joiner<T, T> anySuccessfulOrThrow() {
-      return new AnySuccessfulOrThrow<T>();
-    }
-
-    private static final class AnySuccessfulOrThrow<T> implements Joiner<T, T> {
-      private final AtomicReference<Subtask<? extends T>> subtaskRef = new AtomicReference<>(null);
-
-      @Override
-      public void onComplete(Subtask<? extends T> subtask) {
-        Subtask.State newState = subtask.state();
-        Subtask<? extends T> oldSubtask;
-        while (((oldSubtask = subtaskRef.get()) == null)
-            || oldSubtask.state().compareTo(newState) < 0) {
-          if (subtaskRef.compareAndSet(oldSubtask, subtask)) {
-            return;
-          }
-        }
-      }
-
-      @Override
-      public T result() throws Throwable {
-        var subtask = this.subtaskRef.get();
-        if (subtask == null) {
-          throw new NoSuchElementException("No subtasks completed");
-        }
-        return switch (subtask.state()) {
-          case SUCCESS -> subtask.get();
-          case FAILED -> throw subtask.exception();
-          default -> throw new IllegalStateException("Unexpected state: " + subtask.state());
-        };
-      }
+    @Throws(E::class, java.lang.InterruptedException::class)
+    fun <E : java.lang.Exception?> joinOrThrow(exceptionClass: java.lang.Class<E?>?): R? {
+        return joinOrThrowInternal<E?, java.lang.RuntimeException?, java.lang.RuntimeException?>(
+            exceptionClass,
+            null,
+            null
+        )
     }
 
     /**
-     * Returns a joiner that ignores the result of successful subtasks.
-     *
-     * <p>If any subtask fails, the joiner causes {@link #join} to throw.
+     * Similar to [.join], but throws the checked exception from the subtasks instead of
+     * wrapping them in an [ExecutionException]. If a subtask throws an exception that doesn't
+     * match the given class, an [IllegalStateException] is thrown with the cause set to the
+     * actual exception.
      */
-    public static <T> Joiner<T, Void> voidOrThrow() {
-      return new VoidOrThrow<T>();
+    @Throws(E1::class, E2::class, java.lang.InterruptedException::class)
+    fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?> joinOrThrow(
+        exceptionClass1: java.lang.Class<E1?>?, exceptionClass2: java.lang.Class<E2?>?
+    ): R? {
+        return joinOrThrowInternal<E1?, E2?, java.lang.RuntimeException?>(exceptionClass1, exceptionClass2, null)
     }
 
-    @VisibleForTesting
-    static final class VoidOrThrow<T> implements Joiner<T, Void> {
-      private volatile Throwable error;
-
-      @Override
-      public void onComplete(Subtask<? extends T> subtask) {
-        Subtask.State state = subtask.state();
-        if (state == Subtask.State.FAILED && error == null) {
-          // There might be a race here, but it doesn't matter which error got set.
-          error = subtask.exception();
-        }
-      }
-
-      @Override
-      public Void result() throws Throwable {
-        Throwable e = error;
-        if (e != null) {
-          throw e;
-        } else {
-          return null;
-        }
-      }
-
-      @VisibleForTesting
-      Throwable getError() {
-        return error;
-      }
+    /**
+     * Similar to [.join], but throws the checked exception from the subtasks instead of
+     * wrapping them in an [ExecutionException]. If a subtask throws an exception that doesn't
+     * match the given class, an [IllegalStateException] is thrown with the cause set to the
+     * actual exception.
+     */
+    @Throws(E1::class, E2::class, E3::class, java.lang.InterruptedException::class)
+    fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?> joinOrThrow(
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?
+    ): R? {
+        return joinOrThrowInternal<E1?, E2?, E3?>(exceptionClass1, exceptionClass2, exceptionClass3)
     }
-  }
+
+    @Throws(E1::class, E2::class, E3::class, java.lang.InterruptedException::class)
+    private fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?> joinOrThrowInternal(
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?
+    ): R? {
+        try {
+            return join()
+        } catch (e: ExecutionException) {
+            val cause: Throwable = e.getCause()
+            if (exceptionClass1 != null) {
+                com.google.common.base.Throwables.throwIfInstanceOf<E1?>(cause, exceptionClass1)
+            }
+            if (exceptionClass2 != null) {
+                com.google.common.base.Throwables.throwIfInstanceOf<E2?>(cause, exceptionClass2)
+            }
+            if (exceptionClass3 != null) {
+                com.google.common.base.Throwables.throwIfInstanceOf<E3?>(cause, exceptionClass3)
+            }
+            com.google.common.base.Throwables.throwIfUnchecked(cause)
+            throw java.lang.IllegalStateException(cause)
+        }
+    }
+
+    /** Returns whether the group is cancelled or in the process of being cancelled.  */
+    fun isCancelled(): Boolean {
+        return cancelled.get()
+    }
+
+    private fun onComplete(subtask: Subtask<out T?>, thread: java.lang.Thread?) {
+        try {
+            if (subtask.state() != com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.UNAVAILABLE) {
+                // We want to call Joiner#onComplete first, so that if subtask failed and the policy decides
+                // to cancel the group, the joiner can see the exception from this subtask first. Otherwise,
+                // the exception from this subtask may race with the InterruptedException from other
+                // subtasks that are cancelled. This will cause the joiner to sometimes throw
+                // InterruptedException instead of the exception from this subtask, if the joiner only
+                // throws one exception.
+                joiner.onComplete(subtask)
+                if (policy.onComplete(subtask)) {
+                    cancel()
+                }
+            }
+        } finally {
+            threads.remove(thread)
+            latch.countDown()
+        }
+    }
+
+    private fun interruptAll() {
+        val currentThread: java.lang.Thread? = java.lang.Thread.currentThread()
+        for (thread in com.google.common.collect.ImmutableSet.copyOf<java.lang.Thread?>(threads)) {
+            if (thread !== currentThread) {
+                thread.interrupt()
+            }
+        }
+    }
+
+    /**
+     * Cancels the task group if not already cancelled.
+     * 
+     * 
+     * Cancellation will interrupt all subtask threads in the task group. No new subtasks can be
+     * forked after cancellation.
+     * 
+     * 
+     * This method can be called by any subtask threads.
+     */
+    private fun cancel() {
+        if (cancelled.compareAndSet(false, true)) {
+            interruptAll()
+        }
+    }
+
+    /**
+     * @throws IllegalStateException if [.fork] was called at least once and [.join] was
+     * never called
+     */
+    override fun close() {
+        ensureOwner()
+
+        val s = state
+        var ownerDidNotJoin = false
+        when (s) {
+            com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.NEW -> {
+                // If the group is new, the latch was never decremented. We need to decrement it here
+                // because the latch is initialized with a count of 1.
+                latch.countDown()
+            }
+
+            com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.FORKED -> {
+                cancel()
+                // The latch is initialized with a count of 1 (the owner's share). In the FORKED state,
+                // join() was never called, so this initial count of 1 was never decremented. We must
+                // decrement it here, otherwise waiting for the subtasks to terminate will deadlock.
+                latch.countDown()
+                ownerDidNotJoin = true
+            }
+
+            com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.JOIN_STARTED -> {
+                // Cancel the group if join did not complete.
+                cancel()
+            }
+
+            com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.JOIN_COMPLETED -> {}
+            com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.CLOSED -> {
+                return
+            }
+        }
+
+        try {
+            latch.awaitUninterruptibly()
+        } finally {
+            state = com.google.devtools.build.lib.concurrent.TaskGroup.TaskGroupState.CLOSED
+        }
+
+        // throw if the owner didn't join after forking
+        check(!ownerDidNotJoin) { "Owner did not join after forking" }
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun getThreads(): com.google.common.collect.ImmutableSet<java.lang.Thread?> {
+        return com.google.common.collect.ImmutableSet.copyOf<java.lang.Thread?>(threads)
+    }
+
+    /** A subtask forked with [.fork].  */
+    interface Subtask<T> : java.util.function.Supplier<T?> {
+        /** The state of the subtask.  */
+        enum class State {
+            UNAVAILABLE,
+            FAILED,
+            SUCCESS,
+        }
+
+        /** Returns the state of the subtask.  */
+        fun state(): State
+
+        /**
+         * Returns the result of the subtask if it completed successfully.
+         * 
+         * @throws IllegalStateException if the subtask has not completed, or did not complete
+         * successfully.
+         */
+        override fun get(): T?
+
+        /**
+         * Returns the exception thrown by the subtask if it failed.
+         * 
+         * @throws IllegalStateException if the subtask has not completed, or did not fail.
+         */
+        fun exception(): Throwable?
+    }
+
+    private class SubtaskImpl<T>(
+        private val taskGroup: TaskGroup<in T?, *>,
+        task: java.util.concurrent.Callable<out T?>
+    ) : Subtask<T?>, java.lang.Runnable {
+        private val task: java.util.concurrent.Callable<out T?>
+
+        @kotlin.concurrent.Volatile
+        private var result: Any? = null
+
+        init {
+            this.task = task
+        }
+
+        override fun run() {
+            val thread: java.lang.Thread? = java.lang.Thread.currentThread()
+            val added = taskGroup.threads.add(thread)
+            com.google.common.base.Preconditions.checkState(added)
+            try {
+                if (taskGroup.cancelled.get()) {
+                    // If the task group was cancelled, skip the task. We must check the cancellation state
+                    // after adding the thread to the set to avoid a race with {@link #cancel}.
+                    return
+                }
+
+                var result: T? = null
+                var ex: Throwable? = null
+                try {
+                    result = task.call()
+                } catch (e: Throwable) {
+                    ex = e
+                }
+
+                if (ex == null) {
+                    this.result =
+                        if (result != null) result else com.google.devtools.build.lib.concurrent.TaskGroup.SubtaskImpl.Companion.RESULT_NULL
+                } else {
+                    this.result =
+                        com.google.devtools.build.lib.concurrent.TaskGroup.SubtaskImpl.NullOrExceptionResult(ex)
+                }
+            } finally {
+                taskGroup.onComplete(this, thread)
+            }
+        }
+
+        override fun state(): Subtask.State {
+            val result = this.result
+            if (result == null) {
+                return com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.UNAVAILABLE
+            } else if (result is NullOrExceptionResult) {
+                // null or failed
+                return if (result.exception == null) com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.SUCCESS else com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.FAILED
+            } else {
+                return com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.SUCCESS
+            }
+        }
+
+        override fun get(): T? {
+            taskGroup.ensureJoinedIfOwner()
+            val result = this.result
+            if (result is NullOrExceptionResult) {
+                if (result.exception == null) {
+                    return null
+                }
+            } else if (result != null) {
+                val r = result as T?
+                return r
+            }
+            throw java.lang.IllegalStateException(
+                "Result is unavailable or subtask did not complete successfully"
+            )
+        }
+
+        override fun exception(): Throwable {
+            taskGroup.ensureJoinedIfOwner()
+            val result = this.result
+            if (result is NullOrExceptionResult) {
+                if (result.exception != null) {
+                    return result.exception
+                }
+            }
+            throw java.lang.IllegalStateException(
+                "Result is unavailable or subtask did not complete with exception"
+            )
+        }
+
+        override fun toString(): String {
+            val stateAsString =
+                when (state()) {
+                    com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.UNAVAILABLE -> "[Unavailable]"
+                    com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.SUCCESS -> "[Completed successfully]"
+                    com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.FAILED -> "[Failed: " + (result as NullOrExceptionResult).exception + "]"
+                }
+            return java.util.Objects.toIdentityString(this) + stateAsString
+        }
+
+        /** A result of a subtask that is either null or an exception.  */
+        @kotlin.jvm.JvmRecord
+        private data class NullOrExceptionResult(val exception: Throwable?)
+        companion object {
+            private val RESULT_NULL: NullOrExceptionResult =
+                com.google.devtools.build.lib.concurrent.TaskGroup.SubtaskImpl.NullOrExceptionResult(null)
+        }
+    }
+
+    /** An object that can be used to cancel the task group depending on the subtask state.  */
+    interface Policy<T> {
+        /**
+         * Called by the thread that started the subtask when it completes.
+         * 
+         * @return true to cancel the task group.
+         */
+        fun onComplete(subtask: Subtask<out T?>?): Boolean {
+            return false
+        }
+    }
+
+    /** A collection of [Policy] implementations.  */
+    object Policies {
+        /** Returns a policy that cancels the task group if any subtask fails.  */
+        @kotlin.jvm.JvmStatic
+        fun <T> allSuccessful(): Policy<T?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup.Policies.ALL_SUCCESSFUL as Policy<T?>
+        }
+
+        private val ALL_SUCCESSFUL: Policy<Any?> = object : Policy<Any?> {
+            override fun onComplete(subtask: Subtask<out Any?>): Boolean {
+                return subtask.state() == com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.FAILED
+            }
+        }
+
+        /** Returns a policy that cancels the task group if any subtask succeeds.  */
+        @kotlin.jvm.JvmStatic
+        fun <T> anySuccessful(): Policy<T?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup.Policies.ANY_SUCCESSFUL as Policy<T?>
+        }
+
+        private val ANY_SUCCESSFUL: Policy<Any?> = object : Policy<Any?> {
+            override fun onComplete(subtask: Subtask<out Any?>): Boolean {
+                return subtask.state() == com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.SUCCESS
+            }
+        }
+
+        /** Returns a policy that waits for all subtasks to complete, no matter their state.  */
+        fun <T> allCompleted(): Policy<T?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup.Policies.ALL_COMPLETED as Policy<T?>
+        }
+
+        private val ALL_COMPLETED: Policy<Any?> = object : Policy<Any?> {}
+    }
+
+    /**
+     * An object used to process the result of subtasks and produce the final result for the task
+     * group.
+     */
+    interface Joiner<T, R> {
+        /** Called by the thread that started the subtask when it completes.  */
+        fun onComplete(subtask: Subtask<out T?>?)
+
+        /**
+         * Called by [.join] to get the final result after waiting for all subtasks to complete.
+         * The result from this method is returned by [.join]. If this method throws, then [ ][.join] throws an [ExecutionException] which the exception thrown by this method as the
+         * cause.
+         */
+        @Throws(Throwable::class)
+        fun result(): R?
+    }
+
+    /** A collection of [Joiner] implementations.  */
+    object Joiners {
+        /**
+         * Returns a joiner that returns the result of all subtasks that complete successfully.
+         * 
+         * 
+         * If any subtask fails, the joiner causes [.join] to throw.
+         * 
+         * 
+         * The order of the items in the returned list is undefined - it is not guaranteed to be the
+         * same as the order in which the subtasks were forked.
+         */
+        fun <T> allSuccessfulOrThrow(): Joiner<T?, MutableList<T?>?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup.Joiners.AllSuccessfulOrThrow<T?>()
+        }
+
+        /**
+         * Returns a joiner that returns the result of an arbitrarily chosen subtask that completes
+         * successfully.
+         * 
+         * 
+         * If all subtasks fail, the joiner causes [.join] to throw [ ].
+         */
+        @kotlin.jvm.JvmStatic
+        fun <T> anySuccessfulOrThrow(): Joiner<T?, T?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup.Joiners.AnySuccessfulOrThrow<T?>()
+        }
+
+        /**
+         * Returns a joiner that ignores the result of successful subtasks.
+         * 
+         * 
+         * If any subtask fails, the joiner causes [.join] to throw.
+         */
+        @kotlin.jvm.JvmStatic
+        fun <T> voidOrThrow(): Joiner<T?, java.lang.Void?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup.Joiners.VoidOrThrow<T?>()
+        }
+
+        private class AllSuccessfulOrThrow<T> : Joiner<T?, MutableList<T?>?> {
+            private val results: ConcurrentLinkedDeque<T?> = ConcurrentLinkedDeque<T?>()
+
+            @kotlin.concurrent.Volatile
+            private var error: Throwable? = null
+
+            override fun onComplete(subtask: Subtask<out T?>) {
+                val state = subtask.state()
+                if (state == com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.FAILED) {
+                    if (error == null) {
+                        // There might be a race here, but it doesn't matter which error got set.
+                        error = subtask.exception()
+                    }
+                } else {
+                    results.add(subtask.get())
+                }
+            }
+
+            @Throws(Throwable::class)
+            override fun result(): com.google.common.collect.ImmutableList<T?> {
+                val e = error
+                if (e != null) {
+                    throw e
+                } else {
+                    return com.google.common.collect.ImmutableList.copyOf<T?>(results)
+                }
+            }
+        }
+
+        private class AnySuccessfulOrThrow<T> : Joiner<T?, T?> {
+            private val subtaskRef: AtomicReference<Subtask<out T?>?> = AtomicReference<Subtask<out T?>?>(null)
+
+            override fun onComplete(subtask: Subtask<out T?>) {
+                val newState = subtask.state()
+                var oldSubtask: Subtask<out T?>?
+                while (((subtaskRef.get().also { oldSubtask = it }) == null)
+                    || oldSubtask!!.state().compareTo(newState) < 0
+                ) {
+                    if (subtaskRef.compareAndSet(oldSubtask, subtask)) {
+                        return
+                    }
+                }
+            }
+
+            @Throws(Throwable::class)
+            override fun result(): T? {
+                val subtask: Subtask<out T?> = this.subtaskRef.get()
+                if (subtask == null) {
+                    throw java.util.NoSuchElementException("No subtasks completed")
+                }
+                return when (subtask.state()) {
+                    com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.SUCCESS -> subtask.get()
+                    com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.FAILED -> throw subtask.exception()
+                    else -> throw java.lang.IllegalStateException("Unexpected state: " + subtask.state())
+                }
+            }
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        internal class VoidOrThrow<T> : Joiner<T?, java.lang.Void?> {
+            @get:com.google.common.annotations.VisibleForTesting
+            @kotlin.concurrent.Volatile
+            var error: Throwable? = null
+                private set
+
+            override fun onComplete(subtask: Subtask<out T?>) {
+                val state = subtask.state()
+                if (state == com.google.devtools.build.lib.concurrent.TaskGroup.Subtask.State.FAILED && error == null) {
+                    // There might be a race here, but it doesn't matter which error got set.
+                    error = subtask.exception()
+                }
+            }
+
+            @Throws(Throwable::class)
+            override fun result(): java.lang.Void? {
+                val e = error
+                if (e != null) {
+                    throw e
+                } else {
+                    return null
+                }
+            }
+        }
+    }
+
+    companion object {
+        private fun defaultThreadFactory(): ThreadFactory? {
+            return java.lang.Thread.ofVirtual().factory()
+        }
+
+        /** Similar to [.open], but uses a default thread factory.  */
+        fun <T, R> open(
+            policy: Policy<in T?>, joiner: Joiner<in T?, out R?>
+        ): TaskGroup<T?, R?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup<T?, R?>(
+                com.google.devtools.build.lib.concurrent.TaskGroup.Companion.defaultThreadFactory(),
+                policy,
+                joiner
+            )
+        }
+
+        /**
+         * Opens a new task group with the given policy and joiner. It should be used with
+         * try-with-resources statement like:
+         * 
+         * <pre>`try (var group = TaskGroup.open(policy, joiner)) {   ... } `</pre>
+         * 
+         * 
+         * The calling thread becomes the task group's owner and is the only thread allowed to call
+         * [.fork], [.join] or [.close] on it.
+         * 
+         * 
+         * A new thread is created using the given `threadFactory` for each subtask. If the
+         * factory returns `null`, a [RejectedExecutionException] is thrown.
+         */
+        fun <T, R> open(
+            threadFactory: ThreadFactory,
+            policy: Policy<in T?>,
+            joiner: Joiner<in T?, out R?>
+        ): TaskGroup<T?, R?> {
+            return com.google.devtools.build.lib.concurrent.TaskGroup<T?, R?>(threadFactory, policy, joiner)
+        }
+    }
 }

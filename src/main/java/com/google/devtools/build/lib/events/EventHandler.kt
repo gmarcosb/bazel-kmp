@@ -11,17 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
 /**
  * An EventHandler handles events, such as errors and warnings. It is a subset of the functionality
- * of the {@link Reporter}. In most cases, you should use this interface instead of the {@code
- * Reporter} class.
+ * of the [Reporter]. In most cases, you should use this interface instead of the `Reporter` class.
  */
-public interface EventHandler {
-  /**
-   * Handles an event.
-   */
-  void handle(Event event);
+interface EventHandler {
+    /**
+     * Handles an event.
+     */
+    fun handle(event: com.google.devtools.build.lib.events.Event?)
 }

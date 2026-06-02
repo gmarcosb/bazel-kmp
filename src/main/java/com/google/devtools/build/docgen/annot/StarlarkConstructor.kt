@@ -11,19 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen.annot;
-
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+package com.google.devtools.build.docgen.annot
 
 /**
- * An marker annotation used on a {@link net.starlark.java.annot.StarlarkMethod}-annotated method
+ * An marker annotation used on a [net.starlark.java.annot.StarlarkMethod]-annotated method
  * that causes docgen to document it as a constructor function for the Starlark data type denoted by
- * the method's return type. The Starlark data type is obtained from the class using {@link
- * net.starlark.java.annot.StarlarkAnnotations#getStarlarkBuiltin}.
+ * the method's return type. The Starlark data type is obtained from the class using [ ][net.starlark.java.annot.StarlarkAnnotations.getStarlarkBuiltin].
  */
-@Target({ElementType.METHOD})
-@Retention(RetentionPolicy.RUNTIME)
-public @interface StarlarkConstructor {}
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY_GETTER, AnnotationTarget.PROPERTY_SETTER)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class StarlarkConstructor 

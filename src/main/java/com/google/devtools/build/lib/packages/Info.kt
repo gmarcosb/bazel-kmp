@@ -11,11 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
-
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkValue;
+package com.google.devtools.build.lib.packages
 
 /**
  * An Info is a unit of information produced by analysis of one configured target and consumed by
@@ -49,15 +45,13 @@ import net.starlark.java.eval.StarlarkValue;
 //   - dozens of singleton subclasses
 // - StarlarkProvider. Callable.
 //
-public interface Info extends StarlarkValue {
+interface Info : net.starlark.java.eval.StarlarkValue {
+    /** Returns the provider that instantiated this Info.  */
+    fun getProvider(): com.google.devtools.build.lib.packages.Provider?
 
-  /** Returns the provider that instantiated this Info. */
-  Provider getProvider();
-
-  @Override
-  default void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<instance of provider ");
-    printer.append(getProvider().getPrintableName());
-    printer.append(">");
-  }
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("<instance of provider ")
+        printer.append(getProvider().getPrintableName())
+        printer.append(">")
+    }
 }

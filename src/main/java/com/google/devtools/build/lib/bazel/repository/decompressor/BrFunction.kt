@@ -11,32 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import com.google.common.collect.ImmutableMap
+import org.apache.commons.compress.compressors.FileNameUtil
+import org.apache.commons.compress.compressors.brotli.BrotliCompressorInputStream
+import java.io.BufferedInputStream
+import java.io.IOException
+import java.io.InputStream
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import org.apache.commons.compress.compressors.FileNameUtil;
-import org.apache.commons.compress.compressors.brotli.BrotliCompressorInputStream;
+/** Decompresses a brotli compressed file.  */
+class BrFunction : CompressedFunction() {
+    @Throws(IOException::class)
+    override fun getDecompressorStream(compressedInputStream: BufferedInputStream?): InputStream {
+        return BrotliCompressorInputStream(compressedInputStream)
+    }
 
-/** Decompresses a brotli compressed file. */
-public class BrFunction extends CompressedFunction {
-  public static final Decompressor INSTANCE = new BrFunction();
-  // Apache Commons Compress does not provide a readily available mapping of compressed ->
-  // uncompressed filenames for brotli, so we make our own.
-  static final FileNameUtil fileNameUtil = new FileNameUtil(ImmutableMap.of(".br", ""), ".br");
+    override fun getUncompressedFileName(`in`: InputStream?, compressedFileName: String?): String? {
+        return fileNameUtil.getUncompressedFileName(compressedFileName)
+    }
 
-  @Override
-  protected InputStream getDecompressorStream(BufferedInputStream compressedInputStream)
-      throws IOException {
-    return new BrotliCompressorInputStream(compressedInputStream);
-  }
+    companion object {
+        val INSTANCE: DecompressorValue.Decompressor = BrFunction()
 
-  @Override
-  protected String getUncompressedFileName(InputStream in, String compressedFileName) {
-    return fileNameUtil.getUncompressedFileName(compressedFileName);
-  }
+        // Apache Commons Compress does not provide a readily available mapping of compressed ->
+        // uncompressed filenames for brotli, so we make our own.
+        val fileNameUtil: FileNameUtil = FileNameUtil(ImmutableMap.of<String?, String?>(".br", ""), ".br")
+    }
 }

@@ -11,32 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.producers;
+package com.google.devtools.build.lib.packages.producers
 
-import com.google.auto.value.AutoOneOf;
-import com.google.devtools.build.lib.io.FileSymlinkInfiniteExpansionException;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
+import com.google.auto.value.AutoOneOf
+import com.google.devtools.build.lib.io.FileSymlinkInfiniteExpansionException
+import com.google.devtools.build.lib.io.InconsistentFilesystemException
 
-/** Tagged union of possible errors that can be accepted by {@link GlobComputationProducer}. */
-@AutoOneOf(GlobError.Kind.class)
-public abstract class GlobError {
-  /** Tags the error type. */
-  public enum Kind {
-    INCONSISTENT_FILESYSTEM,
-    FILE_SYMLINK_INFINITE_EXPANSION
-  }
+/** Tagged union of possible errors that can be accepted by [GlobComputationProducer].  */
+@AutoOneOf(GlobError.Kind::class)
+abstract class GlobError {
+    /** Tags the error type.  */
+    enum class Kind {
+        INCONSISTENT_FILESYSTEM,
+        FILE_SYMLINK_INFINITE_EXPANSION
+    }
 
-  public abstract Kind kind();
+    abstract fun kind(): Kind?
 
-  public abstract InconsistentFilesystemException inconsistentFilesystem();
+    abstract fun inconsistentFilesystem(): InconsistentFilesystemException?
 
-  public abstract FileSymlinkInfiniteExpansionException fileSymlinkInfiniteExpansion();
+    abstract fun fileSymlinkInfiniteExpansion(): FileSymlinkInfiniteExpansionException?
 
-  public static GlobError of(InconsistentFilesystemException e) {
-    return AutoOneOf_GlobError.inconsistentFilesystem(e);
-  }
+    companion object {
+        fun of(e: InconsistentFilesystemException?): GlobError {
+            return AutoOneOf_GlobError.inconsistentFilesystem(e)
+        }
 
-  public static GlobError of(FileSymlinkInfiniteExpansionException e) {
-    return AutoOneOf_GlobError.fileSymlinkInfiniteExpansion(e);
-  }
+        fun of(e: FileSymlinkInfiniteExpansionException?): GlobError {
+            return AutoOneOf_GlobError.fileSymlinkInfiniteExpansion(e)
+        }
+    }
 }

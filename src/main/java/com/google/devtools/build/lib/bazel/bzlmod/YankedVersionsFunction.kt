@@ -12,57 +12,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.io.IOException;
-import java.util.Optional;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue
+import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import java.io.IOException
 
 /**
- * A simple SkyFunction that fetches the yanked versions for a given module from its {@link
- * Registry}.
+ * A simple SkyFunction that fetches the yanked versions for a given module from its [ ].
  */
-public class YankedVersionsFunction implements SkyFunction {
-  @Nullable private DownloadManager downloadManager;
+class YankedVersionsFunction : SkyFunction {
+    private var downloadManager: DownloadManager? = null
 
-  @Override
-  @Nullable
-  public SkyValue compute(SkyKey skyKey, Environment env) throws InterruptedException {
-    var key = (YankedVersionsValue.Key) skyKey.argument();
+    @Throws(java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val key: com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue.Key =
+            skyKey.argument() as com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue.Key
 
-    Registry registry = (Registry) env.getValue(RegistryKey.create(key.registryUrl()));
-    if (registry == null) {
-      return null;
+        val registry: com.google.devtools.build.lib.bazel.bzlmod.Registry? =
+            env.getValue(com.google.devtools.build.lib.bazel.bzlmod.RegistryKey.Companion.create(key.registryUrl)) as com.google.devtools.build.lib.bazel.bzlmod.Registry?
+        if (registry == null) {
+            return null
+        }
+
+        try {
+            com.google.devtools.build.lib.profiler.Profiler.instance()
+                .profile(
+                    com.google.devtools.build.lib.profiler.ProfilerTask.BZLMOD,
+                    java.util.function.Supplier { "getting yanked versions: " + key.moduleName }).use { c ->
+                    return YankedVersionsValue.Companion.create(
+                        registry.getYankedVersions(key.moduleName, env.getListener(), downloadManager)
+                    )
+                }
+        } catch (e: IOException) {
+            env.getListener()
+                .handle(
+                    com.google.devtools.build.lib.events.Event.warn(
+                        java.lang.String.format(
+                            "Could not read metadata file for module %s from registry %s: %s",
+                            key.moduleName, key.registryUrl, e.getMessage()
+                        )
+                    )
+                )
+            // This is failing open: If we can't read the metadata file, we allow yanked modules to be
+            // fetched.
+            return YankedVersionsValue.Companion.create(java.util.Optional.empty<com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>?>())
+        }
     }
 
-    try (SilentCloseable c =
-        Profiler.instance()
-            .profile(ProfilerTask.BZLMOD, () -> "getting yanked versions: " + key.moduleName())) {
-      return YankedVersionsValue.create(
-          registry.getYankedVersions(key.moduleName(), env.getListener(), downloadManager));
-    } catch (IOException e) {
-      env.getListener()
-          .handle(
-              Event.warn(
-                  String.format(
-                      "Could not read metadata file for module %s from registry %s: %s",
-                      key.moduleName(), key.registryUrl(), e.getMessage())));
-      // This is failing open: If we can't read the metadata file, we allow yanked modules to be
-      // fetched.
-      return YankedVersionsValue.create(Optional.empty());
+    fun setDownloadManager(downloadManager: DownloadManager?) {
+        this.downloadManager = downloadManager
     }
-  }
-
-  public void setDownloadManager(DownloadManager downloadManager) {
-    this.downloadManager = downloadManager;
-  }
 }

@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.packages.RuleClass
+import com.google.devtools.build.lib.starlarkbuildapi.RuleFunctionApi
 
-import com.google.devtools.build.lib.starlarkbuildapi.RuleFunctionApi;
-
-/** Interface for a native or Starlark rule function. */
-// Ideally, this interface should be merged with RuleFunctionApi, but that would cause a circular
+/** Interface for a native or Starlark rule function.  */ // Ideally, this interface should be merged with RuleFunctionApi, but that would cause a circular
 // dependency between packages and starlarkbuildapi.
-public interface RuleFunction extends RuleFunctionApi {
-  RuleClass getRuleClass();
+interface RuleFunction : RuleFunctionApi {
+    fun getRuleClass(): RuleClass?
 }

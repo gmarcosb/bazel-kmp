@@ -114,7 +114,7 @@ public class RuleSetUtils {
 
   /** Predicate for checking if an attribute (other than name) is mandatory. */
   private static boolean mandatoryExcludingName(Attribute input) {
-    return input.isMandatory() && !input.getName().equals("name");
+    return input.isMandatory() && !input.name.equals("name");
   }
 
   /**
@@ -123,7 +123,7 @@ public class RuleSetUtils {
   private static final Predicate<Attribute> DEPS = new Predicate<Attribute>() {
     @Override
     public boolean apply(final Attribute input) {
-      return input.getName().equals("deps");
+      return input.name.equals("deps");
     }
   };
 

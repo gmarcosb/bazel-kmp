@@ -11,485 +11,499 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.util.concurrent.Futures.immediateVoidFuture;
-import static com.google.devtools.build.lib.remote.util.DigestUtil.isOldStyleDigestFunction;
-import static java.lang.String.format;
-import static java.util.concurrent.TimeUnit.SECONDS;
-
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.DigestFunction;
-import com.google.bytestream.ByteStreamGrpc;
-import com.google.bytestream.ByteStreamGrpc.ByteStreamFutureStub;
-import com.google.bytestream.ByteStreamGrpc.ByteStreamStub;
-import com.google.bytestream.ByteStreamProto.QueryWriteStatusRequest;
-import com.google.bytestream.ByteStreamProto.WriteRequest;
-import com.google.bytestream.ByteStreamProto.WriteResponse;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Ascii;
-import com.google.common.base.Strings;
-import com.google.common.util.concurrent.AsyncCallable;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.authandtls.CallCredentialsProvider;
-import com.google.devtools.build.lib.remote.RemoteRetrier.ProgressiveBackoff;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.lib.remote.util.Utils;
-import io.grpc.Channel;
-import io.grpc.Status;
-import io.grpc.Status.Code;
-import io.grpc.StatusRuntimeException;
-import io.grpc.stub.ClientCallStreamObserver;
-import io.grpc.stub.ClientResponseObserver;
-import io.netty.util.ReferenceCounted;
-import java.io.IOException;
-import java.util.UUID;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
-import javax.annotation.Nullable;
+import build.bazel.remote.execution.v2.Digest
 
 /**
- * A client implementing the {@code Write} method of the {@code ByteStream} gRPC service.
- *
- * <p>The uploader supports reference counting to easily be shared between components with different
- * lifecyles. After instantiation the reference count is {@code 1}.
- *
- * <p>See {@link ReferenceCounted} for more information on reference counting.
+ * A client implementing the `Write` method of the `ByteStream` gRPC service.
+ * 
+ * 
+ * The uploader supports reference counting to easily be shared between components with different
+ * lifecyles. After instantiation the reference count is `1`.
+ * 
+ * 
+ * See [ReferenceCounted] for more information on reference counting.
  */
-final class ByteStreamUploader {
-  private final String instanceName;
-  private final ReferenceCountedChannel channel;
-  private final CallCredentialsProvider callCredentialsProvider;
-  private final long callTimeoutSecs;
-  private final RemoteRetrier retrier;
-  private final DigestFunction.Value digestFunction;
-  private final AtomicBoolean queryWriteStatusImplemented = new AtomicBoolean(true);
+internal class ByteStreamUploader(
+    instanceName: String?,
+    channel: ReferenceCountedChannel,
+    callCredentialsProvider: CallCredentialsProvider,
+    callTimeoutSecs: Long,
+    retrier: RemoteRetrier,
+    maximumOpenFiles: Int,
+    digestFunction: DigestFunction.Value
+) {
+    private val instanceName: String?
+    private val channel: ReferenceCountedChannel
+    private val callCredentialsProvider: CallCredentialsProvider
+    private val callTimeoutSecs: Long
+    private val retrier: RemoteRetrier
+    private val digestFunction: DigestFunction.Value
+    private val queryWriteStatusImplemented: AtomicBoolean = AtomicBoolean(true)
 
-  @Nullable private final Semaphore openedFilePermits;
+    private val openedFilePermits: Semaphore?
 
-  /**
-   * Creates a new instance.
-   *
-   * @param instanceName the instance name to be prepended to resource name of the {@code Write}
-   *     call. See the {@code ByteStream} service definition for details
-   * @param channel the {@link io.grpc.Channel} to use for calls
-   * @param callCredentialsProvider the credentials provider to use for authentication.
-   * @param callTimeoutSecs the timeout in seconds after which a {@code Write} gRPC call must be
-   *     complete. The timeout resets between retries
-   * @param retrier the {@link RemoteRetrier} whose backoff strategy to use for retry timings.
-   */
-  ByteStreamUploader(
-      @Nullable String instanceName,
-      ReferenceCountedChannel channel,
-      CallCredentialsProvider callCredentialsProvider,
-      long callTimeoutSecs,
-      RemoteRetrier retrier,
-      int maximumOpenFiles,
-      DigestFunction.Value digestFunction) {
-    checkArgument(callTimeoutSecs > 0, "callTimeoutSecs must be gt 0.");
-    this.instanceName = instanceName;
-    this.channel = channel;
-    this.callCredentialsProvider = callCredentialsProvider;
-    this.callTimeoutSecs = callTimeoutSecs;
-    this.retrier = retrier;
-    this.openedFilePermits = maximumOpenFiles != -1 ? new Semaphore(maximumOpenFiles) : null;
-    this.digestFunction = digestFunction;
-  }
-
-  /**
-   * Uploads a BLOB asynchronously to the remote {@code ByteStream} service. The call returns
-   * immediately and one can listen to the returned future for the success/failure of the upload.
-   *
-   * <p>Uploads are retried according to the specified {@link RemoteRetrier}. Retrying is
-   * transparent to the user of this API.
-   *
-   * <p>Trying to upload the same BLOB multiple times concurrently, results in only one upload being
-   * performed. This is transparent to the user of this API.
-   *
-   * @param digest the {@link Digest} of the data to upload.
-   * @param chunker the data to upload. Callers are responsible for closing the {@link Chunker}.
-   */
-  public ListenableFuture<Void> uploadBlobAsync(
-      RemoteActionExecutionContext context, Digest digest, Chunker chunker) {
-    return Futures.catchingAsync(
-        startAsyncUpload(context, digest, chunker),
-        StatusRuntimeException.class,
-        (sre) -> Futures.immediateFailedFuture(new IOException(sre)),
-        MoreExecutors.directExecutor());
-  }
-
-  private String buildUploadResourceName(
-      String instanceName, UUID uuid, Digest digest, boolean compressed) {
-
-    String resourceName;
-
-    if (isOldStyleDigestFunction(digestFunction)) {
-      String template =
-          compressed ? "uploads/%s/compressed-blobs/zstd/%s/%d" : "uploads/%s/blobs/%s/%d";
-      resourceName = format(template, uuid, digest.getHash(), digest.getSizeBytes());
-    } else {
-      String template =
-          compressed ? "uploads/%s/compressed-blobs/zstd/%s/%s/%d" : "uploads/%s/blobs/%s/%s/%d";
-      resourceName =
-          format(
-              template,
-              uuid,
-              Ascii.toLowerCase(digestFunction.getValueDescriptor().getName()),
-              digest.getHash(),
-              digest.getSizeBytes());
-    }
-    if (!Strings.isNullOrEmpty(instanceName)) {
-      resourceName = instanceName + "/" + resourceName;
-    }
-    return resourceName;
-  }
-
-  /** Starts a file upload and returns a future representing the upload. */
-  private ListenableFuture<Void> startAsyncUpload(
-      RemoteActionExecutionContext context, Digest digest, Chunker chunker) {
-    try {
-      chunker.reset();
-    } catch (IOException e) {
-      return Futures.immediateFailedFuture(e);
-    }
-
-    if (chunker.getUncompressedSize() != digest.getSizeBytes()) {
-      return Futures.immediateFailedFuture(
-          new IllegalStateException(
-              String.format(
-                  "Expected chunker size of %d, got %d",
-                  digest.getSizeBytes(), chunker.getUncompressedSize())));
-    }
-
-    UUID uploadId = UUID.randomUUID();
-    String resourceName =
-        buildUploadResourceName(instanceName, uploadId, digest, chunker.isCompressed());
-    if (openedFilePermits != null) {
-      try {
-        openedFilePermits.acquire();
-      } catch (InterruptedException e) {
-        return Futures.immediateFailedFuture(
-            new InterruptedException(
-                "Unexpected interrupt while acquiring open file permit. Original error message: "
-                    + e.getMessage()));
-      }
-    }
-    AsyncUpload newUpload =
-        new AsyncUpload(
-            context,
-            channel,
-            callCredentialsProvider,
-            callTimeoutSecs,
-            retrier,
-            resourceName,
-            chunker);
-    ListenableFuture<Void> currUpload = newUpload.start();
-    currUpload.addListener(
-        () -> {
-          if (openedFilePermits != null) {
-            openedFilePermits.release();
-          }
-        },
-        MoreExecutors.directExecutor());
-    return currUpload;
-  }
-
-  /**
-   * Signal that the blob already exists on the server, so upload should complete early but
-   * successfully.
-   */
-  private static final class AlreadyExists extends Exception {
-    private AlreadyExists() {
-      super();
-    }
-  }
-
-  private final class AsyncUpload implements AsyncCallable<Long> {
-    private final RemoteActionExecutionContext context;
-    private final ReferenceCountedChannel channel;
-    private final CallCredentialsProvider callCredentialsProvider;
-    private final long callTimeoutSecs;
-    private final Retrier retrier;
-    private final String resourceName;
-    private final Chunker chunker;
-    private final ProgressiveBackoff progressiveBackoff;
-
-    private long lastCommittedOffset = -1;
-
-    AsyncUpload(
-        RemoteActionExecutionContext context,
-        ReferenceCountedChannel channel,
-        CallCredentialsProvider callCredentialsProvider,
-        long callTimeoutSecs,
-        Retrier retrier,
-        String resourceName,
-        Chunker chunker) {
-      this.context = context;
-      this.channel = channel;
-      this.callCredentialsProvider = callCredentialsProvider;
-      this.callTimeoutSecs = callTimeoutSecs;
-      this.retrier = retrier;
-      this.progressiveBackoff = new ProgressiveBackoff(retrier::newBackoff);
-      this.resourceName = resourceName;
-      this.chunker = chunker;
-    }
-
-    ListenableFuture<Void> start() {
-      return Futures.catching(
-          Futures.transformAsync(
-              Utils.refreshIfUnauthenticatedAsync(
-                  () -> retrier.executeAsync(this, progressiveBackoff), callCredentialsProvider),
-              committedSize -> {
-                try {
-                  checkCommittedSize(committedSize);
-                } catch (IOException e) {
-                  return Futures.immediateFailedFuture(e);
-                }
-                return immediateVoidFuture();
-              },
-              MoreExecutors.directExecutor()),
-          AlreadyExists.class,
-          ae -> null,
-          MoreExecutors.directExecutor());
-    }
-
-    /** Check the committed_size the server returned makes sense after a successful full upload. */
-    private void checkCommittedSize(long committedSize) throws IOException {
-      long expected = chunker.getOffset();
-
-      if (committedSize == expected) {
-        // Both compressed and uncompressed uploads can succeed with this result.
-        return;
-      }
-
-      if (chunker.isCompressed()) {
-        if (committedSize == -1) {
-          // Returned early, blob already available.
-          return;
-        }
-
-        throw new IOException(
-            format(
-                "compressed write incomplete: committed_size %d is neither -1 nor total %d - %s",
-                committedSize, expected, resourceName));
-      }
-
-      // Uncompressed upload failed.
-      throw new IOException(
-          format(
-              "write incomplete: committed_size %d for %d total - %s",
-              committedSize, expected, resourceName));
+    /**
+     * Creates a new instance.
+     * 
+     * @param instanceName the instance name to be prepended to resource name of the `Write`
+     * call. See the `ByteStream` service definition for details
+     * @param channel the [io.grpc.Channel] to use for calls
+     * @param callCredentialsProvider the credentials provider to use for authentication.
+     * @param callTimeoutSecs the timeout in seconds after which a `Write` gRPC call must be
+     * complete. The timeout resets between retries
+     * @param retrier the [RemoteRetrier] whose backoff strategy to use for retry timings.
+     */
+    init {
+        com.google.common.base.Preconditions.checkArgument(callTimeoutSecs > 0, "callTimeoutSecs must be gt 0.")
+        this.instanceName = instanceName
+        this.channel = channel
+        this.callCredentialsProvider = callCredentialsProvider
+        this.callTimeoutSecs = callTimeoutSecs
+        this.retrier = retrier
+        this.openedFilePermits = if (maximumOpenFiles != -1) Semaphore(maximumOpenFiles) else null
+        this.digestFunction = digestFunction
     }
 
     /**
-     * Make one attempt to upload. If this is the first attempt, uploading starts from the beginning
-     * of the blob. On later attempts, the server is queried to see at which offset upload should
-     * resume. The final committed size from the server is returned on success.
+     * Uploads a BLOB asynchronously to the remote `ByteStream` service. The call returns
+     * immediately and one can listen to the returned future for the success/failure of the upload.
+     * 
+     * 
+     * Uploads are retried according to the specified [RemoteRetrier]. Retrying is
+     * transparent to the user of this API.
+     * 
+     * 
+     * Trying to upload the same BLOB multiple times concurrently, results in only one upload being
+     * performed. This is transparent to the user of this API.
+     * 
+     * @param digest the [Digest] of the data to upload.
+     * @param chunker the data to upload. Callers are responsible for closing the [Chunker].
      */
-    @Override
-    public ListenableFuture<Long> call() {
-      boolean firstAttempt = lastCommittedOffset == -1;
-      return Futures.transformAsync(
-          firstAttempt ? Futures.immediateFuture(0L) : query(),
-          committedSize -> {
-            if (!firstAttempt) {
-              if (committedSize > lastCommittedOffset) {
-                // We have made progress on this upload in the last request. Reset the backoff so
-                // that this request has a full deck of retries
-                progressiveBackoff.reset();
-              }
-            }
-            lastCommittedOffset = committedSize;
-            return upload(committedSize);
-          },
-          MoreExecutors.directExecutor());
+    fun uploadBlobAsync(
+        context: RemoteActionExecutionContext, digest: Digest, chunker: Chunker
+    ): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+        return com.google.common.util.concurrent.Futures.catchingAsync<java.lang.Void?, StatusRuntimeException?>(
+            startAsyncUpload(context, digest, chunker),
+            StatusRuntimeException::class.java,
+            com.google.common.util.concurrent.AsyncFunction { sre: StatusRuntimeException? ->
+                com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(
+                    IOException(sre)
+                )
+            },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
     }
 
-    private ByteStreamFutureStub bsFutureStub(Channel channel) {
-      return ByteStreamGrpc.newFutureStub(channel)
-          .withInterceptors(
-              TracingMetadataUtils.attachMetadataInterceptor(context.getRequestMetadata()))
-          .withCallCredentials(callCredentialsProvider.getCallCredentials())
-          .withDeadlineAfter(callTimeoutSecs, SECONDS);
-    }
+    private fun buildUploadResourceName(
+        instanceName: String?, uuid: UUID?, digest: Digest, compressed: Boolean
+    ): String? {
+        var resourceName: String?
 
-    private ByteStreamStub bsAsyncStub(Channel channel) {
-      return ByteStreamGrpc.newStub(channel)
-          .withInterceptors(
-              TracingMetadataUtils.attachMetadataInterceptor(context.getRequestMetadata()))
-          .withCallCredentials(callCredentialsProvider.getCallCredentials())
-          .withDeadlineAfter(callTimeoutSecs, SECONDS);
-    }
-
-    private ListenableFuture<Long> query() {
-      if (!queryWriteStatusImplemented.get()) {
-        // Without server support for QueryWriteStatus, we have no choice but to restart the entire
-        // upload.
-        return Futures.immediateFuture(0L);
-      }
-      ListenableFuture<Long> committedSizeFuture =
-          Futures.transformAsync(
-              channel.withChannelFuture(
-                  channel ->
-                      bsFutureStub(channel)
-                          .queryWriteStatus(
-                              QueryWriteStatusRequest.newBuilder()
-                                  .setResourceName(resourceName)
-                                  .build())),
-              r ->
-                  r.getComplete()
-                      ? Futures.immediateFailedFuture(new AlreadyExists())
-                      : Futures.immediateFuture(r.getCommittedSize()),
-              MoreExecutors.directExecutor());
-      return Futures.catchingAsync(
-          committedSizeFuture,
-          Exception.class,
-          (e) -> {
-            Status status = Status.fromThrowable(e);
-            if (status.getCode() == Code.UNIMPLEMENTED) {
-              queryWriteStatusImplemented.set(false);
-              return Futures.immediateFuture(0L);
-            }
-            return Futures.immediateFailedFuture(e);
-          },
-          MoreExecutors.directExecutor());
-    }
-
-    private ListenableFuture<Long> upload(long pos) {
-      return channel.withChannelFuture(
-          channel -> {
-            SettableFuture<Long> uploadResult = SettableFuture.create();
-            bsAsyncStub(channel).write(new Writer(resourceName, chunker, pos, uploadResult));
-            return uploadResult;
-          });
-    }
-  }
-
-  private static final class Writer
-      implements ClientResponseObserver<WriteRequest, WriteResponse>, Runnable {
-    private final Chunker chunker;
-    private final long pos;
-    private final String resourceName;
-    private final SettableFuture<Long> uploadResult;
-    private long committedSize = -1;
-    private ClientCallStreamObserver<WriteRequest> requestObserver;
-    private boolean first = true;
-    private boolean finishedWriting;
-
-    private Writer(
-        String resourceName, Chunker chunker, long pos, SettableFuture<Long> uploadResult) {
-      this.resourceName = resourceName;
-      this.chunker = chunker;
-      this.pos = pos;
-      this.uploadResult = uploadResult;
-    }
-
-    @Override
-    public void beforeStart(ClientCallStreamObserver<WriteRequest> requestObserver) {
-      this.requestObserver = requestObserver;
-      uploadResult.addListener(
-          () -> {
-            if (uploadResult.isCancelled()) {
-              requestObserver.cancel("cancelled by user", null);
-            }
-          },
-          MoreExecutors.directExecutor());
-      requestObserver.setOnReadyHandler(this);
-    }
-
-    @Override
-    public void run() {
-      while (requestObserver.isReady()) {
-        WriteRequest.Builder request = WriteRequest.newBuilder();
-        if (first) {
-          first = false;
-          if (!seekChunker()) {
-            return;
-          }
-          // Resource name only needs to be set on the first write for each file.
-          request.setResourceName(resourceName);
+        if (DigestUtil.isOldStyleDigestFunction(digestFunction)) {
+            val template =
+                if (compressed) "uploads/%s/compressed-blobs/zstd/%s/%d" else "uploads/%s/blobs/%s/%d"
+            resourceName = format(template, uuid, digest.getHash(), digest.getSizeBytes())
+        } else {
+            val template =
+                if (compressed) "uploads/%s/compressed-blobs/zstd/%s/%s/%d" else "uploads/%s/blobs/%s/%s/%d"
+            resourceName =
+                format(
+                    template,
+                    uuid,
+                    com.google.common.base.Ascii.toLowerCase(digestFunction.getValueDescriptor().getName()),
+                    digest.getHash(),
+                    digest.getSizeBytes()
+                )
         }
-        Chunker.Chunk chunk;
+        if (!com.google.common.base.Strings.isNullOrEmpty(instanceName)) {
+            resourceName = instanceName + "/" + resourceName
+        }
+        return resourceName
+    }
+
+    /** Starts a file upload and returns a future representing the upload.  */
+    private fun startAsyncUpload(
+        context: RemoteActionExecutionContext, digest: Digest, chunker: Chunker
+    ): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
         try {
-          chunk = chunker.next();
-        } catch (IOException e) {
-          requestObserver.cancel("Failed to read next chunk.", e);
-          return;
+            chunker.reset()
+        } catch (e: IOException) {
+            return com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(e)
         }
-        boolean isLastChunk = !chunker.hasNext();
-        requestObserver.onNext(
-            request
-                .setData(chunk.getData())
-                .setWriteOffset(chunk.getOffset())
-                .setFinishWrite(isLastChunk)
-                .build());
-        if (isLastChunk) {
-          requestObserver.onCompleted();
-          finishedWriting = true;
-          return;
+
+        if (chunker.getUncompressedSize() != digest.getSizeBytes()) {
+            return com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(
+                java.lang.IllegalStateException(
+                    java.lang.String.format(
+                        "Expected chunker size of %d, got %d",
+                        digest.getSizeBytes(), chunker.getUncompressedSize()
+                    )
+                )
+            )
         }
-      }
-    }
 
-    private boolean seekChunker() {
-      try {
-        chunker.seek(pos);
-      } catch (IOException e) {
-        try {
-          chunker.reset();
-        } catch (IOException resetException) {
-          e.addSuppressed(resetException);
+        val uploadId: UUID = UUID.randomUUID()
+        val resourceName =
+            buildUploadResourceName(instanceName, uploadId, digest, chunker.isCompressed())
+        if (openedFilePermits != null) {
+            try {
+                openedFilePermits.acquire()
+            } catch (e: java.lang.InterruptedException) {
+                return com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(
+                    java.lang.InterruptedException(
+                        "Unexpected interrupt while acquiring open file permit. Original error message: "
+                                + e.getMessage()
+                    )
+                )
+            }
         }
-        String tooManyOpenFilesError = "Too many open files";
-        if (Ascii.toLowerCase(e.getMessage()).contains(Ascii.toLowerCase(tooManyOpenFilesError))) {
-          String newMessage =
-              "An IOException was thrown because the process opened too many files. We recommend"
-                  + " setting --bep_maximum_open_remote_upload_files flag to a number lower than"
-                  + " your system default (run 'ulimit -a' for *nix-based operating systems)."
-                  + " Original error message: "
-                  + e.getMessage();
-          e = new IOException(newMessage, e);
+        val newUpload =
+            AsyncUpload(
+                context,
+                channel,
+                callCredentialsProvider,
+                callTimeoutSecs,
+                retrier,
+                resourceName,
+                chunker
+            )
+        val currUpload: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> = newUpload.start()
+        currUpload.addListener(
+            java.lang.Runnable {
+                if (openedFilePermits != null) {
+                    openedFilePermits.release()
+                }
+            },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+        return currUpload
+    }
+
+    /**
+     * Signal that the blob already exists on the server, so upload should complete early but
+     * successfully.
+     */
+    private class AlreadyExists : java.lang.Exception()
+
+    private inner class AsyncUpload(
+        context: RemoteActionExecutionContext,
+        channel: ReferenceCountedChannel,
+        callCredentialsProvider: CallCredentialsProvider,
+        callTimeoutSecs: Long,
+        retrier: Retrier,
+        resourceName: String?,
+        chunker: Chunker
+    ) : com.google.common.util.concurrent.AsyncCallable<Long?> {
+        private val context: RemoteActionExecutionContext
+        private val channel: ReferenceCountedChannel
+        private val callCredentialsProvider: CallCredentialsProvider
+        private val callTimeoutSecs: Long
+        private val retrier: Retrier?
+        private val resourceName: String?
+        private val chunker: Chunker
+        private val progressiveBackoff: ProgressiveBackoff
+
+        private var lastCommittedOffset: Long = -1
+
+        init {
+            this.context = context
+            this.channel = channel
+            this.callCredentialsProvider = callCredentialsProvider
+            this.callTimeoutSecs = callTimeoutSecs
+            this.retrier = retrier
+            this.progressiveBackoff = ProgressiveBackoff(java.util.function.Supplier { retrier.newBackoff() })
+            this.resourceName = resourceName
+            this.chunker = chunker
         }
-        uploadResult.setException(e);
-        requestObserver.cancel("failed to seek chunk", e);
-        return false;
-      }
-      return true;
+
+        fun start(): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+            return com.google.common.util.concurrent.Futures.catching<java.lang.Void?, AlreadyExists?>(
+                com.google.common.util.concurrent.Futures.transformAsync<Long?, java.lang.Void?>(
+                    com.google.devtools.build.lib.remote.util.Utils.refreshIfUnauthenticatedAsync<Long?>(
+                        com.google.common.util.concurrent.AsyncCallable {
+                            retrier.executeAsync<Long?>(
+                                this,
+                                progressiveBackoff
+                            )
+                        }, callCredentialsProvider
+                    ),
+                    com.google.common.util.concurrent.AsyncFunction { committedSize: Long? ->
+                        try {
+                            checkCommittedSize(committedSize!!)
+                        } catch (e: IOException) {
+                            return@transformAsync com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(
+                                e
+                            )
+                        }
+                        com.google.common.util.concurrent.Futures.immediateVoidFuture()
+                    },
+                    com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                ),
+                AlreadyExists::class.java,
+                com.google.common.base.Function { ae: AlreadyExists? -> null },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+
+        /** Check the committed_size the server returned makes sense after a successful full upload.  */
+        @Throws(IOException::class)
+        fun checkCommittedSize(committedSize: Long) {
+            val expected: Long = chunker.getOffset()
+
+            if (committedSize == expected) {
+                // Both compressed and uncompressed uploads can succeed with this result.
+                return
+            }
+
+            if (chunker.isCompressed()) {
+                if (committedSize == -1L) {
+                    // Returned early, blob already available.
+                    return
+                }
+
+                throw IOException(
+                    java.lang.String.format(
+                        "compressed write incomplete: committed_size %d is neither -1 nor total %d - %s",
+                        committedSize, expected, resourceName
+                    )
+                )
+            }
+
+            // Uncompressed upload failed.
+            throw IOException(
+                java.lang.String.format(
+                    "write incomplete: committed_size %d for %d total - %s",
+                    committedSize, expected, resourceName
+                )
+            )
+        }
+
+        /**
+         * Make one attempt to upload. If this is the first attempt, uploading starts from the beginning
+         * of the blob. On later attempts, the server is queried to see at which offset upload should
+         * resume. The final committed size from the server is returned on success.
+         */
+        override fun call(): com.google.common.util.concurrent.ListenableFuture<Long?> {
+            val firstAttempt = lastCommittedOffset == -1L
+            return com.google.common.util.concurrent.Futures.transformAsync<Long?, Long?>(
+                if (firstAttempt) com.google.common.util.concurrent.Futures.immediateFuture<Long?>(0L) else query(),
+                com.google.common.util.concurrent.AsyncFunction { committedSize: Long? ->
+                    if (!firstAttempt) {
+                        if (committedSize!! > lastCommittedOffset) {
+                            // We have made progress on this upload in the last request. Reset the backoff so
+                            // that this request has a full deck of retries
+                            progressiveBackoff.reset()
+                        }
+                    }
+                    lastCommittedOffset = committedSize!!
+                    upload(committedSize)
+                },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+
+        fun bsFutureStub(channel: io.grpc.Channel?): ByteStreamFutureStub {
+            return ByteStreamGrpc.newFutureStub(channel)
+                .withInterceptors(
+                    TracingMetadataUtils.attachMetadataInterceptor(context.getRequestMetadata())
+                )
+                .withCallCredentials(callCredentialsProvider.callCredentials)
+                .withDeadlineAfter(callTimeoutSecs, TimeUnit.SECONDS)
+        }
+
+        fun bsAsyncStub(channel: io.grpc.Channel?): ByteStreamStub {
+            return ByteStreamGrpc.newStub(channel)
+                .withInterceptors(
+                    TracingMetadataUtils.attachMetadataInterceptor(context.getRequestMetadata())
+                )
+                .withCallCredentials(callCredentialsProvider.callCredentials)
+                .withDeadlineAfter(callTimeoutSecs, TimeUnit.SECONDS)
+        }
+
+        fun query(): com.google.common.util.concurrent.ListenableFuture<Long?> {
+            if (!queryWriteStatusImplemented.get()) {
+                // Without server support for QueryWriteStatus, we have no choice but to restart the entire
+                // upload.
+                return com.google.common.util.concurrent.Futures.immediateFuture<Long?>(0L)
+            }
+            val committedSizeFuture: com.google.common.util.concurrent.ListenableFuture<Long?> =
+                com.google.common.util.concurrent.Futures.transformAsync<Any?, Long?>(
+                    channel.withChannelFuture<Any?>(
+                        com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                            bsFutureStub(channel)
+                                .queryWriteStatus(
+                                    QueryWriteStatusRequest.newBuilder()
+                                        .setResourceName(resourceName)
+                                        .build()
+                                )
+                        }),
+                    com.google.common.util.concurrent.AsyncFunction { r: Any? ->
+                        if (r.getComplete())
+                            com.google.common.util.concurrent.Futures.immediateFailedFuture<Any?>(AlreadyExists())
+                        else
+                            com.google.common.util.concurrent.Futures.immediateFuture<V?>(r.getCommittedSize())
+                    },
+                    com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                )
+            return com.google.common.util.concurrent.Futures.catchingAsync<Long?, java.lang.Exception?>(
+                committedSizeFuture,
+                java.lang.Exception::class.java,
+                com.google.common.util.concurrent.AsyncFunction { e: java.lang.Exception? ->
+                    val status: io.grpc.Status = io.grpc.Status.fromThrowable(e)
+                    if (status.getCode() == io.grpc.Status.Code.UNIMPLEMENTED) {
+                        queryWriteStatusImplemented.set(false)
+                        return@catchingAsync com.google.common.util.concurrent.Futures.immediateFuture<Long?>(0L)
+                    }
+                    com.google.common.util.concurrent.Futures.immediateFailedFuture<Long?>(e)
+                },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+
+        fun upload(pos: Long): com.google.common.util.concurrent.ListenableFuture<Long?>? {
+            return channel.withChannelFuture<Long?>(
+                com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                    val uploadResult: com.google.common.util.concurrent.SettableFuture<Long?> =
+                        com.google.common.util.concurrent.SettableFuture.create<Long?>()
+                    bsAsyncStub(channel).write(
+                        com.google.devtools.build.lib.remote.ByteStreamUploader.Writer(
+                            resourceName,
+                            chunker,
+                            pos,
+                            uploadResult
+                        )
+                    )
+                    uploadResult
+                })
+        }
     }
 
-    @Override
-    public void onNext(WriteResponse response) {
-      committedSize = response.getCommittedSize();
+    private class Writer
+        (
+        private val resourceName: String?,
+        chunker: Chunker,
+        pos: Long,
+        uploadResult: com.google.common.util.concurrent.SettableFuture<Long?>
+    ) : ClientResponseObserver<WriteRequest?, WriteResponse?>, java.lang.Runnable {
+        private val chunker: Chunker
+        private val pos: Long
+        private val uploadResult: com.google.common.util.concurrent.SettableFuture<Long?>
+        private var committedSize: Long = -1
+        private var requestObserver: ClientCallStreamObserver<WriteRequest?>? = null
+        private var first = true
+        private var finishedWriting = false
+
+        init {
+            this.chunker = chunker
+            this.pos = pos
+            this.uploadResult = uploadResult
+        }
+
+        override fun beforeStart(requestObserver: ClientCallStreamObserver<WriteRequest?>) {
+            this.requestObserver = requestObserver
+            uploadResult.addListener(
+                java.lang.Runnable {
+                    if (uploadResult.isCancelled()) {
+                        requestObserver.cancel("cancelled by user", null)
+                    }
+                },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+            requestObserver.setOnReadyHandler(this)
+        }
+
+        override fun run() {
+            while (requestObserver.isReady()) {
+                val request: WriteRequest.Builder = WriteRequest.newBuilder()
+                if (first) {
+                    first = false
+                    if (!seekChunker()) {
+                        return
+                    }
+                    // Resource name only needs to be set on the first write for each file.
+                    request.setResourceName(resourceName)
+                }
+                val chunk: com.google.devtools.build.lib.remote.Chunker.Chunk
+                try {
+                    chunk = chunker.next()
+                } catch (e: IOException) {
+                    requestObserver.cancel("Failed to read next chunk.", e)
+                    return
+                }
+                val isLastChunk: Boolean = !chunker.hasNext()
+                requestObserver.onNext(
+                    request
+                        .setData(chunk.getData())
+                        .setWriteOffset(chunk.getOffset())
+                        .setFinishWrite(isLastChunk)
+                        .build()
+                )
+                if (isLastChunk) {
+                    requestObserver.onCompleted()
+                    finishedWriting = true
+                    return
+                }
+            }
+        }
+
+        fun seekChunker(): Boolean {
+            try {
+                chunker.seek(pos)
+            } catch (e: IOException) {
+                try {
+                    chunker.reset()
+                } catch (resetException: IOException) {
+                    e.addSuppressed(resetException)
+                }
+                val tooManyOpenFilesError = "Too many open files"
+                if (com.google.common.base.Ascii.toLowerCase(e.getMessage())
+                        .contains(com.google.common.base.Ascii.toLowerCase(tooManyOpenFilesError))
+                ) {
+                    val newMessage =
+                        ("An IOException was thrown because the process opened too many files. We recommend"
+                                + " setting --bep_maximum_open_remote_upload_files flag to a number lower than"
+                                + " your system default (run 'ulimit -a' for *nix-based operating systems)."
+                                + " Original error message: "
+                                + e.getMessage())
+                    e = IOException(newMessage, e)
+                }
+                uploadResult.setException(e)
+                requestObserver.cancel("failed to seek chunk", e)
+                return false
+            }
+            return true
+        }
+
+        override fun onNext(response: WriteResponse) {
+            committedSize = response.getCommittedSize()
+        }
+
+        override fun onCompleted() {
+            if (finishedWriting) {
+                uploadResult.set(committedSize)
+            } else {
+                // Server completed succesfully before we finished writing all the data, meaning the blob
+                // already exists. The server is supposed to set committed_size to the size of the blob (for
+                // uncompressed uploads) or -1 (for compressed uploads), but we do not verify this.
+                requestObserver.cancel("server has returned early", null)
+                uploadResult.setException(AlreadyExists())
+            }
+        }
+
+        override fun onError(t: Throwable) {
+            requestObserver.cancel("failed", t)
+            uploadResult.setException(
+                if (io.grpc.Status.fromThrowable(t)
+                        .getCode() == io.grpc.Status.Code.ALREADY_EXISTS
+                ) AlreadyExists() else t
+            )
+        }
     }
 
-    @Override
-    public void onCompleted() {
-      if (finishedWriting) {
-        uploadResult.set(committedSize);
-      } else {
-        // Server completed succesfully before we finished writing all the data, meaning the blob
-        // already exists. The server is supposed to set committed_size to the size of the blob (for
-        // uncompressed uploads) or -1 (for compressed uploads), but we do not verify this.
-        requestObserver.cancel("server has returned early", null);
-        uploadResult.setException(new AlreadyExists());
-      }
+    @com.google.common.annotations.VisibleForTesting
+    fun getOpenedFilePermits(): Semaphore? {
+        return openedFilePermits
     }
-
-    @Override
-    public void onError(Throwable t) {
-      requestObserver.cancel("failed", t);
-      uploadResult.setException(
-          (Status.fromThrowable(t).getCode() == Code.ALREADY_EXISTS) ? new AlreadyExists() : t);
-    }
-  }
-
-  @VisibleForTesting
-  public Semaphore getOpenedFilePermits() {
-    return openedFilePermits;
-  }
 }

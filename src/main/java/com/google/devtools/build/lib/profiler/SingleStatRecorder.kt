@@ -11,80 +11,85 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Range;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.profiler.MetricData.HistogramElement;
-import java.util.concurrent.atomic.AtomicIntegerArray;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAccumulator;
+import com.google.devtools.build.lib.profiler.MetricData
+import com.google.devtools.build.lib.profiler.MetricData.HistogramElement
+import java.util.concurrent.atomic.AtomicIntegerArray
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.LongAccumulator
+import java.util.function.LongBinaryOperator
 
 /**
  * A stat recorder that can record time histograms, count of calls, average time, Std. Deviation
  * and max time.
  */
-@ThreadSafe
-public class SingleStatRecorder implements StatRecorder {
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class SingleStatRecorder(description: Any?, buckets: Int) : com.google.devtools.build.lib.profiler.StatRecorder {
+    private val buckets: Int
+    private val description: Any?
+    private val histogram: AtomicIntegerArray
+    private val sum: AtomicLong = AtomicLong(0)
+    private val sumSquared: AtomicLong = AtomicLong(0)
+    private val max: LongAccumulator =
+        LongAccumulator(LongBinaryOperator { a: Long, b: Long -> java.lang.Math.max(a, b) }, -1)
 
-  private final int buckets;
-  private final Object description;
-  private final AtomicIntegerArray histogram;
-  private final AtomicLong sum = new AtomicLong(0);
-  private final AtomicLong sumSquared = new AtomicLong(0);
-  private final LongAccumulator max = new LongAccumulator(Math::max, -1);
-
-  public SingleStatRecorder(Object description, int buckets) {
-    this.description = description;
-    Preconditions.checkArgument(buckets > 1, "At least two buckets (one for bellow start and one"
-        + "for above start) are required");
-    this.buckets = buckets;
-    histogram = new AtomicIntegerArray(buckets);
-  }
-
-  /** Create an snapshot of the stats recorded up to now. */
-  public MetricData snapshot() {
-    ImmutableList.Builder<HistogramElement> result = ImmutableList.builder();
-    result.add(new HistogramElement(Range.closedOpen(0, 1), histogram.get(0)));
-    int from = 1;
-    for (int i = 1; i < histogram.length() - 1; i++) {
-      int to = from << 1;
-      result.add(new HistogramElement(Range.closedOpen(from, to), histogram.get(i)));
-      from = to;
+    init {
+        this.description = description
+        com.google.common.base.Preconditions.checkArgument(
+            buckets > 1, "At least two buckets (one for bellow start and one"
+                    + "for above start) are required"
+        )
+        this.buckets = buckets
+        histogram = AtomicIntegerArray(buckets)
     }
-    result.add(new HistogramElement(Range.atLeast(from), histogram.get(histogram.length() - 1)));
-    int n = 0;
-    for (int i = 0; i < histogram.length(); i++) {
-      n += histogram.get(i);
+
+    /** Create an snapshot of the stats recorded up to now.  */
+    fun snapshot(): MetricData {
+        val result: com.google.common.collect.ImmutableList.Builder<HistogramElement?> =
+            com.google.common.collect.ImmutableList.builder<HistogramElement?>()
+        result.add(HistogramElement(com.google.common.collect.Range.closedOpen<Int?>(0, 1), histogram.get(0)))
+        var from = 1
+        for (i in 1..<histogram.length() - 1) {
+            val to = from shl 1
+            result.add(HistogramElement(com.google.common.collect.Range.closedOpen<Int?>(from, to), histogram.get(i)))
+            from = to
+        }
+        result.add(
+            HistogramElement(
+                com.google.common.collect.Range.atLeast<Int?>(from),
+                histogram.get(histogram.length() - 1)
+            )
+        )
+        var n = 0
+        for (i in 0..<histogram.length()) {
+            n += histogram.get(i)
+        }
+        val stddev: Double
+        if (n == 1) {
+            stddev = 0.0
+        } else {
+            stddev = java.lang.Math.sqrt((sumSquared.longValue() - sum.get() * sum.doubleValue() / n) / n)
+        }
+        return MetricData(
+            description, result.build(), n, sum.doubleValue() / n, stddev, max.intValue()
+        )
     }
-    double stddev;
-    if (n == 1) {
-      stddev = 0;
-    } else {
-      stddev = Math.sqrt((sumSquared.longValue() - sum.get() * sum.doubleValue() / n) / n);
+
+    override fun addStat(duration: Int, obj: Any?) {
+        val histogramBucket: Int =
+            java.lang.Math.min(32 - java.lang.Integer.numberOfLeadingZeros(duration), buckets - 1)
+        sum.addAndGet(duration.toLong())
+        sumSquared.addAndGet((duration * duration).toLong())
+        max.accumulate(duration.toLong())
+        histogram.incrementAndGet(histogramBucket)
     }
-    return new MetricData(
-        description, result.build(), n, sum.doubleValue() / n, stddev, max.intValue());
-  }
 
-  @Override
-  public void addStat(int duration, Object obj) {
-    int histogramBucket = Math.min(32 - Integer.numberOfLeadingZeros(duration), buckets - 1);
-    sum.addAndGet(duration);
-    sumSquared.addAndGet(duration * duration);
-    max.accumulate(duration);
-    histogram.incrementAndGet(histogramBucket);
-  }
+    override fun isEmpty(): Boolean {
+        return snapshot().getCount() == 0
+    }
 
-  @Override
-  public boolean isEmpty() {
-    return snapshot().getCount() == 0;
-  }
-
-  @Override
-  public String toString() {
-    return snapshot().toString();
-  }
+    override fun toString(): String {
+        return snapshot().toString()
+    }
 }

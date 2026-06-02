@@ -11,125 +11,111 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.junit4
 
-package com.google.testing.junit.runner.junit4;
-
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.testing.junit.runner.internal.junit4.CancellableRequestFactory;
-import com.google.testing.junit.runner.model.AntXmlResultWriter;
-import com.google.testing.junit.runner.model.TestSuiteModel;
-import com.google.testing.junit.runner.model.XmlResultWriter;
-import com.google.testing.junit.runner.sharding.ShardingEnvironment;
-import com.google.testing.junit.runner.sharding.ShardingFilters;
-import com.google.testing.junit.runner.util.MemoizingSupplier;
-import java.io.PrintStream;
-import java.util.Collections;
-import java.util.Set;
-import java.util.function.Supplier;
-import org.junit.runner.Request;
-import org.junit.runner.notification.RunListener;
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import com.google.testing.junit.runner.model.TestSuiteModel
+import com.google.testing.junit.runner.sharding.ShardingEnvironment
+import org.junit.runner.Request
+import java.util.function.Supplier
 
 /**
- * Utility class to create a JUnit4Runner instance from a {@link Builder}. All required dependencies
+ * Utility class to create a JUnit4Runner instance from a [Builder]. All required dependencies
  * are being injected automatically.
  */
-public final class JUnit4Bazel {
+class JUnit4Bazel internal constructor(builder: Builder<*>?) {
+    private var request: Request? = null
 
-  private Request request;
+    private var cancellableRequestFactory: CancellableRequestFactory? = null
 
-  private CancellableRequestFactory cancellableRequestFactory;
+    private var jUnit4TestModelBuilder: JUnit4TestModelBuilder? = null
 
-  private JUnit4TestModelBuilder jUnit4TestModelBuilder;
+    private var testSuiteModelSupplier: Supplier<TestSuiteModel?>? = null
 
-  private Supplier<TestSuiteModel> testSuiteModelSupplier;
+    private var stdoutStream: PrintStream? = null
 
-  private PrintStream stdoutStream;
+    private var config: JUnit4Config? = null
 
-  private JUnit4Config config;
+    private var setOfRunListeners: MutableSet<RunListener?>? = null
 
-  private Set<RunListener> setOfRunListeners;
-
-  JUnit4Bazel(Builder<?> builder) {
-    initialize(checkNotNull(builder));
-  }
-
-  public static Builder<?> builder() {
-    return new Builder<>();
-  }
-
-  private void initialize(final Builder<?> builder) {
-    Class<?> topLevelSuite = builder.suiteClass;
-    this.request = JUnit4RunnerBaseModule.provideRequest(topLevelSuite);
-    this.cancellableRequestFactory = builder.module.cancellableRequestFactory();
-    String topLevelSuiteName = topLevelSuite.getCanonicalName();
-    ShardingEnvironment shardingEnvironment = builder.module.shardingEnvironment();
-    ShardingFilters shardingFilters = builder.module.shardingFilters(shardingEnvironment);
-    XmlResultWriter resultWriter = new AntXmlResultWriter();
-    TestSuiteModel.Builder builder1 =
-        new TestSuiteModel.Builder(
-            builder.module.clock(), shardingFilters, shardingEnvironment, resultWriter);
-    this.jUnit4TestModelBuilder = new JUnit4TestModelBuilder(request, topLevelSuiteName, builder1);
-    this.testSuiteModelSupplier = new MemoizingSupplier<>(() -> jUnit4TestModelBuilder.get());
-    this.stdoutStream = builder.module.stdout();
-    this.config = builder.module.config();
-    this.setOfRunListeners =
-        builder.module.setOfRunListeners(config, testSuiteModelSupplier, cancellableRequestFactory);
-  }
-
-  public JUnit4Runner runner() {
-    return new JUnit4Runner(
-        request,
-        cancellableRequestFactory,
-        testSuiteModelSupplier,
-        stdoutStream,
-        config,
-        setOfRunListeners,
-        Collections.emptySet());
-  }
-
-  /** A builder for instantiating {@link JUnit4Bazel}. */
-  public static class Builder<B extends Builder<B>> {
-    private Class<?> suiteClass;
-    private JUnit4InstanceModules.Config config;
-    protected JUnit4RunnerModule module;
-
-    public JUnit4Bazel build() {
-      if (suiteClass == null) {
-        throw new IllegalStateException("suiteClass must be set");
-      }
-      if (module == null) {
-        this.module = createModule();
-      }
-      return new JUnit4Bazel(this);
+    init {
+        initialize(checkNotNull(builder)!!)
     }
 
-    private JUnit4RunnerModule createModule() {
-      if (config == null) {
-        throw new IllegalStateException(
-            JUnit4InstanceModules.Config.class.getCanonicalName() + " must be set");
-      }
-      return new JUnit4RunnerModule(config.options());
+    private fun initialize(builder: Builder<*>) {
+        val topLevelSuite = builder.suiteClass!!
+        this.request = JUnit4RunnerBaseModule.provideRequest(topLevelSuite)
+        this.cancellableRequestFactory = builder.module!!.cancellableRequestFactory()
+        val topLevelSuiteName = topLevelSuite.getCanonicalName()
+        val shardingEnvironment: ShardingEnvironment? = builder.module!!.shardingEnvironment()
+        val shardingFilters: ShardingFilters? = builder.module!!.shardingFilters(shardingEnvironment)
+        val resultWriter: XmlResultWriter = AntXmlResultWriter()
+        val builder1 =
+            TestSuiteModel.Builder(
+                builder.module!!.clock(), shardingFilters, shardingEnvironment, resultWriter
+            )
+        this.jUnit4TestModelBuilder = JUnit4TestModelBuilder(request, topLevelSuiteName, builder1)
+        this.testSuiteModelSupplier = MemoizingSupplier({ jUnit4TestModelBuilder!!.get() })
+        this.stdoutStream = builder.module!!.stdout()
+        this.config = builder.module!!.config()
+        this.setOfRunListeners =
+            builder.module!!.setOfRunListeners(config, testSuiteModelSupplier, cancellableRequestFactory)
     }
 
-    @CanIgnoreReturnValue
-    @SuppressWarnings("unchecked")
-    public B suiteClass(Class<?> suiteClass) {
-      this.suiteClass = checkNotNull(suiteClass);
-      return (B) this;
+    fun runner(): JUnit4Runner {
+        return JUnit4Runner(
+            request,
+            cancellableRequestFactory,
+            testSuiteModelSupplier,
+            stdoutStream,
+            config,
+            setOfRunListeners,
+            mutableSetOf<JUnit4Runner.Initializer?>()
+        )
     }
 
-    @CanIgnoreReturnValue
-    @SuppressWarnings("unchecked")
-    public B config(JUnit4InstanceModules.Config config) {
-      this.config = checkNotNull(config);
-      return (B) this;
-    }
-  }
+    /** A builder for instantiating [JUnit4Bazel].  */
+    class Builder<B : Builder<B?>?> {
+        private var suiteClass: Class<*>? = null
+        private var config: JUnit4InstanceModules.Config? = null
+        var module: JUnit4RunnerModule? = null
 
-  private static <T> T checkNotNull(T reference) {
-    if (reference == null) {
-      throw new NullPointerException();
+        fun build(): JUnit4Bazel {
+            checkNotNull(suiteClass) { "suiteClass must be set" }
+            if (module == null) {
+                this.module = createModule()
+            }
+            return JUnit4Bazel(this)
+        }
+
+        private fun createModule(): JUnit4RunnerModule {
+            checkNotNull(config) { JUnit4InstanceModules.Config::class.java.getCanonicalName() + " must be set" }
+            return JUnit4RunnerModule(config!!.options())
+        }
+
+        @CanIgnoreReturnValue
+        fun suiteClass(suiteClass: Class<*>?): B? {
+            this.suiteClass = checkNotNull(suiteClass)
+            return this as B
+        }
+
+        @CanIgnoreReturnValue
+        fun config(config: JUnit4InstanceModules.Config?): B? {
+            this.config = checkNotNull<JUnit4InstanceModules.Config>(config)
+            return this as B
+        }
     }
-    return reference;
-  }
+
+    companion object {
+        fun builder(): Builder<*> {
+            return JUnit4Bazel.Builder<B?>()
+        }
+
+        private fun <T> checkNotNull(reference: T?): T? {
+            if (reference == null) {
+                throw NullPointerException()
+            }
+            return reference
+        }
+    }
 }

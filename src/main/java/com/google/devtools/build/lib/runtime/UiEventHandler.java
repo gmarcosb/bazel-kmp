@@ -493,13 +493,13 @@ public final class UiEventHandler implements EventHandler {
         stdout =
             getContentIfSmallEnough(
                 "stdout",
-                processOutput.getStdOutSize(),
+                    processOutput.stdOutSize,
                 processOutput::getStdOut,
                 processOutput::getStdOutPath);
         stderr =
             getContentIfSmallEnough(
                 "stderr",
-                processOutput.getStdErrSize(),
+                    processOutput.stdErrSize,
                 processOutput::getStdErr,
                 processOutput::getStdErrPath);
       }
@@ -744,7 +744,7 @@ public final class UiEventHandler implements EventHandler {
   public void downloadProgress(FetchProgress event) {
     maybeAddDate();
     stateTracker.downloadProgress(event);
-    if (!event.isFinished()) {
+    if (!event.isFinished) {
       refresh();
     } else {
       checkActivities();

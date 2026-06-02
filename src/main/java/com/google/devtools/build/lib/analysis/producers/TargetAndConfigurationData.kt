@@ -11,26 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.devtools.build.lib.analysis.TransitiveDependencyState;
-import com.google.devtools.build.lib.analysis.config.StarlarkTransitionCache;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.StarlarkTransitionCache
 
-/** Data shared by {@link TargetAndConfigurationProducer} and {@link RuleTransitionApplier}. */
-public interface TargetAndConfigurationData {
-  public ConfiguredTargetKey getPreRuleTransitionKey();
+/** Data shared by [TargetAndConfigurationProducer] and [RuleTransitionApplier].  */
+interface TargetAndConfigurationData {
+    val preRuleTransitionKey: ConfiguredTargetKey?
 
-  @Nullable
-  public TransitionFactory<RuleTransitionData> getTrimmingTransitionFactory();
+    val trimmingTransitionFactory: TransitionFactory<RuleTransitionData?>?
 
-  public PatchTransition getToolchainTaggedTrimmingTransition();
+    val toolchainTaggedTrimmingTransition: PatchTransition?
 
-  public StarlarkTransitionCache getTransitionCache();
+    val transitionCache: StarlarkTransitionCache?
 
-  public TransitiveDependencyState getTransitiveState();
+    val transitiveState: TransitiveDependencyState?
 }

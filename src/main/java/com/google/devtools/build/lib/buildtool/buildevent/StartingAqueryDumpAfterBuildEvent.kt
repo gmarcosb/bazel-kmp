@@ -11,41 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader.UploadContext;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.vfs.Path;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader.UploadContext
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import com.google.devtools.build.lib.vfs.Path
 
-/** Fired before the start of the aquery dump after a build. */
-public class StartingAqueryDumpAfterBuildEvent implements ExtendedEventHandler.Postable {
+/** Fired before the start of the aquery dump after a build.  */
+class StartingAqueryDumpAfterBuildEvent : ExtendedEventHandler.Postable {
+    var streamingContext: UploadContext? = null
+        private set
+    var localAqueryDumpPath: Path? = null
+        private set
+    val aqueryDumpName: String?
 
-  @Nullable private UploadContext streamingContext;
-  @Nullable private Path localAqueryDumpPath;
-  private final String aqueryDumpName;
+    constructor(streamingContext: UploadContext?, aqueryDumpName: String?) {
+        this.streamingContext = streamingContext
+        this.aqueryDumpName = aqueryDumpName
+    }
 
-  public StartingAqueryDumpAfterBuildEvent(UploadContext streamingContext, String aqueryDumpName) {
-    this.streamingContext = streamingContext;
-    this.aqueryDumpName = aqueryDumpName;
-  }
-
-  public StartingAqueryDumpAfterBuildEvent(Path localAqueryDumpPath, String aqueryDumpName) {
-    this.localAqueryDumpPath = localAqueryDumpPath;
-    this.aqueryDumpName = aqueryDumpName;
-  }
-
-  @Nullable
-  public UploadContext getStreamingContext() {
-    return streamingContext;
-  }
-
-  @Nullable
-  public Path getLocalAqueryDumpPath() {
-    return localAqueryDumpPath;
-  }
-
-  public String getAqueryDumpName() {
-    return aqueryDumpName;
-  }
+    constructor(localAqueryDumpPath: Path?, aqueryDumpName: String?) {
+        this.localAqueryDumpPath = localAqueryDumpPath
+        this.aqueryDumpName = aqueryDumpName
+    }
 }

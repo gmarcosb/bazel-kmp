@@ -11,195 +11,178 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventservice
 
-package com.google.devtools.build.lib.buildeventservice;
+import BuildEventStreamProtos.BuildEvent
+import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions
+import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadMode
+import com.google.devtools.build.lib.buildeventservice.BuildEventServiceUploader
+import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient
+import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.CommandContext
+import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
+import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader
+import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions
+import com.google.devtools.build.lib.buildeventstream.BuildEventTransport
+import com.google.devtools.build.lib.util.JavaSleeper
+import java.time.Instant
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** A [BuildEventTransport] that streams [BuildEvent]s to BuildEventService.  */
+class BuildEventServiceTransport private constructor(
+    besClient: BuildEventServiceClient?,
+    localFileUploader: BuildEventArtifactUploader?,
+    bepOptions: BuildEventProtocolOptions?,
+    clock: com.google.devtools.build.lib.clock.Clock?,
+    publishLifecycleEvents: Boolean,
+    artifactGroupNamer: ArtifactGroupNamer?,
+    eventBus: com.google.common.eventbus.EventBus?,
+    closeTimeout: java.time.Duration?,
+    sleeper: com.google.devtools.build.lib.util.Sleeper?,
+    commandContext: CommandContext?,
+    commandStartTime: Instant?,
+    besUploadMode: BesUploadMode?
+) : BuildEventTransport {
+    private val besUploader: BuildEventServiceUploader
+    private val besTimeout: java.time.Duration?
+    private val besUploadMode: BesUploadMode?
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.eventbus.EventBus;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadMode;
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient;
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.CommandContext;
-import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions;
-import com.google.devtools.build.lib.buildeventstream.BuildEventTransport;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.util.JavaSleeper;
-import com.google.devtools.build.lib.util.Sleeper;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.time.Duration;
-import java.time.Instant;
-import javax.annotation.Nullable;
-
-/** A {@link BuildEventTransport} that streams {@link BuildEvent}s to BuildEventService. */
-public class BuildEventServiceTransport implements BuildEventTransport {
-  private final BuildEventServiceUploader besUploader;
-  private final Duration besTimeout;
-  private final BesUploadMode besUploadMode;
-
-  private BuildEventServiceTransport(
-      BuildEventServiceClient besClient,
-      BuildEventArtifactUploader localFileUploader,
-      BuildEventProtocolOptions bepOptions,
-      Clock clock,
-      boolean publishLifecycleEvents,
-      ArtifactGroupNamer artifactGroupNamer,
-      EventBus eventBus,
-      Duration closeTimeout,
-      Sleeper sleeper,
-      CommandContext commandContext,
-      Instant commandStartTime,
-      BesUploadMode besUploadMode) {
-    this.besTimeout = closeTimeout;
-    this.besUploader =
-        new BuildEventServiceUploader.Builder()
-            .besClient(besClient)
-            .localFileUploader(localFileUploader)
-            .bepOptions(bepOptions)
-            .clock(clock)
-            .publishLifecycleEvents(publishLifecycleEvents)
-            .sleeper(sleeper)
-            .artifactGroupNamer(artifactGroupNamer)
-            .eventBus(eventBus)
-            .commandContext(commandContext)
-            .commandStartTime(commandStartTime)
-            .build();
-    this.besUploadMode = besUploadMode;
-  }
-
-  @Override
-  public ListenableFuture<Void> close() {
-    return besUploader.close();
-  }
-
-  @Override
-  public ListenableFuture<Void> getHalfCloseFuture() {
-    return besUploader.getHalfCloseFuture();
-  }
-
-  @Override
-  public BuildEventArtifactUploader getUploader() {
-    return besUploader.getBuildEventUploader();
-  }
-
-  @Override
-  public String name() {
-    return "Build Event Service";
-  }
-
-  @Override
-  public boolean mayBeSlow() {
-    return true;
-  }
-
-  @Override
-  public BesUploadMode getBesUploadMode() {
-    return besUploadMode;
-  }
-
-  @Override
-  public void sendBuildEvent(BuildEvent event) {
-    besUploader.enqueueEvent(event);
-  }
-
-  @Override
-  public Duration getTimeout() {
-    return besTimeout;
-  }
-
-  /** A builder for {@link BuildEventServiceTransport}. */
-  public static class Builder {
-    private BuildEventServiceClient besClient;
-    private BuildEventArtifactUploader localFileUploader;
-    private BuildEventServiceOptions besOptions;
-    private BuildEventProtocolOptions bepOptions;
-    private Clock clock;
-    private ArtifactGroupNamer artifactGroupNamer;
-    private EventBus eventBus;
-    @Nullable private Sleeper sleeper;
-    private CommandContext commandContext;
-    private Instant commandStartTime;
-
-    @CanIgnoreReturnValue
-    public Builder besClient(BuildEventServiceClient value) {
-      this.besClient = value;
-      return this;
+    init {
+        this.besTimeout = closeTimeout
+        this.besUploader =
+            com.google.devtools.build.lib.buildeventservice.BuildEventServiceUploader.Builder()
+                .besClient(besClient)
+                .localFileUploader(localFileUploader)
+                .bepOptions(bepOptions)
+                .clock(clock)
+                .publishLifecycleEvents(publishLifecycleEvents)
+                .sleeper(sleeper)
+                .artifactGroupNamer(artifactGroupNamer)
+                .eventBus(eventBus)
+                .commandContext(commandContext)
+                .commandStartTime(commandStartTime)
+                .build()
+        this.besUploadMode = besUploadMode
     }
 
-    @CanIgnoreReturnValue
-    public Builder localFileUploader(BuildEventArtifactUploader value) {
-      this.localFileUploader = value;
-      return this;
+    override fun close(): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>? {
+        return besUploader.close()
     }
 
-    @CanIgnoreReturnValue
-    public Builder bepOptions(BuildEventProtocolOptions value) {
-      this.bepOptions = value;
-      return this;
+    val halfCloseFuture: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?
+        get() = besUploader.getHalfCloseFuture()
+
+    val uploader: BuildEventArtifactUploader?
+        get() = besUploader.getBuildEventUploader()
+
+    override fun name(): String {
+        return "Build Event Service"
     }
 
-    @CanIgnoreReturnValue
-    public Builder besOptions(BuildEventServiceOptions value) {
-      this.besOptions = value;
-      return this;
+    override fun mayBeSlow(): Boolean {
+        return true
     }
 
-    @CanIgnoreReturnValue
-    public Builder clock(Clock value) {
-      this.clock = value;
-      return this;
+    override fun getBesUploadMode(): BesUploadMode? {
+        return besUploadMode
     }
 
-    @CanIgnoreReturnValue
-    public Builder artifactGroupNamer(ArtifactGroupNamer value) {
-      this.artifactGroupNamer = value;
-      return this;
+    override fun sendBuildEvent(event: BuildEvent) {
+        besUploader.enqueueEvent(event)
     }
 
-    @CanIgnoreReturnValue
-    public Builder eventBus(EventBus value) {
-      this.eventBus = value;
-      return this;
-    }
+    val timeout: java.time.Duration?
+        get() = besTimeout
 
-    @CanIgnoreReturnValue
-    @VisibleForTesting
-    public Builder sleeper(Sleeper value) {
-      this.sleeper = value;
-      return this;
-    }
+    /** A builder for [BuildEventServiceTransport].  */
+    class Builder {
+        private var besClient: BuildEventServiceClient? = null
+        private var localFileUploader: BuildEventArtifactUploader? = null
+        private var besOptions: BuildEventServiceOptions? = null
+        private var bepOptions: BuildEventProtocolOptions? = null
+        private var clock: com.google.devtools.build.lib.clock.Clock? = null
+        private var artifactGroupNamer: ArtifactGroupNamer? = null
+        private var eventBus: com.google.common.eventbus.EventBus? = null
+        private var sleeper: com.google.devtools.build.lib.util.Sleeper? = null
+        private var commandContext: CommandContext? = null
+        private var commandStartTime: Instant? = null
 
-    @CanIgnoreReturnValue
-    public Builder commandContext(CommandContext value) {
-      this.commandContext = value;
-      return this;
-    }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun besClient(value: BuildEventServiceClient?): Builder {
+            this.besClient = value
+            return this
+        }
 
-    @CanIgnoreReturnValue
-    public Builder commandStartTime(Instant value) {
-      this.commandStartTime = value;
-      return this;
-    }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun localFileUploader(value: BuildEventArtifactUploader?): Builder {
+            this.localFileUploader = value
+            return this
+        }
 
-    public BuildEventServiceTransport build() {
-      checkNotNull(besOptions);
-      return new BuildEventServiceTransport(
-          checkNotNull(besClient),
-          checkNotNull(localFileUploader),
-          checkNotNull(bepOptions),
-          checkNotNull(clock),
-          besOptions.getBesLifecycleEvents(),
-          checkNotNull(artifactGroupNamer),
-          checkNotNull(eventBus),
-          (besOptions.getBesTimeout() != null) ? besOptions.getBesTimeout() : Duration.ZERO,
-          sleeper != null ? sleeper : new JavaSleeper(),
-          checkNotNull(commandContext),
-          checkNotNull(commandStartTime),
-          besOptions.getBesUploadMode());
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun bepOptions(value: BuildEventProtocolOptions?): Builder {
+            this.bepOptions = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun besOptions(value: BuildEventServiceOptions): Builder {
+            this.besOptions = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun clock(value: com.google.devtools.build.lib.clock.Clock?): Builder {
+            this.clock = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun artifactGroupNamer(value: ArtifactGroupNamer?): Builder {
+            this.artifactGroupNamer = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun eventBus(value: com.google.common.eventbus.EventBus?): Builder {
+            this.eventBus = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @com.google.common.annotations.VisibleForTesting
+        fun sleeper(value: com.google.devtools.build.lib.util.Sleeper?): Builder {
+            this.sleeper = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun commandContext(value: CommandContext?): Builder {
+            this.commandContext = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun commandStartTime(value: Instant?): Builder {
+            this.commandStartTime = value
+            return this
+        }
+
+        fun build(): BuildEventServiceTransport {
+            com.google.common.base.Preconditions.checkNotNull<BuildEventServiceOptions?>(besOptions)
+            return BuildEventServiceTransport(
+                com.google.common.base.Preconditions.checkNotNull<BuildEventServiceClient?>(besClient),
+                com.google.common.base.Preconditions.checkNotNull<BuildEventArtifactUploader?>(localFileUploader),
+                com.google.common.base.Preconditions.checkNotNull<BuildEventProtocolOptions?>(bepOptions),
+                com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.clock.Clock?>(clock),
+                besOptions.getBesLifecycleEvents(),
+                com.google.common.base.Preconditions.checkNotNull<ArtifactGroupNamer?>(artifactGroupNamer),
+                com.google.common.base.Preconditions.checkNotNull<com.google.common.eventbus.EventBus?>(eventBus),
+                if (besOptions.getBesTimeout() != null) besOptions.getBesTimeout() else java.time.Duration.ZERO,
+                if (sleeper != null) sleeper else JavaSleeper(),
+                com.google.common.base.Preconditions.checkNotNull<CommandContext?>(commandContext),
+                com.google.common.base.Preconditions.checkNotNull<Instant?>(commandStartTime),
+                besOptions.getBesUploadMode()
+            )
+        }
     }
-  }
 }

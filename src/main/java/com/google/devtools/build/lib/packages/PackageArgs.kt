@@ -11,233 +11,254 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.devtools.build.lib.analysis.config.FeatureSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.CollectionUtils;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.analysis.config.FeatureSet
 
 /**
- * A group of {@link Package} argument values that may be provided by `package()` or `repo()` calls.
- *
- * <p>Unless otherwise specified, these are only used when the rule does not provide an explicit
+ * A group of [Package] argument values that may be provided by `package()` or `repo()` calls.
+ * 
+ * 
+ * Unless otherwise specified, these are only used when the rule does not provide an explicit
  * override value in the associated attribute.
  */
 @AutoValue
-public abstract class PackageArgs {
-  public static final PackageArgs EMPTY = PackageArgs.builder().build();
+abstract class PackageArgs {
+    /** The default visibility value for the package.  */
+    abstract fun defaultVisibility(): RuleVisibility?
 
-  public static final PackageArgs DEFAULT =
-      PackageArgs.builder()
-          .setDefaultVisibility(RuleVisibility.PRIVATE)
-          .setDefaultTestOnly(false)
-          .setFeatures(FeatureSet.EMPTY)
-          .setLicense(License.NO_LICENSE)
-          .setDefaultCompatibleWith(ImmutableSet.of())
-          .setDefaultRestrictedTo(ImmutableSet.of())
-          .setDefaultPackageMetadata(ImmutableList.of())
-          .build();
+    /** The default testonly value for the package.  */
+    abstract fun defaultTestOnly(): Boolean?
 
-  /** The default visibility value for the package. */
-  @Nullable
-  public abstract RuleVisibility defaultVisibility();
+    /** The default deprecation value for the package.  */
+    abstract fun defaultDeprecation(): String?
 
-  /** The default testonly value for the package. */
-  @Nullable
-  public abstract Boolean defaultTestOnly();
+    /**
+     * The default (generally C/C++) features value for the package.
+     * 
+     * 
+     * Note that this is actually additive with features set by a rule where the rule has priority
+     * for turning specific features on or off.
+     */
+    abstract fun features(): FeatureSet?
 
-  /** The default deprecation value for the package. */
-  @Nullable
-  public abstract String defaultDeprecation();
+    /** The default license value for the package.  */
+    abstract fun license(): License?
 
-  /**
-   * The default (generally C/C++) features value for the package.
-   *
-   * <p>Note that this is actually additive with features set by a rule where the rule has priority
-   * for turning specific features on or off.
-   */
-  public abstract FeatureSet features();
+    /** The default [RuleClass.COMPATIBLE_ENVIRONMENT_ATTR] value for the package.  */
+    abstract fun defaultCompatibleWith(): com.google.common.collect.ImmutableSet<Label?>?
 
-  /** The default license value for the package. */
-  @Nullable
-  public abstract License license();
+    /** The default [RuleClass.RESTRICTED_ENVIRONMENT_ATTR] value for the package.  */
+    abstract fun defaultRestrictedTo(): com.google.common.collect.ImmutableSet<Label?>?
 
-  /** The default {@link RuleClass#COMPATIBLE_ENVIRONMENT_ATTR} value for the package. */
-  @Nullable
-  public abstract ImmutableSet<Label> defaultCompatibleWith();
+    /** The default package metadata list value for the package.  */
+    abstract fun defaultPackageMetadata(): com.google.common.collect.ImmutableList<Label?>?
 
-  /** The default {@link RuleClass#RESTRICTED_ENVIRONMENT_ATTR} value for the package. */
-  @Nullable
-  public abstract ImmutableSet<Label> defaultRestrictedTo();
+    /** The transitive visibility settings this package says it belongs to.  */
+    abstract fun transitiveVisibility(): Label?
 
-  /** The default package metadata list value for the package. */
-  @Nullable
-  public abstract ImmutableList<Label> defaultPackageMetadata();
+    // TODO(blaze-team): this should just act like other attributes in that
+    //   it is public and does not have getters defined
+    /** The default (C/C++) header strictness checking mode for the package.  */
+    abstract fun defaultHdrsCheck(): String?
 
-  /** The transitive visibility settings this package says it belongs to. */
-  @Nullable
-  public abstract Label transitiveVisibility();
-
-  // TODO(blaze-team): this should just act like other attributes in that
-  //   it is public and does not have getters defined
-  /** The default (C/C++) header strictness checking mode for the package. */
-  @Nullable
-  abstract String defaultHdrsCheck();
-
-  /** Gets the default header checking mode. */
-  public String getDefaultHdrsCheck() {
-    return defaultHdrsCheck() != null ? defaultHdrsCheck() : "strict";
-  }
-
-  /** Returns whether the default header checking mode has been set or it is the default value. */
-  public boolean isDefaultHdrsCheckSet() {
-    return defaultHdrsCheck() != null;
-  }
-
-  public static Builder builder() {
-    return new AutoValue_PackageArgs.Builder().setFeatures(FeatureSet.EMPTY);
-  }
-
-  abstract Builder toBuilder();
-
-  /** Builder type for {@link PackageArgs}. */
-  @AutoValue.Builder
-  public abstract static class Builder {
-    public abstract Builder setDefaultVisibility(RuleVisibility x);
-
-    public abstract Builder setDefaultTestOnly(Boolean x);
-
-    public abstract Builder setDefaultDeprecation(String x);
-
-    abstract FeatureSet features();
-
-    public abstract Builder setFeatures(FeatureSet x);
-
-    @CanIgnoreReturnValue
-    public final Builder mergeFeatures(FeatureSet x) {
-      return setFeatures(FeatureSet.merge(features(), x));
+    /** Gets the default header checking mode.  */
+    fun getDefaultHdrsCheck(): String? {
+        return if (defaultHdrsCheck() != null) defaultHdrsCheck() else "strict"
     }
 
-    public abstract Builder setLicense(License x);
-
-    /** Note that we don't check dupes in this method. Check beforehand! */
-    public abstract Builder setDefaultCompatibleWith(Iterable<Label> x);
-
-    /** Note that we don't check dupes in this method. Check beforehand! */
-    public abstract Builder setDefaultRestrictedTo(Iterable<Label> x);
-
-    @Nullable
-    abstract ImmutableList<Label> defaultPackageMetadata();
-
-    /** Note that we don't check dupes in this method. Check beforehand! */
-    public abstract Builder setDefaultPackageMetadata(List<Label> x);
-
-    public abstract Builder setTransitiveVisibility(Label x);
-
-    public abstract Builder setDefaultHdrsCheck(String x);
-
-    public abstract PackageArgs build();
-  }
-
-  private static List<Label> throwIfHasDupes(List<Label> labels, String what) throws EvalException {
-    var dupes = ImmutableSortedSet.copyOf(CollectionUtils.duplicatedElementsOf(labels));
-    if (!dupes.isEmpty()) {
-      throw Starlark.errorf("duplicate label(s) in %s: %s", what, Joiner.on(", ").join(dupes));
+    /** Returns whether the default header checking mode has been set or it is the default value.  */
+    fun isDefaultHdrsCheckSet(): Boolean {
+        return defaultHdrsCheck() != null
     }
-    return labels;
-  }
 
-  /**
-   * Processes the given Starlark parameter to the {@code package()/repo()} call into a field on a
-   * {@link Builder} object.
-   */
-  public static void processParam(
-      String name, Object rawValue, String what, LabelConverter labelConverter, Builder builder)
-      throws EvalException {
-    switch (name) {
-      case "default_visibility" ->
-          builder.setDefaultVisibility(
-              RuleVisibility.parse(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter)));
-      case "default_testonly" ->
-          builder.setDefaultTestOnly(Type.BOOLEAN.convert(rawValue, what, labelConverter));
-      case "default_deprecation" ->
-          builder.setDefaultDeprecation(Type.STRING.convert(rawValue, what, labelConverter));
-      case "features" ->
-          builder.mergeFeatures(
-              FeatureSet.parse(Types.STRING_LIST.convert(rawValue, what, labelConverter)));
-      case "licenses" ->
-          builder.setLicense(BuildType.LICENSE.convert(rawValue, what, labelConverter));
-      case "default_compatible_with" ->
-          builder.setDefaultCompatibleWith(
-              throwIfHasDupes(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter), name));
-      case "default_restricted_to" ->
-          builder.setDefaultRestrictedTo(
-              throwIfHasDupes(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter), name));
-      case "default_applicable_licenses", "default_package_metadata" -> {
-        if (builder.defaultPackageMetadata() != null) {
-          throw Starlark.errorf(
-              "Can not set both default_package_metadata and default_applicable_licenses."
-                  + " Move all declarations to default_package_metadata.");
+    abstract fun toBuilder(): Builder
+
+    /** Builder type for [PackageArgs].  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun setDefaultVisibility(x: RuleVisibility?): Builder?
+
+        abstract fun setDefaultTestOnly(x: Boolean?): Builder?
+
+        abstract fun setDefaultDeprecation(x: String?): Builder?
+
+        abstract fun features(): FeatureSet?
+
+        abstract fun setFeatures(x: FeatureSet?): Builder?
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun mergeFeatures(x: FeatureSet?): Builder? {
+            return setFeatures(FeatureSet.merge(features(), x))
         }
-        builder.setDefaultPackageMetadata(
-            throwIfHasDupes(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter), name));
-      }
-      case "default_hdrs_check" ->
-          builder.setDefaultHdrsCheck(Type.STRING.convert(rawValue, what, labelConverter));
-      case "transitive_visibility" -> {
-        Label transitiveVisibility = BuildType.LABEL.convert(rawValue, what, labelConverter);
-        builder.setTransitiveVisibility(transitiveVisibility);
-      }
-      default -> throw Starlark.errorf("unexpected keyword argument: %s", name);
-    }
-  }
 
-  /**
-   * Returns a new {@link PackageArgs} containing the result of merging {@code other} into {@code
-   * this}. {@code other}'s fields take precedence if specified.
-   */
-  public PackageArgs mergeWith(PackageArgs other) {
-    Builder builder = toBuilder();
-    if (other.defaultVisibility() != null) {
-      builder.setDefaultVisibility(other.defaultVisibility());
+        abstract fun setLicense(x: License?): Builder?
+
+        /** Note that we don't check dupes in this method. Check beforehand!  */
+        abstract fun setDefaultCompatibleWith(x: Iterable<Label?>?): Builder?
+
+        /** Note that we don't check dupes in this method. Check beforehand!  */
+        abstract fun setDefaultRestrictedTo(x: Iterable<Label?>?): Builder?
+
+        abstract fun defaultPackageMetadata(): com.google.common.collect.ImmutableList<Label?>?
+
+        /** Note that we don't check dupes in this method. Check beforehand!  */
+        abstract fun setDefaultPackageMetadata(x: MutableList<Label?>?): Builder?
+
+        abstract fun setTransitiveVisibility(x: Label?): Builder?
+
+        abstract fun setDefaultHdrsCheck(x: String?): Builder?
+
+        abstract fun build(): PackageArgs?
     }
-    if (other.defaultTestOnly() != null) {
-      builder.setDefaultTestOnly(other.defaultTestOnly());
+
+    /**
+     * Returns a new [PackageArgs] containing the result of merging `other` into `this`. `other`'s fields take precedence if specified.
+     */
+    fun mergeWith(other: PackageArgs): PackageArgs? {
+        val builder = toBuilder()
+        if (other.defaultVisibility() != null) {
+            builder.setDefaultVisibility(other.defaultVisibility())
+        }
+        if (other.defaultTestOnly() != null) {
+            builder.setDefaultTestOnly(other.defaultTestOnly())
+        }
+        if (other.defaultDeprecation() != null) {
+            builder.setDefaultDeprecation(other.defaultDeprecation())
+        }
+        if (!other.features().equals(FeatureSet.EMPTY)) {
+            builder.mergeFeatures(other.features())
+        }
+        if (other.license() != null) {
+            builder.setLicense(other.license())
+        }
+        if (other.defaultCompatibleWith() != null) {
+            builder.setDefaultCompatibleWith(other.defaultCompatibleWith())
+        }
+        if (other.defaultRestrictedTo() != null) {
+            builder.setDefaultRestrictedTo(other.defaultRestrictedTo())
+        }
+        if (other.defaultPackageMetadata() != null) {
+            builder.setDefaultPackageMetadata(other.defaultPackageMetadata())
+        }
+        if (other.transitiveVisibility() != null) {
+            builder.setTransitiveVisibility(other.transitiveVisibility())
+        }
+        if (other.defaultHdrsCheck() != null) {
+            builder.setDefaultHdrsCheck(other.defaultHdrsCheck())
+        }
+        return builder.build()
     }
-    if (other.defaultDeprecation() != null) {
-      builder.setDefaultDeprecation(other.defaultDeprecation());
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val EMPTY: PackageArgs? = builder().build()
+
+        @kotlin.jvm.JvmField
+        val DEFAULT: PackageArgs? = builder()
+            .setDefaultVisibility(RuleVisibility.Companion.PRIVATE)!!
+            .setDefaultTestOnly(false)!!
+            .setFeatures(FeatureSet.EMPTY)!!
+            .setLicense(License.Companion.NO_LICENSE)!!
+            .setDefaultCompatibleWith(com.google.common.collect.ImmutableSet.of<Label?>())!!
+            .setDefaultRestrictedTo(com.google.common.collect.ImmutableSet.of<Label?>())!!
+            .setDefaultPackageMetadata(com.google.common.collect.ImmutableList.of<Label?>())!!
+            .build()
+
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return Builder().setFeatures(FeatureSet.EMPTY)!!
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun throwIfHasDupes(labels: MutableList<Label?>?, what: String?): MutableList<Label?>? {
+            val dupes: com.google.common.collect.ImmutableSet<out Any?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf(CollectionUtils.duplicatedElementsOf(labels))
+            if (!dupes.isEmpty()) {
+                throw net.starlark.java.eval.Starlark.errorf(
+                    "duplicate label(s) in %s: %s",
+                    what,
+                    com.google.common.base.Joiner.on(", ").join(dupes)
+                )
+            }
+            return labels
+        }
+
+        /**
+         * Processes the given Starlark parameter to the `package()/repo()` call into a field on a
+         * [Builder] object.
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun processParam(
+            name: String, rawValue: Any?, what: String?, labelConverter: LabelConverter?, builder: Builder
+        ) {
+            when (name) {
+                "default_visibility" -> builder.setDefaultVisibility(
+                    RuleVisibility.Companion.parse(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter))
+                )
+
+                "default_testonly" -> builder.setDefaultTestOnly(
+                    com.google.devtools.build.lib.packages.Type.Companion.BOOLEAN.convert(
+                        rawValue,
+                        what,
+                        labelConverter
+                    )
+                )
+
+                "default_deprecation" -> builder.setDefaultDeprecation(
+                    com.google.devtools.build.lib.packages.Type.Companion.STRING.convert(
+                        rawValue,
+                        what,
+                        labelConverter
+                    )
+                )
+
+                "features" -> builder.mergeFeatures(
+                    FeatureSet.parse(
+                        com.google.devtools.build.lib.packages.Types.STRING_LIST.convert(
+                            rawValue,
+                            what,
+                            labelConverter
+                        )
+                    )
+                )
+
+                "licenses" -> builder.setLicense(BuildType.LICENSE.convert(rawValue, what, labelConverter))
+                "default_compatible_with" -> builder.setDefaultCompatibleWith(
+                    throwIfHasDupes(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter), name)
+                )
+
+                "default_restricted_to" -> builder.setDefaultRestrictedTo(
+                    throwIfHasDupes(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter), name)
+                )
+
+                "default_applicable_licenses", "default_package_metadata" -> {
+                    if (builder.defaultPackageMetadata() != null) {
+                        throw net.starlark.java.eval.Starlark.errorf(
+                            "Can not set both default_package_metadata and default_applicable_licenses."
+                                    + " Move all declarations to default_package_metadata."
+                        )
+                    }
+                    builder.setDefaultPackageMetadata(
+                        throwIfHasDupes(BuildType.LABEL_LIST.convert(rawValue, what, labelConverter), name)
+                    )
+                }
+
+                "default_hdrs_check" -> builder.setDefaultHdrsCheck(
+                    com.google.devtools.build.lib.packages.Type.Companion.STRING.convert(
+                        rawValue,
+                        what,
+                        labelConverter
+                    )
+                )
+
+                "transitive_visibility" -> {
+                    val transitiveVisibility: Label? = BuildType.LABEL.convert(rawValue, what, labelConverter)
+                    builder.setTransitiveVisibility(transitiveVisibility)
+                }
+
+                else -> throw net.starlark.java.eval.Starlark.errorf("unexpected keyword argument: %s", name)
+            }
+        }
     }
-    if (!other.features().equals(FeatureSet.EMPTY)) {
-      builder.mergeFeatures(other.features());
-    }
-    if (other.license() != null) {
-      builder.setLicense(other.license());
-    }
-    if (other.defaultCompatibleWith() != null) {
-      builder.setDefaultCompatibleWith(other.defaultCompatibleWith());
-    }
-    if (other.defaultRestrictedTo() != null) {
-      builder.setDefaultRestrictedTo(other.defaultRestrictedTo());
-    }
-    if (other.defaultPackageMetadata() != null) {
-      builder.setDefaultPackageMetadata(other.defaultPackageMetadata());
-    }
-    if (other.transitiveVisibility() != null) {
-      builder.setTransitiveVisibility(other.transitiveVisibility());
-    }
-    if (other.defaultHdrsCheck() != null) {
-      builder.setDefaultHdrsCheck(other.defaultHdrsCheck());
-    }
-    return builder.build();
-  }
 }

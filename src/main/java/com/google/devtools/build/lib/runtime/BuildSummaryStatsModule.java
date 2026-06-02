@@ -89,8 +89,8 @@ public class BuildSummaryStatsModule extends BlazeModule {
 
   @Override
   public void executorInit(CommandEnvironment env, BuildRequest request, ExecutorBuilder builder) {
-    enabled = env.getOptions().getOptions(ExecutionOptions.class).getEnableCriticalPathProfiling();
-    statsSummary = env.getOptions().getOptions(ExecutionOptions.class).getStatsSummary();
+    enabled = env.getOptions().getOptions(ExecutionOptions.class).enableCriticalPathProfiling;
+    statsSummary = env.getOptions().getOptions(ExecutionOptions.class).statsSummary;
     if (enabled) {
       criticalPathComputer =
           new CriticalPathComputer(
@@ -157,8 +157,7 @@ public class BuildSummaryStatsModule extends BlazeModule {
       List<String> items = new ArrayList<>();
       items.add(String.format("Elapsed time: %.3fs", event.getResult().getElapsedSeconds()));
       event
-          .getResult()
-          .getBuildToolLogCollection()
+          .getResult().buildToolLogCollection
           .addDirectValue(
               "elapsed time",
               String.format("%f", event.getResult().getElapsedSeconds())
@@ -172,8 +171,7 @@ public class BuildSummaryStatsModule extends BlazeModule {
           reporter.post(new CriticalPathEvent(criticalPath));
           items.add(criticalPath.toStringSummaryNoRemote());
           event
-              .getResult()
-              .getBuildToolLogCollection()
+              .getResult().buildToolLogCollection
               .addDirectValue(
                   "critical path", criticalPath.toString().getBytes(StandardCharsets.UTF_8));
           logger.atInfo().log("%s", criticalPath);
@@ -186,14 +184,14 @@ public class BuildSummaryStatsModule extends BlazeModule {
           for (CriticalPathComponent stat : criticalPath.components().reverse()) {
             Profiler.instance()
                 .logSimpleTaskDuration(
-                    stat.getStartTimeNanos(),
+                        stat.startTimeNanos,
                     stat.getElapsedTime(),
                     ProfilerTask.CRITICAL_PATH_COMPONENT,
                     stat.prettyPrintAction());
           }
         }
       }
-      if (profileEvent != null && profileEvent.getProfile() != null) {
+      if (profileEvent != null && profileEvent.profile != null) {
         // The profiler has to be stopped before `BuildEventServiceModule#afterCommand` is called,
         // especially when it is a bep artifact. An unstopped bep artifact could lead to a deadlock
         // in `BuildEventServiceModule#afterCommand`.
@@ -206,7 +204,7 @@ public class BuildSummaryStatsModule extends BlazeModule {
         // modules in the profile, which is a compromise we are willing to make.
         try {
           Profiler.instance().stop();
-          profileEvent.getProfile().publish(event.getResult().getBuildToolLogCollection());
+          profileEvent.profile.publish(event.getResult().buildToolLogCollection);
         } catch (IOException e) {
           reporter.handle(Event.error("Error while writing profile file: " + e.getMessage()));
         }
@@ -240,8 +238,7 @@ public class BuildSummaryStatsModule extends BlazeModule {
       }
 
       event
-          .getResult()
-          .getBuildToolLogCollection()
+          .getResult().buildToolLogCollection
           .addDirectValue("process stats", spawnSummaryString.getBytes(StandardCharsets.UTF_8));
     } finally {
       if (criticalPathComputer != null) {

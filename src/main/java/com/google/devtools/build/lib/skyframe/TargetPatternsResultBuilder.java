@@ -68,7 +68,7 @@ class TargetPatternsResultBuilder {
   private Target getExistingTarget(Label label) {
     Package pkg = Preconditions.checkNotNull(packages.get(label.getPackageIdentifier()), label);
     try {
-      return pkg.getTarget(label.getName());
+      return pkg.getTarget(label.name);
     } catch (NoSuchTargetException e) {
       // This exception should not raise, because we are processing it during TargetPatternValues
       // evaluation in SkyframeTargetPatternEvaluator#parseTargetPatternKeys and values with errors

@@ -11,22 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.cquery;
+package com.google.devtools.build.lib.query2.cquery
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.query2.engine.Callback;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ThreadSafeMutableSet;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QueryExpressionContext;
-import com.google.devtools.build.lib.query2.engine.QueryUtil;
-import java.util.List;
+import com.google.devtools.build.lib.query2.common.CqueryNode
+import com.google.devtools.build.lib.query2.cquery.ConfiguredTargetQueryEnvironment
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ThreadSafeMutableSet
+import com.google.devtools.build.lib.query2.engine.QueryExpression
+import com.google.devtools.build.lib.query2.engine.QueryExpressionContext
+import com.google.devtools.build.lib.query2.engine.QueryUtil
 
 /**
  * A "config" query expression for cquery. The first argument is the expression to be evaluated. The
@@ -34,57 +29,49 @@ import java.util.List;
  * annotates label outputs with) to specify which configuration the user is seeking to query in. If
  * some but not all results of expr can be found in the specified config, the subset that can be is
  * returned. If no results of expr can be found in the specified config, an error is thrown.
- *
+ * 
  * <pre> expr ::= CONFIG '(' expr ',' word ')'</pre>
  */
-public final class ConfigFunction implements QueryFunction {
+class ConfigFunction : QueryFunction {
+    val name: String
+        get() = "config"
 
-  public ConfigFunction() {
-  }
+    val mandatoryArguments: Int
+        get() = 2
 
-  @Override
-  public String getName() {
-    return "config";
-  }
+    val argumentTypes: MutableList<com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType>
+        get() = com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType?>(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType.EXPRESSION,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType.WORD
+        )
 
-  @Override
-  public int getMandatoryArguments() {
-    return 2;
-  }
+    /**
+     * This function is only viable with ConfiguredTargetQueryEnvironment which extends [ ].
+     */
+    override fun <T> eval(
+        env: QueryEnvironment<T?>,
+        context: QueryExpressionContext<T?>?,
+        expression: QueryExpression?,
+        args: MutableList<com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument>,
+        callback: com.google.devtools.build.lib.query2.engine.Callback<T?>?
+    ): QueryTaskFuture<java.lang.Void?>? {
+        val targetExpression: com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument = args.get(0)
+        var configuration = args.get(1).toString()
+        // Turn "'string'" to "string" (remove the surrounding apostrophes).
+        configuration = configuration.substring(1, configuration.length - 1)
 
-  @Override
-  public List<ArgumentType> getArgumentTypes() {
-    return ImmutableList.of(ArgumentType.EXPRESSION, ArgumentType.WORD);
-  }
+        val targetsFuture: QueryTaskFuture<ThreadSafeMutableSet<T?>?>? =
+            QueryUtil.evalAll<T?>(env, context, targetExpression.getExpression())
 
-  /**
-   * This function is only viable with ConfiguredTargetQueryEnvironment which extends {@link
-   * AbstractBlazeQueryEnvironment <CqueryNode>}.
-   */
-  @Override
-  @SuppressWarnings("unchecked")
-  public <T> QueryTaskFuture<Void> eval(
-      QueryEnvironment<T> env,
-      QueryExpressionContext<T> context,
-      QueryExpression expression,
-      List<Argument> args,
-      final Callback<T> callback) {
-
-    Argument targetExpression = args.get(0);
-    String configuration = args.get(1).toString();
-    // Turn "'string'" to "string" (remove the surrounding apostrophes).
-    configuration = configuration.substring(1, configuration.length() - 1);
-
-    QueryTaskFuture<ThreadSafeMutableSet<T>> targetsFuture =
-        QueryUtil.evalAll(env, context, targetExpression.getExpression());
-
-    return env.whenSucceedsCall(
-        targetsFuture,
-        ((ConfiguredTargetQueryEnvironment) env)
-            .getConfiguredTargetsForConfigFunction(
-                targetExpression.toString(),
-                targetsFuture,
-                configuration,
-                (Callback<CqueryNode>) callback));
-  }
+        return env.whenSucceedsCall<java.lang.Void?>(
+            targetsFuture,
+            (env as ConfiguredTargetQueryEnvironment)
+                .getConfiguredTargetsForConfigFunction<T?>(
+                    targetExpression.toString(),
+                    targetsFuture,
+                    configuration,
+                    callback as com.google.devtools.build.lib.query2.engine.Callback<CqueryNode?>?
+                )
+        )
+    }
 }

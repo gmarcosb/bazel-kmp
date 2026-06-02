@@ -986,7 +986,7 @@ public class CcCommonTest extends BuildViewTestCase {
         )
         """);
     ConfiguredTarget starlarkTarget = getConfiguredTarget("//a:bin_test");
-    RunEnvironmentInfo provider = starlarkTarget.get(RunEnvironmentInfo.PROVIDER);
+    RunEnvironmentInfo provider = starlarkTarget.get(RunEnvironmentInfo.provider);
     assertThat(provider.getEnvironment()).containsEntry("SOME_KEY", "-Wl,@a/a.lds");
   }
 

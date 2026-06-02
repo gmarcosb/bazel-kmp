@@ -893,7 +893,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
     ConfiguredTarget target = getConfiguredTarget("//test/starlark:cr");
 
     assertThat(target.getLabel().toString()).isEqualTo("//test/starlark:cr");
-    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.provider);
     assertWithMessage("InstrumentedFilesInfo should be set.").that(provider).isNotNull();
     assertThat(ActionsTestUtil.baseArtifactNames(provider.getInstrumentedFiles())).isEmpty();
   }
@@ -931,7 +931,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
     ConfiguredTarget target = getConfiguredTarget("//test/starlark:cr");
 
     assertThat(target.getLabel().toString()).isEqualTo("//test/starlark:cr");
-    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.provider);
     assertWithMessage("InstrumentedFilesInfo should be set.").that(provider).isNotNull();
     assertThat(ActionsTestUtil.baseArtifactNames(provider.getInstrumentedFiles()))
         .containsExactly("a.txt", "A.java");
@@ -969,7 +969,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test/starlark:cr");
 
-    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.provider);
     assertWithMessage("InstrumentedFilesInfo should be set.").that(provider).isNotNull();
     assertThat(ActionsTestUtil.baseArtifactNames(provider.getInstrumentedFiles())).isEmpty();
   }
@@ -1093,7 +1093,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
     assertThat(
             ActionsTestUtil.baseArtifactNames(
                 customRule
-                    .get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+                    .get(InstrumentedFilesInfo.provider)
                     .getBaselineCoverageArtifacts()
                     .toList()
                     .stream()
@@ -1182,7 +1182,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
     assertThat(
             ActionsTestUtil.baseArtifactNames(
                 getConfiguredTarget("//test/starlark:foo")
-                    .get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+                    .get(InstrumentedFilesInfo.provider)
                     .getCoverageSupportFiles()))
         .containsExactly("foo.file1", "foo.file2");
   }
@@ -1219,7 +1219,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
     assertThat(
             ActionsTestUtil.baseArtifactNames(
                 getConfiguredTarget("//test/starlark:foo")
-                    .get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+                    .get(InstrumentedFilesInfo.provider)
                     .getCoverageSupportFiles()))
         .containsExactly("foo.file1", "foo.file2");
   }
@@ -1340,7 +1340,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
     // for coverage to work at all.
     useConfiguration("--collect_code_coverage");
     ConfiguredTarget target = getConfiguredTarget("//test/starlark:outer");
-    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+    InstrumentedFilesInfo provider = target.get(InstrumentedFilesInfo.provider);
     assertWithMessage("InstrumentedFilesInfo should be set.").that(provider).isNotNull();
     assertThat(ActionsTestUtil.baseArtifactNames(provider.getInstrumentedFiles()))
         .containsExactly("wrapped.cc", "wrapped_list.cc");
@@ -2713,9 +2713,9 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:r");
     AnalysisTestResultInfo info =
-        (AnalysisTestResultInfo) target.get(AnalysisTestResultInfo.STARLARK_CONSTRUCTOR.getKey());
-    assertThat(info.getSuccess()).isTrue();
-    assertThat(info.getMessage()).isEqualTo("message contents");
+        (AnalysisTestResultInfo) target.get(AnalysisTestResultInfo.provider.getKey());
+    assertThat(info.success).isTrue();
+    assertThat(info.message).isEqualTo("message contents");
   }
 
   @Test
@@ -2765,9 +2765,9 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//test:r");
     AnalysisTestResultInfo info =
-        (AnalysisTestResultInfo) target.get(AnalysisTestResultInfo.STARLARK_CONSTRUCTOR.getKey());
-    assertThat(info.getSuccess()).isTrue();
-    assertThat(info.getMessage()).isEqualTo("message contents");
+        (AnalysisTestResultInfo) target.get(AnalysisTestResultInfo.provider.getKey());
+    assertThat(info.success).isTrue();
+    assertThat(info.message).isEqualTo("message contents");
 
     // TODO(cparsons): Verify implicit action registration via AnalysisTestResultInfo.
   }
@@ -2941,7 +2941,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
             .getBuildSetting();
 
     assertThat(buildSetting.getType()).isEqualTo(Type.STRING);
-    assertThat(buildSetting.isFlag()).isTrue();
+    assertThat(buildSetting.isFlag).isTrue();
   }
 
   @Test
@@ -2966,7 +2966,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
             .getBuildSetting();
 
     assertThat(buildSetting.getType()).isEqualTo(Type.STRING);
-    assertThat(buildSetting.isFlag()).isFalse();
+    assertThat(buildSetting.isFlag).isFalse();
   }
 
   @Test
@@ -2991,7 +2991,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
             .getBuildSetting();
 
     assertThat(buildSetting.getType()).isEqualTo(Type.STRING);
-    assertThat(buildSetting.isFlag()).isFalse();
+    assertThat(buildSetting.isFlag).isFalse();
   }
 
   @Test
@@ -4236,7 +4236,7 @@ public class StarlarkIntegrationTest extends BuildViewTestCase {
         """);
 
     ConfiguredTarget starlarkTarget = getConfiguredTarget("//examples:my_target");
-    RunEnvironmentInfo provider = starlarkTarget.get(RunEnvironmentInfo.PROVIDER);
+    RunEnvironmentInfo provider = starlarkTarget.get(RunEnvironmentInfo.provider);
 
     assertThat(provider.getEnvironment()).containsExactly("FIXED", "fixed");
     assertThat(provider.getInheritedEnvironment()).containsExactly("INHERITED");

@@ -78,7 +78,7 @@ public class PlatformTestCase extends BuildViewTestCase {
       ImmutableList.Builder<String> lines = ImmutableList.builder();
 
       // Add the constraint setting.
-      lines.add("constraint_setting(name = '" + label.getName() + "',");
+      lines.add("constraint_setting(name = '" + label.name + "',");
       if (!Strings.isNullOrEmpty(defaultConstraintValue)) {
         lines.add("  default_constraint_value = ':" + defaultConstraintValue + "',");
       }
@@ -89,7 +89,7 @@ public class PlatformTestCase extends BuildViewTestCase {
         lines.add(
             "constraint_value(",
             "  name = '" + constraintValue + "',",
-            "  constraint_setting = ':" + label.getName() + "',",
+            "  constraint_setting = ':" + label.name + "',",
             ")");
       }
 
@@ -141,7 +141,7 @@ public class PlatformTestCase extends BuildViewTestCase {
     public List<String> lines() {
       ImmutableList.Builder<String> lines = ImmutableList.builder();
 
-      lines.add("platform(", "  name = '" + label.getName() + "',");
+      lines.add("platform(", "  name = '" + label.name + "',");
       if (parentLabel != null) {
         lines.add("  parents = ['" + parentLabel + "'],");
       }

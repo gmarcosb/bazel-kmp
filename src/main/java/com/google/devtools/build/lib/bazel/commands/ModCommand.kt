@@ -11,829 +11,913 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.commands;
+package com.google.devtools.build.lib.bazel.commands
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableListMultimap.toImmutableListMultimap;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions.Charset.UTF8;
-import static com.google.devtools.build.lib.runtime.Command.BuildPhase.LOADS;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.stream.Collectors.joining;
+import com.google.common.base.Preconditions
+import com.google.common.collect.*
+import com.google.common.io.CharSource
+import com.google.devtools.build.lib.analysis.NoBuildEvent
+import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions
+import com.google.devtools.build.lib.cmdline.RepositoryMapping
+import com.google.devtools.build.lib.events.Event
+import com.google.devtools.build.lib.profiler.Profiler
+import com.google.devtools.build.lib.profiler.ProfilerTask
+import com.google.devtools.build.lib.runtime.Command
+import com.google.devtools.build.lib.shell.CommandException
+import com.google.devtools.build.skyframe.EvaluationContext
+import com.google.devtools.common.options.OptionsParsingException
+import com.google.devtools.common.options.OptionsParsingResult
+import java.io.Writer
+import java.lang.String
+import java.nio.charset.StandardCharsets
+import java.util.*
+import java.util.function.Function
+import java.util.function.IntFunction
+import kotlin.Boolean
+import kotlin.Exception
+import kotlin.IllegalStateException
+import kotlin.Int
+import kotlin.arrayOf
+import kotlin.toString
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableBiMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Iterables;
-import com.google.common.io.CharSource;
-import com.google.devtools.build.lib.analysis.NoBuildEvent;
-import com.google.devtools.build.lib.analysis.NoBuildRequestFinishedEvent;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelDepGraphValue;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModTidyValue;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.bazel.bzlmod.RootModuleFileFixup;
-import com.google.devtools.build.lib.bazel.bzlmod.SingleExtensionValue;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ExtensionArg;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ExtensionArg.ExtensionArgConverter;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.InvalidArgumentException;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModExecutor;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions.ModSubcommand;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModOptions.ModSubcommandConverter;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModuleArg;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModuleArg.ModuleArgConverter;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionValue;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.runtime.BlazeCommand;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.LoadingPhaseThreadsOption;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.ModCommand.Code;
-import com.google.devtools.build.lib.shell.AbnormalTerminationException;
-import com.google.devtools.build.lib.shell.CommandException;
-import com.google.devtools.build.lib.skyframe.BzlLoadCycleReporter;
-import com.google.devtools.build.lib.skyframe.BzlmodRepoCycleReporter;
-import com.google.devtools.build.lib.skyframe.RepositoryMappingValue;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.CommandBuilder;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.InterruptedFailureDetails;
-import com.google.devtools.build.lib.util.MaybeCompleteSet;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.CyclesReporter;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.OptionsParsingResult;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.stream.JsonWriter;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.IntStream;
-import javax.annotation.Nullable;
-
-/** Queries the Bzlmod external dependency graph. */
+/** Queries the Bzlmod external dependency graph.  */
 @Command(
-    name = ModCommand.NAME,
-    buildPhase = LOADS,
-    options = {
-      CoreOptions.class, // for --action_env, which affects the repo env
-      ModOptions.class,
-      PackageOptions.class,
-      LoadingPhaseThreadsOption.class
-    },
+    name = ModCommand.Companion.NAME,
+    buildPhase = BuildPhase.LOADS,
+    options = [CoreOptions::class // for --action_env, which affects the repo env
+        , ModOptions::class, PackageOptions::class, LoadingPhaseThreadsOption::class
+    ],
     help = "resource:mod.txt",
     shortDescription = "Queries the Bzlmod external dependency graph",
-    allowResidue = true)
-public final class ModCommand implements BlazeCommand {
-
-  public static final String NAME = "mod";
-
-  @Override
-  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    env.getEventBus()
-        .post(
-            new NoBuildEvent(
-                env.getCommandName(),
-                env.getCommandStartTime(),
-                /* separateFinishedEvent= */ true,
-                /* showProgress= */ true,
-                /* id= */ null));
-    BlazeCommandResult result = execInternal(env, options);
-    env.getEventBus()
-        .post(
-            new NoBuildRequestFinishedEvent(
-                result.getExitCode(), env.getRuntime().getClock().currentTimeMillis()));
-    return result;
-  }
-
-  private void validateArgs(ModSubcommand subcommand, ModOptions modOptions, List<String> args)
-      throws InvalidArgumentException {
-
-    // Validate output format.
-    switch (subcommand) {
-      case SHOW_REPO -> {
-        switch (modOptions.getOutputFormat()) {
-          case TEXT, STREAMED_JSONPROTO, STREAMED_PROTO -> {} // supported
-          default ->
-              throw new InvalidArgumentException(
-                  String.format(
-                      "Invalid --output '%s' for the 'show_repo' subcommand. Only 'text',"
-                          + " 'streamed_jsonproto', and 'streamed_proto' are supported.",
-                      modOptions.getOutputFormat()),
-                  Code.INVALID_ARGUMENTS);
-        }
-      }
-      case SHOW_EXTENSION -> {
-        if (modOptions.getOutputFormat() != ModOptions.OutputFormat.TEXT) {
-          throw new InvalidArgumentException(
-              String.format(
-                  "Invalid --output '%s' for the 'show_extension' subcommand. Only 'text' is"
-                      + " supported.",
-                  modOptions.getOutputFormat()),
-              Code.INVALID_ARGUMENTS);
-        }
-      }
-      case ModSubcommand sub when sub.isGraph() -> {
-        switch (modOptions.getOutputFormat()) {
-          case TEXT, JSON, GRAPH -> {} // supported
-          default ->
-              throw new InvalidArgumentException(
-                  String.format(
-                      "Invalid --output '%s' for the '%s' subcommand. "
-                          + "Only 'text', 'json', and 'graph' are supported.",
-                      modOptions.getOutputFormat(), sub),
-                  Code.INVALID_ARGUMENTS);
-        }
-      }
-      // We don't validate other subcommands yet since they are less confusing.
-      default -> {}
+    allowResidue = true
+)
+class ModCommand : BlazeCommand {
+    override fun exec(env: CommandEnvironment, options: OptionsParsingResult): BlazeCommandResult {
+        env.getEventBus()
+            .post(
+                NoBuildEvent(
+                    env.getCommandName(),
+                    env.getCommandStartTime(),  /* separateFinishedEvent= */
+                    true,  /* showProgress= */
+                    true,  /* id= */
+                    null
+                )
+            )
+        val result: BlazeCommandResult = execInternal(env, options)
+        env.getEventBus()
+            .post(
+                NoBuildRequestFinishedEvent(
+                    result.getExitCode(), env.getRuntime().getClock().currentTimeMillis()
+                )
+            )
+        return result
     }
 
-    if (subcommand == ModSubcommand.SHOW_REPO) {
-      int selectedModes = 0;
-      if (modOptions.getAllRepos()) {
-        selectedModes++;
-      }
-      if (modOptions.getAllVisibleRepos()) {
-        selectedModes++;
-      }
-      if (!args.isEmpty()) {
-        selectedModes++;
-      }
-      if (selectedModes > 1) {
-        throw new InvalidArgumentException(
-            "the 'show_repo' command requires exactly one of --all_repos, --all_visible_repos, or a"
-                + " list of repo arguments",
-            Code.TOO_MANY_ARGUMENTS);
-      }
-    } else {
-      if (modOptions.getAllRepos()) {
-        throw new InvalidArgumentException(
-            String.format("the '%s' command doesn't take the --all_repos option", subcommand),
-            Code.INVALID_ARGUMENTS);
-      }
-      if (modOptions.getAllVisibleRepos()) {
-        throw new InvalidArgumentException(
-            String.format(
-                "the '%s' command doesn't take the --all_visible_repos option", subcommand),
-            Code.INVALID_ARGUMENTS);
-      }
-    }
-  }
+    @Throws(InvalidArgumentException::class)
+    private fun validateArgs(subcommand: ModSubcommand, modOptions: ModOptions, args: MutableList<String>) {
+        // Validate output format.
 
-  private BlazeCommandResult execInternal(CommandEnvironment env, OptionsParsingResult options) {
-    ModOptions modOptions = options.getOptions(ModOptions.class);
-    Preconditions.checkArgument(modOptions != null);
-
-    if (options.getResidue().isEmpty()) {
-      String errorMessage =
-          String.format(
-              "No subcommand specified, choose one of : %s.", ModSubcommand.printValues());
-      return reportAndCreateFailureResult(env, errorMessage, Code.MOD_COMMAND_UNKNOWN);
-    }
-
-    // The first element in the residue must be the subcommand, and then comes a list of arguments.
-    String subcommandStr = options.getResidue().get(0);
-    ModSubcommand subcommand;
-    try {
-      subcommand = new ModSubcommandConverter().convert(subcommandStr);
-    } catch (OptionsParsingException e) {
-      String errorMessage =
-          String.format("Invalid subcommand, choose one from : %s.", ModSubcommand.printValues());
-      return reportAndCreateFailureResult(env, errorMessage, Code.MOD_COMMAND_UNKNOWN);
-    }
-    List<String> args = options.getResidue().subList(1, options.getResidue().size());
-
-    // Validate and parse args as early as possible, so we don't have to
-    // wait for Skyframe evaluations to happen before failing due to a simple error.
-    try {
-      validateArgs(subcommand, modOptions, args);
-    } catch (InvalidArgumentException e) {
-      return reportAndCreateFailureResult(env, e.getMessage(), e.getCode());
-    }
-
-    ImmutableList.Builder<RepositoryMappingValue.Key> repositoryMappingKeysBuilder =
-        ImmutableList.builder();
-    if (subcommand.equals(ModSubcommand.DUMP_REPO_MAPPING)) {
-      if (args.isEmpty()) {
-        // Make this case an error so that we are free to add a mode that emits all mappings in a
-        // single JSON object later.
-        return reportAndCreateFailureResult(
-            env, "No repository name(s) specified", Code.INVALID_ARGUMENTS);
-      }
-      for (String arg : args) {
-        try {
-          repositoryMappingKeysBuilder.add(RepositoryMappingValue.key(RepositoryName.create(arg)));
-        } catch (LabelSyntaxException e) {
-          return reportAndCreateFailureResult(env, e.getMessage(), Code.INVALID_ARGUMENTS);
-        }
-      }
-    }
-    ImmutableList<RepositoryMappingValue.Key> repoMappingKeys =
-        repositoryMappingKeysBuilder.build();
-
-    BazelDepGraphValue depGraphValue;
-    @Nullable BazelModuleInspectorValue moduleInspector;
-    @Nullable BazelModTidyValue modTidyValue;
-    ImmutableList<RepositoryMappingValue> repoMappingValues;
-
-    SkyframeExecutor skyframeExecutor = env.getSkyframeExecutor();
-    LoadingPhaseThreadsOption threadsOption = options.getOptions(LoadingPhaseThreadsOption.class);
-
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setParallelism(threadsOption.getThreads())
-            .setEventHandler(env.getReporter())
-            .build();
-
-    try {
-      env.syncPackageLoading(options);
-
-      ImmutableSet.Builder<SkyKey> keys = ImmutableSet.builder();
-      if (subcommand.equals(ModSubcommand.DUMP_REPO_MAPPING)) {
-        keys.addAll(repoMappingKeys);
-      } else if (subcommand.equals(ModSubcommand.TIDY)) {
-        keys.add(BazelModTidyValue.KEY);
-      } else {
-        keys.add(BazelDepGraphValue.KEY, BazelModuleInspectorValue.KEY);
-      }
-      EvaluationResult<SkyValue> evaluationResult =
-          skyframeExecutor.prepareAndGet(keys.build(), evaluationContext);
-
-      if (evaluationResult.hasError()) {
-        var cycleInfo = evaluationResult.getError().getCycleInfo();
-        if (!cycleInfo.isEmpty()) {
-          // We don't expect target-level cycles here, so restrict to the subset of reporters that
-          // are relevant for the (conceptual) loading phase.
-          new CyclesReporter(new BzlmodRepoCycleReporter(), new BzlLoadCycleReporter())
-              .reportCycles(cycleInfo, cycleInfo.getFirst().getTopKey(), env.getReporter());
-        }
-        Exception e = evaluationResult.getError().getException();
-        String message = "Unexpected error during module graph evaluation.";
-        if (e != null) {
-          message = e.getMessage();
-        }
-        return reportAndCreateFailureResult(env, message, Code.MOD_COMMAND_UNKNOWN);
-      }
-
-      depGraphValue = (BazelDepGraphValue) evaluationResult.get(BazelDepGraphValue.KEY);
-
-      moduleInspector =
-          (BazelModuleInspectorValue) evaluationResult.get(BazelModuleInspectorValue.KEY);
-
-      modTidyValue = (BazelModTidyValue) evaluationResult.get(BazelModTidyValue.KEY);
-
-      repoMappingValues =
-          repoMappingKeys.stream()
-              .map(evaluationResult::get)
-              .map(RepositoryMappingValue.class::cast)
-              .collect(toImmutableList());
-    } catch (InterruptedException e) {
-      String errorMessage = "mod command interrupted: " + e.getMessage();
-      env.getReporter().handle(Event.error(errorMessage));
-      return BlazeCommandResult.detailedExitCode(
-          InterruptedFailureDetails.detailedExitCode(errorMessage));
-    } catch (AbruptExitException e) {
-      env.getReporter().handle(Event.error(null, "Unknown error: " + e.getMessage()));
-      return BlazeCommandResult.detailedExitCode(e.getDetailedExitCode());
-    }
-
-    // Handle commands that do not require BazelModuleInspectorValue.
-    if (subcommand.equals(ModSubcommand.DUMP_REPO_MAPPING)) {
-      String missingRepos =
-          IntStream.range(0, repoMappingKeys.size())
-              .filter(i -> repoMappingValues.get(i) == RepositoryMappingValue.NOT_FOUND_VALUE)
-              .mapToObj(repoMappingKeys::get)
-              .map(RepositoryMappingValue.Key::repoName)
-              .map(RepositoryName::getName)
-              .collect(joining(", "));
-      if (!missingRepos.isEmpty()) {
-        return reportAndCreateFailureResult(
-            env, "Repositories not found: " + missingRepos, Code.INVALID_ARGUMENTS);
-      }
-      try (SilentCloseable c =
-          Profiler.instance().profile(ProfilerTask.BZLMOD, "execute mod " + subcommand)) {
-        dumpRepoMappings(
-            repoMappingValues,
-            new OutputStreamWriter(
-                env.getReporter().getOutErr().getOutputStream(),
-                modOptions.getCharset() == UTF8 ? UTF_8 : US_ASCII));
-      } catch (IOException e) {
-        throw new IllegalStateException(e);
-      }
-      return BlazeCommandResult.success();
-    } else if (subcommand == ModSubcommand.TIDY) {
-      // tidy doesn't take extra arguments.
-      if (!args.isEmpty()) {
-        return reportAndCreateFailureResult(
-            env, "the 'tidy' command doesn't take extra arguments", Code.TOO_MANY_ARGUMENTS);
-      }
-      try (SilentCloseable c =
-          Profiler.instance().profile(ProfilerTask.BZLMOD, "execute mod " + subcommand)) {
-        return runTidy(env, modTidyValue);
-      }
-    }
-
-    // Extract and check the --base_module argument first to use it when parsing the other args.
-    // Can only be a TargetModule or a repoName relative to the ROOT.
-    ModuleKey baseModuleKey;
-    AugmentedModule rootModule = moduleInspector.depGraph().get(ModuleKey.ROOT);
-    try {
-      ImmutableSet<ModuleKey> keys =
-          modOptions
-              .getBaseModule()
-              .resolveToModuleKeys(
-                  moduleInspector.modulesIndex(),
-                  moduleInspector.depGraph(),
-                  moduleInspector.moduleKeyToCanonicalNames(),
-                  rootModule.deps(),
-                  rootModule.unusedDeps(),
-                  false,
-                  false);
-      if (keys.size() > 1) {
-        throw new InvalidArgumentException(
-            String.format(
-                "The --base_module option can only specify exactly one module version, choose one"
-                    + " of: %s.",
-                keys.stream().map(ModuleKey::toString).collect(joining(", "))),
-            Code.INVALID_ARGUMENTS);
-      }
-      baseModuleKey = Iterables.getOnlyElement(keys);
-    } catch (InvalidArgumentException e) {
-      return reportAndCreateFailureResult(
-          env,
-          String.format(
-              "In --base_module %s option: %s (Note that unused modules cannot be used here)",
-              modOptions.getBaseModule(), e.getMessage()),
-          Code.INVALID_ARGUMENTS);
-    }
-
-    // The args can have different types depending on the subcommand, so create multiple containers
-    // which can be filled accordingly.
-    ImmutableSet<ModuleKey> argsAsModules = null;
-    ImmutableSortedSet<ModuleExtensionId> argsAsExtensions = null;
-    ImmutableMap<String, RepositoryName> argsAsRepos = null;
-
-    AugmentedModule baseModule =
-        Objects.requireNonNull(moduleInspector.depGraph().get(baseModuleKey));
-    RepositoryMapping baseModuleMapping = depGraphValue.getFullRepoMapping(baseModuleKey);
-    try {
-      switch (subcommand) {
-        case GRAPH -> {
-          // GRAPH doesn't take extra arguments.
-          if (!args.isEmpty()) {
-            throw new InvalidArgumentException(
-                "the 'graph' command doesn't take extra arguments", Code.TOO_MANY_ARGUMENTS);
-          }
-        }
-        case SHOW_REPO -> {
-          argsAsRepos =
-              getReposToShow(modOptions, moduleInspector, depGraphValue, baseModuleMapping, args);
-        }
-        case SHOW_EXTENSION -> {
-          ImmutableSortedSet.Builder<ModuleExtensionId> extensionsBuilder =
-              new ImmutableSortedSet.Builder<>(ModuleExtensionId.LEXICOGRAPHIC_COMPARATOR);
-          for (String arg : args) {
-            try {
-              extensionsBuilder.add(
-                  ExtensionArgConverter.INSTANCE
-                      .convert(arg)
-                      .resolveToExtensionId(
-                          moduleInspector.modulesIndex(),
-                          moduleInspector.depGraph(),
-                          moduleInspector.moduleKeyToCanonicalNames(),
-                          baseModule.deps(),
-                          baseModule.unusedDeps()));
-            } catch (InvalidArgumentException | OptionsParsingException e) {
-              throw new InvalidArgumentException(
-                  String.format("In extension argument %s: %s", arg, e.getMessage()),
-                  Code.INVALID_ARGUMENTS,
-                  e);
+        when (subcommand) {
+            ModSubcommand.SHOW_REPO -> {
+                when (modOptions.getOutputFormat()) {
+                    ModOptions.OutputFormat.TEXT, ModOptions.OutputFormat.STREAMED_JSONPROTO, ModOptions.OutputFormat.STREAMED_PROTO -> {}
+                    else -> throw InvalidArgumentException(
+                        String.format(
+                            "Invalid --output '%s' for the 'show_repo' subcommand. Only 'text',"
+                                    + " 'streamed_jsonproto', and 'streamed_proto' are supported.",
+                            modOptions.getOutputFormat()
+                        ),
+                        Code.INVALID_ARGUMENTS
+                    )
+                }
             }
-          }
-          argsAsExtensions = extensionsBuilder.build();
-        }
-        default -> {
-          ImmutableSet.Builder<ModuleKey> keysBuilder = new ImmutableSet.Builder<>();
-          for (String arg : args) {
-            try {
-              keysBuilder.addAll(
-                  ModuleArgConverter.INSTANCE
-                      .convert(arg)
-                      .resolveToModuleKeys(
-                          moduleInspector.modulesIndex(),
-                          moduleInspector.depGraph(),
-                          moduleInspector.moduleKeyToCanonicalNames(),
-                          baseModule.deps(),
-                          baseModule.unusedDeps(),
-                          modOptions.getIncludeUnused(),
-                          /* warnUnused= */ true));
-            } catch (InvalidArgumentException | OptionsParsingException e) {
-              throw new InvalidArgumentException(
-                  String.format("In module argument %s: %s", arg, e.getMessage()),
-                  Code.INVALID_ARGUMENTS);
+
+            ModSubcommand.SHOW_EXTENSION -> {
+                if (modOptions.getOutputFormat() != ModOptions.OutputFormat.TEXT) {
+                    throw InvalidArgumentException(
+                        String.format(
+                            "Invalid --output '%s' for the 'show_extension' subcommand. Only 'text' is"
+                                    + " supported.",
+                            modOptions.getOutputFormat()
+                        ),
+                        Code.INVALID_ARGUMENTS
+                    )
+                }
             }
-          }
-          argsAsModules = keysBuilder.build();
+
+            -> {
+                when (modOptions.getOutputFormat()) {
+                    ModOptions.OutputFormat.TEXT, ModOptions.OutputFormat.JSON, ModOptions.OutputFormat.GRAPH -> {}
+                    else -> throw InvalidArgumentException(
+                        String.format(
+                            "Invalid --output '%s' for the '%s' subcommand. "
+                                    + "Only 'text', 'json', and 'graph' are supported.",
+                            modOptions.getOutputFormat(), sub
+                        ),
+                        Code.INVALID_ARGUMENTS
+                    )
+                }
+            }
+
+            else -> {}
         }
-      }
-    } catch (InvalidArgumentException e) {
-      return reportAndCreateFailureResult(env, e.getMessage(), e.getCode());
-    }
-    /* Extract and check the --from and --extension_usages argument */
-    ImmutableSet<ModuleKey> fromKeys;
-    ImmutableSet<ModuleKey> usageKeys;
-    try {
-      fromKeys =
-          moduleArgListToKeys(
-              modOptions.getModulesFrom(),
-              moduleInspector.modulesIndex(),
-              moduleInspector.depGraph(),
-              moduleInspector.moduleKeyToCanonicalNames(),
-              baseModule.deps(),
-              baseModule.unusedDeps(),
-              modOptions.getIncludeUnused());
-    } catch (InvalidArgumentException e) {
-      return reportAndCreateFailureResult(
-          env,
-          String.format("In --from %s option: %s", modOptions.getModulesFrom(), e.getMessage()),
-          Code.INVALID_ARGUMENTS);
+
+        if (subcommand == ModSubcommand.SHOW_REPO) {
+            var selectedModes = 0
+            if (modOptions.getAllRepos()) {
+                selectedModes++
+            }
+            if (modOptions.getAllVisibleRepos()) {
+                selectedModes++
+            }
+            if (!args.isEmpty()) {
+                selectedModes++
+            }
+            if (selectedModes > 1) {
+                throw InvalidArgumentException(
+                    "the 'show_repo' command requires exactly one of --all_repos, --all_visible_repos, or a"
+                            + " list of repo arguments",
+                    Code.TOO_MANY_ARGUMENTS
+                )
+            }
+        } else {
+            if (modOptions.getAllRepos()) {
+                throw InvalidArgumentException(
+                    String.format("the '%s' command doesn't take the --all_repos option", subcommand),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            if (modOptions.getAllVisibleRepos()) {
+                throw InvalidArgumentException(
+                    String.format(
+                        "the '%s' command doesn't take the --all_visible_repos option", subcommand
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+        }
     }
 
-    try {
-      usageKeys =
-          moduleArgListToKeys(
-              modOptions.getExtensionUsages(),
-              moduleInspector.modulesIndex(),
-              moduleInspector.depGraph(),
-              moduleInspector.moduleKeyToCanonicalNames(),
-              baseModule.deps(),
-              baseModule.unusedDeps(),
-              modOptions.getIncludeUnused());
-    } catch (InvalidArgumentException e) {
-      return reportAndCreateFailureResult(
-          env,
-          String.format(
-              "In --extension_usages %s option: %s (Note that unused modules cannot be used"
-                  + " here)",
-              modOptions.getExtensionUsages(), e.getMessage()),
-          Code.INVALID_ARGUMENTS);
-    }
+    private fun execInternal(env: CommandEnvironment, options: OptionsParsingResult): BlazeCommandResult {
+        val modOptions: ModOptions? = options.getOptions<ModOptions?>(ModOptions::class.java)
+        Preconditions.checkArgument(modOptions != null)
 
-    /* Extract and check the --extension_filter argument */
-    Optional<MaybeCompleteSet<ModuleExtensionId>> filterExtensions = Optional.empty();
-    if (subcommand.isGraph() && modOptions.getExtensionFilter() != null) {
-      if (modOptions.getExtensionFilter().isEmpty()) {
-        filterExtensions = Optional.of(MaybeCompleteSet.completeSet());
-      } else {
+        if (options.getResidue().isEmpty()) {
+            val errorMessage =
+                String.format(
+                    "No subcommand specified, choose one of : %s.", ModSubcommand.Companion.printValues()
+                )
+            return reportAndCreateFailureResult(env, errorMessage, Code.MOD_COMMAND_UNKNOWN)
+        }
+
+        // The first element in the residue must be the subcommand, and then comes a list of arguments.
+        val subcommandStr = options.getResidue().get(0)
+        val subcommand: ModSubcommand
         try {
-          filterExtensions =
-              Optional.of(
-                  MaybeCompleteSet.copyOf(
-                      extensionArgListToIds(
-                          modOptions.getExtensionFilter(),
-                          moduleInspector.modulesIndex(),
-                          moduleInspector.depGraph(),
-                          moduleInspector.moduleKeyToCanonicalNames(),
-                          baseModule.deps(),
-                          baseModule.unusedDeps())));
-        } catch (InvalidArgumentException e) {
-          return reportAndCreateFailureResult(
-              env,
-              String.format(
-                  "In --extension_filter %s option: %s",
-                  modOptions.getExtensionFilter(), e.getMessage()),
-              Code.INVALID_ARGUMENTS);
+            subcommand = ModSubcommandConverter().convert(subcommandStr)
+        } catch (e: OptionsParsingException) {
+            val errorMessage =
+                String.format("Invalid subcommand, choose one from : %s.", ModSubcommand.Companion.printValues())
+            return reportAndCreateFailureResult(env, errorMessage, Code.MOD_COMMAND_UNKNOWN)
         }
-      }
-    }
+        val args = options.getResidue().subList(1, options.getResidue().size())
 
-    ImmutableMap<String, RepoDefinitionValue> targetRepoDefinitions = null;
-    try {
-      if (subcommand == ModSubcommand.SHOW_REPO) {
-        ImmutableSet<SkyKey> skyKeys =
-            argsAsRepos.values().stream().map(RepoDefinitionValue::key).collect(toImmutableSet());
-        EvaluationResult<SkyValue> result =
-            env.getSkyframeExecutor().prepareAndGet(skyKeys, evaluationContext);
-        if (result.hasError()) {
-          Exception e = result.getError().getException();
-          String message = "Unexpected error during repository rule evaluation.";
-          if (e != null) {
-            message = e.getMessage();
-          }
-          return reportAndCreateFailureResult(env, message, Code.INVALID_ARGUMENTS);
+        // Validate and parse args as early as possible, so we don't have to
+        // wait for Skyframe evaluations to happen before failing due to a simple error.
+        try {
+            validateArgs(subcommand, modOptions, args)
+        } catch (e: InvalidArgumentException) {
+            return reportAndCreateFailureResult(env, e.getMessage(), e.getCode())
         }
-        var resultBuilder =
-            ImmutableMap.<String, RepoDefinitionValue>builderWithExpectedSize(argsAsRepos.size());
-        for (Map.Entry<String, RepositoryName> e : argsAsRepos.entrySet()) {
-          SkyValue value = result.get(RepoDefinitionValue.key(e.getValue()));
-          if (value == RepoDefinitionValue.NOT_FOUND) {
+
+        val repositoryMappingKeysBuilder: ImmutableList.Builder<RepositoryMappingValue.Key?> =
+            ImmutableList.builder<RepositoryMappingValue.Key?>()
+        if (subcommand == ModSubcommand.DUMP_REPO_MAPPING) {
+            if (args.isEmpty()) {
+                // Make this case an error so that we are free to add a mode that emits all mappings in a
+                // single JSON object later.
+                return reportAndCreateFailureResult(
+                    env, "No repository name(s) specified", Code.INVALID_ARGUMENTS
+                )
+            }
+            for (arg in args) {
+                try {
+                    repositoryMappingKeysBuilder.add(RepositoryMappingValue.key(RepositoryName.create(arg)))
+                } catch (e: LabelSyntaxException) {
+                    return reportAndCreateFailureResult(env, e.getMessage(), Code.INVALID_ARGUMENTS)
+                }
+            }
+        }
+        val repoMappingKeys: ImmutableList<RepositoryMappingValue.Key?> =
+            repositoryMappingKeysBuilder.build()
+
+        val depGraphValue: BazelDepGraphValue
+        val moduleInspector: BazelModuleInspectorValue?
+        val modTidyValue: BazelModTidyValue?
+        val repoMappingValues: ImmutableList<RepositoryMappingValue>?
+
+        val skyframeExecutor: SkyframeExecutor = env.getSkyframeExecutor()
+        val threadsOption: LoadingPhaseThreadsOption? =
+            options.getOptions<LoadingPhaseThreadsOption?>(LoadingPhaseThreadsOption::class.java)
+
+        val evaluationContext =
+            EvaluationContext.newBuilder()
+                .setParallelism(threadsOption.getThreads())
+                .setEventHandler(env.getReporter())
+                .build()
+
+        try {
+            env.syncPackageLoading(options)
+
+            val keys: ImmutableSet.Builder<SkyKey?> = ImmutableSet.builder<SkyKey?>()
+            if (subcommand == ModSubcommand.DUMP_REPO_MAPPING) {
+                keys.addAll(repoMappingKeys)
+            } else if (subcommand == ModSubcommand.TIDY) {
+                keys.add(BazelModTidyValue.Companion.KEY)
+            } else {
+                keys.add(BazelDepGraphValue.Companion.KEY, BazelModuleInspectorValue.Companion.KEY)
+            }
+            val evaluationResult: EvaluationResult<SkyValue?> =
+                skyframeExecutor.prepareAndGet(keys.build(), evaluationContext)
+
+            if (evaluationResult.hasError()) {
+                val cycleInfo: ImmutableList<CycleInfo?> = evaluationResult.getError().getCycleInfo()
+                if (!cycleInfo.isEmpty()) {
+                    // We don't expect target-level cycles here, so restrict to the subset of reporters that
+                    // are relevant for the (conceptual) loading phase.
+                    CyclesReporter(BzlmodRepoCycleReporter(), BzlLoadCycleReporter())
+                        .reportCycles(cycleInfo, cycleInfo.getFirst().getTopKey(), env.getReporter())
+                }
+                val e: Exception? = evaluationResult.getError().getException()
+                var message = "Unexpected error during module graph evaluation."
+                if (e != null) {
+                    message = e.getMessage()
+                }
+                return reportAndCreateFailureResult(env, message, Code.MOD_COMMAND_UNKNOWN)
+            }
+
+            depGraphValue = evaluationResult.get(BazelDepGraphValue.Companion.KEY) as BazelDepGraphValue
+
+            moduleInspector =
+                evaluationResult.get(BazelModuleInspectorValue.Companion.KEY) as BazelModuleInspectorValue?
+
+            modTidyValue = evaluationResult.get(BazelModTidyValue.Companion.KEY) as BazelModTidyValue?
+
+            repoMappingValues =
+                repoMappingKeys.stream()
+                    .map<SkyValue?>(Function { key: RepositoryMappingValue.Key? -> evaluationResult.get(key) })
+                    .map<RepositoryMappingValue?>(Function { obj: SkyValue? ->
+                        RepositoryMappingValue::class.java.cast(
+                            obj
+                        )
+                    })
+                    .collect(ImmutableList.toImmutableList<RepositoryMappingValue?>())
+        } catch (e: InterruptedException) {
+            val errorMessage = "mod command interrupted: " + e.getMessage()
+            env.getReporter().handle(Event.error(errorMessage))
+            return BlazeCommandResult.detailedExitCode(
+                InterruptedFailureDetails.detailedExitCode(errorMessage)
+            )
+        } catch (e: AbruptExitException) {
+            env.getReporter().handle(Event.error(null, "Unknown error: " + e.getMessage()))
+            return BlazeCommandResult.detailedExitCode(e.getDetailedExitCode())
+        }
+
+        // Handle commands that do not require BazelModuleInspectorValue.
+        if (subcommand == ModSubcommand.DUMP_REPO_MAPPING) {
+            val missingRepos: kotlin.String =
+                IntStream.range(0, repoMappingKeys.size())
+                    .filter(IntPredicate { i: Int -> repoMappingValues.get(i) === RepositoryMappingValue.NOT_FOUND_VALUE })
+                    .mapToObj<RepositoryMappingValue.Key?>(IntFunction { index: Int -> repoMappingKeys.get(index) })
+                    .map<RepositoryName?>(Function { RepositoryMappingValue.Key.repoName() })
+                    .map<kotlin.String?>(Function { obj: RepositoryName? -> obj.getName() })
+                    .collect(Collectors.joining(", "))
+            if (!missingRepos.isEmpty()) {
+                return reportAndCreateFailureResult(
+                    env, "Repositories not found: " + missingRepos, Code.INVALID_ARGUMENTS
+                )
+            }
+            try {
+                Profiler.instance().profile(ProfilerTask.BZLMOD, "execute mod " + subcommand).use { c ->
+                    dumpRepoMappings(
+                        repoMappingValues,
+                        OutputStreamWriter(
+                            env.getReporter().getOutErr().getOutputStream(),
+                            if (modOptions.getCharset() == ModOptions.Charset.UTF8) StandardCharsets.UTF_8 else StandardCharsets.US_ASCII
+                        )
+                    )
+                }
+            } catch (e: IOException) {
+                throw IllegalStateException(e)
+            }
+            return BlazeCommandResult.success()
+        } else if (subcommand == ModSubcommand.TIDY) {
+            // tidy doesn't take extra arguments.
+            if (!args.isEmpty()) {
+                return reportAndCreateFailureResult(
+                    env, "the 'tidy' command doesn't take extra arguments", Code.TOO_MANY_ARGUMENTS
+                )
+            }
+            Profiler.instance().profile(ProfilerTask.BZLMOD, "execute mod " + subcommand).use { c ->
+                return runTidy(env, modTidyValue)
+            }
+        }
+
+        // Extract and check the --base_module argument first to use it when parsing the other args.
+        // Can only be a TargetModule or a repoName relative to the ROOT.
+        val baseModuleKey: ModuleKey?
+        val rootModule: AugmentedModule? = moduleInspector.depGraph.get(ModuleKey.Companion.ROOT)
+        try {
+            val keys: ImmutableSet<ModuleKey?> =
+                modOptions
+                    .getBaseModule()
+                    .resolveToModuleKeys(
+                        moduleInspector.modulesIndex,
+                        moduleInspector.depGraph,
+                        moduleInspector.moduleKeyToCanonicalNames,
+                        rootModule.deps,
+                        rootModule.unusedDeps,
+                        false,
+                        false
+                    )
+            if (keys.size() > 1) {
+                throw InvalidArgumentException(
+                    String.format(
+                        "The --base_module option can only specify exactly one module version, choose one"
+                                + " of: %s.",
+                        keys.stream().map<kotlin.String?>(Function { obj: ModuleKey? -> obj.toString() })
+                            .collect(Collectors.joining(", "))
+                    ),
+                    Code.INVALID_ARGUMENTS
+                )
+            }
+            baseModuleKey = Iterables.getOnlyElement<ModuleKey?>(keys)
+        } catch (e: InvalidArgumentException) {
             return reportAndCreateFailureResult(
                 env,
-                String.format("In repo argument %s: no such repo", e.getKey()),
-                Code.INVALID_ARGUMENTS);
-          }
-          resultBuilder.put(e.getKey(), (RepoDefinitionValue) value);
+                String.format(
+                    "In --base_module %s option: %s (Note that unused modules cannot be used here)",
+                    modOptions.getBaseModule(), e.getMessage()
+                ),
+                Code.INVALID_ARGUMENTS
+            )
         }
-        targetRepoDefinitions = resultBuilder.buildOrThrow();
-      }
-    } catch (InterruptedException e) {
-      String errorMessage = "mod command interrupted: " + e.getMessage();
-      env.getReporter().handle(Event.error(errorMessage));
-      return BlazeCommandResult.detailedExitCode(
-          InterruptedFailureDetails.detailedExitCode(errorMessage));
-    }
 
-    // Workaround to allow different default value for DEPS and EXPLAIN, and also use
-    // Integer.MAX_VALUE instead of the exact number string.
-    if (modOptions.getDepth() < 1) {
-      modOptions.setDepth(
-          switch (subcommand) {
-            case EXPLAIN -> 1;
-            case DEPS -> 2;
-            default -> Integer.MAX_VALUE;
-          });
-    }
+        // The args can have different types depending on the subcommand, so create multiple containers
+        // which can be filled accordingly.
+        var argsAsModules: ImmutableSet<ModuleKey?>? = null
+        var argsAsExtensions: ImmutableSortedSet<ModuleExtensionId?>? = null
+        var argsAsRepos: ImmutableMap<kotlin.String?, RepositoryName?>? = null
 
-    ModExecutor modExecutor =
-        new ModExecutor(
-            moduleInspector.depGraph(),
-            depGraphValue.getExtensionUsagesTable(),
-            moduleInspector.extensionToRepoInternalNames(),
-            filterExtensions,
-            modOptions,
-            env.getReporter().getOutErr().getOutputStream());
-
-    try (SilentCloseable c =
-        Profiler.instance().profile(ProfilerTask.BZLMOD, "execute mod " + subcommand)) {
-      switch (subcommand) {
-        case GRAPH -> modExecutor.graph(fromKeys);
-        case DEPS -> modExecutor.graph(argsAsModules);
-        case PATH -> modExecutor.path(fromKeys, argsAsModules);
-        case ALL_PATHS, EXPLAIN -> modExecutor.allPaths(fromKeys, argsAsModules);
-        case SHOW_REPO -> modExecutor.showRepo(targetRepoDefinitions);
-        case SHOW_EXTENSION -> modExecutor.showExtension(argsAsExtensions, usageKeys);
-        default -> throw new IllegalStateException("Unexpected subcommand: " + subcommand);
-      }
-    } catch (InvalidArgumentException e) {
-      return reportAndCreateFailureResult(env, e.getMessage(), Code.INVALID_ARGUMENTS);
-    }
-
-    if (moduleInspector.errors().isEmpty()) {
-      return BlazeCommandResult.success();
-    } else {
-      return reportAndCreateFailureResult(
-          env,
-          String.format(
-              "Results may be incomplete as %d extension%s failed.",
-              moduleInspector.errors().size(), moduleInspector.errors().size() == 1 ? "" : "s"),
-          Code.ERROR_DURING_GRAPH_INSPECTION);
-    }
-  }
-
-  private ImmutableMap<String, RepositoryName> getReposToShow(
-      ModOptions modOptions,
-      BazelModuleInspectorValue moduleInspector,
-      BazelDepGraphValue depGraphValue,
-      RepositoryMapping baseModuleMapping,
-      List<String> args)
-      throws InvalidArgumentException {
-
-    ImmutableMap.Builder<String, RepositoryName> targetToRepoName = new ImmutableMap.Builder<>();
-
-    if (modOptions.getAllRepos()) {
-      // Module repos.
-      for (RepositoryName repoName : moduleInspector.moduleKeyToCanonicalNames().values()) {
-        if (repoName.isMain()) {
-          // The main repo can't be inspected.
-          continue;
-        }
-        targetToRepoName.put(repoName.getNameWithAt(), repoName);
-      }
-
-      // Extension repos.
-      for (Map.Entry<ModuleExtensionId, Collection<String>> extensionRepos :
-          moduleInspector.extensionToRepoInternalNames().asMap().entrySet()) {
-        String extensionUniqueName =
-            depGraphValue.getExtensionUniqueNames().get(extensionRepos.getKey());
-
-        for (String internalName : extensionRepos.getValue()) {
-          RepositoryName repoName =
-              SingleExtensionValue.repositoryName(extensionUniqueName, internalName);
-          targetToRepoName.put(repoName.getNameWithAt(), repoName);
-        }
-      }
-    } else if (modOptions.getAllVisibleRepos()) {
-      for (Entry<String, RepositoryName> entry : baseModuleMapping.entries().entrySet()) {
-        if (entry.getValue().isMain()) {
-          // The main repo can't be inspected.
-          continue;
-        }
-        targetToRepoName.put("@" + entry.getKey(), entry.getValue());
-      }
-    } else {
-      // Resolve explicitly specified repos.
-      for (String arg : args) {
+        val baseModule: AugmentedModule =
+            Objects.requireNonNull<AugmentedModule>(moduleInspector.depGraph.get(baseModuleKey))
+        val baseModuleMapping: RepositoryMapping = depGraphValue.getFullRepoMapping(baseModuleKey)
         try {
-          targetToRepoName.putAll(
-              ModuleArgConverter.INSTANCE
-                  .convert(arg)
-                  .resolveToRepoNames(
-                      moduleInspector.modulesIndex(),
-                      moduleInspector.depGraph(),
-                      moduleInspector.moduleKeyToCanonicalNames(),
-                      baseModuleMapping));
-        } catch (InvalidArgumentException | OptionsParsingException e) {
-          throw new InvalidArgumentException(
-              String.format(
-                  "In repo argument %s: %s (Note that unused modules cannot be used here)",
-                  arg, e.getMessage()),
-              Code.INVALID_ARGUMENTS,
-              e);
+            when (subcommand) {
+                ModSubcommand.GRAPH -> {
+                    // GRAPH doesn't take extra arguments.
+                    if (!args.isEmpty()) {
+                        throw InvalidArgumentException(
+                            "the 'graph' command doesn't take extra arguments", Code.TOO_MANY_ARGUMENTS
+                        )
+                    }
+                }
+
+                ModSubcommand.SHOW_REPO -> {
+                    argsAsRepos =
+                        getReposToShow(modOptions, moduleInspector, depGraphValue, baseModuleMapping, args)
+                }
+
+                ModSubcommand.SHOW_EXTENSION -> {
+                    val extensionsBuilder: ImmutableSortedSet.Builder<ModuleExtensionId?> =
+                        ImmutableSortedSet.Builder<ModuleExtensionId?>(ModuleExtensionId.Companion.LEXICOGRAPHIC_COMPARATOR)
+                    for (arg in args) {
+                        try {
+                            extensionsBuilder.add(
+                                ExtensionArgConverter.Companion.INSTANCE
+                                    .convert(arg)
+                                    .resolveToExtensionId(
+                                        moduleInspector.modulesIndex,
+                                        moduleInspector.depGraph,
+                                        moduleInspector.moduleKeyToCanonicalNames,
+                                        baseModule.deps,
+                                        baseModule.unusedDeps
+                                    )
+                            )
+                        } catch (e: InvalidArgumentException) {
+                            throw InvalidArgumentException(
+                                String.format("In extension argument %s: %s", arg, e.getMessage()),
+                                Code.INVALID_ARGUMENTS,
+                                e
+                            )
+                        } catch (e: OptionsParsingException) {
+                            throw InvalidArgumentException(
+                                String.format("In extension argument %s: %s", arg, e.getMessage()),
+                                Code.INVALID_ARGUMENTS,
+                                e
+                            )
+                        }
+                    }
+                    argsAsExtensions = extensionsBuilder.build()
+                }
+
+                else -> {
+                    val keysBuilder: ImmutableSet.Builder<ModuleKey?> = ImmutableSet.Builder<ModuleKey?>()
+                    for (arg in args) {
+                        try {
+                            keysBuilder.addAll(
+                                ModuleArgConverter.Companion.INSTANCE
+                                    .convert(arg)
+                                    .resolveToModuleKeys(
+                                        moduleInspector.modulesIndex,
+                                        moduleInspector.depGraph,
+                                        moduleInspector.moduleKeyToCanonicalNames,
+                                        baseModule.deps,
+                                        baseModule.unusedDeps,
+                                        modOptions.getIncludeUnused(),  /* warnUnused= */
+                                        true
+                                    )
+                            )
+                        } catch (e: InvalidArgumentException) {
+                            throw InvalidArgumentException(
+                                String.format("In module argument %s: %s", arg, e.getMessage()),
+                                Code.INVALID_ARGUMENTS
+                            )
+                        } catch (e: OptionsParsingException) {
+                            throw InvalidArgumentException(
+                                String.format("In module argument %s: %s", arg, e.getMessage()),
+                                Code.INVALID_ARGUMENTS
+                            )
+                        }
+                    }
+                    argsAsModules = keysBuilder.build()
+                }
+            }
+        } catch (e: InvalidArgumentException) {
+            return reportAndCreateFailureResult(env, e.getMessage(), e.getCode())
         }
-      }
-    }
-    return targetToRepoName.buildKeepingLast();
-  }
-
-  private BlazeCommandResult runTidy(CommandEnvironment env, BazelModTidyValue modTidyValue) {
-    ImmutableListMultimap<PathFragment, String> allCommandsPerFile =
-        modTidyValue.fixups().stream()
-            .flatMap(fixup -> fixup.moduleFilePathToBuildozerCommands().entries().stream())
-            .collect(toImmutableListMultimap(Entry::getKey, Entry::getValue));
-    StringBuilder buildozerInput = new StringBuilder();
-    for (PathFragment moduleFilePath : modTidyValue.moduleFilePaths()) {
-      buildozerInput.append("//").append(moduleFilePath).append(":all|");
-      for (String command : allCommandsPerFile.get(moduleFilePath)) {
-        buildozerInput.append(command).append('|');
-      }
-      buildozerInput.append("format\n");
-    }
-
-    try (var stdin = CharSource.wrap(buildozerInput).asByteSource(ISO_8859_1).openStream()) {
-      new CommandBuilder(env.getClientEnv())
-          .setWorkingDir(env.getWorkspace())
-          .addArg(modTidyValue.buildozer().getPathString())
-          .addArg("-f")
-          .addArg("-")
-          .build()
-          .executeAsync(stdin, /* killSubprocessOnInterrupt= */ true)
-          .get();
-    } catch (InterruptedException | CommandException | IOException e) {
-      String suffix = "";
-      if (e instanceof AbnormalTerminationException abnormalTerminationException) {
-        if (abnormalTerminationException.getResult().terminationStatus().getRawExitCode() == 3) {
-          // Buildozer exits with exit code 3 if it didn't make any changes.
-          return reportAndCreateTidyResult(env, modTidyValue);
+        /* Extract and check the --from and --extension_usages argument */
+        val fromKeys: ImmutableSet<ModuleKey?>?
+        val usageKeys: ImmutableSet<ModuleKey?>?
+        try {
+            fromKeys =
+                moduleArgListToKeys(
+                    modOptions.getModulesFrom(),
+                    moduleInspector.modulesIndex,
+                    moduleInspector.depGraph,
+                    moduleInspector.moduleKeyToCanonicalNames,
+                    baseModule.deps,
+                    baseModule.unusedDeps,
+                    modOptions.getIncludeUnused()
+                )
+        } catch (e: InvalidArgumentException) {
+            return reportAndCreateFailureResult(
+                env,
+                String.format("In --from %s option: %s", modOptions.getModulesFrom(), e.getMessage()),
+                Code.INVALID_ARGUMENTS
+            )
         }
-        suffix =
-            ":\n"
-                + new String(
-                    ((AbnormalTerminationException) e).getResult().getStderr(), ISO_8859_1);
-      }
-      return reportAndCreateFailureResult(
-          env,
-          "Unexpected error while running buildozer: " + e.getMessage() + suffix,
-          Code.BUILDOZER_FAILED);
+
+        try {
+            usageKeys =
+                moduleArgListToKeys(
+                    modOptions.getExtensionUsages(),
+                    moduleInspector.modulesIndex,
+                    moduleInspector.depGraph,
+                    moduleInspector.moduleKeyToCanonicalNames,
+                    baseModule.deps,
+                    baseModule.unusedDeps,
+                    modOptions.getIncludeUnused()
+                )
+        } catch (e: InvalidArgumentException) {
+            return reportAndCreateFailureResult(
+                env,
+                String.format(
+                    "In --extension_usages %s option: %s (Note that unused modules cannot be used"
+                            + " here)",
+                    modOptions.getExtensionUsages(), e.getMessage()
+                ),
+                Code.INVALID_ARGUMENTS
+            )
+        }
+
+        /* Extract and check the --extension_filter argument */
+        var filterExtensions: Optional<MaybeCompleteSet<ModuleExtensionId?>?> =
+            Optional.empty<MaybeCompleteSet<ModuleExtensionId?>?>()
+        if (subcommand.isGraph() && modOptions.getExtensionFilter() != null) {
+            if (modOptions.getExtensionFilter().isEmpty()) {
+                filterExtensions =
+                    Optional.of<MaybeCompleteSet<ModuleExtensionId?>?>(MaybeCompleteSet.completeSet<ModuleExtensionId?>())
+            } else {
+                try {
+                    filterExtensions =
+                        Optional.of<MaybeCompleteSet<ModuleExtensionId?>?>(
+                            MaybeCompleteSet.copyOf<ModuleExtensionId?>(
+                                extensionArgListToIds(
+                                    modOptions.getExtensionFilter(),
+                                    moduleInspector.modulesIndex,
+                                    moduleInspector.depGraph,
+                                    moduleInspector.moduleKeyToCanonicalNames,
+                                    baseModule.deps,
+                                    baseModule.unusedDeps
+                                )
+                            )
+                        )
+                } catch (e: InvalidArgumentException) {
+                    return reportAndCreateFailureResult(
+                        env,
+                        String.format(
+                            "In --extension_filter %s option: %s",
+                            modOptions.getExtensionFilter(), e.getMessage()
+                        ),
+                        Code.INVALID_ARGUMENTS
+                    )
+                }
+            }
+        }
+
+        var targetRepoDefinitions: ImmutableMap<kotlin.String?, RepoDefinitionValue?>? = null
+        try {
+            if (subcommand == ModSubcommand.SHOW_REPO) {
+                val skyKeys: ImmutableSet<SkyKey?> =
+                    argsAsRepos.values().stream()
+                        .map<RepoDefinitionValue.Key?>(Function { repositoryName: RepositoryName? ->
+                            RepoDefinitionValue.key(repositoryName)
+                        }).collect(
+                            ImmutableSet.toImmutableSet<SkyKey?>()
+                        )
+                val result: EvaluationResult<SkyValue?> =
+                    env.getSkyframeExecutor().prepareAndGet(skyKeys, evaluationContext)
+                if (result.hasError()) {
+                    val e: Exception? = result.getError().getException()
+                    var message = "Unexpected error during repository rule evaluation."
+                    if (e != null) {
+                        message = e.getMessage()
+                    }
+                    return reportAndCreateFailureResult(env, message, Code.INVALID_ARGUMENTS)
+                }
+                val resultBuilder: ImmutableMap.Builder<kotlin.String?, RepoDefinitionValue?> =
+                    ImmutableMap.builderWithExpectedSize<kotlin.String?, RepoDefinitionValue?>(argsAsRepos.size())
+                for (e in argsAsRepos.entrySet()) {
+                    val value: SkyValue? = result.get(RepoDefinitionValue.key(e.getValue()))
+                    if (value === RepoDefinitionValue.NOT_FOUND) {
+                        return reportAndCreateFailureResult(
+                            env,
+                            String.format("In repo argument %s: no such repo", e.getKey()),
+                            Code.INVALID_ARGUMENTS
+                        )
+                    }
+                    resultBuilder.put(e.getKey(), value as RepoDefinitionValue?)
+                }
+                targetRepoDefinitions = resultBuilder.buildOrThrow()
+            }
+        } catch (e: InterruptedException) {
+            val errorMessage = "mod command interrupted: " + e.getMessage()
+            env.getReporter().handle(Event.error(errorMessage))
+            return BlazeCommandResult.detailedExitCode(
+                InterruptedFailureDetails.detailedExitCode(errorMessage)
+            )
+        }
+
+        // Workaround to allow different default value for DEPS and EXPLAIN, and also use
+        // Integer.MAX_VALUE instead of the exact number string.
+        if (modOptions.getDepth() < 1) {
+            modOptions.setDepth(
+                when (subcommand) {
+                    ModSubcommand.EXPLAIN -> 1
+                    ModSubcommand.DEPS -> 2
+                    else -> Integer.MAX_VALUE
+                }
+            )
+        }
+
+        val modExecutor: ModExecutor =
+            ModExecutor(
+                moduleInspector.depGraph,
+                depGraphValue.getExtensionUsagesTable(),
+                moduleInspector.extensionToRepoInternalNames,
+                filterExtensions,
+                modOptions,
+                env.getReporter().getOutErr().getOutputStream()
+            )
+
+        try {
+            Profiler.instance().profile(ProfilerTask.BZLMOD, "execute mod " + subcommand).use { c ->
+                when (subcommand) {
+                    ModSubcommand.GRAPH -> modExecutor.graph(fromKeys)
+                    ModSubcommand.DEPS -> modExecutor.graph(argsAsModules)
+                    ModSubcommand.PATH -> modExecutor.path(fromKeys, argsAsModules)
+                    ModSubcommand.ALL_PATHS, ModSubcommand.EXPLAIN -> modExecutor.allPaths(fromKeys, argsAsModules)
+                    ModSubcommand.SHOW_REPO -> modExecutor.showRepo(targetRepoDefinitions)
+                    ModSubcommand.SHOW_EXTENSION -> modExecutor.showExtension(argsAsExtensions, usageKeys)
+                    else -> throw IllegalStateException("Unexpected subcommand: " + subcommand)
+                }
+            }
+        } catch (e: InvalidArgumentException) {
+            return reportAndCreateFailureResult(env, e.getMessage(), Code.INVALID_ARGUMENTS)
+        }
+
+        if (moduleInspector.errors.isEmpty()) {
+            return BlazeCommandResult.success()
+        } else {
+            return reportAndCreateFailureResult(
+                env,
+                String.format(
+                    "Results may be incomplete as %d extension%s failed.",
+                    moduleInspector.errors.size(), if (moduleInspector.errors.size() == 1) "" else "s"
+                ),
+                Code.ERROR_DURING_GRAPH_INSPECTION
+            )
+        }
     }
 
-    for (RootModuleFileFixup fixupEvent : modTidyValue.fixups()) {
-      env.getReporter().handle(Event.info(fixupEvent.getSuccessMessage()));
+    @Throws(InvalidArgumentException::class)
+    private fun getReposToShow(
+        modOptions: ModOptions,
+        moduleInspector: BazelModuleInspectorValue,
+        depGraphValue: BazelDepGraphValue,
+        baseModuleMapping: RepositoryMapping,
+        args: MutableList<kotlin.String>
+    ): ImmutableMap<kotlin.String?, RepositoryName?> {
+        val targetToRepoName: ImmutableMap.Builder<kotlin.String?, RepositoryName?> =
+            ImmutableMap.Builder<kotlin.String?, RepositoryName?>()
+
+        if (modOptions.getAllRepos()) {
+            // Module repos.
+            for (repoName in moduleInspector.moduleKeyToCanonicalNames.values()) {
+                if (repoName.isMain()) {
+                    // The main repo can't be inspected.
+                    continue
+                }
+                targetToRepoName.put(repoName.getNameWithAt(), repoName)
+            }
+
+            // Extension repos.
+            for (extensionRepos in moduleInspector.extensionToRepoInternalNames.asMap().entrySet()) {
+                val extensionUniqueName: kotlin.String? =
+                    depGraphValue.getExtensionUniqueNames().get(extensionRepos.getKey())
+
+                for (internalName in extensionRepos.getValue()) {
+                    val repoName: RepositoryName =
+                        SingleExtensionValue.Companion.repositoryName(extensionUniqueName, internalName)
+                    targetToRepoName.put(repoName.getNameWithAt(), repoName)
+                }
+            }
+        } else if (modOptions.getAllVisibleRepos()) {
+            for (entry in baseModuleMapping.entries().entrySet()) {
+                if (entry.getValue().isMain()) {
+                    // The main repo can't be inspected.
+                    continue
+                }
+                targetToRepoName.put("@" + entry.getKey(), entry.getValue())
+            }
+        } else {
+            // Resolve explicitly specified repos.
+            for (arg in args) {
+                try {
+                    targetToRepoName.putAll(
+                        ModuleArgConverter.Companion.INSTANCE
+                            .convert(arg)
+                            .resolveToRepoNames(
+                                moduleInspector.modulesIndex,
+                                moduleInspector.depGraph,
+                                moduleInspector.moduleKeyToCanonicalNames,
+                                baseModuleMapping
+                            )
+                    )
+                } catch (e: InvalidArgumentException) {
+                    throw InvalidArgumentException(
+                        String.format(
+                            "In repo argument %s: %s (Note that unused modules cannot be used here)",
+                            arg, e.getMessage()
+                        ),
+                        Code.INVALID_ARGUMENTS,
+                        e
+                    )
+                } catch (e: OptionsParsingException) {
+                    throw InvalidArgumentException(
+                        String.format(
+                            "In repo argument %s: %s (Note that unused modules cannot be used here)",
+                            arg, e.getMessage()
+                        ),
+                        Code.INVALID_ARGUMENTS,
+                        e
+                    )
+                }
+            }
+        }
+        return targetToRepoName.buildKeepingLast()
     }
 
-    return reportAndCreateTidyResult(env, modTidyValue);
-  }
+    private fun runTidy(env: CommandEnvironment, modTidyValue: BazelModTidyValue): BlazeCommandResult {
+        val allCommandsPerFile: ImmutableListMultimap<PathFragment?, kotlin.String?>? =
+            modTidyValue.fixups.stream()
+                .flatMap<MutableMap.MutableEntry<PathFragment?, kotlin.String?>?>(Function { fixup: RootModuleFileFixup? ->
+                    fixup.moduleFilePathToBuildozerCommands.entries().stream()
+                })
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |collect(<Entry<PathFragment, String>, PathFragment, String>toImmutableListMultimap(Entry::getKey, Entry::getValue)
+            """.trimMargin()
+        )
 
-  private static BlazeCommandResult reportAndCreateTidyResult(
-      CommandEnvironment env, BazelModTidyValue modTidyValue) {
-    if (modTidyValue.errors().isEmpty()) {
-      return BlazeCommandResult.success();
-    } else {
-      return reportAndCreateFailureResult(
-          env,
-          String.format(
-              "Failed to process %d extension%s due to errors.",
-              modTidyValue.errors().size(), modTidyValue.errors().size() == 1 ? "" : "s"),
-          Code.ERROR_DURING_GRAPH_INSPECTION);
+        val buildozerInput = StringBuilder()
+        for (moduleFilePath in modTidyValue.moduleFilePaths) {
+            buildozerInput.append("//").append(moduleFilePath).append(":all|")
+            for (command in allCommandsPerFile!!.get(moduleFilePath)) {
+                buildozerInput.append(command).append('|')
+            }
+            buildozerInput.append("format\n")
+        }
+
+        try {
+            CharSource.wrap(buildozerInput).asByteSource(StandardCharsets.ISO_8859_1).openStream().use { stdin ->
+                CommandBuilder(env.getClientEnv())
+                    .setWorkingDir(env.getWorkspace())
+                    .addArg(modTidyValue.buildozer.getPathString())
+                    .addArg("-f")
+                    .addArg("-")
+                    .build()
+                    .executeAsync(stdin,  /* killSubprocessOnInterrupt= */true)
+                    .get()
+            }
+        } catch (e: InterruptedException) {
+            var suffix = ""
+            if (e is AbnormalTerminationException) {
+                if (e.getResult().terminationStatus.getRawExitCode() == 3) {
+                    // Buildozer exits with exit code 3 if it didn't make any changes.
+                    return reportAndCreateTidyResult(env, modTidyValue)
+                }
+                suffix =
+                    (":\n"
+                            + kotlin.String(
+                        (e as AbnormalTerminationException).getResult().getStderr(), StandardCharsets.ISO_8859_1
+                    ))
+            }
+            return reportAndCreateFailureResult(
+                env,
+                "Unexpected error while running buildozer: " + e.getMessage() + suffix,
+                Code.BUILDOZER_FAILED
+            )
+        } catch (e: CommandException) {
+            var suffix = ""
+            if (e is AbnormalTerminationException) {
+                if (e.getResult().terminationStatus.getRawExitCode() == 3) {
+                    return reportAndCreateTidyResult(env, modTidyValue)
+                }
+                suffix =
+                    (":\n"
+                            + kotlin.String(
+                        (e as AbnormalTerminationException).getResult().getStderr(), StandardCharsets.ISO_8859_1
+                    ))
+            }
+            return reportAndCreateFailureResult(
+                env,
+                "Unexpected error while running buildozer: " + e.getMessage() + suffix,
+                Code.BUILDOZER_FAILED
+            )
+        } catch (e: IOException) {
+            var suffix = ""
+            if (e is AbnormalTerminationException) {
+                if (e.getResult().terminationStatus.getRawExitCode() == 3) {
+                    return reportAndCreateTidyResult(env, modTidyValue)
+                }
+                suffix =
+                    (":\n"
+                            + kotlin.String(
+                        (e as AbnormalTerminationException).getResult().getStderr(), StandardCharsets.ISO_8859_1
+                    ))
+            }
+            return reportAndCreateFailureResult(
+                env,
+                "Unexpected error while running buildozer: " + e.getMessage() + suffix,
+                Code.BUILDOZER_FAILED
+            )
+        }
+
+        for (fixupEvent in modTidyValue.fixups) {
+            env.getReporter().handle(Event.info(fixupEvent.getSuccessMessage()))
+        }
+
+        return reportAndCreateTidyResult(env, modTidyValue)
     }
-  }
 
-  /** Collects a list of {@link ModuleArg} into a set of {@link ModuleKey}s. */
-  private static ImmutableSet<ModuleKey> moduleArgListToKeys(
-      ImmutableList<ModuleArg> argList,
-      ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-      ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-      ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-      ImmutableBiMap<String, ModuleKey> baseModuleDeps,
-      ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps,
-      boolean includeUnused)
-      throws InvalidArgumentException {
-    ImmutableSet.Builder<ModuleKey> allTargetKeys = new ImmutableSet.Builder<>();
-    for (ModuleArg moduleArg : argList) {
-      allTargetKeys.addAll(
-          moduleArg.resolveToModuleKeys(
-              modulesIndex,
-              depGraph,
-              moduleKeyToCanonicalNames,
-              baseModuleDeps,
-              baseModuleUnusedDeps,
-              includeUnused,
-              true));
+    companion object {
+        const val NAME: kotlin.String = "mod"
+
+        private fun reportAndCreateTidyResult(
+            env: CommandEnvironment, modTidyValue: BazelModTidyValue
+        ): BlazeCommandResult {
+            if (modTidyValue.errors.isEmpty()) {
+                return BlazeCommandResult.success()
+            } else {
+                return reportAndCreateFailureResult(
+                    env,
+                    String.format(
+                        "Failed to process %d extension%s due to errors.",
+                        modTidyValue.errors.size(), if (modTidyValue.errors.size() == 1) "" else "s"
+                    ),
+                    Code.ERROR_DURING_GRAPH_INSPECTION
+                )
+            }
+        }
+
+        /** Collects a list of [ModuleArg] into a set of [ModuleKey]s.  */
+        @Throws(InvalidArgumentException::class)
+        private fun moduleArgListToKeys(
+            argList: ImmutableList<ModuleArg>,
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>?,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+            baseModuleDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            baseModuleUnusedDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            includeUnused: Boolean
+        ): ImmutableSet<ModuleKey?> {
+            val allTargetKeys: ImmutableSet.Builder<ModuleKey?> = ImmutableSet.Builder<ModuleKey?>()
+            for (moduleArg in argList) {
+                allTargetKeys.addAll(
+                    moduleArg.resolveToModuleKeys(
+                        modulesIndex,
+                        depGraph,
+                        moduleKeyToCanonicalNames,
+                        baseModuleDeps,
+                        baseModuleUnusedDeps,
+                        includeUnused,
+                        true
+                    )
+                )
+            }
+            return allTargetKeys.build()
+        }
+
+        @Throws(InvalidArgumentException::class)
+        private fun extensionArgListToIds(
+            args: ImmutableList<ExtensionArg>,
+            modulesIndex: ImmutableMap<kotlin.String?, ImmutableSet<ModuleKey?>?>?,
+            depGraph: ImmutableMap<ModuleKey?, AugmentedModule?>?,
+            moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?>?,
+            baseModuleDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?,
+            baseModuleUnusedDeps: ImmutableBiMap<kotlin.String?, ModuleKey?>?
+        ): ImmutableSortedSet<ModuleExtensionId?> {
+            val extensionsBuilder: ImmutableSortedSet.Builder<ModuleExtensionId?> =
+                ImmutableSortedSet.Builder<ModuleExtensionId?>(ModuleExtensionId.Companion.LEXICOGRAPHIC_COMPARATOR)
+            for (arg in args) {
+                extensionsBuilder.add(
+                    arg.resolveToExtensionId(
+                        modulesIndex,
+                        depGraph,
+                        moduleKeyToCanonicalNames,
+                        baseModuleDeps,
+                        baseModuleUnusedDeps
+                    )
+                )
+            }
+            return extensionsBuilder.build()
+        }
+
+        private fun reportAndCreateFailureResult(
+            env: CommandEnvironment, message: kotlin.String, detailedCode: Code
+        ): BlazeCommandResult {
+            val fullMessage =
+                when (detailedCode) {
+                    MISSING_ARGUMENTS, TOO_MANY_ARGUMENTS, INVALID_ARGUMENTS -> String.format(
+                        "%s%s Type '%s help mod' for syntax and help.",
+                        message, if (message.endsWith(".")) "" else ".", env.getRuntime().getProductName()
+                    )
+
+                    else -> message
+                }
+            env.getReporter().handle(Event.error(fullMessage))
+            return createFailureResult(fullMessage, detailedCode)
+        }
+
+        private fun createFailureResult(message: kotlin.String?, detailedCode: Code?): BlazeCommandResult {
+            return BlazeCommandResult.detailedExitCode(
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setModCommand(FailureDetails.ModCommand.newBuilder().setCode(detailedCode).build())
+                        .setMessage(message)
+                        .build()
+                )
+            )
+        }
+
+        @Throws(IOException::class)
+        fun dumpRepoMappings(repoMappings: MutableList<RepositoryMappingValue>, writer: Writer) {
+            val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+            for (repoMapping in repoMappings) {
+                val jsonWriter: JsonWriter = gson.newJsonWriter(writer)
+                jsonWriter.beginObject()
+                for (entry in repoMapping.repositoryMapping.entries().entrySet()) {
+                    jsonWriter.name(entry.getKey())
+                    jsonWriter.value(entry.getValue().getName())
+                }
+                jsonWriter.endObject()
+                writer.write('\n'.code)
+            }
+            writer.flush()
+        }
     }
-    return allTargetKeys.build();
-  }
-
-  private static ImmutableSortedSet<ModuleExtensionId> extensionArgListToIds(
-      ImmutableList<ExtensionArg> args,
-      ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex,
-      ImmutableMap<ModuleKey, AugmentedModule> depGraph,
-      ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames,
-      ImmutableBiMap<String, ModuleKey> baseModuleDeps,
-      ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps)
-      throws InvalidArgumentException {
-    ImmutableSortedSet.Builder<ModuleExtensionId> extensionsBuilder =
-        new ImmutableSortedSet.Builder<>(ModuleExtensionId.LEXICOGRAPHIC_COMPARATOR);
-    for (ExtensionArg arg : args) {
-      extensionsBuilder.add(
-          arg.resolveToExtensionId(
-              modulesIndex,
-              depGraph,
-              moduleKeyToCanonicalNames,
-              baseModuleDeps,
-              baseModuleUnusedDeps));
-    }
-    return extensionsBuilder.build();
-  }
-
-  private static BlazeCommandResult reportAndCreateFailureResult(
-      CommandEnvironment env, String message, Code detailedCode) {
-    String fullMessage =
-        switch (detailedCode) {
-          case MISSING_ARGUMENTS, TOO_MANY_ARGUMENTS, INVALID_ARGUMENTS ->
-              String.format(
-                  "%s%s Type '%s help mod' for syntax and help.",
-                  message, message.endsWith(".") ? "" : ".", env.getRuntime().getProductName());
-          default -> message;
-        };
-    env.getReporter().handle(Event.error(fullMessage));
-    return createFailureResult(fullMessage, detailedCode);
-  }
-
-  private static BlazeCommandResult createFailureResult(String message, Code detailedCode) {
-    return BlazeCommandResult.detailedExitCode(
-        DetailedExitCode.of(
-            FailureDetail.newBuilder()
-                .setModCommand(FailureDetails.ModCommand.newBuilder().setCode(detailedCode).build())
-                .setMessage(message)
-                .build()));
-  }
-
-  public static void dumpRepoMappings(List<RepositoryMappingValue> repoMappings, Writer writer)
-      throws IOException {
-    Gson gson = new GsonBuilder().disableHtmlEscaping().create();
-    for (RepositoryMappingValue repoMapping : repoMappings) {
-      JsonWriter jsonWriter = gson.newJsonWriter(writer);
-      jsonWriter.beginObject();
-      for (Entry<String, RepositoryName> entry :
-          repoMapping.repositoryMapping().entries().entrySet()) {
-        jsonWriter.name(entry.getKey());
-        jsonWriter.value(entry.getValue().getName());
-      }
-      jsonWriter.endObject();
-      writer.write('\n');
-    }
-    writer.flush();
-  }
 }

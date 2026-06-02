@@ -11,33 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark
 
-package com.google.devtools.build.lib.analysis.starlark;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.analysis.ProviderCollection;
+import com.google.devtools.build.lib.analysis.ProviderCollection
 
 /**
  * An abstract class for adding a Starlark API for the built-in providers. Derived classes should
  * declare functions to be used from Starlark.
  */
-public abstract class StarlarkApiProvider {
-  private ProviderCollection info;
+abstract class StarlarkApiProvider {
+    private var info: ProviderCollection? = null
 
-  protected ProviderCollection getInfo() {
-    return info;
-  }
-
-  public final void init(ProviderCollection info) {
-    if (this.info != null) {
-      // todo(dslomov): nuke this weird initialization mechanism.
-
-      // Allow multiple calls.
-      // It is possible for the Starlark rule to get a StarlarkApiProvider such as `target.java`
-      // from its dependency and pass it on. It does not make a whole lot of sense, but we
-      // shouldn't crash.
-      return;
+    protected fun getInfo(): ProviderCollection? {
+        return info
     }
-    this.info = Preconditions.checkNotNull(info);
-  }
+
+    fun init(info: ProviderCollection?) {
+        if (this.info != null) {
+            // todo(dslomov): nuke this weird initialization mechanism.
+
+            // Allow multiple calls.
+            // It is possible for the Starlark rule to get a StarlarkApiProvider such as `target.java`
+            // from its dependency and pass it on. It does not make a whole lot of sense, but we
+            // shouldn't crash.
+
+            return
+        }
+        this.info = com.google.common.base.Preconditions.checkNotNull<ProviderCollection?>(info)
+    }
 }

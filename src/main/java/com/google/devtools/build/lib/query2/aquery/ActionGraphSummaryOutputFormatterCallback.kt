@@ -11,135 +11,123 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.aquery;
+package com.google.devtools.build.lib.query2.aquery
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import com.google.devtools.build.lib.skyframe.RuleConfiguredTargetValue;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Map.Entry;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
-/** Output callback for aquery, prints a human readable summary. */
-class ActionGraphSummaryOutputFormatterCallback extends AqueryThreadsafeCallback {
+/** Output callback for aquery, prints a human readable summary.  */
+internal class ActionGraphSummaryOutputFormatterCallback(
+    eventHandler: ExtendedEventHandler?,
+    options: AqueryOptions?,
+    out: java.io.OutputStream?,
+    accessor: TargetAccessor<ConfiguredTargetValue?>?,
+    actionFilters: AqueryActionFilter?
+) : AqueryThreadsafeCallback(eventHandler, options, out, accessor) {
+    private val actionFilters: AqueryActionFilter?
+    private val mnemonicToCount: MutableMap<String?, Int?> = HashMap<String?, Int?>()
+    private val configurationToCount: MutableMap<String?, Int?> = HashMap<String?, Int?>()
+    private val execPlatformToCount: MutableMap<String?, Int?> = HashMap<String?, Int?>()
+    private val aspectToCount: MutableMap<String?, Int?> = HashMap<String?, Int?>()
 
-  private final AqueryActionFilter actionFilters;
-  private final Map<String, Integer> mnemonicToCount = new HashMap<>();
-  private final Map<String, Integer> configurationToCount = new HashMap<>();
-  private final Map<String, Integer> execPlatformToCount = new HashMap<>();
-  private final Map<String, Integer> aspectToCount = new HashMap<>();
+    init {
+        this.actionFilters = actionFilters
+    }
 
-  ActionGraphSummaryOutputFormatterCallback(
-      ExtendedEventHandler eventHandler,
-      AqueryOptions options,
-      OutputStream out,
-      TargetAccessor<ConfiguredTargetValue> accessor,
-      AqueryActionFilter actionFilters) {
-    super(eventHandler, options, out, accessor);
-    this.actionFilters = actionFilters;
-  }
+    val name: String
+        get() = "summary"
 
-  @Override
-  public String getName() {
-    return "summary";
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun processOutput(partialResult: Iterable<ConfiguredTargetValue>) {
+        // Enabling includeParamFiles should enable includeCommandline by default.
+        options.setIncludeCommandline(
+            options.getIncludeCommandline() || options.getIncludeParamFiles()
+        )
 
-  @Override
-  public void processOutput(Iterable<ConfiguredTargetValue> partialResult)
-      throws IOException, InterruptedException {
-    // Enabling includeParamFiles should enable includeCommandline by default.
-    options.setIncludeCommandline(
-        options.getIncludeCommandline() || options.getIncludeParamFiles());
-
-    for (ConfiguredTargetValue configuredTargetValue : partialResult) {
-      if (!(configuredTargetValue instanceof RuleConfiguredTargetValue)) {
-        // We have to include non-rule values in the graph to visit their dependencies, but they
-        // don't have any actions to print out.
-        continue;
-      }
-      for (ActionAnalysisMetadata action :
-          ((RuleConfiguredTargetValue) configuredTargetValue).getActions()) {
-        processAction(action);
-      }
-      if (options.getUseAspects()) {
-        for (AspectValue aspectValue : accessor.getAspectValues(configuredTargetValue)) {
-          for (ActionAnalysisMetadata action : aspectValue.getActions()) {
-            processAction(action);
-          }
+        for (configuredTargetValue in partialResult) {
+            if (configuredTargetValue !is RuleConfiguredTargetValue) {
+                // We have to include non-rule values in the graph to visit their dependencies, but they
+                // don't have any actions to print out.
+                continue
+            }
+            for (action in (configuredTargetValue as RuleConfiguredTargetValue).getActions()) {
+                processAction(action)
+            }
+            if (options.getUseAspects()) {
+                for (aspectValue in accessor.getAspectValues(configuredTargetValue)) {
+                    for (action in aspectValue.getActions()) {
+                        processAction(action)
+                    }
+                }
+            }
         }
-      }
-    }
-  }
-
-  private void processAction(ActionAnalysisMetadata action) throws InterruptedException {
-    if (!AqueryUtils.matchesAqueryFilters(
-        action, actionFilters, options.getIncludePrunedInputs())) {
-      return;
     }
 
-    mnemonicToCount.merge(action.getMnemonic(), 1, Integer::sum);
-    ActionOwner actionOwner = action.getOwner();
-    if (actionOwner != null) {
-      BuildEvent configuration = actionOwner.getBuildConfigurationEvent();
-      BuildEventStreamProtos.Configuration configProto =
-          configuration.asStreamProto(/*context=*/ null).getConfiguration();
-      configurationToCount.merge(configProto.getMnemonic(), 1, Integer::sum);
+    @Throws(java.lang.InterruptedException::class)
+    private fun processAction(action: ActionAnalysisMetadata) {
+        if (!AqueryUtils.matchesAqueryFilters(
+                action, actionFilters, options.getIncludePrunedInputs()
+            )
+        ) {
+            return
+        }
 
-      if (actionOwner.getExecutionPlatform() != null) {
-        execPlatformToCount.merge(
-            actionOwner.getExecutionPlatform().label().toString(), 1, Integer::sum);
-      }
+        mnemonicToCount.merge(action.getMnemonic(), 1) { a: Int?, b: Int? -> java.lang.Integer.sum(a, b) }
+        val actionOwner: ActionOwner? = action.getOwner()
+        if (actionOwner != null) {
+            val configuration: BuildEvent = actionOwner.getBuildConfigurationEvent()
+            val configProto: BuildEventStreamProtos.Configuration =
+                configuration.asStreamProto( /*context=*/null).getConfiguration()
+            configurationToCount.merge(configProto.getMnemonic(), 1) { a: Int?, b: Int? -> java.lang.Integer.sum(a, b) }
 
-      // In the case of aspect-on-aspect, AspectDescriptors are listed in
-      // topological order of the dependency graph.
-      // e.g. [A -> B] would imply that aspect A is applied on top of aspect B.
-      ImmutableList<AspectDescriptor> aspectDescriptors =
-          actionOwner.getAspectDescriptors().reverse();
-      if (!aspectDescriptors.isEmpty()) {
-        aspectDescriptors.forEach(
-            aspectDescriptor ->
-                aspectToCount.merge(aspectDescriptor.getAspectClass().getName(), 1, Integer::sum));
-      }
+            if (actionOwner.getExecutionPlatform() != null) {
+                execPlatformToCount.merge(
+                    actionOwner.getExecutionPlatform().label().toString(), 1
+                ) { a: Int?, b: Int? -> java.lang.Integer.sum(a, b) }
+            }
+
+            // In the case of aspect-on-aspect, AspectDescriptors are listed in
+            // topological order of the dependency graph.
+            // e.g. [A -> B] would imply that aspect A is applied on top of aspect B.
+            val aspectDescriptors: com.google.common.collect.ImmutableList<AspectDescriptor?> =
+                actionOwner.getAspectDescriptors().reverse()
+            if (!aspectDescriptors.isEmpty()) {
+                aspectDescriptors.forEach(
+                    java.util.function.Consumer { aspectDescriptor: AspectDescriptor? ->
+                        aspectToCount.merge(
+                            aspectDescriptor.getAspectClass().getName(),
+                            1
+                        ) { a: Int?, b: Int? -> java.lang.Integer.sum(a, b) }
+                    })
+            }
+        }
     }
-  }
 
-  @Override
-  public void close(boolean failFast) throws InterruptedException, IOException {
-    if (failFast) {
-      return;
+    @Throws(java.lang.InterruptedException::class, IOException::class)
+    override fun close(failFast: Boolean) {
+        if (failFast) {
+            return
+        }
+
+        val totalActions: Int = mnemonicToCount.values.stream().mapToInt { v: Int? -> v }.sum()
+        if (totalActions == 0) {
+            printStream.println("No actions matched.")
+        } else {
+            printStream.println(totalActions.toString() + " total action" + (if (totalActions == 1) "" else "s") + ".")
+        }
+
+        printSummary(mnemonicToCount, "Mnemonics:")
+        printSummary(configurationToCount, "Configurations:")
+        printSummary(execPlatformToCount, "Execution Platforms:")
+        printSummary(aspectToCount, "Aspects:")
     }
 
-    int totalActions = mnemonicToCount.values().stream().mapToInt(v -> v).sum();
-    if (totalActions == 0) {
-      printStream.println("No actions matched.");
-    } else {
-      printStream.println(totalActions + " total action" + (totalActions == 1 ? "" : "s") + ".");
+    private fun printSummary(actionsCount: MutableMap<String?, Int?>, s: String?) {
+        if (!actionsCount.isEmpty()) {
+            printStream.println()
+            printStream.println(s)
+            actionsCount.entries.stream()
+                .sorted(java.util.Comparator.comparingInt<MutableMap.MutableEntry<String?, Int?>?>(ToIntFunction { obj: MutableMap.MutableEntry<String?, Int?>? -> obj!!.value }))
+                .forEach { entry: MutableMap.MutableEntry<String?, Int?>? -> printStream.println("  " + entry!!.key + ": " + entry.value) }
+        }
     }
-
-    printSummary(mnemonicToCount, "Mnemonics:");
-    printSummary(configurationToCount, "Configurations:");
-    printSummary(execPlatformToCount, "Execution Platforms:");
-    printSummary(aspectToCount, "Aspects:");
-  }
-
-  private void printSummary(Map<String, Integer> actionsCount, String s) {
-    if (!actionsCount.isEmpty()) {
-      printStream.println();
-      printStream.println(s);
-      actionsCount.entrySet().stream()
-          .sorted(Comparator.comparingInt(Entry::getValue))
-          .forEach(entry -> printStream.println("  " + entry.getKey() + ": " + entry.getValue()));
-    }
-  }
 }

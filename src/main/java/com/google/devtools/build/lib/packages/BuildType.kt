@@ -11,915 +11,981 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Interner;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Ordering;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.packages.License.LicenseParsingException;
-import com.google.devtools.build.lib.packages.Type.ConversionException;
-import com.google.devtools.build.lib.packages.Type.DictType;
-import com.google.devtools.build.lib.packages.Type.LabelClass;
-import com.google.devtools.build.lib.packages.Type.ListType;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * Collection of data types that are specific to building things, i.e. not inherent to Starlark.
- *
- * <p>BEFORE YOU ADD A NEW TYPE: See javadoc in {@link Type}.
+ * 
+ * 
+ * BEFORE YOU ADD A NEW TYPE: See javadoc in [Type].
  */
-public final class BuildType {
+object BuildType {
+    /**
+     * The type of a label. Labels are not actually a first-class datatype in the build language, but
+     * they are so frequently used in the definitions of attributes that it's worth treating them
+     * specially (and providing support for resolution of relative-labels in the `convert()
+    ` *  method).
+     */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val LABEL: com.google.devtools.build.lib.packages.Type<Label> = LabelType(LabelClass.DEPENDENCY)
 
-  /**
-   * The type of a label. Labels are not actually a first-class datatype in the build language, but
-   * they are so frequently used in the definitions of attributes that it's worth treating them
-   * specially (and providing support for resolution of relative-labels in the <code>convert()
-   * </code> method).
-   */
-  @SerializationConstant
-  public static final Type<Label> LABEL = new LabelType(LabelClass.DEPENDENCY);
-  /** The type of a dictionary of {@linkplain #LABEL labels}. */
-  @SerializationConstant
-  public static final DictType<String, Label> LABEL_DICT_UNARY =
-      DictType.create(Type.STRING, LABEL);
-  /** The type of a dictionary keyed by {@linkplain #LABEL labels} with string values. */
-  @SerializationConstant
-  public static final DictType<Label, String> LABEL_KEYED_STRING_DICT =
-      LabelKeyedDictType.create(Type.STRING);
-  /** The type of a list of {@linkplain #LABEL labels}. */
-  @SerializationConstant public static final ListType<Label> LABEL_LIST = ListType.create(LABEL);
+    /** The type of a dictionary of [labels][.LABEL].  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val LABEL_DICT_UNARY: com.google.devtools.build.lib.packages.Type.DictType<String?, Label?> =
+        com.google.devtools.build.lib.packages.Type.DictType.Companion.create<String?, Label?>(
+            com.google.devtools.build.lib.packages.Type.Companion.STRING,
+            LABEL
+        )
 
-  /** The type of a dictionary of {@linkplain #LABEL_LIST label lists}. */
-  @SerializationConstant
-  public static final DictType<String, List<Label>> LABEL_LIST_DICT =
-      DictType.create(Type.STRING, LABEL_LIST);
+    /** The type of a dictionary keyed by [labels][.LABEL] with string values.  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val LABEL_KEYED_STRING_DICT: com.google.devtools.build.lib.packages.Type.DictType<Label?, String?> =
+        LabelKeyedDictType.Companion.create<String?>(com.google.devtools.build.lib.packages.Type.Companion.STRING)
 
-  /**
-   * This is a label type that does not cause dependencies. It is needed because certain rules want
-   * to verify the type of a target referenced by one of their attributes, but if there was a
-   * dependency edge there, it would be a circular dependency.
-   */
-  @SerializationConstant
-  public static final Type<Label> NODEP_LABEL = new LabelType(LabelClass.NONDEP_REFERENCE);
-  /** The type of a list of {@linkplain #NODEP_LABEL labels} that do not cause dependencies. */
-  @SerializationConstant
-  public static final ListType<Label> NODEP_LABEL_LIST = ListType.create(NODEP_LABEL);
+    /** The type of a list of [labels][.LABEL].  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val LABEL_LIST: com.google.devtools.build.lib.packages.Type.ListType<Label?> =
+        com.google.devtools.build.lib.packages.Type.ListType.Companion.create<Label?>(
+            LABEL
+        )
 
-  @SerializationConstant
-  public static final Type<Label> DORMANT_LABEL =
-      new LabelType(LabelClass.GENQUERY_SCOPE_REFERENCE);
+    /** The type of a dictionary of [label lists][.LABEL_LIST].  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val LABEL_LIST_DICT: com.google.devtools.build.lib.packages.Type.DictType<String?, MutableList<Label?>?> =
+        com.google.devtools.build.lib.packages.Type.DictType.Companion.create<String?, MutableList<Label?>?>(
+            com.google.devtools.build.lib.packages.Type.Companion.STRING,
+            LABEL_LIST
+        )
 
-  @SerializationConstant
-  public static final ListType<Label> DORMANT_LABEL_LIST = ListType.create(DORMANT_LABEL);
+    /**
+     * This is a label type that does not cause dependencies. It is needed because certain rules want
+     * to verify the type of a target referenced by one of their attributes, but if there was a
+     * dependency edge there, it would be a circular dependency.
+     */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val NODEP_LABEL: com.google.devtools.build.lib.packages.Type<Label?> = LabelType(LabelClass.NONDEP_REFERENCE)
 
-  /**
-   * This is a label type that causes dependencies, but the dependencies are NOT to be configured.
-   * Does not say anything about whether the attribute of this type is itself configurable.
-   *
-   * <p>Without a special type to handle genquery.scope, configuring a genquery target ends up
-   * configuring the transitive closure of genquery.scope. Since genquery rule implementation loads
-   * the deps through TransitiveTargetFunction, it doesn't need them to be configured. Preventing
-   * the dependencies of scope from being configured, lets us save some resources.
-   */
-  @SerializationConstant
-  public static final Type<Label> GENQUERY_SCOPE_TYPE =
-      new LabelType(LabelClass.GENQUERY_SCOPE_REFERENCE);
+    /** The type of a list of [labels][.NODEP_LABEL] that do not cause dependencies.  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val NODEP_LABEL_LIST: com.google.devtools.build.lib.packages.Type.ListType<Label?> =
+        com.google.devtools.build.lib.packages.Type.ListType.Companion.create<Label?>(
+            NODEP_LABEL
+        )
 
-  /**
-   * This is a label type that causes dependencies, but the dependencies are NOT to be configured.
-   * Does not say anything about whether the attribute of this type is itself configurable.
-   */
-  @SerializationConstant
-  public static final ListType<Label> GENQUERY_SCOPE_TYPE_LIST =
-      ListType.create(GENQUERY_SCOPE_TYPE);
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val DORMANT_LABEL: com.google.devtools.build.lib.packages.Type<Label?> =
+        LabelType(LabelClass.GENQUERY_SCOPE_REFERENCE)
 
-  /**
-   * The type of a license. Like Label, licenses aren't first-class, but they're important enough to
-   * justify early syntax error detection.
-   */
-  @SerializationConstant public static final Type<License> LICENSE = new LicenseType();
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val DORMANT_LABEL_LIST: com.google.devtools.build.lib.packages.Type.ListType<Label?> =
+        com.google.devtools.build.lib.packages.Type.ListType.Companion.create<Label?>(
+            DORMANT_LABEL
+        )
 
-  /** The type of an output file, treated as a {@link #LABEL}. */
-  @SerializationConstant public static final Type<Label> OUTPUT = new OutputType();
+    /**
+     * This is a label type that causes dependencies, but the dependencies are NOT to be configured.
+     * Does not say anything about whether the attribute of this type is itself configurable.
+     * 
+     * 
+     * Without a special type to handle genquery.scope, configuring a genquery target ends up
+     * configuring the transitive closure of genquery.scope. Since genquery rule implementation loads
+     * the deps through TransitiveTargetFunction, it doesn't need them to be configured. Preventing
+     * the dependencies of scope from being configured, lets us save some resources.
+     */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val GENQUERY_SCOPE_TYPE: com.google.devtools.build.lib.packages.Type<Label?> =
+        LabelType(LabelClass.GENQUERY_SCOPE_REFERENCE)
 
-  private static final ImmutableMap<Type<?>, String> whyNotConfigurable =
-      ImmutableMap.<Type<?>, String>builder()
-          .put(LICENSE, "loading phase license checking logic assumes non-configurable values")
-          .put(OUTPUT, "output paths are part of the static graph structure")
-          .buildOrThrow();
+    /**
+     * This is a label type that causes dependencies, but the dependencies are NOT to be configured.
+     * Does not say anything about whether the attribute of this type is itself configurable.
+     */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val GENQUERY_SCOPE_TYPE_LIST: com.google.devtools.build.lib.packages.Type.ListType<Label?> =
+        com.google.devtools.build.lib.packages.Type.ListType.Companion.create<Label?>(
+            GENQUERY_SCOPE_TYPE
+        )
 
-  /** The type of a list of {@linkplain #OUTPUT outputs}. */
-  @SerializationConstant public static final ListType<Label> OUTPUT_LIST = ListType.create(OUTPUT);
+    /**
+     * The type of a license. Like Label, licenses aren't first-class, but they're important enough to
+     * justify early syntax error detection.
+     */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val LICENSE: com.google.devtools.build.lib.packages.Type<License?> = LicenseType()
 
-  /** The type of a TriState with values: true (x>0), false (x==0), auto (x<0). */
-  @SerializationConstant public static final Type<TriState> TRISTATE = new TriStateType();
+    /** The type of an output file, treated as a [.LABEL].  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val OUTPUT: com.google.devtools.build.lib.packages.Type<Label?> = OutputType()
 
-  private BuildType() {
-    // Do not instantiate
-  }
+    private val whyNotConfigurable: com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.packages.Type<*>?, String?> =
+        com.google.common.collect.ImmutableMap.builder<com.google.devtools.build.lib.packages.Type<*>?, String?>()
+            .put(LICENSE, "loading phase license checking logic assumes non-configurable values")
+            .put(OUTPUT, "output paths are part of the static graph structure")
+            .buildOrThrow()
 
-  /** Returns whether the specified type is a label type or not. */
-  public static boolean isLabelType(Type<?> type) {
-    return type.getLabelClass() != LabelClass.NONE;
-  }
+    /** The type of a list of [outputs][.OUTPUT].  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val OUTPUT_LIST: com.google.devtools.build.lib.packages.Type.ListType<Label?> =
+        com.google.devtools.build.lib.packages.Type.ListType.Companion.create<Label?>(
+            OUTPUT
+        )
 
-  /**
-   * Variation of {@link Type#convert} that supports selector expressions for configurable
-   * attributes (i.e. "{ config1: 'value1_of_orig_type', config2: 'value2_of_orig_type; }"). If x is
-   * a selector expression, returns a {@link SelectorList} instance that contains key-mapped entries
-   * of the native type. Else, returns the native type directly.
-   *
-   * <p>If {@code simplifyUnconditionalSelects} is true, then an unconditional select is simplified
-   * to the select's value converted to a native value; and a concatenation of unconditional selects
-   * (and direct values, if any) is simplified to a concatenation of the select's values and the
-   * direct values converted to native values. In other words, {@code ["//x"] +
-   * select("//conditions:default": ["//y"])} becomes {@code [Label("//x"), Label("//y")]}. If a
-   * concatenation contains a non-unconditional select, the concatenation is not simplified.
-   *
-   * <p>Returns null iff {@code simplifyUnconditionalSelects} is true, {@code x} is {@code
-   * select({"//conditions:default": None})}, and the {@code type.getDefaultValue()} is null.
-   *
-   * <p>The caller is responsible for casting the returned value appropriately.
-   */
-  @Nullable
-  static <T> Object selectableConvert(
-      Type<T> type,
-      Object x,
-      Object what,
-      LabelConverter context,
-      boolean simplifyUnconditionalSelects)
-      throws ConversionException {
-    if (x instanceof com.google.devtools.build.lib.packages.SelectorList selectorList) {
-      List<Object> selectorListElements = selectorList.getElements();
-      if (!simplifyUnconditionalSelects) {
-        return new SelectorList<T>(selectorListElements, what, context, type);
-      }
-      if (selectorListElements.size() > 1 && type.concat(ImmutableList.of()) == null) {
-        throw new ConversionException(
-            String.format("type '%s' doesn't support select concatenation", type));
-      }
-      // Note: ArrayList, not ImmutableList, because we may insert a null into it; the default value
-      // of an unconditional Selector<T> is null if the SelectorValue value is None and the native
-      // type's default value is null.
-      ArrayList<T> values = new ArrayList<>(selectorListElements.size());
-      for (Object element : selectorListElements) {
-        if (element instanceof SelectorValue selectorValue) {
-          ImmutableMap<?, ?> dictionary = selectorValue.getDictionary();
-          if (dictionary.size() != 1) {
-            // Cannot simplify: selectorValue has multiple branches.
-            return new SelectorList<T>(selectorListElements, what, context, type);
-          }
-          Selector<T> selector =
-              new Selector<>(dictionary, what, context, type, selectorValue.getNoMatchError());
-          if (!selector.isUnconditional()) {
-            // Cannot simplify: the only branch is not the default condition.
-            return new SelectorList<T>(selectorListElements, what, context, type);
-          }
-          values.add(selector.getDefault());
+    /** The type of a TriState with values: true (x>0), false (x==0), auto (x<0).  */
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val TRISTATE: com.google.devtools.build.lib.packages.Type<com.google.devtools.build.lib.packages.TriState?> =
+        TriStateType()
+
+    /** Returns whether the specified type is a label type or not.  */
+    fun isLabelType(type: com.google.devtools.build.lib.packages.Type<*>): Boolean {
+        return type.getLabelClass() != LabelClass.NONE
+    }
+
+    /**
+     * Variation of [Type.convert] that supports selector expressions for configurable
+     * attributes (i.e. "{ config1: 'value1_of_orig_type', config2: 'value2_of_orig_type; }"). If x is
+     * a selector expression, returns a [SelectorList] instance that contains key-mapped entries
+     * of the native type. Else, returns the native type directly.
+     * 
+     * 
+     * If `simplifyUnconditionalSelects` is true, then an unconditional select is simplified
+     * to the select's value converted to a native value; and a concatenation of unconditional selects
+     * (and direct values, if any) is simplified to a concatenation of the select's values and the
+     * direct values converted to native values. In other words, `["//x"] + select("//conditions:default": ["//y"])` becomes `[Label("//x"), Label("//y")]`. If a
+     * concatenation contains a non-unconditional select, the concatenation is not simplified.
+     * 
+     * 
+     * Returns null iff `simplifyUnconditionalSelects` is true, `x` is `select({"//conditions:default": None})`, and the `type.getDefaultValue()` is null.
+     * 
+     * 
+     * The caller is responsible for casting the returned value appropriately.
+     */
+    @Throws(ConversionException::class)
+    fun <T> selectableConvert(
+        type: com.google.devtools.build.lib.packages.Type<T?>,
+        x: Any?,
+        what: Any?,
+        context: LabelConverter?,
+        simplifyUnconditionalSelects: Boolean
+    ): Any? {
+        if (x is com.google.devtools.build.lib.packages.SelectorList) {
+            val selectorListElements: MutableList<Any?> = x.getElements()
+            if (!simplifyUnconditionalSelects) {
+                return SelectorList<T?>(selectorListElements, what, context, type)
+            }
+            if (selectorListElements.size() > 1 && type.concat(com.google.common.collect.ImmutableList.of<T?>()) == null) {
+                throw ConversionException(
+                    java.lang.String.format("type '%s' doesn't support select concatenation", type)
+                )
+            }
+            // Note: ArrayList, not ImmutableList, because we may insert a null into it; the default value
+            // of an unconditional Selector<T> is null if the SelectorValue value is None and the native
+            // type's default value is null.
+            val values: java.util.ArrayList<T?> = java.util.ArrayList<T?>(selectorListElements.size())
+            for (element in selectorListElements) {
+                if (element is SelectorValue) {
+                    val dictionary: com.google.common.collect.ImmutableMap<*, *> = element.getDictionary()
+                    if (dictionary.size() != 1) {
+                        // Cannot simplify: selectorValue has multiple branches.
+                        return SelectorList<T?>(selectorListElements, what, context, type)
+                    }
+                    val selector =
+                        Selector<T?>(dictionary, what, context, type, element.getNoMatchError())
+                    if (!selector.isUnconditional()) {
+                        // Cannot simplify: the only branch is not the default condition.
+                        return SelectorList<T?>(selectorListElements, what, context, type)
+                    }
+                    values.add(selector.getDefault())
+                } else {
+                    values.add(type.convert(element, what, context))
+                }
+            }
+            if (values.size() == 1) {
+                return values.getFirst()
+            } else {
+                return type.concat(values)
+            }
         } else {
-          values.add(type.convert(element, what, context));
+            return type.convert(x, what, context)
         }
-      }
-      if (values.size() == 1) {
-        return values.getFirst();
-      } else {
-        return type.concat(values);
-      }
-    } else {
-      return type.convert(x, what, context);
-    }
-  }
-
-  /**
-   * Converts the build-language-typed {@code buildLangValue} to a native value via {@link
-   * BuildType#selectableConvert}. Canonicalizes the value's order if it is a {@link List} type and
-   * {@code attr.isOrderIndependent()} returns {@code true}.
-   *
-   * <p>Returns null iff {@code simplifyUnconditionalSelects} is true, {@code buildLangValue} is
-   * {@code select({"//conditions:default": None})}, and {@code attr.getType().getDefaultValue()} is
-   * null.
-   *
-   * <p>Throws {@link ConversionException} if the conversion fails, or if {@code buildLangValue} is
-   * a selector expression but {@code attr.isConfigurable()} is {@code false}.
-   */
-  @Nullable
-  public static Object convertFromBuildLangType(
-      String ruleClass,
-      Attribute attr,
-      Object buildLangValue,
-      LabelConverter labelConverter,
-      Interner<ImmutableList<?>> listInterner,
-      boolean simplifyUnconditionalSelects)
-      throws ConversionException {
-    if ((buildLangValue instanceof com.google.devtools.build.lib.packages.SelectorList)
-        && !attr.isConfigurable()) {
-      throw new ConversionException(
-          String.format("attribute \"%s\" is not configurable", attr.getName()));
     }
 
-    Object converted =
-        BuildType.selectableConvert(
-            attr.getType(),
-            buildLangValue,
-            new AttributeConversionContext(attr.getName(), ruleClass),
-            labelConverter,
-            simplifyUnconditionalSelects);
+    /**
+     * Converts the build-language-typed `buildLangValue` to a native value via [ ][BuildType.selectableConvert]. Canonicalizes the value's order if it is a [List] type and
+     * `attr.isOrderIndependent()` returns `true`.
+     * 
+     * 
+     * Returns null iff `simplifyUnconditionalSelects` is true, `buildLangValue` is
+     * `select({"//conditions:default": None})`, and `attr.getType().getDefaultValue()` is
+     * null.
+     * 
+     * 
+     * Throws [ConversionException] if the conversion fails, or if `buildLangValue` is
+     * a selector expression but `attr.isConfigurable()` is `false`.
+     */
+    @Throws(ConversionException::class)
+    fun convertFromBuildLangType(
+        ruleClass: String?,
+        attr: com.google.devtools.build.lib.packages.Attribute,
+        buildLangValue: Any?,
+        labelConverter: LabelConverter?,
+        listInterner: com.google.common.collect.Interner<com.google.common.collect.ImmutableList<*>?>,
+        simplifyUnconditionalSelects: Boolean
+    ): Any? {
+        if ((buildLangValue is com.google.devtools.build.lib.packages.SelectorList)
+            && !attr.isConfigurable()
+        ) {
+            throw ConversionException(
+                java.lang.String.format("attribute \"%s\" is not configurable", attr.getName())
+            )
+        }
 
-    if (converted instanceof List<?>) {
-      if (attr.isOrderIndependent()) {
-        @SuppressWarnings("unchecked")
-        List<? extends Comparable<?>> list = (List<? extends Comparable<?>>) converted;
-        converted = Ordering.natural().sortedCopy(list);
-      }
-      // It's common for multiple rule instances in the same package to have the same value for some
-      // attributes. As a concrete example, consider a package having several 'java_test' instances,
-      // each with the same exact 'tags' attribute value.
-      converted = listInterner.intern(ImmutableList.copyOf((List<?>) converted));
+        var converted =
+            selectableConvert(
+                attr.getType(),
+                buildLangValue,
+                AttributeConversionContext(attr.getName(), ruleClass),
+                labelConverter,
+                simplifyUnconditionalSelects
+            )
+
+        if (converted is MutableList<*>) {
+            if (attr.isOrderIndependent()) {
+                val list = converted as MutableList<out Comparable<*>?>
+                converted = com.google.common.collect.Ordering.natural<Comparable<*>?>().sortedCopy(list)
+            }
+            // It's common for multiple rule instances in the same package to have the same value for some
+            // attributes. As a concrete example, consider a package having several 'java_test' instances,
+            // each with the same exact 'tags' attribute value.
+            converted = listInterner.intern(com.google.common.collect.ImmutableList.copyOf(converted as MutableList<*>))
+        }
+
+        return converted
     }
 
-    return converted;
-  }
+    /** Copies a Starlark SelectorList converting label strings to Label objects.  */
+    @Throws(ConversionException::class)
+    private fun <T> copyAndLiftSelectorList(
+        type: com.google.devtools.build.lib.packages.Type<T?>,
+        x: com.google.devtools.build.lib.packages.SelectorList,
+        what: Any?,
+        context: LabelConverter?
+    ): Any {
+        val elements: MutableList<Any?> = x.getElements()
+        try {
+            if (elements.size() > 1 && type.concat(com.google.common.collect.ImmutableList.of<T?>()) == null) {
+                throw ConversionException(
+                    java.lang.String.format("type '%s' doesn't support select concatenation", type)
+                )
+            }
 
-  /** Copies a Starlark SelectorList converting label strings to Label objects. */
-  private static <T> Object copyAndLiftSelectorList(
-      Type<T> type,
-      com.google.devtools.build.lib.packages.SelectorList x,
-      Object what,
-      LabelConverter context)
-      throws ConversionException {
-    List<Object> elements = x.getElements();
-    try {
-      if (elements.size() > 1 && type.concat(ImmutableList.of()) == null) {
-        throw new ConversionException(
-            String.format("type '%s' doesn't support select concatenation", type));
-      }
+            val builder: com.google.common.collect.ImmutableList.Builder<Any?> =
+                com.google.common.collect.ImmutableList.builder<Any?>()
+            for (elem in elements) {
+                val newMap: com.google.common.collect.ImmutableMap.Builder<Label?, Any?> =
+                    com.google.common.collect.ImmutableMap.builder<Label?, Any?>()
+                if (elem is SelectorValue) {
+                    for (entry in (elem as SelectorValue).getDictionary().entrySet()) {
+                        val key: Label? = LABEL.convert(entry.getKey(), what, context)
+                        newMap.put(
+                            key,
+                            if (entry.getValue() === net.starlark.java.eval.Starlark.NONE)
+                                net.starlark.java.eval.Starlark.NONE
+                            else
+                                type.copyAndLiftStarlarkValue(
+                                    entry.getValue(), SelectBranchMessage(what, key), context
+                                )
+                        )
+                    }
+                    builder.add(
+                        SelectorValue(
+                            newMap.buildKeepingLast(), (elem as SelectorValue).getNoMatchError()
+                        )
+                    )
+                } else {
+                    val directValue: Any = type.copyAndLiftStarlarkValue(elem, what, context)
+                    builder.add(directValue)
+                }
+            }
+            return com.google.devtools.build.lib.packages.SelectorList.Companion.of(builder.build())
+        } catch (e: net.starlark.java.eval.EvalException) {
+            throw ConversionException(e.getMessage())
+        }
+    }
 
-      ImmutableList.Builder<Object> builder = ImmutableList.builder();
-      for (Object elem : elements) {
-        ImmutableMap.Builder<Label, Object> newMap = ImmutableMap.builder();
-        if (elem instanceof SelectorValue) {
-          for (var entry : ((SelectorValue) elem).getDictionary().entrySet()) {
-            Label key = LABEL.convert(entry.getKey(), what, context);
-            newMap.put(
-                key,
-                entry.getValue() == Starlark.NONE
-                    ? Starlark.NONE
-                    : type.copyAndLiftStarlarkValue(
-                        entry.getValue(), new SelectBranchMessage(what, key), context));
-          }
-          builder.add(
-              new SelectorValue(
-                  newMap.buildKeepingLast(), ((SelectorValue) elem).getNoMatchError()));
+    /**
+     * Copies a Starlark value to immutable ones and converts label strings to Label objects.
+     * 
+     * 
+     * `attrOwner` is the name of the rule or macro on which the attribute is defined, e.g.
+     * "cc_library".
+     * 
+     * 
+     * All Starlark values are also type checked.
+     * 
+     * 
+     * In comparison to [.convertFromBuildLangType] unordered attributes are not
+     * canonicalized or interned.
+     * 
+     * 
+     * Use the function before passing the values to initializers.
+     * 
+     * @throws ConversionException if the `starlarkValue` doesn't match the type of attr or if
+     * `starlarkValue` is a selector expression but `attr.isConfigurable()` is `false`.
+     */
+    @Throws(ConversionException::class)
+    fun copyAndLiftStarlarkValue(
+        attrOwner: String?,
+        attr: com.google.devtools.build.lib.packages.Attribute,
+        starlarkValue: Any?,
+        labelConverter: LabelConverter?
+    ): Any {
+        if (starlarkValue is com.google.devtools.build.lib.packages.SelectorList) {
+            if (!attr.isConfigurable()) {
+                throw ConversionException(
+                    java.lang.String.format("attribute \"%s\" is not configurable", attr.getName())
+                )
+            }
+            return copyAndLiftSelectorList(
+                attr.getType(),
+                starlarkValue as com.google.devtools.build.lib.packages.SelectorList,
+                AttributeConversionContext(attr.getName(), attrOwner),
+                labelConverter
+            )
         } else {
-          Object directValue = type.copyAndLiftStarlarkValue(elem, what, context);
-          builder.add(directValue);
+            return attr.getType()
+                .copyAndLiftStarlarkValue(
+                    starlarkValue,
+                    AttributeConversionContext(attr.getName(), attrOwner),
+                    labelConverter
+                )
         }
-      }
-      return com.google.devtools.build.lib.packages.SelectorList.of(builder.build());
-    } catch (EvalException e) {
-      throw new ConversionException(e.getMessage());
     }
-  }
 
-  /**
-   * Copies a Starlark value to immutable ones and converts label strings to Label objects.
-   *
-   * <p>{@code attrOwner} is the name of the rule or macro on which the attribute is defined, e.g.
-   * "cc_library".
-   *
-   * <p>All Starlark values are also type checked.
-   *
-   * <p>In comparison to {@link #convertFromBuildLangType} unordered attributes are not
-   * canonicalized or interned.
-   *
-   * <p>Use the function before passing the values to initializers.
-   *
-   * @throws ConversionException if the {@code starlarkValue} doesn't match the type of attr or if
-   *     {@code starlarkValue} is a selector expression but {@code attr.isConfigurable()} is {@code
-   *     false}.
-   */
-  public static Object copyAndLiftStarlarkValue(
-      String attrOwner, Attribute attr, Object starlarkValue, LabelConverter labelConverter)
-      throws ConversionException {
-    if (starlarkValue instanceof com.google.devtools.build.lib.packages.SelectorList) {
-      if (!attr.isConfigurable()) {
-        throw new ConversionException(
-            String.format("attribute \"%s\" is not configurable", attr.getName()));
-      }
-      return copyAndLiftSelectorList(
-          attr.getType(),
-          (com.google.devtools.build.lib.packages.SelectorList) starlarkValue,
-          new AttributeConversionContext(attr.getName(), attrOwner),
-          labelConverter);
-    } else {
-      return attr.getType()
-          .copyAndLiftStarlarkValue(
-              starlarkValue,
-              new AttributeConversionContext(attr.getName(), attrOwner),
-              labelConverter);
+    /**
+     * If the given attribute type is non-configurable, returns the reason why. Otherwise, returns
+     * `null`.
+     */
+    fun maybeGetNonConfigurableReason(type: com.google.devtools.build.lib.packages.Type<*>?): String? {
+        return whyNotConfigurable.get(type)
     }
-  }
 
-  /**
-   * If the given attribute type is non-configurable, returns the reason why. Otherwise, returns
-   * {@code null}.
-   */
-  @Nullable
-  public static String maybeGetNonConfigurableReason(Type<?> type) {
-    return whyNotConfigurable.get(type);
-  }
-
-  /**
-   * A pair of an attribute name and owner, with a toString that includes both.
-   *
-   * <p>This is used to defer stringifying this information until needed for an error message, so as
-   * to avoid generating unnecessary garbage.
-   */
-  private static class AttributeConversionContext {
-    private final String attrName;
-    private final String attrOwner;
-
+    /**
+     * A pair of an attribute name and owner, with a toString that includes both.
+     * 
+     * 
+     * This is used to defer stringifying this information until needed for an error message, so as
+     * to avoid generating unnecessary garbage.
+     */
+    private class AttributeConversionContext
     /**
      * Constructs a new context object from a pair of strings.
-     *
+     * 
      * @param attrName an attribute name, such as "deps"
      * @param attrOwner a rule or macro on which the attribute is defined, e.g. "cc_library"
-     */
-    AttributeConversionContext(String attrName, String attrOwner) {
-      this.attrName = attrName;
-      this.attrOwner = attrOwner;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("attribute '%s' of '%s'", attrName, attrOwner);
-    }
-  }
-
-  private static class LabelType extends Type<Label> {
-    private final LabelClass labelClass;
-
-    LabelType(LabelClass labelClass) {
-      this.labelClass = labelClass;
-    }
-
-    @Override
-    public Label cast(Object value) {
-      return (Label) value;
-    }
-
-    @Override
-    public Label getDefaultValue() {
-      return null; // Labels have no default value
-    }
-
-    @Override
-    public void visitLabels(LabelVisitor visitor, Label value, @Nullable Attribute context) {
-      visitor.visit(value, context);
-    }
-
-    @Override
-    public String toString() {
-      return "label";
-    }
-
-    @Override
-    public LabelClass getLabelClass() {
-      return labelClass;
-    }
-
-    @Override
-    public Label convert(Object x, Object what, LabelConverter labelConverter)
-        throws ConversionException {
-      if (x instanceof Label) {
-        return (Label) x;
-      }
-      if (!(x instanceof String)) {
-        throw new ConversionException(Type.STRING, x, what);
-      }
-      try {
-        if (labelConverter == null) {
-          return Label.parseCanonical((String) x);
+     */(private val attrName: String?, private val attrOwner: String?) {
+        override fun toString(): String {
+            return java.lang.String.format("attribute '%s' of '%s'", attrName, attrOwner)
         }
-        return labelConverter.convert((String) x);
-      } catch (LabelSyntaxException e) {
-        throw new ConversionException(
-            "invalid label '" + x + "' in " + what + ": " + e.getMessage());
-      }
-    }
-  }
-
-  /**
-   * Dictionary type specialized for label keys, which is able to detect collisions caused by the
-   * fact that labels have multiple equivalent representations in Starlark code.
-   */
-  private static class LabelKeyedDictType<ValueT> extends DictType<Label, ValueT> {
-    private LabelKeyedDictType(Type<ValueT> valueType) {
-      super(LABEL, valueType, LabelClass.DEPENDENCY);
     }
 
-    static <ValueT> LabelKeyedDictType<ValueT> create(Type<ValueT> valueType) {
-      Preconditions.checkArgument(
-          valueType.getLabelClass() == LabelClass.NONE
-              || valueType.getLabelClass() == LabelClass.DEPENDENCY,
-          "Values associated with label keys must not be labels themselves.");
-      return new LabelKeyedDictType<>(valueType);
-    }
+    private class LabelType(labelClass: LabelClass?) : com.google.devtools.build.lib.packages.Type<Label?>() {
+        private val labelClass: LabelClass?
 
-    @Override
-    public Map<Label, ValueT> convert(Object x, Object what, LabelConverter labelConverter)
-        throws ConversionException {
-      Map<Label, ValueT> result = super.convert(x, what, labelConverter);
-      // The input is known to be a map because super.convert succeeded; otherwise, a
-      // ConversionException would have been thrown.
-      Map<?, ?> input = (Map<?, ?>) x;
-
-      if (input.size() == result.size()) {
-        // No collisions found. Exit early.
-        return result;
-      }
-      // Look for collisions in order to produce a nicer error message.
-      Map<Label, List<Object>> convertedFrom = new LinkedHashMap<>();
-      for (Object original : input.keySet()) {
-        Label label = LABEL.convert(original, what, labelConverter);
-        convertedFrom.computeIfAbsent(label, k -> new ArrayList<>()).add(original);
-      }
-      Printer errorMessage = new Printer();
-      errorMessage.append("duplicate labels");
-      if (what != null) {
-        errorMessage.append(" in ").append(what.toString());
-      }
-      errorMessage.append(':');
-      boolean isFirstEntry = true;
-      for (Map.Entry<Label, List<Object>> entry : convertedFrom.entrySet()) {
-        if (entry.getValue().size() == 1) {
-          continue;
+        init {
+            this.labelClass = labelClass
         }
-        if (isFirstEntry) {
-          isFirstEntry = false;
-        } else {
-          errorMessage.append(',');
+
+        override fun cast(value: Any?): Label? {
+            return value as Label?
         }
-        errorMessage.append(' ');
-        errorMessage.append(entry.getKey().getCanonicalForm());
-        errorMessage.append(" (as ");
-        errorMessage.repr(entry.getValue(), StarlarkSemantics.DEFAULT);
-        errorMessage.append(')');
-      }
-      throw new ConversionException(errorMessage.toString());
-    }
-  }
 
-  /**
-   * Like Label, LicenseType is a derived type, which is declared specially in order to allow syntax
-   * validation. It represents the licenses, as described in {@link License}.
-   */
-  public static final class LicenseType extends Type<License> {
-    @Override
-    public License cast(Object value) {
-      return (License) value;
-    }
-
-    @Override
-    public License convert(Object x, Object what, LabelConverter labelConverter)
-        throws ConversionException {
-      try {
-        List<String> licenseStrings = STRING_LIST.convert(x, what);
-        return License.parseLicense(licenseStrings);
-      } catch (LicenseParsingException e) {
-        throw new ConversionException(e.getMessage());
-      }
-    }
-
-    @Override
-    public Object copyAndLiftStarlarkValue(
-        Object x, Object what, @Nullable LabelConverter labelConverter) throws ConversionException {
-      return STRING_LIST.copyAndLiftStarlarkValue(x, what, labelConverter);
-    }
-
-    @Override
-    public License getDefaultValue() {
-      return License.NO_LICENSE;
-    }
-
-    @Override
-    public void visitLabels(LabelVisitor visitor, License value, @Nullable Attribute context) {}
-
-    @Override
-    public String toString() {
-      return "license";
-    }
-  }
-
-  private static final class OutputType extends Type<Label> {
-    @Override
-    public Label cast(Object value) {
-      return (Label) value;
-    }
-
-    @Nullable
-    @Override
-    public Label getDefaultValue() {
-      return null;
-    }
-
-    @Override
-    public void visitLabels(LabelVisitor visitor, Label value, @Nullable Attribute context) {
-      visitor.visit(value, context);
-    }
-
-    @Override
-    public LabelClass getLabelClass() {
-      return LabelClass.OUTPUT;
-    }
-
-    @Override
-    public String toString() {
-      return "output";
-    }
-
-    @Override
-    public Label convert(Object x, Object what, LabelConverter labelConverter)
-        throws ConversionException {
-      Label result = LABEL.convert(x, what, labelConverter);
-      if (!result.getPackageIdentifier().equals(labelConverter.getBasePackage())) {
-        throw new ConversionException("label '" + x + "' is not in the current package");
-      }
-      return result;
-    }
-  }
-
-  /**
-   * Holds an ordered collection of {@link Selector}s. This is used to support {@code attr =
-   * rawValue + select(...) + select(...) + ..."} syntax. For consistency's sake, raw values are
-   * stored as selects with only a default condition.
-   */
-  // TODO(adonovan): merge with packages.Selector{List,Value}.
-  // We don't need three classes for the same concept.
-  public static final class SelectorList<T> implements StarlarkValue {
-    private final Type<T> originalType;
-    private final List<Selector<T>> elements;
-
-    @VisibleForTesting
-    SelectorList(
-        List<Object> x, Object what, @Nullable LabelConverter context, Type<T> originalType)
-        throws ConversionException {
-      if (x.size() > 1 && originalType.concat(ImmutableList.of()) == null) {
-        throw new ConversionException(
-            String.format("type '%s' doesn't support select concatenation", originalType));
-      }
-
-      ImmutableList.Builder<Selector<T>> builder = ImmutableList.builder();
-      for (Object elem : x) {
-        if (elem instanceof SelectorValue) {
-          builder.add(new Selector<>(((SelectorValue) elem).getDictionary(), what,
-              context, originalType, ((SelectorValue) elem).getNoMatchError()));
-        } else {
-          T directValue = originalType.convert(elem, what, context);
-          builder.add(new Selector<>(ImmutableMap.of(Selector.DEFAULT_CONDITION_KEY, directValue),
-              what, context, originalType));
+        override fun getDefaultValue(): Label? {
+            return null // Labels have no default value
         }
-      }
-      this.originalType = originalType;
-      this.elements = builder.build();
-    }
 
-    SelectorList(List<Selector<T>> elements, Type<T> originalType) {
-      this.elements = ImmutableList.copyOf(elements);
-      this.originalType = originalType;
-    }
-
-    /**
-     * Returns a syntactically order-preserved list of all values and selectors for this attribute.
-     */
-    public List<Selector<T>> getSelectors() {
-      return elements;
-    }
-
-    /**
-     * Returns the native Type for this attribute (i.e. what this would be if it wasn't a selector
-     * list).
-     */
-    public Type<T> getOriginalType() {
-      return originalType;
-    }
-
-    /** Returns the labels of all configurability keys across all selects in this expression. */
-    public Set<Label> getKeyLabels() {
-      ImmutableSet.Builder<Label> keys = ImmutableSet.builder();
-      for (Selector<T> selector : elements) {
-        selector.forEach(
-            (label, value) -> {
-              if (!Selector.isDefaultConditionLabel(label)) {
-                keys.add(label);
-              }
-            });
-      }
-      return keys.build();
-    }
-
-    @Override
-    public String toString() {
-      return Starlark.repr(this, StarlarkSemantics.DEFAULT);
-    }
-
-    @Override
-    public void repr(Printer printer, StarlarkSemantics semantics) {
-      // Convert to a lib.packages.SelectorList to guarantee consistency with callers that serialize
-      // directly on that type.
-      printer.repr(Attribute.valueToStarlark(this), semantics);
-    }
-  }
-
-  /** Lazy string message to pass as the {@code what} when converting a select branch value. */
-  private static final class SelectBranchMessage {
-    private final Object what;
-    private final Label key;
-
-    SelectBranchMessage(Object what, Label key) {
-      this.what = what;
-      this.key = key;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("each branch in select expression of %s (including '%s')", what, key);
-    }
-  }
-
-  /**
-   * Represents the entries in a single select expression (in the order they were initially
-   * specified). Contains the configurability pattern (label) and value (objects of the attribute's
-   * native type) of each entry.
-   */
-  public static final class Selector<T> {
-    /** Value to use when none of an attribute's selection criteria match. */
-    @VisibleForTesting
-    public static final String DEFAULT_CONDITION_KEY = "//conditions:default";
-
-    static final Label DEFAULT_CONDITION_LABEL =
-        Label.parseCanonicalUnchecked(DEFAULT_CONDITION_KEY);
-
-    private final Type<T> originalType;
-
-    private final Label[] labels;
-
-    // Can contain nulls, when an entry maps to None and the Type<T> has a null getDefaultValue().
-    private final T[] values;
-
-    private final Set<Label> conditionsWithDefaultValues;
-    private final String noMatchError;
-    private final int defaultConditionPos;
-
-    /** Creates a new Selector using the default error message when no conditions match. */
-    Selector(
-        ImmutableMap<?, ?> x, Object what, @Nullable LabelConverter context, Type<T> originalType)
-        throws ConversionException {
-      this(x, what, context, originalType, "");
-    }
-
-    /** Creates a new Selector with a custom error message for when no conditions match. */
-    Selector(
-        ImmutableMap<?, ?> x,
-        Object what,
-        @Nullable LabelConverter context,
-        Type<T> originalType,
-        String noMatchError)
-        throws ConversionException {
-      this.originalType = originalType;
-      Label[] labels = new Label[x.size()];
-      @SuppressWarnings("unchecked")
-      T[] values = (T[]) new Object[x.size()];
-      ImmutableSet.Builder<Label> defaultValuesBuilder = ImmutableSet.builder();
-      int pos = 0;
-      int defaultConditionPos = -1;
-      for (Map.Entry<?, ?> entry : x.entrySet()) {
-        Label key = LABEL.convert(entry.getKey(), what, context);
-        labels[pos] = key;
-        T value;
-        if (entry.getValue() == Starlark.NONE) {
-          // { "//condition": None } is the same as not setting the value.
-          value = originalType.getDefaultValue();
-          defaultValuesBuilder.add(key);
-        } else {
-          Object selectBranch = what == null ? null : new SelectBranchMessage(what, key);
-          value = originalType.convert(entry.getValue(), selectBranch, context);
+        override fun visitLabels(
+            visitor: com.google.devtools.build.lib.packages.Type.LabelVisitor,
+            value: Label?,
+            context: com.google.devtools.build.lib.packages.Attribute?
+        ) {
+            visitor.visit(value, context)
         }
-        if (key.equals(DEFAULT_CONDITION_LABEL)) {
-          defaultConditionPos = pos;
+
+        override fun toString(): String {
+            return "label"
         }
-        values[pos] = value;
-        pos++;
-      }
-      this.labels = labels;
-      this.values = values;
-      this.noMatchError = noMatchError;
-      this.conditionsWithDefaultValues = defaultValuesBuilder.build();
-      this.defaultConditionPos = defaultConditionPos;
+
+        override fun getLabelClass(): LabelClass? {
+            return labelClass
+        }
+
+        @Throws(ConversionException::class)
+        override fun convert(x: Any?, what: Any?, labelConverter: LabelConverter?): Label? {
+            if (x is Label) {
+                return x as Label?
+            }
+            if (x !is String) {
+                throw ConversionException(com.google.devtools.build.lib.packages.Type.Companion.STRING, x, what)
+            }
+            try {
+                if (labelConverter == null) {
+                    return Label.parseCanonical(x)
+                }
+                return labelConverter.convert(x)
+            } catch (e: LabelSyntaxException) {
+                throw ConversionException(
+                    "invalid label '" + x + "' in " + what + ": " + e.getMessage()
+                )
+            }
+        }
     }
 
     /**
-     * Create a new Selector from raw values. Defensive copies of the supplied arrays are <i>not</i>
-     * made, so it is imperative that they are not modified following construction.
+     * Dictionary type specialized for label keys, which is able to detect collisions caused by the
+     * fact that labels have multiple equivalent representations in Starlark code.
      */
-    Selector(
-        Label[] labels,
-        T[] values,
-        Type<T> originalType,
-        String noMatchError,
-        ImmutableSet<Label> conditionsWithDefaultValues,
-        int defaultConditionPos) {
-      this.labels = labels;
-      this.values = values;
-      this.originalType = originalType;
-      this.noMatchError = noMatchError;
-      this.conditionsWithDefaultValues = conditionsWithDefaultValues;
-      this.defaultConditionPos = defaultConditionPos;
-    }
+    private class LabelKeyedDictType<ValueT>(valueType: com.google.devtools.build.lib.packages.Type<ValueT?>?) :
+        com.google.devtools.build.lib.packages.Type.DictType<Label?, ValueT?>(
+            LABEL, valueType, LabelClass.DEPENDENCY
+        ) {
+        @Throws(ConversionException::class)
+        override fun convert(x: Any?, what: Any?, labelConverter: LabelConverter?): MutableMap<Label?, ValueT?> {
+            val result: MutableMap<Label?, ValueT?> = super.convert(x, what, labelConverter)
+            // The input is known to be a map because super.convert succeeded; otherwise, a
+            // ConversionException would have been thrown.
+            val input = x as MutableMap<*, *>
 
-    public boolean hasDefault() {
-      return defaultConditionPos >= 0;
-    }
+            if (input.size() == result.size()) {
+                // No collisions found. Exit early.
+                return result
+            }
+            // Look for collisions in order to produce a nicer error message.
+            val convertedFrom: MutableMap<Label?, MutableList<Any?>?> = LinkedHashMap<Label?, MutableList<Any?>?>()
+            for (original in input.keySet()) {
+                val label: Label? = LABEL.convert(original, what, labelConverter)
+                convertedFrom.computeIfAbsent(
+                    label,
+                    java.util.function.Function { k: Label? -> java.util.ArrayList<Any?>() }).add(original)
+            }
+            val errorMessage: net.starlark.java.eval.Printer = net.starlark.java.eval.Printer()
+            errorMessage.append("duplicate labels")
+            if (what != null) {
+                errorMessage.append(" in ").append(what.toString())
+            }
+            errorMessage.append(':')
+            var isFirstEntry = true
+            for (entry in convertedFrom.entrySet()) {
+                if (entry.getValue().size() == 1) {
+                    continue
+                }
+                if (isFirstEntry) {
+                    isFirstEntry = false
+                } else {
+                    errorMessage.append(',')
+                }
+                errorMessage.append(' ')
+                errorMessage.append(entry.getKey().getCanonicalForm())
+                errorMessage.append(" (as ")
+                errorMessage.repr(entry.getValue(), net.starlark.java.eval.StarlarkSemantics.DEFAULT)
+                errorMessage.append(')')
+            }
+            throw ConversionException(errorMessage.toString())
+        }
 
-    /** Returns the value to use when none of the attribute's selection keys match. */
-    @Nullable
-    public T getDefault() {
-      return defaultConditionPos < 0 ? null : values[defaultConditionPos];
+        companion object {
+            fun <ValueT> create(valueType: com.google.devtools.build.lib.packages.Type<ValueT?>): LabelKeyedDictType<ValueT?> {
+                com.google.common.base.Preconditions.checkArgument(
+                    valueType.getLabelClass() == LabelClass.NONE
+                            || valueType.getLabelClass() == LabelClass.DEPENDENCY,
+                    "Values associated with label keys must not be labels themselves."
+                )
+                return LabelKeyedDictType<ValueT?>(valueType)
+            }
+        }
     }
 
     /**
-     * Returns a new {@link ArrayList} containing all the values in the entries of this {@link
-     * Selector}, in the same order they were initially specified.
-     *
-     * <p>Prefer using {@link #forEach} since that makes no allocations.
+     * Like Label, LicenseType is a derived type, which is declared specially in order to allow syntax
+     * validation. It represents the licenses, as described in [License].
      */
-    public ArrayList<T> valuesCopy() {
-      // N.B. We can't use ImmutableList since we can have null values.
-      ArrayList<T> result = Lists.newArrayListWithCapacity(getNumEntries());
-      forEach((label, value) -> result.add(value));
-      return result;
+    class LicenseType : com.google.devtools.build.lib.packages.Type<License?>() {
+        override fun cast(value: Any?): License? {
+            return value as License?
+        }
+
+        @Throws(ConversionException::class)
+        override fun convert(x: Any?, what: Any?, labelConverter: LabelConverter?): License? {
+            try {
+                val licenseStrings: MutableList<String?> =
+                    com.google.devtools.build.lib.packages.Types.STRING_LIST.convert(x, what)
+                return License.Companion.parseLicense(licenseStrings)
+            } catch (e: LicenseParsingException) {
+                throw ConversionException(e.getMessage())
+            }
+        }
+
+        @Throws(ConversionException::class)
+        override fun copyAndLiftStarlarkValue(
+            x: Any?, what: Any?, labelConverter: LabelConverter?
+        ): Any? {
+            return com.google.devtools.build.lib.packages.Types.STRING_LIST.copyAndLiftStarlarkValue(
+                x,
+                what,
+                labelConverter
+            )
+        }
+
+        override fun getDefaultValue(): License? {
+            return License.Companion.NO_LICENSE
+        }
+
+        override fun visitLabels(
+            visitor: com.google.devtools.build.lib.packages.Type.LabelVisitor?,
+            value: License?,
+            context: com.google.devtools.build.lib.packages.Attribute?
+        ) {
+        }
+
+        override fun toString(): String {
+            return "license"
+        }
+    }
+
+    private class OutputType : com.google.devtools.build.lib.packages.Type<Label?>() {
+        override fun cast(value: Any?): Label? {
+            return value as Label?
+        }
+
+        override fun getDefaultValue(): Label? {
+            return null
+        }
+
+        override fun visitLabels(
+            visitor: com.google.devtools.build.lib.packages.Type.LabelVisitor,
+            value: Label?,
+            context: com.google.devtools.build.lib.packages.Attribute?
+        ) {
+            visitor.visit(value, context)
+        }
+
+        override fun getLabelClass(): LabelClass {
+            return LabelClass.OUTPUT
+        }
+
+        override fun toString(): String {
+            return "output"
+        }
+
+        @Throws(ConversionException::class)
+        override fun convert(x: Any?, what: Any?, labelConverter: LabelConverter): Label {
+            val result: Label = LABEL.convert(x, what, labelConverter)
+            if (!result.getPackageIdentifier().equals(labelConverter.getBasePackage())) {
+                throw ConversionException("label '" + x + "' is not in the current package")
+            }
+            return result
+        }
     }
 
     /**
-     * Returns a new {@link LinkedHashMap} representing the branches of this {@link Selector}, in
-     * the same order they were initially specified.
-     *
-     * <p>Prefer using {@link #forEach} since that makes no allocations.
+     * Holds an ordered collection of [Selector]s. This is used to support `attr = rawValue + select(...) + select(...) + ..."` syntax. For consistency's sake, raw values are
+     * stored as selects with only a default condition.
      */
-    public LinkedHashMap<Label, T> mapCopy() {
-      // N.B. We can't use ImmutableMap since we can have null values. But we also want to respect
-      // the ordering of our original map, so we use LinkedHashMap instead of HashMap.
-      LinkedHashMap<Label, T> result = Maps.newLinkedHashMapWithExpectedSize(getNumEntries());
-      forEach(result::put);
-      return result;
+    // TODO(adonovan): merge with packages.Selector{List,Value}.
+    // We don't need three classes for the same concept.
+    class SelectorList<T> : net.starlark.java.eval.StarlarkValue {
+        private val originalType: com.google.devtools.build.lib.packages.Type<T?>?
+        @kotlin.jvm.JvmField
+        private val elements: MutableList<Selector<T?>>
+
+        @com.google.common.annotations.VisibleForTesting
+        internal constructor(
+            x: MutableList<Any?>,
+            what: Any?,
+            context: LabelConverter?,
+            originalType: com.google.devtools.build.lib.packages.Type<T?>
+        ) {
+            if (x.size() > 1 && originalType.concat(com.google.common.collect.ImmutableList.of<T?>()) == null) {
+                throw ConversionException(
+                    java.lang.String.format("type '%s' doesn't support select concatenation", originalType)
+                )
+            }
+
+            val builder: com.google.common.collect.ImmutableList.Builder<Selector<T?>?> =
+                com.google.common.collect.ImmutableList.builder<Selector<T?>?>()
+            for (elem in x) {
+                if (elem is SelectorValue) {
+                    builder.add(
+                        Selector<T?>(
+                            (elem as SelectorValue).getDictionary(), what,
+                            context, originalType, (elem as SelectorValue).getNoMatchError()
+                        )
+                    )
+                } else {
+                    val directValue: T? = originalType.convert(elem, what, context)
+                    builder.add(
+                        Selector<T?>(
+                            com.google.common.collect.ImmutableMap.of<String?, T?>(
+                                com.google.devtools.build.lib.packages.BuildType.Selector.Companion.DEFAULT_CONDITION_KEY,
+                                directValue
+                            ),
+                            what, context, originalType
+                        )
+                    )
+                }
+            }
+            this.originalType = originalType
+            this.elements = builder.build()
+        }
+
+        internal constructor(
+            elements: MutableList<Selector<T?>?>,
+            originalType: com.google.devtools.build.lib.packages.Type<T?>?
+        ) {
+            this.elements = com.google.common.collect.ImmutableList.copyOf<Selector<T?>?>(elements)
+            this.originalType = originalType
+        }
+
+        /**
+         * Returns a syntactically order-preserved list of all values and selectors for this attribute.
+         */
+        fun getSelectors(): MutableList<Selector<T?>> {
+            return elements
+        }
+
+        /**
+         * Returns the native Type for this attribute (i.e. what this would be if it wasn't a selector
+         * list).
+         */
+        fun getOriginalType(): com.google.devtools.build.lib.packages.Type<T?>? {
+            return originalType
+        }
+
+        /** Returns the labels of all configurability keys across all selects in this expression.  */
+        fun getKeyLabels(): MutableSet<Label?> {
+            val keys: com.google.common.collect.ImmutableSet.Builder<Label?> =
+                com.google.common.collect.ImmutableSet.builder<Label?>()
+            for (selector in elements) {
+                selector.forEach(
+                    SelectorEntryConsumer { label: Label?, value: T? ->
+                        if (!com.google.devtools.build.lib.packages.BuildType.Selector.Companion.isDefaultConditionLabel(
+                                label
+                            )
+                        ) {
+                            keys.add(label)
+                        }
+                    })
+            }
+            return keys.build()
+        }
+
+        override fun toString(): String {
+            return net.starlark.java.eval.Starlark.repr(this, net.starlark.java.eval.StarlarkSemantics.DEFAULT)
+        }
+
+        override fun repr(
+            printer: net.starlark.java.eval.Printer,
+            semantics: net.starlark.java.eval.StarlarkSemantics?
+        ) {
+            // Convert to a lib.packages.SelectorList to guarantee consistency with callers that serialize
+            // directly on that type.
+            printer.repr(com.google.devtools.build.lib.packages.Attribute.Companion.valueToStarlark(this), semantics)
+        }
     }
 
-    /** Consumer for {@link #forEach}. */
-    public interface SelectorEntryConsumer<T> {
-      void accept(Label conditionLabel, @Nullable T value);
+    /** Lazy string message to pass as the `what` when converting a select branch value.  */
+    private class SelectBranchMessage(private val what: Any?, key: Label?) {
+        private val key: Label?
+
+        init {
+            this.key = key
+        }
+
+        override fun toString(): String {
+            return java.lang.String.format("each branch in select expression of %s (including '%s')", what, key)
+        }
     }
 
     /**
-     * Passes each entry to the provided {@code consumer}, in the same order they were initially
-     * specified.
+     * Represents the entries in a single select expression (in the order they were initially
+     * specified). Contains the configurability pattern (label) and value (objects of the attribute's
+     * native type) of each entry.
      */
-    public void forEach(SelectorEntryConsumer<T> consumer) {
-      for (int i = 0; i < labels.length; i++) {
-        consumer.accept(labels[i], values[i]);
-      }
-    }
+    class Selector<T> {
+        private val originalType: com.google.devtools.build.lib.packages.Type<T?>?
 
-    /** Consumer for {@link #forEachExceptionally}. */
-    interface ExceptionalSelectorEntryConsumer<T, E1 extends Exception, E2 extends Exception> {
-      void accept(Label conditionLabel, @Nullable T value) throws E1, E2;
+        private val labels: Array<Label?>
+
+        // Can contain nulls, when an entry maps to None and the Type<T> has a null getDefaultValue().
+        private val values: Array<T?>
+
+        private val conditionsWithDefaultValues: MutableSet<Label?>
+        private val noMatchError: String?
+        private val defaultConditionPos: Int
+
+        /** Creates a new Selector with a custom error message for when no conditions match.  */
+        /** Creates a new Selector using the default error message when no conditions match.  */
+        @kotlin.jvm.JvmOverloads
+        internal constructor(
+            x: com.google.common.collect.ImmutableMap<*, *>,
+            what: Any?,
+            context: LabelConverter?,
+            originalType: com.google.devtools.build.lib.packages.Type<T?>,
+            noMatchError: String? = ""
+        ) {
+            this.originalType = originalType
+            val labels: Array<Label?> = arrayOfNulls<Label>(x.size())
+            val values = arrayOfNulls<Any>(x.size()) as Array<T?>
+            val defaultValuesBuilder: com.google.common.collect.ImmutableSet.Builder<Label?> =
+                com.google.common.collect.ImmutableSet.builder<Label?>()
+            var pos = 0
+            var defaultConditionPos = -1
+            for (entry in x.entrySet()) {
+                val key: Label = LABEL.convert(entry.getKey(), what, context)
+                labels[pos] = key
+                val value: T?
+                if (entry.getValue() === net.starlark.java.eval.Starlark.NONE) {
+                    // { "//condition": None } is the same as not setting the value.
+                    value = originalType.getDefaultValue()
+                    defaultValuesBuilder.add(key)
+                } else {
+                    val selectBranch: Any? = if (what == null) null else SelectBranchMessage(what, key)
+                    value = originalType.convert(entry.getValue(), selectBranch, context)
+                }
+                if (key.equals(com.google.devtools.build.lib.packages.BuildType.Selector.Companion.DEFAULT_CONDITION_LABEL)) {
+                    defaultConditionPos = pos
+                }
+                values[pos] = value
+                pos++
+            }
+            this.labels = labels
+            this.values = values
+            this.noMatchError = noMatchError
+            this.conditionsWithDefaultValues = defaultValuesBuilder.build()
+            this.defaultConditionPos = defaultConditionPos
+        }
+
+        /**
+         * Create a new Selector from raw values. Defensive copies of the supplied arrays are *not*
+         * made, so it is imperative that they are not modified following construction.
+         */
+        internal constructor(
+            labels: Array<Label?>,
+            values: Array<T?>,
+            originalType: com.google.devtools.build.lib.packages.Type<T?>?,
+            noMatchError: String?,
+            conditionsWithDefaultValues: com.google.common.collect.ImmutableSet<Label?>,
+            defaultConditionPos: Int
+        ) {
+            this.labels = labels
+            this.values = values
+            this.originalType = originalType
+            this.noMatchError = noMatchError
+            this.conditionsWithDefaultValues = conditionsWithDefaultValues
+            this.defaultConditionPos = defaultConditionPos
+        }
+
+        fun hasDefault(): Boolean {
+            return defaultConditionPos >= 0
+        }
+
+        /** Returns the value to use when none of the attribute's selection keys match.  */
+        fun getDefault(): T? {
+            return if (defaultConditionPos < 0) null else values[defaultConditionPos]
+        }
+
+        /**
+         * Returns a new [ArrayList] containing all the values in the entries of this [ ], in the same order they were initially specified.
+         * 
+         * 
+         * Prefer using [.forEach] since that makes no allocations.
+         */
+        fun valuesCopy(): java.util.ArrayList<T?> {
+            // N.B. We can't use ImmutableList since we can have null values.
+            val result: java.util.ArrayList<T?> =
+                com.google.common.collect.Lists.newArrayListWithCapacity<T?>(getNumEntries())
+            forEach(SelectorEntryConsumer { label: Label?, value: T? -> result.add(value) })
+            return result
+        }
+
+        /**
+         * Returns a new [LinkedHashMap] representing the branches of this [Selector], in
+         * the same order they were initially specified.
+         * 
+         * 
+         * Prefer using [.forEach] since that makes no allocations.
+         */
+        fun mapCopy(): LinkedHashMap<Label?, T?> {
+            // N.B. We can't use ImmutableMap since we can have null values. But we also want to respect
+            // the ordering of our original map, so we use LinkedHashMap instead of HashMap.
+            val result: LinkedHashMap<Label?, T?> =
+                com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize<Label?, T?>(getNumEntries())
+            forEach(SelectorEntryConsumer { key: Label?, value: T? -> result.put(key, value) })
+            return result
+        }
+
+        /** Consumer for [.forEach].  */
+        interface SelectorEntryConsumer<T> {
+            fun accept(conditionLabel: Label?, value: T?)
+        }
+
+        /**
+         * Passes each entry to the provided `consumer`, in the same order they were initially
+         * specified.
+         */
+        fun forEach(consumer: SelectorEntryConsumer<T?>) {
+            for (i in labels.indices) {
+                consumer.accept(labels[i], values[i])
+            }
+        }
+
+        /** Consumer for [.forEachExceptionally].  */
+        internal interface ExceptionalSelectorEntryConsumer<T, E1 : java.lang.Exception?, E2 : java.lang.Exception?> {
+            @Throws(E1::class, E2::class)
+            fun accept(conditionLabel: Label?, value: T?)
+        }
+
+        /**
+         * Passes each entry to the provided `consumer`, in the same order they were initially
+         * specified.
+         */
+        @Throws(E1::class, E2::class)
+        fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?> forEachExceptionally(
+            consumer: ExceptionalSelectorEntryConsumer<T?, E1?, E2?>
+        ) {
+            for (i in labels.indices) {
+                consumer.accept(labels[i], values[i])
+            }
+        }
+
+        /** Returns the number of entries.  */
+        fun getNumEntries(): Int {
+            return labels.size
+        }
+
+        /**
+         * Returns the native Type for this attribute (i.e. what this would be if it wasn't a selector
+         * expression).
+         */
+        fun getOriginalType(): com.google.devtools.build.lib.packages.Type<T?>? {
+            return originalType
+        }
+
+        /**
+         * Returns true if this selector has the structure: {"//conditions:default": ...}. That means
+         * all values are always chosen.
+         */
+        fun isUnconditional(): Boolean {
+            return labels.size == 1 && defaultConditionPos >= 0
+        }
+
+        /**
+         * Returns true if an explicit value is set for the given condition, vs. { "//condition": None }
+         * which means revert to the default.
+         */
+        fun isValueSet(condition: Label?): Boolean {
+            return !conditionsWithDefaultValues.contains(condition)
+        }
+
+        /**
+         * Returns a custom error message for this select when no condition matches, or an empty string
+         * if no such message is declared.
+         */
+        fun getNoMatchError(): String? {
+            return noMatchError
+        }
+
+        companion object {
+            /** Value to use when none of an attribute's selection criteria match.  */
+            @com.google.common.annotations.VisibleForTesting
+            const val DEFAULT_CONDITION_KEY: String = "//conditions:default"
+
+            val DEFAULT_CONDITION_LABEL: Label =
+                Label.parseCanonicalUnchecked(com.google.devtools.build.lib.packages.BuildType.Selector.Companion.DEFAULT_CONDITION_KEY)
+
+            /**
+             * Returns true for the default condition label, which is not intended to map to an actual
+             * target.
+             */
+            fun isDefaultConditionLabel(label: Label?): Boolean {
+                return com.google.devtools.build.lib.packages.BuildType.Selector.Companion.DEFAULT_CONDITION_LABEL.equals(
+                    label
+                )
+            }
+        }
     }
 
     /**
-     * Passes each entry to the provided {@code consumer}, in the same order they were initially
-     * specified.
+     * A TriState value is like a boolean attribute whose default value may be distinguished from
+     * either of the possible explicitly assigned values. TriState attributes may be assigned the
+     * values 0 (NO), 1 (YES), or None (AUTO). TriState is deprecated; use attr.int(values=[-1, 0, 1])
+     * instead.
      */
-    public <E1 extends Exception, E2 extends Exception> void forEachExceptionally(
-        ExceptionalSelectorEntryConsumer<T, E1, E2> consumer) throws E1, E2 {
-      for (int i = 0; i < labels.length; i++) {
-        consumer.accept(labels[i], values[i]);
-      }
-    }
+    private class TriStateType :
+        com.google.devtools.build.lib.packages.Type<com.google.devtools.build.lib.packages.TriState?>() {
+        override fun cast(value: Any?): com.google.devtools.build.lib.packages.TriState? {
+            return value as com.google.devtools.build.lib.packages.TriState?
+        }
 
-    /** Returns the number of entries. */
-    public int getNumEntries() {
-      return labels.length;
-    }
+        override fun getDefaultValue(): com.google.devtools.build.lib.packages.TriState? {
+            return com.google.devtools.build.lib.packages.TriState.AUTO
+        }
 
-    /**
-     * Returns the native Type for this attribute (i.e. what this would be if it wasn't a selector
-     * expression).
-     */
-    public Type<T> getOriginalType() {
-      return originalType;
-    }
+        override fun visitLabels(
+            visitor: com.google.devtools.build.lib.packages.Type.LabelVisitor?,
+            value: com.google.devtools.build.lib.packages.TriState?,
+            context: com.google.devtools.build.lib.packages.Attribute?
+        ) {
+        }
 
-    /**
-     * Returns true if this selector has the structure: {"//conditions:default": ...}. That means
-     * all values are always chosen.
-     */
-    public boolean isUnconditional() {
-      return labels.length == 1 && defaultConditionPos >= 0;
-    }
+        override fun toString(): String {
+            return "tristate"
+        }
 
-    /**
-     * Returns true if an explicit value is set for the given condition, vs. { "//condition": None }
-     * which means revert to the default.
-     */
-    public boolean isValueSet(Label condition) {
-      return !conditionsWithDefaultValues.contains(condition);
+        @Throws(ConversionException::class)
+        override fun convert(
+            x: Any,
+            what: Any?,
+            labelConverter: LabelConverter?
+        ): com.google.devtools.build.lib.packages.TriState {
+            if (x is com.google.devtools.build.lib.packages.TriState) {
+                return x as com.google.devtools.build.lib.packages.TriState
+            }
+            if (x is Boolean) {
+                // TODO(adonovan): re-enable this under flag control; see b/116691720.
+                // throw new ConversionException(this, x,
+                //   "rule attribute (tristate is being replaced by "
+                //       + "attr.int(values=[-1, 0, 1]), and it no longer accepts Boolean values; "
+                //       + "instead, use 0 or 1, or None for the default)");
+                return if (x) com.google.devtools.build.lib.packages.TriState.YES else com.google.devtools.build.lib.packages.TriState.NO
+            }
+            val xAsInteger: Int =
+                com.google.devtools.build.lib.packages.Type.Companion.INTEGER.convert(x, what, labelConverter)
+                    .toIntUnchecked()
+            if (xAsInteger == -1) {
+                return com.google.devtools.build.lib.packages.TriState.AUTO
+            } else if (xAsInteger == 1) {
+                return com.google.devtools.build.lib.packages.TriState.YES
+            } else if (xAsInteger == 0) {
+                return com.google.devtools.build.lib.packages.TriState.NO
+            }
+            throw ConversionException(this, x, "TriState values is not one of [-1, 0, 1]")
+        }
     }
-
-    /**
-     * Returns a custom error message for this select when no condition matches, or an empty string
-     * if no such message is declared.
-     */
-    public String getNoMatchError() {
-      return noMatchError;
-    }
-
-    /**
-     * Returns true for the default condition label, which is not intended to map to an actual
-     * target.
-     */
-    public static boolean isDefaultConditionLabel(Label label) {
-      return DEFAULT_CONDITION_LABEL.equals(label);
-    }
-  }
-
-  /**
-   * A TriState value is like a boolean attribute whose default value may be distinguished from
-   * either of the possible explicitly assigned values. TriState attributes may be assigned the
-   * values 0 (NO), 1 (YES), or None (AUTO). TriState is deprecated; use attr.int(values=[-1, 0, 1])
-   * instead.
-   */
-  private static final class TriStateType extends Type<TriState> {
-    @Override
-    public TriState cast(Object value) {
-      return (TriState) value;
-    }
-
-    @Override
-    public TriState getDefaultValue() {
-      return TriState.AUTO;
-    }
-
-    @Override
-    public void visitLabels(LabelVisitor visitor, TriState value, @Nullable Attribute context) {}
-
-    @Override
-    public String toString() {
-      return "tristate";
-    }
-
-    @Override
-    public TriState convert(Object x, Object what, LabelConverter labelConverter)
-        throws ConversionException {
-      if (x instanceof TriState) {
-        return (TriState) x;
-      }
-      if (x instanceof Boolean) {
-        // TODO(adonovan): re-enable this under flag control; see b/116691720.
-        // throw new ConversionException(this, x,
-        //   "rule attribute (tristate is being replaced by "
-        //       + "attr.int(values=[-1, 0, 1]), and it no longer accepts Boolean values; "
-        //       + "instead, use 0 or 1, or None for the default)");
-        return ((Boolean) x) ? TriState.YES : TriState.NO;
-      }
-      int xAsInteger = INTEGER.convert(x, what, labelConverter).toIntUnchecked();
-      if (xAsInteger == -1) {
-        return TriState.AUTO;
-      } else if (xAsInteger == 1) {
-        return TriState.YES;
-      } else if (xAsInteger == 0) {
-        return TriState.NO;
-      }
-      throw new ConversionException(this, x, "TriState values is not one of [-1, 0, 1]");
-    }
-  }
 }

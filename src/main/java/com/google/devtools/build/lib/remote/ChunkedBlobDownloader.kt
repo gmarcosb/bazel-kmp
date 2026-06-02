@@ -11,214 +11,215 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
+import build.bazel.remote.execution.v2.Digest
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.remote.util.Utils.getFromFuture;
+/** Downloads blobs by fetching chunks through a per-blob sliding window via the SplitBlob API.  */
+class ChunkedBlobDownloader(grpcCacheClient: GrpcCacheClient, combinedCache: CombinedCache, digestUtil: DigestUtil) {
+    private val grpcCacheClient: GrpcCacheClient
+    private val combinedCache: CombinedCache
+    private val digestUtil: DigestUtil
 
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.SplitBlobResponse;
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.remote.common.CacheNotFoundException;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.util.DigestOutputStream;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.Utils;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.LinkedBlockingQueue;
-import javax.annotation.Nullable;
-
-/** Downloads blobs by fetching chunks through a per-blob sliding window via the SplitBlob API. */
-public class ChunkedBlobDownloader {
-  // Guard against pathological fanout from a single large chunked blob. This is only a per-blob
-  // cap; chunk requests still flow through CombinedCache and the shared remote cache transport
-  // stack below it, which is what bounds active remote RPC concurrency across blobs.
-  private static final int MAX_IN_FLIGHT_CHUNK_DOWNLOADS = 16;
-
-  private final GrpcCacheClient grpcCacheClient;
-  private final CombinedCache combinedCache;
-  private final DigestUtil digestUtil;
-
-  public ChunkedBlobDownloader(
-      GrpcCacheClient grpcCacheClient, CombinedCache combinedCache, DigestUtil digestUtil) {
-    this.grpcCacheClient = grpcCacheClient;
-    this.combinedCache = combinedCache;
-    this.digestUtil = digestUtil;
-  }
-
-  /**
-   * Downloads a blob using chunked download via the SplitBlob API. This should be called with
-   * virtual threads, as it may block while waiting for chunk metadata and completed chunk
-   * downloads.
-   */
-  public void downloadChunked(
-      RemoteActionExecutionContext context, Digest blobDigest, OutputStream out)
-      throws IOException, InterruptedException {
-    @Nullable DigestOutputStream digestOut = null;
-    if (grpcCacheClient.shouldVerifyDownloads()) {
-      digestOut = digestUtil.newDigestOutputStream(out);
-      out = digestOut;
+    init {
+        this.grpcCacheClient = grpcCacheClient
+        this.combinedCache = combinedCache
+        this.digestUtil = digestUtil
     }
 
-    List<Digest> chunkDigests = getChunkDigests(context, blobDigest);
-    downloadAndReassembleChunks(context, chunkDigests, out);
-    if (digestOut != null) {
-      Utils.verifyBlobContents(blobDigest, digestOut.digest());
-    }
-  }
-
-  private List<Digest> getChunkDigests(RemoteActionExecutionContext context, Digest blobDigest)
-      throws IOException, InterruptedException {
-    if (blobDigest.getSizeBytes() == 0) {
-      return ImmutableList.of();
-    }
-    ListenableFuture<SplitBlobResponse> splitResponseFuture =
-        grpcCacheClient.splitBlob(context, blobDigest);
-    if (splitResponseFuture == null) {
-      throw new CacheNotFoundException(blobDigest);
-    }
-    List<Digest> chunkDigests = getFromFuture(splitResponseFuture).getChunkDigestsList();
-    if (chunkDigests.isEmpty()) {
-      throw new CacheNotFoundException(blobDigest);
-    }
-    return chunkDigests;
-  }
-
-  private static final class PendingDownload {
-    private final Digest digest;
-    private final ListenableFuture<byte[]> future;
-    private final List<Integer> chunkIndices = new ArrayList<>(1);
-
-    PendingDownload(Digest digest, ListenableFuture<byte[]> future, int firstChunkIndex) {
-      this.digest = digest;
-      this.future = future;
-      chunkIndices.add(firstChunkIndex);
-    }
-
-    void addChunkIndex(int chunkIndex) {
-      chunkIndices.add(chunkIndex);
-    }
-
-    Digest digest() {
-      return digest;
-    }
-
-    ListenableFuture<byte[]> future() {
-      return future;
-    }
-
-    List<Integer> chunkIndices() {
-      return chunkIndices;
-    }
-  }
-
-  private void downloadAndReassembleChunks(
-      RemoteActionExecutionContext context, List<Digest> chunkDigests, OutputStream out)
-      throws IOException, InterruptedException {
-    new DownloadSession(context, chunkDigests, out).run();
-  }
-
-  private final class DownloadSession {
-    private final LinkedBlockingQueue<PendingDownload> completedDownloads =
-        new LinkedBlockingQueue<>();
-    private final Map<Digest, PendingDownload> activeDownloads =
-        new HashMap<>(MAX_IN_FLIGHT_CHUNK_DOWNLOADS);
-    private final Map<Integer, byte[]> readyChunks = new HashMap<>(MAX_IN_FLIGHT_CHUNK_DOWNLOADS);
-    private final RemoteActionExecutionContext context;
-    private final List<Digest> chunkDigests;
-    private final OutputStream out;
-    private int nextToStart = 0;
-    private int nextToWrite = 0;
-
-    DownloadSession(
-        RemoteActionExecutionContext context, List<Digest> chunkDigests, OutputStream out) {
-      this.context = context;
-      this.chunkDigests = chunkDigests;
-      this.out = out;
-    }
-
-    void run() throws IOException, InterruptedException {
-      try {
-        fillWindow();
-        while (nextToWrite < chunkDigests.size()) {
-          drainCompletedDownloads();
-          drainReadyChunks();
-          fillWindow();
+    /**
+     * Downloads a blob using chunked download via the SplitBlob API. This should be called with
+     * virtual threads, as it may block while waiting for chunk metadata and completed chunk
+     * downloads.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun downloadChunked(
+        context: RemoteActionExecutionContext?, blobDigest: Digest, out: java.io.OutputStream
+    ) {
+        var out: java.io.OutputStream = out
+        var digestOut: com.google.devtools.build.lib.remote.util.DigestOutputStream? = null
+        if (grpcCacheClient.shouldVerifyDownloads()) {
+            digestOut = digestUtil.newDigestOutputStream(out)
+            out = digestOut
         }
-      } finally {
-        cancelAllDownloads();
-      }
-    }
 
-    private void fillWindow() {
-      while (nextToStart < chunkDigests.size()) {
-        if (nextToStart - nextToWrite >= MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
-          return;
+        val chunkDigests: MutableList<Digest?> = getChunkDigests(context, blobDigest)
+        downloadAndReassembleChunks(context, chunkDigests, out)
+        if (digestOut != null) {
+            com.google.devtools.build.lib.remote.util.Utils.verifyBlobContents(blobDigest, digestOut.digest())
         }
-        Digest chunkDigest = chunkDigests.get(nextToStart);
-        PendingDownload existing = activeDownloads.get(chunkDigest);
-        if (existing != null) {
-          existing.addChunkIndex(nextToStart);
-          nextToStart++;
-          continue;
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun getChunkDigests(context: RemoteActionExecutionContext?, blobDigest: Digest): MutableList<Digest?> {
+        if (blobDigest.getSizeBytes() === 0) {
+            return com.google.common.collect.ImmutableList.of<Digest?>()
         }
-        startDownload(chunkDigest, nextToStart);
-        nextToStart++;
-      }
-    }
-
-    private void startDownload(Digest chunkDigest, int chunkIndex) {
-      PendingDownload download =
-          new PendingDownload(
-              chunkDigest, combinedCache.downloadBlob(context, chunkDigest), chunkIndex);
-      activeDownloads.put(chunkDigest, download);
-      download.future().addListener(() -> completedDownloads.add(download), directExecutor());
-    }
-
-    private void drainCompletedDownloads() throws IOException, InterruptedException {
-      PendingDownload download = completedDownloads.take();
-      do {
-        processCompletedDownload(download);
-        download = completedDownloads.poll();
-      } while (download != null);
-    }
-
-    private void processCompletedDownload(PendingDownload download)
-        throws IOException, InterruptedException {
-      activeDownloads.remove(download.digest());
-      byte[] chunkData = getFromFuture(download.future());
-      for (int chunkIndex : download.chunkIndices()) {
-        if (chunkIndex == nextToWrite) {
-          out.write(chunkData);
-          nextToWrite++;
-        } else {
-          readyChunks.put(chunkIndex, chunkData);
+        val splitResponseFuture: com.google.common.util.concurrent.ListenableFuture<SplitBlobResponse?>? =
+            grpcCacheClient.splitBlob(context, blobDigest)
+        if (splitResponseFuture == null) {
+            throw CacheNotFoundException(blobDigest)
         }
-      }
-    }
-
-    private void drainReadyChunks() throws IOException {
-      while (true) {
-        byte[] chunk = readyChunks.remove(nextToWrite);
-        if (chunk == null) {
-          return;
+        val chunkDigests: MutableList<Digest?> =
+            com.google.devtools.build.lib.remote.util.Utils.getFromFuture<SplitBlobResponse?>(splitResponseFuture)
+                .getChunkDigestsList()
+        if (chunkDigests.isEmpty()) {
+            throw CacheNotFoundException(blobDigest)
         }
-        out.write(chunk);
-        nextToWrite++;
-      }
+        return chunkDigests
     }
 
-    private void cancelAllDownloads() {
-      for (PendingDownload download : activeDownloads.values()) {
-        download.future().cancel(/* mayInterruptIfRunning= */ true);
-      }
+    private class PendingDownload(
+        digest: Digest?,
+        future: com.google.common.util.concurrent.ListenableFuture<ByteArray?>?,
+        firstChunkIndex: Int
+    ) {
+        private val digest: Digest?
+        private val future: com.google.common.util.concurrent.ListenableFuture<ByteArray?>?
+        private val chunkIndices: MutableList<Int?> = java.util.ArrayList<Int?>(1)
+
+        init {
+            this.digest = digest
+            this.future = future
+            chunkIndices.add(firstChunkIndex)
+        }
+
+        fun addChunkIndex(chunkIndex: Int) {
+            chunkIndices.add(chunkIndex)
+        }
+
+        fun digest(): Digest? {
+            return digest
+        }
+
+        fun future(): com.google.common.util.concurrent.ListenableFuture<ByteArray?>? {
+            return future
+        }
+
+        fun chunkIndices(): MutableList<Int?> {
+            return chunkIndices
+        }
     }
-  }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun downloadAndReassembleChunks(
+        context: RemoteActionExecutionContext?, chunkDigests: MutableList<Digest?>, out: java.io.OutputStream
+    ) {
+        DownloadSession(context, chunkDigests, out).run()
+    }
+
+    private inner class DownloadSession(
+        context: RemoteActionExecutionContext?,
+        chunkDigests: MutableList<Digest?>,
+        out: java.io.OutputStream
+    ) {
+        private val completedDownloads: LinkedBlockingQueue<PendingDownload?> = LinkedBlockingQueue<PendingDownload?>()
+        private val activeDownloads: MutableMap<Digest?, PendingDownload> = HashMap<Digest?, PendingDownload>(
+            MAX_IN_FLIGHT_CHUNK_DOWNLOADS
+        )
+        private val readyChunks: MutableMap<Int?, ByteArray?> = HashMap<Int?, ByteArray?>(MAX_IN_FLIGHT_CHUNK_DOWNLOADS)
+        private val context: RemoteActionExecutionContext?
+        private val chunkDigests: MutableList<Digest?>
+        private val out: java.io.OutputStream
+        private var nextToStart = 0
+        private var nextToWrite = 0
+
+        init {
+            this.context = context
+            this.chunkDigests = chunkDigests
+            this.out = out
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun run() {
+            try {
+                fillWindow()
+                while (nextToWrite < chunkDigests.size()) {
+                    drainCompletedDownloads()
+                    drainReadyChunks()
+                    fillWindow()
+                }
+            } finally {
+                cancelAllDownloads()
+            }
+        }
+
+        fun fillWindow() {
+            while (nextToStart < chunkDigests.size()) {
+                if (nextToStart - nextToWrite >= MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
+                    return
+                }
+                val chunkDigest: Digest? = chunkDigests.get(nextToStart)
+                val existing = activeDownloads.get(chunkDigest)
+                if (existing != null) {
+                    existing.addChunkIndex(nextToStart)
+                    nextToStart++
+                    continue
+                }
+                startDownload(chunkDigest, nextToStart)
+                nextToStart++
+            }
+        }
+
+        fun startDownload(chunkDigest: Digest?, chunkIndex: Int) {
+            val download: PendingDownload =
+                com.google.devtools.build.lib.remote.ChunkedBlobDownloader.PendingDownload(
+                    chunkDigest, combinedCache.downloadBlob(context, chunkDigest), chunkIndex
+                )
+            activeDownloads.put(chunkDigest, download)
+            download.future().addListener(
+                java.lang.Runnable { completedDownloads.add(download) },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun drainCompletedDownloads() {
+            var download: PendingDownload? = completedDownloads.take()
+            do {
+                processCompletedDownload(download!!)
+                download = completedDownloads.poll()
+            } while (download != null)
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun processCompletedDownload(download: PendingDownload) {
+            activeDownloads.remove(download.digest())
+            val chunkData: ByteArray? =
+                com.google.devtools.build.lib.remote.util.Utils.getFromFuture<ByteArray?>(download.future())
+            for (chunkIndex in download.chunkIndices()) {
+                if (chunkIndex == nextToWrite) {
+                    out.write(chunkData)
+                    nextToWrite++
+                } else {
+                    readyChunks.put(chunkIndex, chunkData)
+                }
+            }
+        }
+
+        @Throws(IOException::class)
+        fun drainReadyChunks() {
+            while (true) {
+                val chunk = readyChunks.remove(nextToWrite)
+                if (chunk == null) {
+                    return
+                }
+                out.write(chunk)
+                nextToWrite++
+            }
+        }
+
+        fun cancelAllDownloads() {
+            for (download in activeDownloads.values()) {
+                download.future().cancel( /* mayInterruptIfRunning= */true)
+            }
+        }
+    }
+
+    companion object {
+        // Guard against pathological fanout from a single large chunked blob. This is only a per-blob
+        // cap; chunk requests still flow through CombinedCache and the shared remote cache transport
+        // stack below it, which is what bounds active remote RPC concurrency across blobs.
+        private const val MAX_IN_FLIGHT_CHUNK_DOWNLOADS = 16
+    }
 }

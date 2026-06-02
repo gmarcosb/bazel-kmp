@@ -11,43 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler
 
-package com.google.devtools.build.lib.profiler;
+/** Build phase markers. Used as a separators between different build phases.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+enum class ProfilePhase(nick: String, description: String) {
+    LAUNCH("launch", "Launch Blaze"),
+    INIT("init", "Initialize command"),
+    TARGET_PATTERN_EVAL("target pattern evaluation", "Evaluate target patterns"),
+    ANALYZE("interleaved loading-and-analysis", "Load and analyze dependencies"),
+    ANALYZE_AND_EXECUTE(
+        "interleaved loading, analysis and execution",
+        "Load, analyze dependencies and build artifacts"
+    ),
+    LICENSE("license checking", "Analyze licenses"),
+    PREPARE("preparation", "Prepare for build"),
+    EXECUTE("execution", "Build artifacts"),
+    FINISH("finish", "Complete build"),
+    UNKNOWN("unknown", "unknown");
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
+    /** Short name for the phase  */
+    val nick: String?
 
-/** Build phase markers. Used as a separators between different build phases. */
-@SkybridgeInterface
-public enum ProfilePhase {
-  LAUNCH("launch", "Launch Blaze"),
-  INIT("init", "Initialize command"),
-  TARGET_PATTERN_EVAL("target pattern evaluation", "Evaluate target patterns"),
-  ANALYZE("interleaved loading-and-analysis", "Load and analyze dependencies"),
-  ANALYZE_AND_EXECUTE(
-      "interleaved loading, analysis and execution",
-      "Load, analyze dependencies and build artifacts"),
-  LICENSE("license checking", "Analyze licenses"),
-  PREPARE("preparation", "Prepare for build"),
-  EXECUTE("execution", "Build artifacts"),
-  FINISH("finish", "Complete build"),
-  UNKNOWN("unknown", "unknown");
+    /** Human readable description for the phase.  */
+    @kotlin.jvm.JvmField
+    val description: String
 
-  /** Short name for the phase */
-  public final String nick;
-  /** Human readable description for the phase. */
-  public final String description;
-
-  ProfilePhase(String nick, String description) {
-    this.nick = nick;
-    this.description = description;
-  }
-
-  public static ProfilePhase getPhaseFromDescription(String description) {
-    for (ProfilePhase profilePhase : ProfilePhase.values()) {
-      if (profilePhase.description.equals(description)) {
-        return profilePhase;
-      }
+    init {
+        this.nick = nick
+        this.description = description
     }
-    return UNKNOWN;
-  }
+
+    companion object {
+        fun getPhaseFromDescription(description: String?): ProfilePhase {
+            for (profilePhase in com.google.devtools.build.lib.profiler.ProfilePhase.entries) {
+                if (profilePhase.description == description) {
+                    return profilePhase
+                }
+            }
+            return com.google.devtools.build.lib.profiler.ProfilePhase.UNKNOWN
+        }
+    }
 }

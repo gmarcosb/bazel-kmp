@@ -41,7 +41,7 @@ public class TestTimeoutConverterTest {
   }
 
   protected void assertDefaultTimeout(TestTimeout timeout) {
-    assertTimeout(timeout, timeout.getTimeoutSeconds());
+    assertTimeout(timeout, timeout.timeoutSeconds);
   }
 
   protected void assertFailure(String option) {

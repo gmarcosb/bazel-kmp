@@ -11,13 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
  * An event sent when CAS objects were previously determined to exist remotely, but have since been
  * evicted.
  */
-public record LostInputsEvent(ImmutableSet<String> missingDigests) implements Postable {}
+class LostInputsEvent(missingDigests: com.google.common.collect.ImmutableSet<String?>?) : Postable {
+    val missingDigests: com.google.common.collect.ImmutableSet<String?>?
+
+    init {
+        this.missingDigests = missingDigests
+    }
+}

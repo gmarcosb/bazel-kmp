@@ -11,111 +11,105 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.devtools.build.lib.util.HashCodes.hashObjects;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-
-/** {@link AspectClass} for aspects defined in Starlark. */
+/** [AspectClass] for aspects defined in Starlark.  */
 @Immutable
-public final class StarlarkAspectClass implements AspectClass {
-  private final BzlLoadValue.Key extensionKey;
-  private final String exportedName;
-  private final String name;
+class StarlarkAspectClass(extensionKey: BzlLoadValue.Key, exportedName: String) : AspectClass {
+    private val extensionKey: BzlLoadValue.Key
+    @kotlin.jvm.JvmField
+    private val exportedName: String
+    private val name: String
 
-  public StarlarkAspectClass(BzlLoadValue.Key extensionKey, String exportedName) {
-    this.extensionKey = extensionKey;
-    this.exportedName = exportedName;
-    this.name = extensionKey.getLabel() + "%" + exportedName;
-  }
-
-  BzlLoadValue.Key getExtensionKey() {
-    return extensionKey;
-  }
-
-  public Label getExtensionLabel() {
-    return extensionKey.getLabel();
-  }
-
-  public String getExportedName() {
-    return exportedName;
-  }
-
-  @Override
-  public String getName() {
-    return name;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+    init {
+        this.extensionKey = extensionKey
+        this.exportedName = exportedName
+        this.name = extensionKey.getLabel().toString() + "%" + exportedName
     }
 
-    if (!(o instanceof StarlarkAspectClass)) {
-      return false;
+    fun getExtensionKey(): BzlLoadValue.Key {
+        return extensionKey
     }
 
-    StarlarkAspectClass that = (StarlarkAspectClass) o;
-    return extensionKey.equals(that.extensionKey) && exportedName.equals(that.exportedName);
-  }
+    fun getExtensionLabel(): Label? {
+        return extensionKey.getLabel()
+    }
 
-  @Override
-  public int hashCode() {
-    return hashObjects(extensionKey, exportedName);
-  }
+    fun getExportedName(): String {
+        return exportedName
+    }
 
-  @Override
-  public String toString() {
-    return getName();
-  }
+    override fun getName(): String {
+        return name
+    }
 
-  public static StarlarkAspectClass getAspectClassFromName(String aspect)
-      throws AspectClassCreationException {
-    int delimiterPosition = aspect.indexOf('%');
-    if (delimiterPosition >= 0) {
-      String bzlFileLoadLikeString = aspect.substring(0, delimiterPosition);
-      if (!bzlFileLoadLikeString.startsWith("//") && !bzlFileLoadLikeString.startsWith("@")) {
-        throw new AspectClassCreationException(
-            "--exec_aspects must be specified with absolute labels, e.g."
-                + " //foo/bar:baz.bzl%my_aspect, @repo//foo/bar:baz%my_aspect, or"
-                + " /foo/bar:baz.bzl%my_aspect. Found: "
-                + aspect);
-      } else if (!bzlFileLoadLikeString.endsWith(".bzl")) {
-        throw new AspectClassCreationException(
-            "--exec_aspects files must end with .bzl. Found: " + aspect);
-      } else {
-        Label starlarkFileLabel = null;
-        try {
-          starlarkFileLabel = Label.parseCanonical(bzlFileLoadLikeString);
-          String starlarkFunctionName = aspect.substring(delimiterPosition + 1);
-          return new StarlarkAspectClass(
-              BzlLoadValue.keyForBuild(starlarkFileLabel), starlarkFunctionName);
-        } catch (LabelSyntaxException e) {
-          throw new AspectClassCreationException(
-              String.format("Invalid aspect '%s': %s", aspect, e.getMessage()));
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
         }
-      }
-    } else {
-      throw new AspectClassCreationException(
-          "--exec_aspects must include the aspect name, preceded by '%', e.g."
-              + " //foo/bar:baz.bzl%my_aspect, @repo//foo/bar:baz%my_aspect, or"
-              + " /foo/bar:baz.bzl%my_aspect. Found: "
-              + aspect);
-    }
-  }
 
-  /**
-   * An exception indicating that there was a problem creating a {@link StarlarkAspectClass} aspect.
-   */
-  public static class AspectClassCreationException extends Exception {
-    public AspectClassCreationException(String message) {
-      super(message);
+        if (o !is StarlarkAspectClass) {
+            return false
+        }
+
+        val that = o
+        return extensionKey == that.extensionKey && exportedName == that.exportedName
     }
-  }
+
+    override fun hashCode(): Int {
+        return HashCodes.hashObjects(extensionKey, exportedName)
+    }
+
+    override fun toString(): String {
+        return getName()
+    }
+
+    /**
+     * An exception indicating that there was a problem creating a [StarlarkAspectClass] aspect.
+     */
+    class AspectClassCreationException(message: String?) : java.lang.Exception(message)
+    companion object {
+        @kotlin.jvm.JvmStatic
+        @Throws(AspectClassCreationException::class)
+        fun getAspectClassFromName(aspect: String): StarlarkAspectClass {
+            val delimiterPosition: Int = aspect.indexOf('%'.code)
+            if (delimiterPosition >= 0) {
+                val bzlFileLoadLikeString: String = aspect.substring(0, delimiterPosition)
+                if (!bzlFileLoadLikeString.startsWith("//") && !bzlFileLoadLikeString.startsWith("@")) {
+                    throw AspectClassCreationException(
+                        ("--exec_aspects must be specified with absolute labels, e.g."
+                                + " //foo/bar:baz.bzl%my_aspect, @repo//foo/bar:baz%my_aspect, or"
+                                + " /foo/bar:baz.bzl%my_aspect. Found: "
+                                + aspect)
+                    )
+                } else if (!bzlFileLoadLikeString.endsWith(".bzl")) {
+                    throw AspectClassCreationException(
+                        "--exec_aspects files must end with .bzl. Found: " + aspect
+                    )
+                } else {
+                    var starlarkFileLabel: Label? = null
+                    try {
+                        starlarkFileLabel = Label.parseCanonical(bzlFileLoadLikeString)
+                        val starlarkFunctionName: String = aspect.substring(delimiterPosition + 1)
+                        return StarlarkAspectClass(
+                            BzlLoadValue.keyForBuild(starlarkFileLabel), starlarkFunctionName
+                        )
+                    } catch (e: LabelSyntaxException) {
+                        throw AspectClassCreationException(
+                            java.lang.String.format("Invalid aspect '%s': %s", aspect, e.getMessage())
+                        )
+                    }
+                }
+            } else {
+                throw AspectClassCreationException(
+                    ("--exec_aspects must include the aspect name, preceded by '%', e.g."
+                            + " //foo/bar:baz.bzl%my_aspect, @repo//foo/bar:baz%my_aspect, or"
+                            + " /foo/bar:baz.bzl%my_aspect. Found: "
+                            + aspect)
+                )
+            }
+        }
+    }
 }

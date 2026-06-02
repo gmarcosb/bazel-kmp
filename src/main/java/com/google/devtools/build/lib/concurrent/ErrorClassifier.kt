@@ -11,60 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import com.google.common.base.Preconditions;
-
-/** A classifier for {@link Error}s and {@link Exception}s. Used by {@link AbstractQueueVisitor}. */
-public abstract class ErrorClassifier {
-
-  /**
-   * Classification of an error thrown by an action.
-   *
-   * <p>N.B. - These enum values are ordered from least severe to most severe.
-   */
-  public enum ErrorClassification {
-    /** Other running actions should be left alone. */
-    NOT_CRITICAL,
+/** A classifier for [Error]s and [Exception]s. Used by [AbstractQueueVisitor].  */
+abstract class ErrorClassifier {
     /**
-     * Other running actions should be left alone, but the error should be prioritized over {@link
-     * #NOT_CRITICAL}.
+     * Classification of an error thrown by an action.
+     * 
+     * 
+     * N.B. - These enum values are ordered from least severe to most severe.
      */
-    NOT_CRITICAL_HIGHER_PRIORITY,
-    /** All running actions should be stopped. */
-    CRITICAL,
-    /** Same as {@link #CRITICAL}, but also log the error. */
-    CRITICAL_AND_LOG,
-    /** Same as {@link #CRITICAL_AND_LOG}, but is even worse. */
-    AS_CRITICAL_AS_POSSIBLE
-  }
+    enum class ErrorClassification {
+        /** Other running actions should be left alone.  */
+        NOT_CRITICAL,
 
-  /** Always treat exceptions as {@code NOT_CRITICAL}. */
-  public static final ErrorClassifier DEFAULT =
-      new ErrorClassifier() {
-        @Override
-        protected ErrorClassification classifyException(Exception e) {
-          return ErrorClassification.NOT_CRITICAL;
-        }
-      };
+        /**
+         * Other running actions should be left alone, but the error should be prioritized over [ ][.NOT_CRITICAL].
+         */
+        NOT_CRITICAL_HIGHER_PRIORITY,
 
-  /**
-   * Used by {@link #classify} to classify {@link Exception}s. (Note that {@link Error}s
-   * are always classified as {@code AS_CRITICAL_AS_POSSIBLE}.)
-   *
-   * @param e the exception object to check
-   */
-  protected abstract ErrorClassification classifyException(Exception e);
+        /** All running actions should be stopped.  */
+        CRITICAL,
 
-  /**
-   * Classify {@code e}. If {@code e} is an {@link Error}, it will be classified as
-   * {@code AS_CRITICAL_AS_POSSIBLE}. Otherwise, calls {@link #classifyException}.
-   */
-  public final ErrorClassification classify(Throwable e) {
-    if (e instanceof Error) {
-      return ErrorClassification.AS_CRITICAL_AS_POSSIBLE;
+        /** Same as [.CRITICAL], but also log the error.  */
+        CRITICAL_AND_LOG,
+
+        /** Same as [.CRITICAL_AND_LOG], but is even worse.  */
+        AS_CRITICAL_AS_POSSIBLE
     }
-    Preconditions.checkArgument(e instanceof Exception, e);
-    return classifyException((Exception) e);
-  }
+
+    /**
+     * Used by [.classify] to classify [Exception]s. (Note that [Error]s
+     * are always classified as `AS_CRITICAL_AS_POSSIBLE`.)
+     * 
+     * @param e the exception object to check
+     */
+    protected abstract fun classifyException(e: java.lang.Exception?): ErrorClassification?
+
+    /**
+     * Classify `e`. If `e` is an [Error], it will be classified as
+     * `AS_CRITICAL_AS_POSSIBLE`. Otherwise, calls [.classifyException].
+     */
+    fun classify(e: Throwable?): ErrorClassification? {
+        if (e is java.lang.Error) {
+            return com.google.devtools.build.lib.concurrent.ErrorClassifier.ErrorClassification.AS_CRITICAL_AS_POSSIBLE
+        }
+        com.google.common.base.Preconditions.checkArgument(e is java.lang.Exception, e)
+        return classifyException(e as java.lang.Exception)
+    }
+
+    companion object {
+        /** Always treat exceptions as `NOT_CRITICAL`.  */
+        @kotlin.jvm.JvmField
+        val DEFAULT: ErrorClassifier = object : ErrorClassifier() {
+            override fun classifyException(e: java.lang.Exception?): ErrorClassification {
+                return com.google.devtools.build.lib.concurrent.ErrorClassifier.ErrorClassification.NOT_CRITICAL
+            }
+        }
+    }
 }

@@ -70,7 +70,7 @@ public class FakeRegistry implements Registry {
   public ModuleFile getModuleFile(
       ModuleKey key, ExtendedEventHandler eventHandler, DownloadManager downloadManager)
       throws NotFoundException {
-    String uri = String.format("%s/modules/%s/%s/MODULE.bazel", url, key.name(), key.version());
+    String uri = String.format("%s/modules/%s/%s/MODULE.bazel", url, key.name, key.version());
     var maybeContent = Optional.ofNullable(modules.get(key)).map(value -> value.getBytes(UTF_8));
     eventHandler.post(RegistryFileDownloadEvent.create(uri, maybeContent));
     if (maybeContent.isEmpty()) {
@@ -89,7 +89,7 @@ public class FakeRegistry implements Registry {
         LocalPathRepoSpecs.create(rootPath + "/" + key.getCanonicalRepoNameWithVersion().getName());
     eventHandler.post(
         RegistryFileDownloadEvent.create(
-            "%s/modules/%s/%s/source.json".formatted(url, key.name(), key.version()),
+            "%s/modules/%s/%s/source.json".formatted(url, key.name, key.version()),
             Optional.of(
                 GsonTypeAdapterUtil.SINGLE_EXTENSION_USAGES_VALUE_GSON
                     .toJson(repoSpec)

@@ -11,77 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.causes;
+package com.google.devtools.build.lib.causes
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ConfigurationId;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import java.util.Objects;
+import com.google.common.base.MoreObjects
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
+import com.google.devtools.build.lib.cmdline.Label
+import java.util.*
 
 /**
- * Class describing a {@link Cause} that can uniquely be described by a {@link Label} and {@link
- * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue}.
+ * Class describing a [Cause] that can uniquely be described by a [Label] and [ ].
  */
-public class AnalysisFailedCause implements Cause {
-  private final Label label;
-  private final ConfigurationId configurationId;
-  private final DetailedExitCode detailedExitCode;
+class AnalysisFailedCause(
+    private val label: Label,
+    configurationId: ConfigurationId?,
+    detailedExitCode: DetailedExitCode
+) : Cause {
+    private val configurationId: ConfigurationId?
+    private val detailedExitCode: DetailedExitCode
 
-  public AnalysisFailedCause(
-      Label label, ConfigurationId configurationId, DetailedExitCode detailedExitCode) {
-    this.label = label;
-    this.configurationId = configurationId;
-    this.detailedExitCode = detailedExitCode;
-  }
-
-  @Override
-  public String toString() {
-    // TODO(mschaller): Tests expect non-escaped message strings, and protobuf (the FailureDetail in
-    //  detailedExitCode) escapes them. Better versions of tests would check structured data, and
-    //  doing that requires unwinding test infrastructure. Note the "inTest" blocks in
-    //  SkyframeBuildView#processAnalysisErrors.
-    return MoreObjects.toStringHelper(this)
-        .add("label", label)
-        .add("configurationId", configurationId)
-        .add("detailedExitCode", detailedExitCode)
-        .add("msg", detailedExitCode.getFailureDetail().getMessage())
-        .toString();
-  }
-
-  @Override
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEventId getIdProto() {
-    // This needs to match AnalysisRootCauseEvent.getEventId.
-    return BuildEventIdUtil.configuredLabelId(label, configurationId);
-  }
-
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    } else if (!(o instanceof AnalysisFailedCause)) {
-      return false;
+    init {
+        this.configurationId = configurationId
+        this.detailedExitCode = detailedExitCode
     }
-    AnalysisFailedCause a = (AnalysisFailedCause) o;
-    return Objects.equals(label, a.label)
-        && Objects.equals(configurationId, a.configurationId)
-        && Objects.equals(detailedExitCode, a.detailedExitCode);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(label, configurationId, detailedExitCode);
-  }
+    override fun toString(): String {
+        // TODO(mschaller): Tests expect non-escaped message strings, and protobuf (the FailureDetail in
+        //  detailedExitCode) escapes them. Better versions of tests would check structured data, and
+        //  doing that requires unwinding test infrastructure. Note the "inTest" blocks in
+        //  SkyframeBuildView#processAnalysisErrors.
+        return MoreObjects.toStringHelper(this)
+            .add("label", label)
+            .add("configurationId", configurationId)
+            .add("detailedExitCode", detailedExitCode)
+            .add("msg", detailedExitCode.getFailureDetail().getMessage())
+            .toString()
+    }
+
+    override fun getLabel(): Label {
+        return label
+    }
+
+    override fun getIdProto(): BuildEventStreamProtos.BuildEventId? {
+        // This needs to match AnalysisRootCauseEvent.getEventId.
+        return BuildEventIdUtil.configuredLabelId(label, configurationId)
+    }
+
+    override fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        } else if (o !is AnalysisFailedCause) {
+            return false
+        }
+        val a = o
+        return label == a.label
+                && configurationId == a.configurationId
+                && detailedExitCode == a.detailedExitCode
+    }
+
+    override fun hashCode(): Int {
+        return Objects.hash(label, configurationId, detailedExitCode)
+    }
 }

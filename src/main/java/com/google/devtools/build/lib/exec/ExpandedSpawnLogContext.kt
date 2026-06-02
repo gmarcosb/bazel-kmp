@@ -11,385 +11,356 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.ImmutableList.toImmutableList;
+import com.google.devtools.build.lib.actions.AbstractAction
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.RunfilesArtifactValue;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.Spawns;
-import com.google.devtools.build.lib.actions.VirtualActionInput;
-import com.google.devtools.build.lib.exec.Protos.Digest;
-import com.google.devtools.build.lib.exec.Protos.File;
-import com.google.devtools.build.lib.exec.Protos.Platform;
-import com.google.devtools.build.lib.exec.Protos.SpawnExec;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.util.io.AsynchronousMessageOutputStream;
-import com.google.devtools.build.lib.util.io.MessageInputStream;
-import com.google.devtools.build.lib.util.io.MessageInputStreamWrapper.BinaryInputStreamWrapper;
-import com.google.devtools.build.lib.util.io.MessageOutputStream;
-import com.google.devtools.build.lib.util.io.MessageOutputStreamWrapper.BinaryOutputStreamWrapper;
-import com.google.devtools.build.lib.util.io.MessageOutputStreamWrapper.JsonOutputStreamWrapper;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.XattrProvider;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.SortedMap;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+/** A [SpawnLogContext] implementation that produces a log in expanded format.  */
+class ExpandedSpawnLogContext(
+    outputStream: BufferedOutputStream,
+    displayName: String?,
+    outputPath: com.google.devtools.build.lib.vfs.Path?,
+    tempPath: com.google.devtools.build.lib.vfs.Path,
+    private val encoding: Encoding?,
+    private val sorted: Boolean,
+    execRoot: PathFragment,
+    remoteOptions: RemoteOptions?,
+    digestHashFunction: DigestHashFunction?,
+    xattrProvider: XattrProvider?,
+    shouldPublish: Boolean,
+    logSpawnPredicate: java.util.function.Predicate<Spawn?>?
+) : SpawnLogContext(logSpawnPredicate) {
+    /** The log encoding.  */
+    enum class Encoding {
+        /** Length-delimited binary protos.  */
+        BINARY,
 
-/** A {@link SpawnLogContext} implementation that produces a log in expanded format. */
-public class ExpandedSpawnLogContext extends SpawnLogContext {
-
-  /** The log encoding. */
-  public enum Encoding {
-    /** Length-delimited binary protos. */
-    BINARY,
-    /** Newline-delimited JSON messages. */
-    JSON
-  }
-
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  private final Encoding encoding;
-  private final boolean sorted;
-
-  private final Path tempPath;
-  private final OutputStream outputStream;
-
-  private final PathFragment execRoot;
-  @Nullable private final RemoteOptions remoteOptions;
-  private final DigestHashFunction digestHashFunction;
-  private final XattrProvider xattrProvider;
-  private final boolean shouldPublish;
-
-  /** Output stream to write directly into during execution. */
-  private final MessageOutputStream<SpawnExec> rawOutputStream;
-
-  public ExpandedSpawnLogContext(
-      BufferedOutputStream outputStream,
-      String displayName,
-      @Nullable Path outputPath,
-      Path tempPath,
-      Encoding encoding,
-      boolean sorted,
-      PathFragment execRoot,
-      @Nullable RemoteOptions remoteOptions,
-      DigestHashFunction digestHashFunction,
-      XattrProvider xattrProvider,
-      boolean shouldPublish,
-      Predicate<Spawn> logSpawnPredicate)
-      throws IOException {
-    super(logSpawnPredicate);
-    this.encoding = encoding;
-    this.sorted = sorted;
-    this.tempPath = tempPath;
-    this.execRoot = execRoot;
-    this.shouldPublish = shouldPublish;
-    this.remoteOptions = remoteOptions;
-    this.digestHashFunction = digestHashFunction;
-    this.xattrProvider = xattrProvider;
-    this.outputStream = outputStream;
-
-    if (needsConversion()) {
-      // Write the unsorted binary format into a temporary path first, then convert into the output
-      // format after execution.
-      rawOutputStream = getRawOutputStream(tempPath);
-    } else {
-      // The unsorted binary format can be written directly into the output stream during execution.
-      rawOutputStream = new AsynchronousMessageOutputStream<>(displayName, outputStream);
+        /** Newline-delimited JSON messages.  */
+        JSON
     }
-  }
 
-  private boolean needsConversion() {
-    return encoding != Encoding.BINARY || sorted;
-  }
+    private val tempPath: com.google.devtools.build.lib.vfs.Path
+    private val outputStream: java.io.OutputStream
 
-  private static MessageOutputStream<SpawnExec> getRawOutputStream(Path path) throws IOException {
-    // Use an AsynchronousMessageOutputStream so that writes occur in a separate thread.
-    // This ensures concurrent writes don't tear and avoids blocking execution.
-    return new AsynchronousMessageOutputStream<>(path);
-  }
+    private val execRoot: PathFragment
+    private val remoteOptions: RemoteOptions?
+    private val digestHashFunction: DigestHashFunction?
+    private val xattrProvider: XattrProvider?
+    private val shouldPublish: Boolean
 
-  private MessageOutputStream<SpawnExec> getConvertedOutputStream(OutputStream out) {
-    return switch (encoding) {
-      case BINARY -> new BinaryOutputStreamWrapper<>(out);
-      case JSON -> new JsonOutputStreamWrapper<>(out);
-    };
-  }
+    /** Output stream to write directly into during execution.  */
+    private val rawOutputStream: MessageOutputStream<SpawnExec?>
 
-  @Override
-  public boolean shouldPublish() {
-    return shouldPublish;
-  }
+    init {
+        this.tempPath = tempPath
+        this.execRoot = execRoot
+        this.shouldPublish = shouldPublish
+        this.remoteOptions = remoteOptions
+        this.digestHashFunction = digestHashFunction
+        this.xattrProvider = xattrProvider
+        this.outputStream = outputStream
 
-  @Override
-  public void logSpawn(
-      Spawn spawn,
-      InputMetadataProvider inputMetadataProvider,
-      Supplier<SortedMap<PathFragment, ActionInput>> inputMap,
-      FileSystem fileSystem,
-      Duration timeout,
-      SpawnResult result)
-      throws IOException, ExecException {
-    if (!shouldLog(spawn)) {
-      return;
+        if (needsConversion()) {
+            // Write the unsorted binary format into a temporary path first, then convert into the output
+            // format after execution.
+            rawOutputStream = getRawOutputStream(tempPath)
+        } else {
+            // The unsorted binary format can be written directly into the output stream during execution.
+            rawOutputStream = AsynchronousMessageOutputStream<SpawnExec?>(displayName, outputStream)
+        }
     }
-    try (SilentCloseable c = Profiler.instance().profile("logSpawn")) {
-      SpawnExec.Builder builder = SpawnExec.newBuilder();
-      builder.addAllCommandArgs(spawn.getArguments());
-      builder.addAllEnvironmentVariables(getEnvironmentVariables(spawn));
 
-      ImmutableSet<? extends ActionInput> toolFiles = spawn.getToolFiles().toSet();
-      ImmutableList<PathFragment> toolRunfilesDirectories =
-          toolFiles.stream()
-              .filter(
-                  actionInput ->
-                      actionInput instanceof Artifact artifact && artifact.isRunfilesTree())
-              .map(inputMetadataProvider::getRunfilesMetadata)
-              .map(RunfilesArtifactValue::getRunfilesTree)
-              .map(RunfilesTree::getExecPath)
-              .collect(toImmutableList());
+    private fun needsConversion(): Boolean {
+        return encoding != com.google.devtools.build.lib.exec.ExpandedSpawnLogContext.Encoding.BINARY || sorted
+    }
 
-      try (SilentCloseable c1 = Profiler.instance().profile("logSpawn/inputs")) {
-        for (Map.Entry<PathFragment, ActionInput> e : inputMap.get().entrySet()) {
-          PathFragment displayPath = e.getKey();
-          ActionInput input = e.getValue();
+    private fun getConvertedOutputStream(out: java.io.OutputStream?): MessageOutputStream<SpawnExec?> {
+        return when (encoding) {
+            com.google.devtools.build.lib.exec.ExpandedSpawnLogContext.Encoding.BINARY -> BinaryOutputStreamWrapper<SpawnExec?>(
+                out
+            )
 
-          if (input instanceof VirtualActionInput.EmptyActionInput) {
-            // Do not include a digest, as it's a waste of space.
-            builder
-                .addInputsBuilder()
-                .setPath(displayPath.getPathString())
-                .setIsTool(toolRunfilesDirectories.stream().anyMatch(displayPath::startsWith));
-            continue;
-          }
-
-          boolean isTool =
-              toolFiles.contains(input)
-                  || (input instanceof TreeFileArtifact treeFileArtifact
-                      && toolFiles.contains(treeFileArtifact.getParent()))
-                  || toolRunfilesDirectories.stream().anyMatch(displayPath::startsWith);
-
-          Path contentPath = fileSystem.getPath(execRoot.getRelative(input.getExecPathString()));
-
-          if (isInputDirectory(input, inputMetadataProvider)) {
-            listDirectoryContents(
-                displayPath, contentPath, builder::addInputs, inputMetadataProvider, isTool);
-            continue;
-          }
-
-          if (input.isSymlink()) {
-            FileArtifactValue metadata = inputMetadataProvider.getInputMetadata(input);
-            checkState(metadata.getType().isSymlink(), metadata);
-            builder
-                .addInputsBuilder()
-                .setPath(displayPath.getPathString())
-                .setSymlinkTargetPath(metadata.getUnresolvedSymlinkTarget())
-                .setIsTool(isTool);
-            continue;
-          }
-
-          Digest digest =
-              computeDigest(
-                  input,
-                  contentPath,
-                  inputMetadataProvider,
-                  xattrProvider,
-                  digestHashFunction,
-                  /* includeHashFunctionName= */ true);
-
-          builder
-              .addInputsBuilder()
-              .setPath(displayPath.getPathString())
-              .setDigest(digest)
-              .setIsTool(isTool);
+            com.google.devtools.build.lib.exec.ExpandedSpawnLogContext.Encoding.JSON -> JsonOutputStreamWrapper<SpawnExec?>(
+                out
+            )
         }
-      } catch (IOException e) {
-        logger.atWarning().withCause(e).log("Error computing spawn input properties");
-      }
-      try (SilentCloseable c1 = Profiler.instance().profile("logSpawn/outputs")) {
-        ArrayList<String> outputPaths = new ArrayList<>();
-        for (ActionInput output : spawn.getOutputFiles()) {
-          outputPaths.add(output.getExecPathString());
+    }
+
+    override fun shouldPublish(): Boolean {
+        return shouldPublish
+    }
+
+    @Throws(IOException::class, ExecException::class)
+    override fun logSpawn(
+        spawn: Spawn,
+        inputMetadataProvider: InputMetadataProvider,
+        inputMap: java.util.function.Supplier<SortedMap<PathFragment?, ActionInput?>?>,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem,
+        timeout: java.time.Duration,
+        result: SpawnResult
+    ) {
+        if (!shouldLog(spawn)) {
+            return
         }
-        Collections.sort(outputPaths);
-        builder.addAllListedOutputs(outputPaths);
-        try {
-          for (ActionInput output : spawn.getOutputFiles()) {
-            Path path = fileSystem.getPath(execRoot.getRelative(output.getExecPathString()));
-            if (!output.isDirectory() && !output.isSymlink() && path.isFile()) {
-              builder
-                  .addActualOutputsBuilder()
-                  .setPath(output.getExecPathString())
-                  .setDigest(
-                      computeDigest(
-                          output,
-                          path,
-                          inputMetadataProvider,
-                          xattrProvider,
-                          digestHashFunction,
-                          /* includeHashFunctionName= */ true));
-            } else if (output.isDirectory() && path.isDirectory()) {
-              listDirectoryContents(
-                  output.getExecPath(),
-                  path,
-                  builder::addActualOutputs,
-                  inputMetadataProvider,
-                  /* isTool= */ false);
-            } else if (output.isSymlink() && path.isSymbolicLink()) {
-              builder
-                  .addActualOutputsBuilder()
-                  .setPath(output.getExecPathString())
-                  .setSymlinkTargetPath(path.readSymbolicLink().getPathString());
+        com.google.devtools.build.lib.profiler.Profiler.instance().profile("logSpawn").use { c ->
+            val builder: SpawnExec.Builder = SpawnExec.newBuilder()
+            builder.addAllCommandArgs(spawn.getArguments())
+            builder.addAllEnvironmentVariables(getEnvironmentVariables(spawn))
+
+            val toolFiles: com.google.common.collect.ImmutableSet<out ActionInput?> = spawn.getToolFiles().toSet()
+            val toolRunfilesDirectories: com.google.common.collect.ImmutableList<PathFragment?> =
+                toolFiles.stream()
+                    .filter { actionInput: ActionInput? -> actionInput is Artifact && actionInput.isRunfilesTree() }
+                    .map<Any?>(inputMetadataProvider::getRunfilesMetadata)
+                    .map<Any?>(RunfilesArtifactValue::getRunfilesTree)
+                    .map<Any?>(RunfilesTree::getExecPath)
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+
+            try {
+                com.google.devtools.build.lib.profiler.Profiler.instance().profile("logSpawn/inputs").use { c1 ->
+                    for (e in inputMap.get().entrySet()) {
+                        val displayPath: PathFragment = e.getKey()
+                        val input: ActionInput = e.getValue()
+
+                        if (input is VirtualActionInput.EmptyActionInput) {
+                            // Do not include a digest, as it's a waste of space.
+                            builder
+                                .addInputsBuilder()
+                                .setPath(displayPath.getPathString())
+                                .setIsTool(
+                                    toolRunfilesDirectories.stream()
+                                        .anyMatch(java.util.function.Predicate { other: PathFragment? ->
+                                            displayPath.startsWith(other)
+                                        })
+                                )
+                            continue
+                        }
+
+                        val isTool =
+                            toolFiles.contains(input)
+                                    || (input is TreeFileArtifact
+                                    && toolFiles.contains(input.getParent()))
+                                    || toolRunfilesDirectories.stream()
+                                .anyMatch(java.util.function.Predicate { other: PathFragment? ->
+                                    displayPath.startsWith(other)
+                                })
+
+                        val contentPath: com.google.devtools.build.lib.vfs.Path =
+                            fileSystem.getPath(execRoot.getRelative(input.getExecPathString()))
+
+                        if (isInputDirectory(input, inputMetadataProvider)) {
+                            listDirectoryContents(
+                                displayPath, contentPath, builder::addInputs, inputMetadataProvider, isTool
+                            )
+                            continue
+                        }
+
+                        if (input.isSymlink()) {
+                            val metadata: FileArtifactValue = inputMetadataProvider.getInputMetadata(input)
+                            checkState(metadata.getType().isSymlink(), metadata)
+                            builder
+                                .addInputsBuilder()
+                                .setPath(displayPath.getPathString())
+                                .setSymlinkTargetPath(metadata.getUnresolvedSymlinkTarget())
+                                .setIsTool(isTool)
+                            continue
+                        }
+
+                        val digest: Digest? =
+                            computeDigest(
+                                input,
+                                contentPath,
+                                inputMetadataProvider,
+                                xattrProvider,
+                                digestHashFunction,  /* includeHashFunctionName= */
+                                true
+                            )
+
+                        builder
+                            .addInputsBuilder()
+                            .setPath(displayPath.getPathString())
+                            .setDigest(digest)
+                            .setIsTool(isTool)
+                    }
+                }
+            } catch (e: IOException) {
+                logger.atWarning().withCause(e).log("Error computing spawn input properties")
             }
-          }
-        } catch (IOException ex) {
-          logger.atWarning().withCause(ex).log("Error computing spawn output properties");
+            com.google.devtools.build.lib.profiler.Profiler.instance().profile("logSpawn/outputs").use { c1 ->
+                val outputPaths: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
+                for (output in spawn.getOutputFiles()) {
+                    outputPaths.add(output.getExecPathString())
+                }
+                Collections.sort<String?>(outputPaths)
+                builder.addAllListedOutputs(outputPaths)
+                try {
+                    for (output in spawn.getOutputFiles()) {
+                        val path: com.google.devtools.build.lib.vfs.Path =
+                            fileSystem.getPath(execRoot.getRelative(output.getExecPathString()))
+                        if (!output.isDirectory() && !output.isSymlink() && path.isFile()) {
+                            builder
+                                .addActualOutputsBuilder()
+                                .setPath(output.getExecPathString())
+                                .setDigest(
+                                    computeDigest(
+                                        output,
+                                        path,
+                                        inputMetadataProvider,
+                                        xattrProvider,
+                                        digestHashFunction,  /* includeHashFunctionName= */
+                                        true
+                                    )
+                                )
+                        } else if (output.isDirectory() && path.isDirectory()) {
+                            listDirectoryContents(
+                                output.getExecPath(),
+                                path,
+                                builder::addActualOutputs,
+                                inputMetadataProvider,  /* isTool= */
+                                false
+                            )
+                        } else if (output.isSymlink() && path.isSymbolicLink()) {
+                            builder
+                                .addActualOutputsBuilder()
+                                .setPath(output.getExecPathString())
+                                .setSymlinkTargetPath(path.readSymbolicLink().getPathString())
+                        }
+                    }
+                } catch (ex: IOException) {
+                    logger.atWarning().withCause(ex).log("Error computing spawn output properties")
+                }
+            }
+            builder.setRemotable(Spawns.mayBeExecutedRemotely(spawn))
+
+            val platform: Platform? = getPlatform(spawn, remoteOptions)
+            if (platform != null) {
+                builder.setPlatform(platform)
+            }
+            if (result.status() !== SpawnResult.Status.SUCCESS) {
+                builder.setStatus(result.status().toString())
+            }
+            if (!timeout.isZero()) {
+                builder.setTimeoutMillis(timeout.toMillis())
+            }
+            builder.setCacheable(Spawns.mayBeCached(spawn))
+            builder.setRemoteCacheable(Spawns.mayBeCachedRemotely(spawn))
+            builder.setExitCode(result.exitCode())
+            builder.setCacheHit(result.isCacheHit())
+            builder.setRunner(result.getRunnerName())
+
+            if (result.getDigest() != null) {
+                builder.setDigest(result.getDigest())
+            }
+
+            builder.setMnemonic(spawn.getMnemonic())
+
+            if (spawn.getTargetLabel() != null) {
+                builder.setTargetLabel(spawn.getTargetLabel().toString())
+            }
+
+            builder.setMetrics(SpawnLogContext.Companion.getSpawnMetricsProto(result))
+            com.google.devtools.build.lib.profiler.Profiler.instance().profile("logSpawn/write").use { c1 ->
+                rawOutputStream.write(builder.build())
+            }
         }
-      }
-      builder.setRemotable(Spawns.mayBeExecutedRemotely(spawn));
-
-      Platform platform = getPlatform(spawn, remoteOptions);
-      if (platform != null) {
-        builder.setPlatform(platform);
-      }
-      if (result.status() != SpawnResult.Status.SUCCESS) {
-        builder.setStatus(result.status().toString());
-      }
-      if (!timeout.isZero()) {
-        builder.setTimeoutMillis(timeout.toMillis());
-      }
-      builder.setCacheable(Spawns.mayBeCached(spawn));
-      builder.setRemoteCacheable(Spawns.mayBeCachedRemotely(spawn));
-      builder.setExitCode(result.exitCode());
-      builder.setCacheHit(result.isCacheHit());
-      builder.setRunner(result.getRunnerName());
-
-      if (result.getDigest() != null) {
-        builder.setDigest(result.getDigest());
-      }
-
-      builder.setMnemonic(spawn.getMnemonic());
-
-      if (spawn.getTargetLabel() != null) {
-        builder.setTargetLabel(spawn.getTargetLabel().toString());
-      }
-
-      builder.setMetrics(getSpawnMetricsProto(result));
-
-      try (SilentCloseable c1 = Profiler.instance().profile("logSpawn/write")) {
-        rawOutputStream.write(builder.build());
-      }
-    }
-  }
-
-  @Override
-  public void logSymlinkAction(AbstractAction action) {
-    // The expanded log does not report symlink actions.
-  }
-
-  @Override
-  public void close() throws IOException {
-    rawOutputStream.close();
-
-    if (!needsConversion()) {
-      outputStream.close();
-      return;
     }
 
-    try (MessageInputStream<SpawnExec> rawInputStream =
-            new BinaryInputStreamWrapper<>(
-                tempPath.getInputStream(), SpawnExec.getDefaultInstance());
-        MessageOutputStream<SpawnExec> convertedOutputStream =
-            getConvertedOutputStream(outputStream)) {
-      if (sorted) {
-        StableSort.stableSort(rawInputStream, convertedOutputStream);
-      } else {
-        SpawnExec ex;
-        while ((ex = rawInputStream.read()) != null) {
-          convertedOutputStream.write(ex);
+    override fun logSymlinkAction(action: AbstractAction?) {
+        // The expanded log does not report symlink actions.
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        rawOutputStream.close()
+
+        if (!needsConversion()) {
+            outputStream.close()
+            return
         }
-      }
-    } finally {
-      try {
-        tempPath.delete();
-      } catch (IOException e) {
-        // Intentionally ignored.
-      }
+
+        try {
+            BinaryInputStreamWrapper<T?>(
+                tempPath.getInputStream(), SpawnExec.getDefaultInstance()
+            ).use { rawInputStream ->
+                getConvertedOutputStream(outputStream).use { convertedOutputStream ->
+                    if (sorted) {
+                        StableSort.stableSort(rawInputStream, convertedOutputStream)
+                    } else {
+                        var ex: SpawnExec?
+                        while ((rawInputStream.read().also { ex = it }) != null) {
+                            convertedOutputStream.write(ex)
+                        }
+                    }
+                }
+            }
+        } finally {
+            try {
+                tempPath.delete()
+            } catch (e: IOException) {
+                // Intentionally ignored.
+            }
+        }
     }
-  }
 
-  /**
-   * Expands a directory into its contents.
-   *
-   * <p>Note the difference between {@code displayPath} and {@code contentPath}: the first is where
-   * the spawn can find the directory, while the second is where Bazel can find it. They're not the
-   * same for a directory appearing in a runfiles or fileset tree.
-   */
-  private void listDirectoryContents(
-      PathFragment displayPath,
-      Path contentPath,
-      Consumer<File> addFile,
-      InputMetadataProvider inputMetadataProvider,
-      boolean isTool)
-      throws IOException {
-    List<Dirent> sortedDirent = new ArrayList<>(contentPath.readdir(Symlinks.NOFOLLOW));
-    sortedDirent.sort(Comparator.comparing(Dirent::getName));
+    /**
+     * Expands a directory into its contents.
+     * 
+     * 
+     * Note the difference between `displayPath` and `contentPath`: the first is where
+     * the spawn can find the directory, while the second is where Bazel can find it. They're not the
+     * same for a directory appearing in a runfiles or fileset tree.
+     */
+    @Throws(IOException::class)
+    private fun listDirectoryContents(
+        displayPath: PathFragment,
+        contentPath: com.google.devtools.build.lib.vfs.Path,
+        addFile: java.util.function.Consumer<File?>,
+        inputMetadataProvider: InputMetadataProvider?,
+        isTool: Boolean
+    ) {
+        val sortedDirent: MutableList<com.google.devtools.build.lib.vfs.Dirent> =
+            java.util.ArrayList<com.google.devtools.build.lib.vfs.Dirent>(contentPath.readdir(Symlinks.NOFOLLOW))
+        sortedDirent.sort(java.util.Comparator.comparing<com.google.devtools.build.lib.vfs.Dirent?, String?>(java.util.function.Function { obj: com.google.devtools.build.lib.vfs.Dirent? -> obj.getName() }))
 
-    for (Dirent dirent : sortedDirent) {
-      String name = dirent.getName();
-      PathFragment childDisplayPath = displayPath.getChild(name);
-      Path childContentPath = contentPath.getChild(name);
+        for (dirent in sortedDirent) {
+            val name: String? = dirent.getName()
+            val childDisplayPath: PathFragment = displayPath.getChild(name)
+            val childContentPath: com.google.devtools.build.lib.vfs.Path = contentPath.getChild(name)
 
-      if (dirent.getType() == Dirent.Type.DIRECTORY) {
-        listDirectoryContents(
-            childDisplayPath, childContentPath, addFile, inputMetadataProvider, isTool);
-        continue;
-      }
+            if (dirent.getType() == com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY) {
+                listDirectoryContents(
+                    childDisplayPath, childContentPath, addFile, inputMetadataProvider, isTool
+                )
+                continue
+            }
 
-      addFile.accept(
-          File.newBuilder()
-              .setPath(childDisplayPath.getPathString())
-              .setDigest(
-                  computeDigest(
-                      null,
-                      childContentPath,
-                      inputMetadataProvider,
-                      xattrProvider,
-                      digestHashFunction,
-                      /* includeHashFunctionName= */ true))
-              .setIsTool(isTool)
-              .build());
+            addFile.accept(
+                File.newBuilder()
+                    .setPath(childDisplayPath.getPathString())
+                    .setDigest(
+                        computeDigest(
+                            null,
+                            childContentPath,
+                            inputMetadataProvider,
+                            xattrProvider,
+                            digestHashFunction,  /* includeHashFunctionName= */
+                            true
+                        )
+                    )
+                    .setIsTool(isTool)
+                    .build()
+            )
+        }
     }
-  }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        @Throws(IOException::class)
+        private fun getRawOutputStream(path: com.google.devtools.build.lib.vfs.Path): MessageOutputStream<SpawnExec?> {
+            // Use an AsynchronousMessageOutputStream so that writes occur in a separate thread.
+            // This ensures concurrent writes don't tear and avoids blocking execution.
+            return AsynchronousMessageOutputStream<SpawnExec?>(path)
+        }
+    }
 }

@@ -54,7 +54,7 @@ public class TestTimeoutTest {
 
   @Test
   public void testAllTimesHaveSuggestions() throws Exception {
-    for (int timeout = 0; timeout < ETERNAL.getTimeoutSeconds(); timeout++) {
+    for (int timeout = 0; timeout < ETERNAL.timeoutSeconds; timeout++) {
       TestTimeout suggested = getSuggestedTestTimeout(timeout);
       assertWithMessage("No suggested TestTimeout found for timeout %s", timeout)
           .that(suggested)
@@ -84,7 +84,7 @@ public class TestTimeoutTest {
 
   @Test
   public void testAllFuzzyRangesCovered() throws Exception {
-    for (int timeout = 0; timeout < ETERNAL.getTimeoutSeconds(); timeout++) {
+    for (int timeout = 0; timeout < ETERNAL.timeoutSeconds; timeout++) {
       List<Boolean> truthValues = new ArrayList<>();
       for (TestTimeout testTimeout : Arrays.asList(SHORT, MODERATE, LONG, ETERNAL)) {
         truthValues.add(testTimeout.isInRangeFuzzy(timeout));

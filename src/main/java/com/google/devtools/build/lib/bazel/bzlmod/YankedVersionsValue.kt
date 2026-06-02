@@ -11,57 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.skyframe.SkyValue
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Optional;
-
-/** A class holding information about the versions of a particular module that have been yanked. */
+/** A class holding information about the versions of a particular module that have been yanked.  */
 @AutoCodec
-public record YankedVersionsValue(Optional<ImmutableMap<Version, String>> yankedVersions)
-    implements SkyValue {
-  public YankedVersionsValue {
-    requireNonNull(yankedVersions, "yankedVersions");
-  }
+class YankedVersionsValue(yankedVersions: java.util.Optional<com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>?>?) :
+    SkyValue {
+    /** The key for [YankedVersionsFunction].  */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    internal data class Key(val moduleName: String?, val registryUrl: String?) : SkyKey {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.YANKED_VERSIONS
+        }
 
-  /** A value representing a module without yanked versions. */
-  public static final YankedVersionsValue NONE_YANKED = create(Optional.of(ImmutableMap.of()));
+        override fun getSkyKeyInterner(): SkyKeyInterner<Key?> {
+            return com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue.Key.Companion.interner
+        }
 
-  public static YankedVersionsValue create(Optional<ImmutableMap<Version, String>> yankedVersions) {
-    return new YankedVersionsValue(yankedVersions);
-  }
+        init {
+            java.util.Objects.requireNonNull<String?>(moduleName, "moduleName")
+            java.util.Objects.requireNonNull<String?>(registryUrl, "registryUrl")
+        }
 
-  /** The key for {@link YankedVersionsFunction}. */
-  @AutoCodec
-  record Key(String moduleName, String registryUrl) implements SkyKey {
-    Key {
-      requireNonNull(moduleName, "moduleName");
-      requireNonNull(registryUrl, "registryUrl");
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            @AutoCodec.Instantiator
+            fun create(moduleName: String?, registryUrl: String?): Key? {
+                return com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsValue.Key(
+                        moduleName,
+                        registryUrl
+                    )
+                )
+            }
+        }
     }
 
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+    val yankedVersions: java.util.Optional<com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>?>?
 
-    @AutoCodec.Instantiator
-    static Key create(String moduleName, String registryUrl) {
-      return interner.intern(new Key(moduleName, registryUrl));
+    init {
+        this.yankedVersions = yankedVersions
+        java.util.Objects.requireNonNull<java.util.Optional<com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>?>?>(
+            yankedVersions,
+            "yankedVersions"
+        )
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.YANKED_VERSIONS;
-    }
+    companion object {
+        /** A value representing a module without yanked versions.  */
+        val NONE_YANKED: YankedVersionsValue = create(
+            java.util.Optional.of<com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>?>(
+                com.google.common.collect.ImmutableMap.of<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>()
+            )
+        )
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+        fun create(yankedVersions: java.util.Optional<com.google.common.collect.ImmutableMap<com.google.devtools.build.lib.bazel.bzlmod.Version?, String?>?>?): YankedVersionsValue {
+            return YankedVersionsValue(yankedVersions)
+        }
     }
-  }
 }

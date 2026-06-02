@@ -11,167 +11,179 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.NetworkMetrics;
-import com.google.devtools.build.lib.profiler.SystemNetworkStatsService.NetIoCounter;
-import java.io.IOException;
-import java.net.NetworkInterface;
-import java.util.Enumeration;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.NetworkMetrics
 
-/** Collects and populates network metrics during an invocation. */
-public final class NetworkMetricsCollector {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+/** Collects and populates network metrics during an invocation.  */
+class NetworkMetricsCollector private constructor() {
+    private var loopbackInterfaceNames: com.google.common.collect.ImmutableSet<String?>? = null
+    private var previousNetworkIoCounters: MutableMap<String?, NetIoCounter?>? = null
+    private val systemNetworkStats: NetworkMetrics.SystemNetworkStats.Builder =
+        NetworkMetrics.SystemNetworkStats.newBuilder()
 
-  /** The metrics collector (a static singleton instance). Inactive by default. */
-  private static final NetworkMetricsCollector instance = new NetworkMetricsCollector();
-
-  @Nullable private ImmutableSet<String> loopbackInterfaceNames = null;
-  @Nullable private Map<String, NetIoCounter> previousNetworkIoCounters = null;
-  private final NetworkMetrics.SystemNetworkStats.Builder systemNetworkStats =
-      NetworkMetrics.SystemNetworkStats.newBuilder();
-
-  private NetworkMetricsCollector() {}
-
-  public static NetworkMetricsCollector instance() {
-    return instance;
-  }
-
-  @Nullable
-  public NetworkMetrics collectMetrics() {
-    if (systemNetworkStats.getBytesRecv() == 0 || systemNetworkStats.getBytesSent() == 0) {
-      return null;
-    }
-
-    return NetworkMetrics.newBuilder().setSystemNetworkStats(systemNetworkStats.build()).build();
-  }
-
-  @Nullable
-  public SystemNetworkUsages collectSystemNetworkUsages(
-      double deltaNanos, SystemNetworkStatsService systemNetworkStatsService) {
-    if (loopbackInterfaceNames == null) {
-      try {
-        loopbackInterfaceNames = getLoopbackInterfaceNames();
-      } catch (IOException e) {
-        logger.atWarning().withCause(e).log("Failed to get loopback interface names");
-      }
-    }
-
-    Map<String, NetIoCounter> nextNetworkIoCounters = null;
-    try {
-      nextNetworkIoCounters = systemNetworkStatsService.getNetIoCounters();
-    } catch (IOException e) {
-      logger.atWarning().withCause(e).log("Failed to get Net IO counters");
-    }
-
-    if (previousNetworkIoCounters == null) {
-      previousNetworkIoCounters = nextNetworkIoCounters;
-    }
-
-    SystemNetworkUsages usages = null;
-    if (previousNetworkIoCounters != null && nextNetworkIoCounters != null) {
-      long deltaBytesSent = 0;
-      long deltaBytesRecv = 0;
-      long deltaPacketsSent = 0;
-      long deltaPacketsRecv = 0;
-      for (Map.Entry<String, NetIoCounter> entry : previousNetworkIoCounters.entrySet()) {
-        String name = entry.getKey();
-        if (loopbackInterfaceNames.contains(name)) {
-          continue;
+    fun collectMetrics(): NetworkMetrics? {
+        if (systemNetworkStats.getBytesRecv() === 0 || systemNetworkStats.getBytesSent() === 0) {
+            return null
         }
-        NetIoCounter previous = entry.getValue();
-        NetIoCounter next = nextNetworkIoCounters.get(name);
-        if (next != null) {
-          deltaBytesSent += calcDelta(previous.bytesSent(), next.bytesSent());
-          deltaBytesRecv += calcDelta(previous.bytesRecv(), next.bytesRecv());
-          deltaPacketsSent += calcDelta(previous.packetsSent(), next.packetsSent());
-          deltaPacketsRecv += calcDelta(previous.packetsRecv(), next.packetsRecv());
+
+        return NetworkMetrics.newBuilder().setSystemNetworkStats(systemNetworkStats.build()).build()
+    }
+
+    fun collectSystemNetworkUsages(
+        deltaNanos: Double, systemNetworkStatsService: SystemNetworkStatsService
+    ): SystemNetworkUsages? {
+        if (loopbackInterfaceNames == null) {
+            try {
+                loopbackInterfaceNames = getLoopbackInterfaceNames()
+            } catch (e: IOException) {
+                logger.atWarning().withCause(e).log("Failed to get loopback interface names")
+            }
         }
-      }
 
-      systemNetworkStats.setBytesRecv(systemNetworkStats.getBytesRecv() + deltaBytesRecv);
-      systemNetworkStats.setBytesSent(systemNetworkStats.getBytesSent() + deltaBytesSent);
-      systemNetworkStats.setPacketsRecv(systemNetworkStats.getPacketsRecv() + deltaPacketsRecv);
-      systemNetworkStats.setPacketsSent(systemNetworkStats.getPacketsSent() + deltaPacketsSent);
+        var nextNetworkIoCounters: MutableMap<String?, NetIoCounter?>? = null
+        try {
+            nextNetworkIoCounters = systemNetworkStatsService.getNetIoCounters()
+        } catch (e: IOException) {
+            logger.atWarning().withCause(e).log("Failed to get Net IO counters")
+        }
 
-      usages =
-          SystemNetworkUsages.create(
-              calcValuePerSec(deltaBytesSent, deltaNanos),
-              calcValuePerSec(deltaBytesRecv, deltaNanos),
-              calcValuePerSec(deltaPacketsSent, deltaNanos),
-              calcValuePerSec(deltaPacketsRecv, deltaNanos));
+        if (previousNetworkIoCounters == null) {
+            previousNetworkIoCounters = nextNetworkIoCounters
+        }
 
-      if (usages.bytesSentPerSec() > systemNetworkStats.getPeakBytesSentPerSec()) {
-        systemNetworkStats.setPeakBytesSentPerSec((long) usages.bytesSentPerSec());
-      }
-      if (usages.bytesRecvPerSec() > systemNetworkStats.getPeakBytesRecvPerSec()) {
-        systemNetworkStats.setPeakBytesRecvPerSec((long) usages.bytesRecvPerSec());
-      }
-      if (usages.packetsSentPerSec() > systemNetworkStats.getPeakPacketsSentPerSec()) {
-        systemNetworkStats.setPeakPacketsSentPerSec((long) usages.packetsSentPerSec());
-      }
-      if (usages.packetsRecvPerSec() > systemNetworkStats.getPeakPacketsRecvPerSec()) {
-        systemNetworkStats.setPeakPacketsRecvPerSec((long) usages.packetsRecvPerSec());
-      }
+        var usages: SystemNetworkUsages? = null
+        if (previousNetworkIoCounters != null && nextNetworkIoCounters != null) {
+            var deltaBytesSent: Long = 0
+            var deltaBytesRecv: Long = 0
+            var deltaPacketsSent: Long = 0
+            var deltaPacketsRecv: Long = 0
+            for (entry in previousNetworkIoCounters.entrySet()) {
+                val name: String? = entry.getKey()
+                if (loopbackInterfaceNames.contains(name)) {
+                    continue
+                }
+                val previous: NetIoCounter = entry.getValue()
+                val next: NetIoCounter? = nextNetworkIoCounters.get(name)
+                if (next != null) {
+                    deltaBytesSent += calcDelta(previous.bytesSent, next.bytesSent)
+                    deltaBytesRecv += calcDelta(previous.bytesRecv, next.bytesRecv)
+                    deltaPacketsSent += calcDelta(previous.packetsSent, next.packetsSent)
+                    deltaPacketsRecv += calcDelta(previous.packetsRecv, next.packetsRecv)
+                }
+            }
+
+            systemNetworkStats.setBytesRecv(systemNetworkStats.getBytesRecv() + deltaBytesRecv)
+            systemNetworkStats.setBytesSent(systemNetworkStats.getBytesSent() + deltaBytesSent)
+            systemNetworkStats.setPacketsRecv(systemNetworkStats.getPacketsRecv() + deltaPacketsRecv)
+            systemNetworkStats.setPacketsSent(systemNetworkStats.getPacketsSent() + deltaPacketsSent)
+
+            usages =
+                SystemNetworkUsages.Companion.create(
+                    calcValuePerSec(deltaBytesSent, deltaNanos),
+                    calcValuePerSec(deltaBytesRecv, deltaNanos),
+                    calcValuePerSec(deltaPacketsSent, deltaNanos),
+                    calcValuePerSec(deltaPacketsRecv, deltaNanos)
+                )
+
+            if (usages.bytesSentPerSec > systemNetworkStats.getPeakBytesSentPerSec()) {
+                systemNetworkStats.setPeakBytesSentPerSec(usages.bytesSentPerSec.toLong())
+            }
+            if (usages.bytesRecvPerSec > systemNetworkStats.getPeakBytesRecvPerSec()) {
+                systemNetworkStats.setPeakBytesRecvPerSec(usages.bytesRecvPerSec.toLong())
+            }
+            if (usages.packetsSentPerSec > systemNetworkStats.getPeakPacketsSentPerSec()) {
+                systemNetworkStats.setPeakPacketsSentPerSec(usages.packetsSentPerSec.toLong())
+            }
+            if (usages.packetsRecvPerSec > systemNetworkStats.getPeakPacketsRecvPerSec()) {
+                systemNetworkStats.setPeakPacketsRecvPerSec(usages.packetsRecvPerSec.toLong())
+            }
+        }
+
+        previousNetworkIoCounters = nextNetworkIoCounters
+
+        return usages
     }
 
-    previousNetworkIoCounters = nextNetworkIoCounters;
+    /** Aggregated system network usages over all interfaces except local loopback.  */
+    @kotlin.jvm.JvmRecord
+    data class SystemNetworkUsages(
+        bytesSentPerSec: Double,
+        bytesRecvPerSec: Double,
+        packetsSentPerSec: Double,
+        packetsRecvPerSec: Double
+    ) {
+        fun megabitsSentPerSec(): Double {
+            return bytesPerSecToMegabitsPerSec(this.bytesSentPerSec)
+        }
 
-    return usages;
-  }
+        fun megabitsRecvPerSec(): Double {
+            return bytesPerSecToMegabitsPerSec(this.bytesRecvPerSec)
+        }
 
-  /** Aggregated system network usages over all interfaces except local loopback. */
-  public record SystemNetworkUsages(
-      double bytesSentPerSec,
-      double bytesRecvPerSec,
-      double packetsSentPerSec,
-      double packetsRecvPerSec) {
-    public static SystemNetworkUsages create(
-        double bytesSentPerSec,
-        double bytesRecvPerSec,
-        double packetsSentPerSec,
-        double packetsRecvPerSec) {
-      return new SystemNetworkUsages(
-          bytesSentPerSec, bytesRecvPerSec, packetsSentPerSec, packetsRecvPerSec);
+        val bytesSentPerSec: Double
+        val bytesRecvPerSec: Double
+        val packetsSentPerSec: Double
+        val packetsRecvPerSec: Double
+
+        init {
+            this.bytesSentPerSec = bytesSentPerSec
+            this.bytesRecvPerSec = bytesRecvPerSec
+            this.packetsSentPerSec = packetsSentPerSec
+            this.packetsRecvPerSec = packetsRecvPerSec
+        }
+
+        companion object {
+            fun create(
+                bytesSentPerSec: Double,
+                bytesRecvPerSec: Double,
+                packetsSentPerSec: Double,
+                packetsRecvPerSec: Double
+            ): SystemNetworkUsages {
+                return SystemNetworkUsages(
+                    bytesSentPerSec, bytesRecvPerSec, packetsSentPerSec, packetsRecvPerSec
+                )
+            }
+        }
     }
 
-    public double megabitsSentPerSec() {
-      return bytesPerSecToMegabitsPerSec(bytesSentPerSec());
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        /** The metrics collector (a static singleton instance). Inactive by default.  */
+        private val instance = NetworkMetricsCollector()
+
+        fun instance(): NetworkMetricsCollector {
+            return instance
+        }
+
+        @Throws(IOException::class)
+        private fun getLoopbackInterfaceNames(): com.google.common.collect.ImmutableSet<String?> {
+            val result: com.google.common.collect.ImmutableSet.Builder<String?> =
+                com.google.common.collect.ImmutableSet.builder<String?>()
+            val ifaces: Enumeration<NetworkInterface> = NetworkInterface.getNetworkInterfaces()
+            while (ifaces.hasMoreElements()) {
+                val iface: NetworkInterface = ifaces.nextElement()
+                if (iface.isLoopback()) {
+                    result.add(iface.getName())
+                }
+            }
+            return result.build()
+        }
+
+        private fun calcDelta(prev: Long, next: Long): Long {
+            if (java.lang.Long.compareUnsigned(next, prev) < 0) {
+                return next
+            }
+            return next - prev
+        }
+
+        private fun calcValuePerSec(deltaValue: Long, deltaNanos: Double): Double {
+            return deltaValue / deltaNanos * 1e9
+        }
+
+        private fun bytesPerSecToMegabitsPerSec(bytesPerSec: Double): Double {
+            return bytesPerSec / 1e6 * 8
+        }
     }
-
-    public double megabitsRecvPerSec() {
-      return bytesPerSecToMegabitsPerSec(bytesRecvPerSec());
-    }
-  }
-
-  private static ImmutableSet<String> getLoopbackInterfaceNames() throws IOException {
-    ImmutableSet.Builder<String> result = ImmutableSet.builder();
-    Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
-    while (ifaces.hasMoreElements()) {
-      NetworkInterface iface = ifaces.nextElement();
-      if (iface.isLoopback()) {
-        result.add(iface.getName());
-      }
-    }
-    return result.build();
-  }
-
-  private static long calcDelta(long prev, long next) {
-    if (Long.compareUnsigned(next, prev) < 0) {
-      return next;
-    }
-    return next - prev;
-  }
-
-  private static double calcValuePerSec(long deltaValue, double deltaNanos) {
-    return deltaValue / deltaNanos * 1e9;
-  }
-
-  private static double bytesPerSecToMegabitsPerSec(double bytesPerSec) {
-    return bytesPerSec / 1e6 * 8;
-  }
 }

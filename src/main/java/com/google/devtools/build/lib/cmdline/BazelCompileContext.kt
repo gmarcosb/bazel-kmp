@@ -11,32 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.cmdline
 
-package com.google.devtools.build.lib.cmdline;
-
-import com.google.auto.value.AutoValue;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Module;
+import com.google.auto.value.AutoValue
 
 /**
- * BazelCompileContext records Bazel-specific information associated with a .bzl {@link
- * net.starlark.java.eval.Module} during bzl compilation.
- *
- * <p>Maintainer's note: This object is determined prior to the module's compilation in
- * BzlCompileFunction. It is saved in the {@code Module} used for compilation as {@link
- * Module#getClientData client data}. The {@code Module} used during .bzl evaluation is separate and
- * uses {@link BazelModuleContext} as client data.
+ * BazelCompileContext records Bazel-specific information associated with a .bzl [ ] during bzl compilation.
+ * 
+ * 
+ * Maintainer's note: This object is determined prior to the module's compilation in
+ * BzlCompileFunction. It is saved in the `Module` used for compilation as [ ][Module.getClientData]. The `Module` used during .bzl evaluation is separate and
+ * uses [BazelModuleContext] as client data.
  */
 @AutoValue
-public abstract class BazelCompileContext {
-  /** Label associated with the Starlark {@link net.starlark.java.eval.Module}. */
-  @Nullable
-  public abstract Label label();
+abstract class BazelCompileContext {
+    /** Label associated with the Starlark [net.starlark.java.eval.Module].  */
+    abstract fun label(): com.google.devtools.build.lib.cmdline.Label?
 
-  /** Returns the name of the module's .bzl file, as provided to the parser. */
-  public abstract String filename();
+    /** Returns the name of the module's .bzl file, as provided to the parser.  */
+    abstract fun filename(): String?
 
-  public static BazelCompileContext create(Label label, String filename) {
-    return new AutoValue_BazelCompileContext(label, filename);
-  }
+    companion object {
+        fun create(label: com.google.devtools.build.lib.cmdline.Label?, filename: String?): BazelCompileContext {
+            return AutoValue_BazelCompileContext(label, filename)
+        }
+    }
 }

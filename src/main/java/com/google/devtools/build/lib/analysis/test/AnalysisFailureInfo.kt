@@ -11,77 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisFailureInfoApi;
+import com.google.devtools.build.lib.analysis.test.AnalysisFailure
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
+import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder
+import com.google.devtools.build.lib.packages.BuiltinProvider
+import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisFailureInfoApi
+import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisFailureInfoApi.AnalysisFailureInfoProviderApi
 
 /**
- * Implementation of {@link AnalysisFailureInfoApi}.
- *
- * <p>Encapsulates information about analysis-phase errors which would have occurred during a build.
+ * Implementation of [AnalysisFailureInfoApi].
+ * 
+ * 
+ * Encapsulates information about analysis-phase errors which would have occurred during a build.
  */
-public final class AnalysisFailureInfo implements Info, AnalysisFailureInfoApi<AnalysisFailure> {
+class AnalysisFailureInfo private constructor(causes: NestedSet<AnalysisFailure?>) :
+    com.google.devtools.build.lib.packages.Info, AnalysisFailureInfoApi<AnalysisFailure?> {
+    private val causes: NestedSet<AnalysisFailure?>
 
-  /** Singleton provider instance for {@link AnalysisFailureInfo}. */
-  public static final AnalysisFailureInfoProvider STARLARK_CONSTRUCTOR =
-      new AnalysisFailureInfoProvider();
-
-  private final NestedSet<AnalysisFailure> causes;
-
-  private AnalysisFailureInfo(NestedSet<AnalysisFailure> causes) {
-    this.causes = causes;
-  }
-
-  @Override
-  public AnalysisFailureInfoProvider getProvider() {
-    return STARLARK_CONSTRUCTOR;
-  }
-
-  /**
-   * Constructs and returns an {@link AnalysisFailureInfo} object representing the given failures.
-   */
-  public static AnalysisFailureInfo forAnalysisFailures(Iterable<AnalysisFailure> failures) {
-    return new AnalysisFailureInfo(
-        NestedSetBuilder.<AnalysisFailure>stableOrder().addAll(failures).build());
-  }
-
-  /**
-   * Constructs and returns an {@link AnalysisFailureInfo} object representing the given sets of
-   * failures. When combining nested sets of analysis failures, use this method instead of {@link
-   * #forAnalysisFailures} so that the sets do not need to be flattened.
-   */
-  public static AnalysisFailureInfo forAnalysisFailureSets(
-      Iterable<NestedSet<AnalysisFailure>> failures) {
-    NestedSetBuilder<AnalysisFailure> fullSetBuilder =
-        NestedSetBuilder.<AnalysisFailure>stableOrder();
-    for (NestedSet<AnalysisFailure> failure : failures) {
-      fullSetBuilder.addTransitive(failure);
+    init {
+        this.causes = causes
     }
-    return new AnalysisFailureInfo(fullSetBuilder.build());
-  }
 
-  @Override
-  public Depset /*<AnalysisFailure>*/ getCauses() {
-    return Depset.of(AnalysisFailure.class, causes);
-  }
-
-  public NestedSet<AnalysisFailure> getCausesNestedSet() {
-    return causes;
-  }
-
-  /**
-   * Provider implementation for {@link AnalysisFailureInfo}.
-   */
-  public static class AnalysisFailureInfoProvider
-      extends BuiltinProvider<AnalysisFailureInfo> implements AnalysisFailureInfoProviderApi {
-
-    public AnalysisFailureInfoProvider() {
-      super("AnalysisFailureInfo", AnalysisFailureInfo.class);
+    override fun  /*<AnalysisFailure>*/getCauses(): Depset? {
+        return Depset.of<AnalysisFailure?>(AnalysisFailure::class.java, causes)
     }
-  }
+
+    val causesNestedSet: NestedSet<AnalysisFailure?>
+        get() = causes
+
+    /**
+     * Provider implementation for [AnalysisFailureInfo].
+     */
+    class AnalysisFailureInfoProvider
+
+        : BuiltinProvider<AnalysisFailureInfo?>("AnalysisFailureInfo", AnalysisFailureInfo::class.java),
+        AnalysisFailureInfoProviderApi
+
+    companion object {
+        /** Singleton provider instance for [AnalysisFailureInfo].  */
+        val provider: AnalysisFailureInfoProvider = AnalysisFailureInfoProvider()
+            get() = Companion.field
+
+        /**
+         * Constructs and returns an [AnalysisFailureInfo] object representing the given failures.
+         */
+        fun forAnalysisFailures(failures: Iterable<AnalysisFailure?>?): AnalysisFailureInfo {
+            return AnalysisFailureInfo(
+                NestedSetBuilder.stableOrder<AnalysisFailure?>().addAll(failures).build()
+            )
+        }
+
+        /**
+         * Constructs and returns an [AnalysisFailureInfo] object representing the given sets of
+         * failures. When combining nested sets of analysis failures, use this method instead of [ ][.forAnalysisFailures] so that the sets do not need to be flattened.
+         */
+        fun forAnalysisFailureSets(
+            failures: Iterable<NestedSet<AnalysisFailure?>?>
+        ): AnalysisFailureInfo {
+            val fullSetBuilder: NestedSetBuilder<AnalysisFailure?> =
+                NestedSetBuilder.stableOrder<AnalysisFailure?>()
+            for (failure in failures) {
+                fullSetBuilder.addTransitive(failure)
+            }
+            return AnalysisFailureInfo(fullSetBuilder.build())
+        }
+    }
 }

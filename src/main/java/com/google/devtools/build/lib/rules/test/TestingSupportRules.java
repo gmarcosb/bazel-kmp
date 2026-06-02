@@ -37,9 +37,9 @@ public final class TestingSupportRules implements RuleSet {
         new TestingBootstrap(
             new StarlarkTestingModule(),
             new CoverageCommon(),
-            InstrumentedFilesInfo.STARLARK_CONSTRUCTOR,
-            AnalysisFailureInfo.STARLARK_CONSTRUCTOR,
-            AnalysisTestResultInfo.STARLARK_CONSTRUCTOR));
+            InstrumentedFilesInfo.provider,
+            AnalysisFailureInfo.provider,
+            AnalysisTestResultInfo.provider));
   }
 
   @Override

@@ -11,213 +11,223 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
-
-import static com.google.devtools.build.lib.bazel.repository.decompressor.StripPrefixedPath.maybeDeprefixSymlink;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.zip.ZipFileEntry;
-import com.google.devtools.build.zip.ZipReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.base.Preconditions
+import com.google.common.io.ByteStreams
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor.CouldNotFindPrefixException
+import com.google.devtools.build.lib.vfs.FileSystemUtils
+import com.google.devtools.build.lib.vfs.Path
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.zip.ZipFileEntry
+import com.google.devtools.build.zip.ZipReader
+import com.google.devtools.build.zip.ZipReader.entries
+import java.io.IOException
+import java.lang.String
+import java.nio.charset.StandardCharsets
+import java.util.*
+import java.util.function.Consumer
+import kotlin.ByteArray
+import kotlin.Int
+import kotlin.Long
 
 /**
  * Creates a repository by decompressing a zip file.
  */
-public class ZipDecompressor implements Decompressor {
-  public static final Decompressor INSTANCE = new ZipDecompressor();
-  private static final long MAX_PATH_LENGTH = 256;
+class ZipDecompressor private constructor() : DecompressorValue.Decompressor {
+    /**
+     * This unzips the zip file to directory [DecompressorDescriptor.destinationPath], which
+     * by default is empty relative [to the calling external repository rule] path. The zip file is
+     * expected to have the WORKSPACE file at the top level, e.g.:
+     * 
+     * <pre>
+     * $ unzip -lf some-repo.zip
+     * Archive:  ../repo.zip
+     * Length      Date    Time    Name
+     * ---------  ---------- -----   ----
+     * 0  2014-11-20 15:50   WORKSPACE
+     * 0  2014-11-20 16:10   foo/
+     * 236  2014-11-20 15:52   foo/BUILD
+     * ...
+    </pre> * 
+     */
+    @Throws(IOException::class, InterruptedException::class)
+    override fun decompress(descriptor: DecompressorDescriptor): Path? {
+        val destinationDirectory = descriptor.destinationPath
+        val prefix = descriptor.prefix
+        val renameFiles: MutableMap<String?, String?> = descriptor.renameFiles
+        var foundPrefix = false
+        // Store link, target info of symlinks, we create them after regular files are extracted.
+        val symlinks: MutableMap<Path?, PathFragment?> = HashMap<Path?, PathFragment?>()
 
-  private ZipDecompressor() {
-  }
-
-  private static final int S_IFDIR = 040000;
-  private static final int S_IFREG = 0100000;
-  private static final int S_IFLNK = 0120000;
-  private static final int EXECUTABLE_MASK = 0755;
-
-  // source: https://docs.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
-  @VisibleForTesting static final int WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10;
-  @VisibleForTesting static final int WINDOWS_FILE_ATTRIBUTE_ARCHIVE = 0x20;
-  @VisibleForTesting static final int WINDOWS_FILE_ATTRIBUTE_NORMAL = 0x80;
-
-  /**
-   * This unzips the zip file to directory {@link DecompressorDescriptor#destinationPath()}, which
-   * by default is empty relative [to the calling external repository rule] path. The zip file is
-   * expected to have the WORKSPACE file at the top level, e.g.:
-   *
-   * <pre>
-   * $ unzip -lf some-repo.zip
-   * Archive:  ../repo.zip
-   *  Length      Date    Time    Name
-   * ---------  ---------- -----   ----
-   *        0  2014-11-20 15:50   WORKSPACE
-   *        0  2014-11-20 16:10   foo/
-   *      236  2014-11-20 15:52   foo/BUILD
-   *      ...
-   * </pre>
-   */
-  @Override
-  @Nullable
-  public Path decompress(DecompressorDescriptor descriptor)
-      throws IOException, InterruptedException {
-    Path destinationDirectory = descriptor.destinationPath();
-    Optional<String> prefix = descriptor.prefix();
-    Map<String, String> renameFiles = descriptor.renameFiles();
-    boolean foundPrefix = false;
-    // Store link, target info of symlinks, we create them after regular files are extracted.
-    Map<Path, PathFragment> symlinks = new HashMap<>();
-
-    try (ZipReader reader = new ZipReader(descriptor.archivePath().getPathFile())) {
-      Collection<ZipFileEntry> entries = reader.entries();
-      for (ZipFileEntry entry : entries) {
-        String entryName = entry.getName();
-        entryName = renameFiles.getOrDefault(entryName, entryName);
-        StripPrefixedPath entryPath =
-            StripPrefixedPath.maybeDeprefix(entryName.getBytes(UTF_8), prefix);
-        foundPrefix = foundPrefix || entryPath.foundPrefix();
-        if (entryPath.skip()) {
-          continue;
+        ZipReader(descriptor.archivePath.getPathFile()).use { reader ->
+            val entries: MutableCollection<ZipFileEntry>? = reader.entries()
+            for (entry in entries!!) {
+                var entryName: String? = entry.getName()
+                entryName = renameFiles.getOrDefault(entryName, entryName)
+                val entryPath: StripPrefixedPath =
+                    StripPrefixedPath.Companion.maybeDeprefix(entryName.getBytes(StandardCharsets.UTF_8), prefix)
+                foundPrefix = foundPrefix || entryPath.foundPrefix()
+                if (entryPath.skip()) {
+                    continue
+                }
+                val pathFragment =
+                    entryPath.getPathFragment().stripComponents(descriptor.stripComponents)
+                if (pathFragment == PathFragment.EMPTY_FRAGMENT) {
+                    continue
+                }
+                extractZipEntry(reader, entry, destinationDirectory, pathFragment, prefix, symlinks)
+            }
+            if (prefix.isPresent() && !foundPrefix) {
+                val prefixes: MutableSet<String?> = HashSet<String?>()
+                for (entry in entries) {
+                    val entryPath: StripPrefixedPath =
+                        StripPrefixedPath.Companion.maybeDeprefix(
+                            entry.getName().getBytes(StandardCharsets.UTF_8),
+                            Optional.empty<String?>()
+                        )
+                    CouldNotFindPrefixException.Companion.maybeMakePrefixSuggestion(entryPath.getPathFragment())
+                        .ifPresent(Consumer { e: String? -> prefixes.add(e) })
+                }
+                throw CouldNotFindPrefixException(prefix.get(), prefixes)
+            }
         }
-        PathFragment pathFragment =
-            entryPath.getPathFragment().stripComponents(descriptor.stripComponents());
-        if (Objects.equals(pathFragment, PathFragment.EMPTY_FRAGMENT)) {
-          continue;
+        for (symlink in symlinks.entrySet()) {
+            FileSystemUtils.ensureSymbolicLink(symlink.getKey(), symlink.getValue())
         }
-        extractZipEntry(reader, entry, destinationDirectory, pathFragment, prefix, symlinks);
-      }
 
-      if (prefix.isPresent() && !foundPrefix) {
-        Set<String> prefixes = new HashSet<>();
-        for (ZipFileEntry entry : entries) {
-          StripPrefixedPath entryPath =
-              StripPrefixedPath.maybeDeprefix(entry.getName().getBytes(UTF_8), Optional.empty());
-          CouldNotFindPrefixException.maybeMakePrefixSuggestion(entryPath.getPathFragment())
-              .ifPresent(prefixes::add);
+        return destinationDirectory
+    }
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: DecompressorValue.Decompressor = ZipDecompressor()
+        private const val MAX_PATH_LENGTH: Long = 256
+
+        private const val S_IFDIR = 16384
+        private const val S_IFREG = 32768
+        private const val S_IFLNK = 40960
+        private const val EXECUTABLE_MASK = 493
+
+        // source: https://docs.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
+        @VisibleForTesting
+        const val WINDOWS_FILE_ATTRIBUTE_DIRECTORY: Int = 0x10
+
+        @VisibleForTesting
+        const val WINDOWS_FILE_ATTRIBUTE_ARCHIVE: Int = 0x20
+
+        @VisibleForTesting
+        const val WINDOWS_FILE_ATTRIBUTE_NORMAL: Int = 0x80
+
+        @Throws(IOException::class, InterruptedException::class)
+        private fun extractZipEntry(
+            reader: ZipReader,
+            entry: ZipFileEntry,
+            destinationDirectory: Path,
+            strippedRelativePath: PathFragment,
+            prefix: Optional<String?>?,
+            symlinks: MutableMap<Path?, PathFragment?>
+        ) {
+            if (strippedRelativePath.isAbsolute()) {
+                throw IOException(
+                    String.format(
+                        "Failed to extract %s, zipped paths cannot be absolute", strippedRelativePath
+                    )
+                )
+            }
+            val outputPath = destinationDirectory.getRelative(strippedRelativePath)
+            if (!outputPath.startsWith(destinationDirectory)) {
+                throw IOException(
+                    String.format(
+                        "Failed to extract %s, path is escaping the destination directory",
+                        strippedRelativePath
+                    )
+                )
+            }
+            val permissions: Int = getPermissions(entry.externalAttributes, entry.getName())
+            outputPath.getParentDirectory()!!.createDirectoryAndParents()
+            val isDirectory = (permissions and S_IFDIR) == S_IFDIR
+            val isSymlink = (permissions and S_IFLNK) == S_IFLNK
+            if (isDirectory) {
+                outputPath.createDirectoryAndParents()
+            } else if (isSymlink) {
+                Preconditions.checkState(entry.getSize() < MAX_PATH_LENGTH)
+                val buffer = ByteArray(entry.getSize().toInt())
+                // For symlinks, the "compressed data" is actually the target name.
+                val read = reader.getInputStream(entry).read(buffer)
+                Preconditions.checkState(read == buffer.size)
+
+                val target: PathFragment = StripPrefixedPath.Companion.createPathFragment(buffer)
+                val targetPath = outputPath.getParentDirectory()!!.getRelative(target)
+                if (!target.isAbsolute() && !targetPath.startsWith(destinationDirectory)) {
+                    throw IOException(
+                        ("Zip entries cannot refer to files outside of their directory: "
+                                + reader.getFilename()
+                                + " has a symlink "
+                                + strippedRelativePath
+                                + " pointing to "
+                                + kotlin.String(buffer, StandardCharsets.UTF_8))
+                    )
+                }
+
+                symlinks.put(
+                    outputPath,
+                    StripPrefixedPath.Companion.maybeDeprefixSymlink(buffer, prefix, destinationDirectory)
+                )
+            } else {
+                reader.getInputStream(entry).use { input ->
+                    outputPath.getOutputStream().use { output ->
+                        ByteStreams.copy(input, output)
+                        if (Thread.interrupted()) {
+                            throw InterruptedException()
+                        }
+                    }
+                }
+                // Ensure that all files are at least user-readable. Some archives contain files that
+                // are not, but many other tools are working around this and thus mask these issues.
+                outputPath.chmod(permissions or 256)
+                outputPath.setLastModifiedTime(entry.time)
+            }
         }
-        throw new CouldNotFindPrefixException(prefix.get(), prefixes);
-      }
-    }
 
-    for (Map.Entry<Path, PathFragment> symlink : symlinks.entrySet()) {
-      FileSystemUtils.ensureSymbolicLink(symlink.getKey(), symlink.getValue());
-    }
+        @kotlin.jvm.JvmStatic
+        @VisibleForTesting
+        @Throws(IOException::class)
+        fun getPermissions(permissions: Int, path: kotlin.String): Int {
+            // Sometimes zip files list directories as being "regular" executable files (i.e., 0100755).
+            // I'm looking at you, Go AppEngine SDK 1.9.37 (see #1263 for details).
+            if (path.endsWith("/")) {
+                return S_IFDIR or EXECUTABLE_MASK
+            }
 
-    return destinationDirectory;
-  }
+            // Posix permissions are in the high-order 2 bytes of the external attributes. After this
+            // operation, permissions holds 0100755 (or 040755 for directories).
+            val shiftedPermissions = permissions ushr 16
+            if (shiftedPermissions != 0) {
+                return shiftedPermissions
+            }
 
-  private static void extractZipEntry(
-      ZipReader reader,
-      ZipFileEntry entry,
-      Path destinationDirectory,
-      PathFragment strippedRelativePath,
-      Optional<String> prefix,
-      Map<Path, PathFragment> symlinks)
-      throws IOException, InterruptedException {
-    if (strippedRelativePath.isAbsolute()) {
-      throw new IOException(
-          String.format(
-              "Failed to extract %s, zipped paths cannot be absolute", strippedRelativePath));
-    }
-    Path outputPath = destinationDirectory.getRelative(strippedRelativePath);
-    if (!outputPath.startsWith(destinationDirectory)) {
-      throw new IOException(
-          String.format(
-              "Failed to extract %s, path is escaping the destination directory",
-              strippedRelativePath));
-    }
-    int permissions = getPermissions(entry.getExternalAttributes(), entry.getName());
-    outputPath.getParentDirectory().createDirectoryAndParents();
-    boolean isDirectory = (permissions & S_IFDIR) == S_IFDIR;
-    boolean isSymlink = (permissions & S_IFLNK) == S_IFLNK;
-    if (isDirectory) {
-      outputPath.createDirectoryAndParents();
-    } else if (isSymlink) {
-      Preconditions.checkState(entry.getSize() < MAX_PATH_LENGTH);
-      byte[] buffer = new byte[(int) entry.getSize()];
-      // For symlinks, the "compressed data" is actually the target name.
-      int read = reader.getInputStream(entry).read(buffer);
-      Preconditions.checkState(read == buffer.length);
+            // If this was zipped up on FAT, it won't have posix permissions set. Instead, this
+            // checks if extra attributes is set to 0 for files. From
+            // https://github.com/miloyip/rapidjson/archive/v1.0.2.zip, it looks like executables end up
+            // with "normal" (posix) permissions (oddly), so they'll be handled above.
+            val windowsPermission = permissions and 0xff
+            if ((windowsPermission and WINDOWS_FILE_ATTRIBUTE_DIRECTORY)
+                == WINDOWS_FILE_ATTRIBUTE_DIRECTORY
+            ) {
+                // Directory.
+                return S_IFDIR or EXECUTABLE_MASK
+            } else if (permissions == 0 || (windowsPermission and WINDOWS_FILE_ATTRIBUTE_ARCHIVE) == WINDOWS_FILE_ATTRIBUTE_ARCHIVE || (windowsPermission and WINDOWS_FILE_ATTRIBUTE_NORMAL) == WINDOWS_FILE_ATTRIBUTE_NORMAL) {
+                // File.
+                return S_IFREG or EXECUTABLE_MASK
+            }
 
-      PathFragment target = StripPrefixedPath.createPathFragment(buffer);
-      Path targetPath = outputPath.getParentDirectory().getRelative(target);
-      if (!target.isAbsolute() && !targetPath.startsWith(destinationDirectory)) {
-        throw new IOException(
-            "Zip entries cannot refer to files outside of their directory: "
-                + reader.getFilename()
-                + " has a symlink "
-                + strippedRelativePath
-                + " pointing to "
-                + new String(buffer, UTF_8));
-      }
-
-      symlinks.put(outputPath, maybeDeprefixSymlink(buffer, prefix, destinationDirectory));
-    } else {
-      try (InputStream input = reader.getInputStream(entry);
-          OutputStream output = outputPath.getOutputStream()) {
-        ByteStreams.copy(input, output);
-        if (Thread.interrupted()) {
-          throw new InterruptedException();
+            // No idea.
+            throw IOException(
+                ("Unrecognized file mode for " + path + ": 0x"
+                        + Integer.toHexString(permissions))
+            )
         }
-      }
-      // Ensure that all files are at least user-readable. Some archives contain files that
-      // are not, but many other tools are working around this and thus mask these issues.
-      outputPath.chmod(permissions | 0400);
-      outputPath.setLastModifiedTime(entry.getTime());
     }
-  }
-
-  @VisibleForTesting
-  static int getPermissions(int permissions, String path) throws IOException {
-    // Sometimes zip files list directories as being "regular" executable files (i.e., 0100755).
-    // I'm looking at you, Go AppEngine SDK 1.9.37 (see #1263 for details).
-    if (path.endsWith("/")) {
-      return S_IFDIR | EXECUTABLE_MASK;
-    }
-
-    // Posix permissions are in the high-order 2 bytes of the external attributes. After this
-    // operation, permissions holds 0100755 (or 040755 for directories).
-    int shiftedPermissions = permissions >>> 16;
-    if (shiftedPermissions != 0) {
-      return shiftedPermissions;
-    }
-
-    // If this was zipped up on FAT, it won't have posix permissions set. Instead, this
-    // checks if extra attributes is set to 0 for files. From
-    // https://github.com/miloyip/rapidjson/archive/v1.0.2.zip, it looks like executables end up
-    // with "normal" (posix) permissions (oddly), so they'll be handled above.
-    int windowsPermission = permissions & 0xff;
-    if ((windowsPermission & WINDOWS_FILE_ATTRIBUTE_DIRECTORY)
-        == WINDOWS_FILE_ATTRIBUTE_DIRECTORY) {
-      // Directory.
-      return S_IFDIR | EXECUTABLE_MASK;
-    } else if (permissions == 0
-        || (windowsPermission & WINDOWS_FILE_ATTRIBUTE_ARCHIVE) == WINDOWS_FILE_ATTRIBUTE_ARCHIVE
-        || (windowsPermission & WINDOWS_FILE_ATTRIBUTE_NORMAL) == WINDOWS_FILE_ATTRIBUTE_NORMAL) {
-      // File.
-      return S_IFREG | EXECUTABLE_MASK;
-    }
-
-    // No idea.
-    throw new IOException("Unrecognized file mode for " + path + ": 0x"
-        + Integer.toHexString(permissions));
-  }
-
 }

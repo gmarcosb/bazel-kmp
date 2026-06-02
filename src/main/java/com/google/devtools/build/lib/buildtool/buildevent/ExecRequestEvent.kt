@@ -11,64 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.EnvironmentVariable;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.server.CommandProtos;
-import com.google.devtools.build.lib.server.CommandProtos.ExecRequest;
-import com.google.protobuf.ByteString;
-import java.util.Collection;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
 
 /**
- * Event triggered after building of the run command has completed and the {@link ExecRequest} has
+ * Event triggered after building of the run command has completed and the [ExecRequest] has
  * been constructed.
  */
-public class ExecRequestEvent implements BuildEvent {
+class ExecRequestEvent(execRequest: ExecRequest, redactedArgv: ImmutableList<ByteString?>?) : BuildEvent {
+    private val execRequest: ExecRequest
+    private val redactedArgv: ImmutableList<ByteString?>?
 
-  private final ExecRequest execRequest;
-  private final ImmutableList<ByteString> redactedArgv;
-
-  public ExecRequestEvent(ExecRequest execRequest, ImmutableList<ByteString> redactedArgv) {
-    this.execRequest = execRequest;
-    this.redactedArgv = redactedArgv;
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext context) {
-    BuildEventStreamProtos.ExecRequestConstructed.Builder builder =
-        BuildEventStreamProtos.ExecRequestConstructed.newBuilder();
-    builder.setWorkingDirectory(execRequest.getWorkingDirectory());
-    for (CommandProtos.EnvironmentVariable environmentVariable :
-        execRequest.getEnvironmentVariableList()) {
-      builder.addEnvironmentVariable(
-          EnvironmentVariable.newBuilder()
-              .setName(environmentVariable.getName())
-              .setValue(environmentVariable.getValue()));
+    init {
+        this.execRequest = execRequest
+        this.redactedArgv = redactedArgv
     }
-    for (ByteString envVarToClear : execRequest.getEnvironmentVariableToClearList()) {
-      builder.addEnvironmentVariableToClear(envVarToClear);
+
+    override fun asStreamProto(context: BuildEventContext?): BuildEvent {
+        val builder: BuildEventStreamProtos.ExecRequestConstructed.Builder =
+            BuildEventStreamProtos.ExecRequestConstructed.newBuilder()
+        builder.setWorkingDirectory(execRequest.getWorkingDirectory())
+        for (environmentVariable in execRequest.getEnvironmentVariableList()) {
+            builder.addEnvironmentVariable(
+                EnvironmentVariable.newBuilder()
+                    .setName(environmentVariable.getName())
+                    .setValue(environmentVariable.getValue())
+            )
+        }
+        for (envVarToClear in execRequest.getEnvironmentVariableToClearList()) {
+            builder.addEnvironmentVariableToClear(envVarToClear)
+        }
+        builder.setShouldExec(execRequest.getShouldExec())
+        // Use the event's redacted argv instead of the ExecRequest's argv.
+        builder.addAllArgv(redactedArgv)
+        return GenericBuildEvent.Companion.protoChaining(this).setExecRequest(builder.build()).build()
     }
-    builder.setShouldExec(execRequest.getShouldExec());
-    // Use the event's redacted argv instead of the ExecRequest's argv.
-    builder.addAllArgv(redactedArgv);
-    return GenericBuildEvent.protoChaining(this).setExecRequest(builder.build()).build();
-  }
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.execRequestId();
-  }
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.execRequestId()
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    val childrenEvents: MutableCollection<BuildEventId>
+        get() = ImmutableList.of<BuildEventId?>()
 }

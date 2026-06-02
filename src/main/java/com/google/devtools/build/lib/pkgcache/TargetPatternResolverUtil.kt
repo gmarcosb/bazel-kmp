@@ -11,58 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.devtools.build.lib.cmdline.LabelValidator;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.server.FailureDetails.TargetPatterns;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Collection;
+import com.google.devtools.build.lib.cmdline.LabelValidator
 
 /**
  * Common utility methods for target pattern resolution.
  */
-public final class TargetPatternResolverUtil {
-  private TargetPatternResolverUtil() {
-    // Utility class.
-  }
+object TargetPatternResolverUtil {
+    @kotlin.jvm.JvmStatic
+    fun getParsingErrorMessage(message: String?, originalPattern: String?): String? {
+        if (originalPattern == null) {
+            return message
+        } else {
+            return java.lang.String.format("while parsing '%s': %s", originalPattern, message)
+        }
+    }
 
-  public static String getParsingErrorMessage(String message, String originalPattern) {
-    if (originalPattern == null) {
-      return message;
-    } else {
-      return String.format("while parsing '%s': %s", originalPattern, message);
+    fun resolvePackageTargets(
+        pkg: com.google.devtools.build.lib.packages.Package,
+        policy: FilteringPolicy
+    ): MutableCollection<com.google.devtools.build.lib.packages.Target?>? {
+        if (policy === FilteringPolicies.NO_FILTER) {
+            return pkg.getTargets().values()
+        }
+        val builder: com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<com.google.devtools.build.lib.packages.Target?> =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.create<com.google.devtools.build.lib.packages.Target?>()
+        for (target in pkg.getTargets().values()) {
+            if (policy.shouldRetain(target, false)) {
+                builder.add(target)
+            }
+        }
+        return builder
     }
-  }
 
-  public static Collection<Target> resolvePackageTargets(Package pkg, FilteringPolicy policy) {
-    if (policy == FilteringPolicies.NO_FILTER) {
-      return pkg.getTargets().values();
+    @kotlin.jvm.JvmStatic
+    @Throws(TargetParsingException::class)
+    fun getPathFragment(pathPrefix: String): PathFragment {
+        val directory: PathFragment = PathFragment.create(pathPrefix)
+        if (directory.containsUplevelReferences()) {
+            throw TargetParsingException(
+                "up-level references are not permitted: '" + directory.getPathString() + "'",
+                TargetPatterns.Code.UP_LEVEL_REFERENCES_NOT_ALLOWED
+            )
+        }
+        if (!pathPrefix.isEmpty() && (LabelValidator.validatePackageName(pathPrefix) != null)) {
+            throw TargetParsingException(
+                "'" + pathPrefix + "' is not a valid package name",
+                TargetPatterns.Code.PACKAGE_NAME_INVALID
+            )
+        }
+        return directory
     }
-    CompactHashSet<Target> builder = CompactHashSet.create();
-    for (Target target : pkg.getTargets().values()) {
-      if (policy.shouldRetain(target, false)) {
-        builder.add(target);
-      }
-    }
-    return builder;
-  }
-
-  public static PathFragment getPathFragment(String pathPrefix) throws TargetParsingException {
-    PathFragment directory = PathFragment.create(pathPrefix);
-    if (directory.containsUplevelReferences()) {
-      throw new TargetParsingException(
-          "up-level references are not permitted: '" + directory.getPathString() + "'",
-          TargetPatterns.Code.UP_LEVEL_REFERENCES_NOT_ALLOWED);
-    }
-    if (!pathPrefix.isEmpty() && (LabelValidator.validatePackageName(pathPrefix) != null)) {
-      throw new TargetParsingException(
-          "'" + pathPrefix + "' is not a valid package name",
-          TargetPatterns.Code.PACKAGE_NAME_INVALID);
-    }
-    return directory;
-  }
 }

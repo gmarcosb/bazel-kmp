@@ -11,40 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
- * This event is fired from {@link
- * com.google.devtools.build.lib.platform.SystemThermalEventModule#thermalCallback} to indicate that
+ * This event is fired from [ ][com.google.devtools.build.lib.platform.SystemThermalEventModule.thermalCallback] to indicate that
  * a thermal event has occurred.
  */
-public class SystemThermalEvent implements ExtendedEventHandler.Postable {
-  private final int value;
-  private final String osDescription;
+class SystemThermalEvent(value: Int, osDescription: String?) : Postable {
+    private val value: Int
+    private val osDescription: String?
 
-  /**
-   * SystemThermalEvent Constructor.
-   *
-   * @param value The actual thermal value (0-100).
-   * @param osDescription A description string that may be OS specific.
-   */
-  public SystemThermalEvent(int value, String osDescription) {
-    this.value = value;
-    this.osDescription = osDescription;
-  }
+    /**
+     * SystemThermalEvent Constructor.
+     * 
+     * @param value The actual thermal value (0-100).
+     * @param osDescription A description string that may be OS specific.
+     */
+    init {
+        this.value = value
+        this.osDescription = osDescription
+    }
 
-  public int value() {
-    return value;
-  }
+    fun value(): Int {
+        return value
+    }
 
-  public String osDescription() {
-    return osDescription;
-  }
+    fun osDescription(): String? {
+        return osDescription
+    }
 
-  public String logString() {
-    return String.format("SystemThermalEvent: %d (%s)", value, osDescription);
-  }
+    fun logString(): String? {
+        return java.lang.String.format("SystemThermalEvent: %d (%s)", value, osDescription)
+    }
 }

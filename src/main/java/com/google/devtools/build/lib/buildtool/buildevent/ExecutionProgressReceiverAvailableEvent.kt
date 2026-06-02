@@ -11,23 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
-import com.google.devtools.build.lib.buildtool.ExecutionProgressReceiver;
+import com.google.devtools.build.lib.buildtool.ExecutionProgressReceiver
 
 /**
  * Event that is raised after the creation of a progress receiver in the execution phase. The event
  * makes the progress receiver available.
  */
-public class ExecutionProgressReceiverAvailableEvent {
-  private final ExecutionProgressReceiver executionProgressReceiver;
-
-  public ExecutionProgressReceiverAvailableEvent(
-      ExecutionProgressReceiver executionProgressReceiver) {
-    this.executionProgressReceiver = executionProgressReceiver;
-  }
-
-  public ExecutionProgressReceiver getExecutionProgressReceiver() {
-    return executionProgressReceiver;
-  }
-}
+class ExecutionProgressReceiverAvailableEvent(@kotlin.jvm.JvmField val executionProgressReceiver: ExecutionProgressReceiver?)

@@ -11,88 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithConfiguration;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.RawAttributeMapper;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.packages.TestSize;
-import com.google.devtools.build.lib.packages.Types;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-/** Event reporting about the configuration associated with a given target */
-public class TargetConfiguredEvent implements BuildEventWithConfiguration {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  private final Target target;
-  @Nullable private final BuildConfigurationValue configuration;
-  @Nullable private final Label actual;
+/** Event reporting about the configuration associated with a given target  */
+class TargetConfiguredEvent(
+    target: com.google.devtools.build.lib.packages.Target,
+    configuration: BuildConfigurationValue?,
+    actual: com.google.devtools.build.lib.cmdline.Label?
+) : BuildEventWithConfiguration {
+    private val target: com.google.devtools.build.lib.packages.Target
+    private val configuration: BuildConfigurationValue?
+    private val actual: com.google.devtools.build.lib.cmdline.Label?
 
-  public TargetConfiguredEvent(
-      Target target, @Nullable BuildConfigurationValue configuration, @Nullable Label actual) {
-    this.target = target;
-    this.configuration = configuration;
-    this.actual = actual;
-  }
-
-  @Override
-  public ImmutableList<BuildEvent> getConfigurations() {
-    return ImmutableList.of(BuildConfigurationValue.buildEvent(configuration));
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.targetConfigured(target.getLabel());
-  }
-
-  @Override
-  public ImmutableList<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of(
-        BuildEventIdUtil.targetCompleted(
-            target.getLabel(), BuildConfigurationValue.configurationId(configuration)));
-  }
-
-  private static BuildEventStreamProtos.TestSize bepTestSize(String targetName, TestSize size) {
-    if (size != null) {
-      return switch (size) {
-        case SMALL -> BuildEventStreamProtos.TestSize.SMALL;
-        case MEDIUM -> BuildEventStreamProtos.TestSize.MEDIUM;
-        case LARGE -> BuildEventStreamProtos.TestSize.LARGE;
-        case ENORMOUS -> BuildEventStreamProtos.TestSize.ENORMOUS;
-      };
+    init {
+        this.target = target
+        this.configuration = configuration
+        this.actual = actual
     }
-    logger.atInfo().log("Target %s has a test size of: %s", targetName, size);
-    return BuildEventStreamProtos.TestSize.UNKNOWN;
-  }
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.TargetConfigured.Builder builder =
-        BuildEventStreamProtos.TargetConfigured.newBuilder().setTargetKind(target.getTargetKind());
-    Rule rule = target.getAssociatedRule();
-    if (rule != null && RawAttributeMapper.of(rule).has("tags")) {
-      // Not every rule has tags, as, due to the "external" package we also have to expect
-      // repository rules at this place.
-      builder.addAllTag(RawAttributeMapper.of(rule).getMergedValues("tags", Types.STRING_LIST));
+    val configurations: com.google.common.collect.ImmutableList<BuildEvent?>
+        get() = com.google.common.collect.ImmutableList.of<E?>(BuildConfigurationValue.buildEvent(configuration))
+
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.targetConfigured(target.getLabel())
+
+    val childrenEvents: com.google.common.collect.ImmutableList<BuildEventId?>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>(
+            BuildEventIdUtil.targetCompleted(
+                target.getLabel(), BuildConfigurationValue.configurationId(configuration)
+            )
+        )
+
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        val builder: BuildEventStreamProtos.TargetConfigured.Builder =
+            BuildEventStreamProtos.TargetConfigured.newBuilder().setTargetKind(target.getTargetKind())
+        val rule: com.google.devtools.build.lib.packages.Rule? = target.getAssociatedRule()
+        if (rule != null && RawAttributeMapper.of(rule).has("tags")) {
+            // Not every rule has tags, as, due to the "external" package we also have to expect
+            // repository rules at this place.
+            builder.addAllTag(
+                RawAttributeMapper.of(rule)
+                    .getMergedValues<T?>("tags", com.google.devtools.build.lib.packages.Types.STRING_LIST)
+            )
+        }
+        if (TargetUtils.isTestRule(target)) {
+            builder.setTestSize(
+                bepTestSize(target.getName(), TestSize.getTestSize(target.getAssociatedRule()))
+            )
+        }
+        if (actual != null) {
+            builder.setActual(actual.toString())
+        }
+        return GenericBuildEvent.protoChaining(this).setConfigured(builder.build()).build()
     }
-    if (TargetUtils.isTestRule(target)) {
-      builder.setTestSize(
-          bepTestSize(target.getName(), TestSize.getTestSize(target.getAssociatedRule())));
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+        private fun bepTestSize(targetName: String?, size: TestSize?): TestSize? {
+            if (size != null) {
+                return when (size) {
+                    TestSize.SMALL -> BuildEventStreamProtos.TestSize.SMALL
+                    TestSize.MEDIUM -> BuildEventStreamProtos.TestSize.MEDIUM
+                    TestSize.LARGE -> BuildEventStreamProtos.TestSize.LARGE
+                    TestSize.ENORMOUS -> BuildEventStreamProtos.TestSize.ENORMOUS
+                }
+            }
+            logger.atInfo().log("Target %s has a test size of: %s", targetName, size)
+            return BuildEventStreamProtos.TestSize.UNKNOWN
+        }
     }
-    if (actual != null) {
-      builder.setActual(actual.toString());
-    }
-    return GenericBuildEvent.protoChaining(this).setConfigured(builder.build()).build();
-  }
 }

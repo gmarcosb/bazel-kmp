@@ -11,26 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.mockito.Mockito
+import org.mockito.junit.MockitoJUnitRunner.Strict
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+/** A JUnit4-style test meant to be invoked by junit4_testbridge_tests.sh.  */
+@RunWith(Strict::class)
+class Junit4UndeclaredTestCaseFailures {
+    private val mockList: MutableList<String?> = Mockito.mock<MutableList<*>>(MutableList::class.java)
 
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
-
-/** A JUnit4-style test meant to be invoked by junit4_testbridge_tests.sh. */
-@RunWith(MockitoJUnitRunner.Strict.class)
-public class Junit4UndeclaredTestCaseFailures {
-
-  @SuppressWarnings("unchecked")
-  private final List<String> mockList = mock(List.class);
-
-  @Test
-  public void passesButHasUnnecessaryStubs() {
-    when(mockList.add("")).thenReturn(true); // this won't get called
-  }
+    @Test
+    fun passesButHasUnnecessaryStubs() {
+        Mockito.`when`<Boolean?>(mockList.add("")).thenReturn(true) // this won't get called
+    }
 }

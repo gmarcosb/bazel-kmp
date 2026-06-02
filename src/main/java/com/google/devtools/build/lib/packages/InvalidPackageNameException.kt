@@ -11,21 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+/** Exception indicating that a package name was invalid.  */
+class InvalidPackageNameException : NoSuchPackageException {
+    constructor(packageIdentifier: PackageIdentifier?, message: String?) : super(packageIdentifier, message)
 
-/** Exception indicating that a package name was invalid. */
-public class InvalidPackageNameException extends NoSuchPackageException {
-
-  public InvalidPackageNameException(PackageIdentifier packageIdentifier, String message) {
-    super(packageIdentifier, message);
-  }
-
-  public InvalidPackageNameException(
-      PackageIdentifier packageIdentifier, String message, DetailedExitCode detailedExitCode) {
-    super(packageIdentifier, message, detailedExitCode);
-  }
+    constructor(packageIdentifier: PackageIdentifier?, message: String?, detailedExitCode: DetailedExitCode?) : super(
+        packageIdentifier,
+        message,
+        detailedExitCode
+    )
 }

@@ -37,16 +37,16 @@ public class RepositoryNameTest {
 
   @Test
   public void testValidateRepositoryName() throws Exception {
-    assertThat(RepositoryName.create("foo").getName()).isEqualTo("foo");
-    assertThat(RepositoryName.create("").getName()).isEqualTo("");
+    assertThat(RepositoryName.create("foo").name).isEqualTo("foo");
+    assertThat(RepositoryName.create("").name).isEqualTo("");
     assertThat(RepositoryName.create("")).isSameInstanceAs(RepositoryName.MAIN);
-    assertThat(RepositoryName.create("foo_bar").getName()).isEqualTo("foo_bar");
-    assertThat(RepositoryName.create("foo-bar").getName()).isEqualTo("foo-bar");
-    assertThat(RepositoryName.create("foo.bar").getName()).isEqualTo("foo.bar");
-    assertThat(RepositoryName.create("..foo").getName()).isEqualTo("..foo");
-    assertThat(RepositoryName.create("foo..").getName()).isEqualTo("foo..");
-    assertThat(RepositoryName.create(".foo").getName()).isEqualTo(".foo");
-    assertThat(RepositoryName.create("foo+bar").getName()).isEqualTo("foo+bar");
+    assertThat(RepositoryName.create("foo_bar").name).isEqualTo("foo_bar");
+    assertThat(RepositoryName.create("foo-bar").name).isEqualTo("foo-bar");
+    assertThat(RepositoryName.create("foo.bar").name).isEqualTo("foo.bar");
+    assertThat(RepositoryName.create("..foo").name).isEqualTo("..foo");
+    assertThat(RepositoryName.create("foo..").name).isEqualTo("foo..");
+    assertThat(RepositoryName.create(".foo").name).isEqualTo(".foo");
+    assertThat(RepositoryName.create("foo+bar").name).isEqualTo("foo+bar");
 
     assertNotValid(".", "repo names are not allowed to be '.'");
     assertNotValid("..", "repo names are not allowed to be '..'");

@@ -67,7 +67,7 @@ public abstract class ContainingPackageLookupValue implements SkyValue {
     PackageIdentifier containingPkg = containingPkgLookupValue.getContainingPackageName();
     boolean crossesPackageBoundaryBelow =
         containingPkg.getSourceRoot().startsWith(label.getPackageIdentifier().getSourceRoot());
-    PathFragment labelNameFragment = PathFragment.create(label.getName());
+    PathFragment labelNameFragment = PathFragment.create(label.name);
     String message;
     if (crossesPackageBoundaryBelow) {
       message =

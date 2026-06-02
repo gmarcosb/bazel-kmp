@@ -203,7 +203,7 @@ final class DockerSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
       throws IOException, ExecException, InterruptedException {
     // Each invocation of "exec" gets its own sandbox base, execroot and temporary directory.
     Path sandboxPath =
-        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.getId()));
+        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.id));
     sandboxPath.getParentDirectory().createDirectory();
     sandboxPath.createDirectory();
 
@@ -222,7 +222,7 @@ final class DockerSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
             execRoot);
     SandboxOutputs outputs = SandboxHelpers.getOutputs(spawn);
 
-    Duration timeout = context.getTimeout();
+    Duration timeout = context.timeout;
 
     UUID uuid = UUID.randomUUID();
 

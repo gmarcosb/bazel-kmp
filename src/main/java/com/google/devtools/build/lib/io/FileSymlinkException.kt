@@ -11,19 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.io;
+package com.google.devtools.build.lib.io
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import java.io.IOException;
+import java.io.IOException
 
-/** Exception indicating a problem with symlinks. */
-@SkybridgeInterface // TODO(tjgq): Replace with a type owned by NativePosixFilesService.
-public abstract class FileSymlinkException extends IOException {
-  protected FileSymlinkException(String message) {
-    super(message);
-  }
-
-  /** Returns a description of the problem that is suitable for printing to users. */
-  // TODO(nharmata): Consider unifying this with AbstractFileChainUniquenessFunction.
-  public abstract String getUserFriendlyMessage();
+/** Exception indicating a problem with symlinks.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface // TODO(tjgq): Replace with a type owned by NativePosixFilesService.
+abstract class FileSymlinkException protected constructor(message: String?) : IOException(message) {
+    /** Returns a description of the problem that is suitable for printing to users.  */ // TODO(nharmata): Consider unifying this with AbstractFileChainUniquenessFunction.
+    abstract val userFriendlyMessage: String?
+        /** Returns a description of the problem that is suitable for printing to users.  */
+        get
 }

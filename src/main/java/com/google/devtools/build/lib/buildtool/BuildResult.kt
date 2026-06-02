@@ -11,360 +11,338 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool
 
-package com.google.devtools.build.lib.buildtool;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileCompression;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType;
-import com.google.devtools.build.lib.buildeventstream.BuildToolLogs;
-import com.google.devtools.build.lib.buildeventstream.BuildToolLogs.LogFileEntry;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.util.CrashFailureDetails;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.protobuf.ByteString;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
 /**
  * Contains information about the result of a build. While BuildRequest is immutable, this class is
  * mutable.
  */
-public final class BuildResult {
-  private long startTimeMillis = 0; // milliseconds since UNIX epoch.
-  private long stopTimeMillis = 0;
+class BuildResult(startTimeMillis: Long) {
+    private var startTimeMillis: Long = 0 // milliseconds since UNIX epoch.
+    /**
+     * Return the time (according to System.currentTimeMillis()) at which the service of this request
+     * was completed.
+     */
+    /**
+     * Record the time (according to System.currentTimeMillis()) at which the service of this request
+     * was completed.
+     */
+    var stopTime: Long = 0
 
-  private Throwable crash = null;
-  private boolean catastrophe = false;
-  private boolean stopOnFirstFailure;
-  @Nullable private DetailedExitCode detailedExitCode;
+    private var crash: Throwable? = null
+    private var catastrophe = false
+    /** Whether some targets were skipped because of `setStopOnFirstFailure`.  */
+    /**
+     * Indicates that remaining targets should be skipped once a target breaks/fails. This will be set
+     * when --nokeep_going or --notest_keep_going is set.
+     */
+    @kotlin.jvm.JvmField
+    var stopOnFirstFailure: Boolean = false
+    private var detailedExitCode: DetailedExitCode? = null
 
-  private BuildConfigurationValue configuration;
-  private ImmutableMap<PathFragment, PathFragment> convenienceSymlinks = ImmutableMap.of();
-  private Collection<ConfiguredTarget> actualTargets;
-  private Collection<ConfiguredTarget> testTargets;
-  private Collection<ConfiguredTarget> successfulTargets;
-  private Collection<ConfiguredTarget> skippedTargets;
-  private ImmutableSet<AspectKey> successfulAspects;
+    private var configuration: BuildConfigurationValue? = null
+    private var convenienceSymlinks: com.google.common.collect.ImmutableMap<PathFragment?, PathFragment?>? =
+        com.google.common.collect.ImmutableMap.of<PathFragment?, PathFragment?>()
+    private var actualTargets: MutableCollection<ConfiguredTarget?>? = null
+    private var testTargets: MutableCollection<ConfiguredTarget?>? = null
+    private var successfulTargets: MutableCollection<ConfiguredTarget?>? = null
+    private var skippedTargets: MutableCollection<ConfiguredTarget?>? = null
+    private var successfulAspects: com.google.common.collect.ImmutableSet<AspectKey?>? = null
 
-  private final BuildToolLogCollection buildToolLogCollection = new BuildToolLogCollection();
+    /**
+     * Collection of data for the build tool logs event. This may only be modified until the
+     * BuildCompleteEvent is posted; any changes after that event is handled will not be included in
+     * the build tool logs event.
+     */
+    @kotlin.jvm.JvmField
+    val buildToolLogCollection: BuildToolLogCollection = BuildToolLogCollection()
 
-  @Nullable private FailureDetail postBuildCallbackFailureDetail;
+    private var postBuildCallbackFailureDetail: FailureDetail? = null
 
-  public BuildResult(long startTimeMillis) {
-    this.startTimeMillis = startTimeMillis;
-  }
-
-  /**
-   * Record the time (according to System.currentTimeMillis()) at which the service of this request
-   * was completed.
-   */
-  public void setStopTime(long stopTimeMillis) {
-    this.stopTimeMillis = stopTimeMillis;
-  }
-
-  /**
-   * Return the time (according to System.currentTimeMillis()) at which the service of this request
-   * was completed.
-   */
-  public long getStopTime() {
-    return stopTimeMillis;
-  }
-
-  /**
-   * Returns the elapsed time in seconds for the service of this request. Not defined for requests
-   * that have not been serviced.
-   */
-  public double getElapsedSeconds() {
-    if (startTimeMillis == 0 || stopTimeMillis == 0) {
-      throw new IllegalStateException("BuildRequest has not been serviced");
-    }
-    return (stopTimeMillis - startTimeMillis) / 1000.0;
-  }
-
-  public void setDetailedExitCode(DetailedExitCode detailedExitCode) {
-    this.detailedExitCode = detailedExitCode;
-  }
-
-  /** True iff the build request has been successfully completed. */
-  public boolean getSuccess() {
-    return detailedExitCode != null && detailedExitCode.isSuccess();
-  }
-
-  /**
-   * Gets the {@link DetailedExitCode} containing the {@link ExitCode} and optional failure detail
-   * to complete the command with.
-   */
-  public DetailedExitCode getDetailedExitCode() {
-    if (detailedExitCode != null) {
-      return detailedExitCode;
-    }
-    return CrashFailureDetails.detailedExitCodeForThrowable(
-        new IllegalStateException("Unspecified DetailedExitCode"));
-  }
-
-  /** Sets the RuntimeException / Error that induced a Blaze crash. */
-  public void setUnhandledThrowable(Throwable crash) {
-    Preconditions.checkState(
-        crash == null || ((crash instanceof RuntimeException) || (crash instanceof Error)));
-    this.crash = crash;
-  }
-
-  /** Sets a "catastrophe": A build failure severe enough to halt a keep_going build. */
-  public void setCatastrophe() {
-    this.catastrophe = true;
-  }
-
-  /** Was the build a "catastrophe": A build failure severe enough to halt a keep_going build. */
-  public boolean wasCatastrophe() {
-    return catastrophe;
-  }
-
-  /** Whether some targets were skipped because of {@code setStopOnFirstFailure}. */
-  public boolean getStopOnFirstFailure() {
-    return stopOnFirstFailure;
-  }
-
-  /**
-   * Indicates that remaining targets should be skipped once a target breaks/fails. This will be set
-   * when --nokeep_going or --notest_keep_going is set.
-   */
-  public void setStopOnFirstFailure(boolean stopOnFirstFailure) {
-    this.stopOnFirstFailure = stopOnFirstFailure;
-  }
-
-  /** Gets the Blaze crash Throwable. Null if Blaze did not crash. */
-  public Throwable getUnhandledThrowable() {
-    return crash;
-  }
-
-  public void setBuildConfiguration(BuildConfigurationValue configuration) {
-    this.configuration = configuration;
-  }
-
-  /** Returns the build configuration collection used for the build. */
-  public BuildConfigurationValue getBuildConfiguration() {
-    return configuration;
-  }
-
-  void setConvenienceSymlinks(ImmutableMap<PathFragment, PathFragment> convenienceSymlinks) {
-    this.convenienceSymlinks = convenienceSymlinks;
-  }
-
-  /**
-   * Returns the convenience symlinks for this build in name -> target format (eg blaze-out ->
-   * /symlink/target).
-   */
-  public ImmutableMap<PathFragment, PathFragment> getConvenienceSymlinks() {
-    return convenienceSymlinks;
-  }
-
-  /** @see #getActualTargets */
-  public void setActualTargets(Collection<ConfiguredTarget> actualTargets) {
-    this.actualTargets = actualTargets;
-  }
-
-  /**
-   * Returns the actual set of targets which we attempted to build. This value is set during the
-   * build, after the target patterns have been parsed and resolved. If --keep_going is specified,
-   * this set may exclude targets that could not be found or successfully analyzed. It may be
-   * examined after the build. May be null even after the build, if there were errors in the loading
-   * or analysis phases.
-   */
-  public Collection<ConfiguredTarget> getActualTargets() {
-    return actualTargets;
-  }
-
-  /** @see #getTestTargets */
-  public void setTestTargets(@Nullable Collection<ConfiguredTarget> testTargets) {
-    this.testTargets = testTargets == null ? null : Collections.unmodifiableCollection(testTargets);
-  }
-
-  /**
-   * Returns the actual unmodifiable collection of targets which we attempted to test. This value is
-   * set at the end of the build analysis phase, after the test target patterns have been parsed and
-   * resolved. If --keep_going is specified, this collection may exclude targets that could not be
-   * found or successfully analyzed. It may be examined after the build. May be null even after the
-   * build, if there were errors in the loading or analysis phases or if testing was not requested.
-   */
-  public Collection<ConfiguredTarget> getTestTargets() {
-    return testTargets;
-  }
-
-  /** @see #getSuccessfulTargets */
-  void setSuccessfulTargets(Collection<ConfiguredTarget> successfulTargets) {
-    this.successfulTargets = successfulTargets;
-  }
-
-  /** See #getSuccessfulAspects */
-  void setSuccessfulAspects(ImmutableSet<AspectKey> successfulAspects) {
-    this.successfulAspects = successfulAspects;
-  }
-
-  void setPostBuildCallbackFailureDetail(FailureDetail failureDetail) {
-    this.postBuildCallbackFailureDetail = failureDetail;
-  }
-
-  @Nullable
-  /** @return only set if build was successful; if callback is successful as well, returns null. */
-  public FailureDetail getPostBuildCallBackFailureDetail() {
-    return postBuildCallbackFailureDetail;
-  }
-
-  /**
-   * Returns the set of targets that were successfully built. This value is set at the end of the
-   * build, after the target patterns have been parsed and resolved and after attempting to build
-   * the targets. If --keep_going is specified, this set may exclude targets that could not be found
-   * or successfully analyzed, or could not be built. It may be examined after the build. May be
-   * null if the execution phase was not attempted, as may happen if there are errors in the loading
-   * phase, for example.
-   */
-  public Collection<ConfiguredTarget> getSuccessfulTargets() {
-    return successfulTargets;
-  }
-
-  /**
-   * Returns the set of aspects that were successfully built. This value is set at the end of the
-   * build, after the target patterns have been parsed and resolved and after attempting to build
-   * the targets. If --keep_going is specified, this set may exclude targets that could not be found
-   * or successfully analyzed, or could not be built. It may be examined after the build. May be
-   * null if the execution phase was not attempted, as may happen if there are errors in the loading
-   * phase, for example.
-   */
-  public ImmutableSet<AspectKey> getSuccessfulAspects() {
-    return successfulAspects;
-  }
-
-  /** See {@link #getSkippedTargets()}. */
-  void setSkippedTargets(Collection<ConfiguredTarget> skippedTargets) {
-    this.skippedTargets = skippedTargets;
-  }
-
-  /**
-   * Returns the set of targets which were skipped (Blaze didn't attempt to execute them) because
-   * they're not compatible with the build's target platform.
-   */
-  public Collection<ConfiguredTarget> getSkippedTargets() {
-    return skippedTargets;
-  }
-
-  /**
-   * Collection of data for the build tool logs event. This may only be modified until the
-   * BuildCompleteEvent is posted; any changes after that event is handled will not be included in
-   * the build tool logs event.
-   */
-  public BuildToolLogCollection getBuildToolLogCollection() {
-    return buildToolLogCollection;
-  }
-
-  /** For debugging. */
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("startTimeMillis", startTimeMillis)
-        .add("stopTimeMillis", stopTimeMillis)
-        .add("crash", crash)
-        .add("catastrophe", catastrophe)
-        .add("detailedExitCode", detailedExitCode)
-        .add("actualTargets", actualTargets)
-        .add("testTargets", testTargets)
-        .add("successfulTargets", successfulTargets)
-        .add("buildToolLogCollection", buildToolLogCollection)
-        .toString();
-  }
-
-  /** Collection of data for the build tool logs event. See {@link BuildToolLogs} for details. */
-  public static final class BuildToolLogCollection {
-    private final List<Pair<String, ByteString>> directValues = new ArrayList<>();
-    private final List<Pair<String, ListenableFuture<String>>> futureUris = new ArrayList<>();
-    private final List<LogFileEntry> localFiles = new ArrayList<>();
-    private boolean frozen;
-
-    @CanIgnoreReturnValue
-    public BuildToolLogCollection freeze() {
-      frozen = true;
-      return this;
+    init {
+        this.startTimeMillis = startTimeMillis
     }
 
-    @VisibleForTesting
-    public List<LogFileEntry> getLocalFiles() {
-      return localFiles;
+    val elapsedSeconds: Double
+        /**
+         * Returns the elapsed time in seconds for the service of this request. Not defined for requests
+         * that have not been serviced.
+         */
+        get() {
+            check(!(startTimeMillis == 0L || this.stopTime == 0L)) { "BuildRequest has not been serviced" }
+            return (this.stopTime - startTimeMillis) / 1000.0
+        }
+
+    fun setDetailedExitCode(detailedExitCode: DetailedExitCode?) {
+        this.detailedExitCode = detailedExitCode
     }
 
-    @CanIgnoreReturnValue
-    public BuildToolLogCollection addDirectValue(String name, byte[] data) {
-      Preconditions.checkState(!frozen);
-      this.directValues.add(Pair.of(name, ByteString.copyFrom(data)));
-      return this;
+    val success: Boolean
+        /** True iff the build request has been successfully completed.  */
+        get() = detailedExitCode != null && detailedExitCode.isSuccess()
+
+    /**
+     * Gets the [DetailedExitCode] containing the [ExitCode] and optional failure detail
+     * to complete the command with.
+     */
+    fun getDetailedExitCode(): DetailedExitCode {
+        if (detailedExitCode != null) {
+            return detailedExitCode
+        }
+        return CrashFailureDetails.detailedExitCodeForThrowable(
+            java.lang.IllegalStateException("Unspecified DetailedExitCode")
+        )
     }
 
-    @CanIgnoreReturnValue
-    public BuildToolLogCollection addUri(String name, String uri) {
-      Preconditions.checkState(!frozen);
-      this.futureUris.add(Pair.of(name, Futures.immediateFuture(uri)));
-      return this;
+    /** Sets a "catastrophe": A build failure severe enough to halt a keep_going build.  */
+    fun setCatastrophe() {
+        this.catastrophe = true
     }
 
-    @CanIgnoreReturnValue
-    public BuildToolLogCollection addUriFuture(String name, ListenableFuture<String> uriFuture) {
-      Preconditions.checkState(!frozen);
-      this.futureUris.add(Pair.of(name, uriFuture));
-      return this;
+    /** Was the build a "catastrophe": A build failure severe enough to halt a keep_going build.  */
+    fun wasCatastrophe(): Boolean {
+        return catastrophe
     }
 
-    @CanIgnoreReturnValue
-    public BuildToolLogCollection addLocalFile(String name, Path path) {
-      return addLocalFile(name, path, LocalFileType.LOG, LocalFileCompression.NONE);
+    var unhandledThrowable: Throwable?
+        /** Gets the Blaze crash Throwable. Null if Blaze did not crash.  */
+        get() = crash
+        /** Sets the RuntimeException / Error that induced a Blaze crash.  */
+        set(crash) {
+            com.google.common.base.Preconditions.checkState(
+                crash == null || ((crash is java.lang.RuntimeException) || (crash is java.lang.Error))
+            )
+            this.crash = crash
+        }
+
+    fun setBuildConfiguration(configuration: BuildConfigurationValue?) {
+        this.configuration = configuration
     }
 
-    @CanIgnoreReturnValue
-    public BuildToolLogCollection addLocalFile(
-        String name, Path path, LocalFileType localFileType, LocalFileCompression compression) {
-      return addLocalFile(
-          name, new LocalFile(path, localFileType, compression, /* artifactMetadata= */ null));
+    val buildConfiguration: BuildConfigurationValue?
+        /** Returns the build configuration collection used for the build.  */
+        get() = configuration
+
+    fun setConvenienceSymlinks(convenienceSymlinks: com.google.common.collect.ImmutableMap<PathFragment?, PathFragment?>?) {
+        this.convenienceSymlinks = convenienceSymlinks
     }
 
-    @CanIgnoreReturnValue
-    public BuildToolLogCollection addLocalFile(String name, LocalFile localFile) {
-      Preconditions.checkState(!frozen);
-      if (localFile.compression == LocalFileCompression.GZIP) {
-        name += ".gz";
-      }
-      this.localFiles.add(new LogFileEntry(name, localFile));
-      return this;
+    /**
+     * Returns the convenience symlinks for this build in name -> target format (eg blaze-out ->
+     * /symlink/target).
+     */
+    fun getConvenienceSymlinks(): com.google.common.collect.ImmutableMap<PathFragment?, PathFragment?>? {
+        return convenienceSymlinks
     }
 
-    public BuildToolLogs toEvent() {
-      Preconditions.checkState(frozen);
-      return new BuildToolLogs(directValues, futureUris, localFiles);
+    /** @see .getActualTargets
+     */
+    fun setActualTargets(actualTargets: MutableCollection<ConfiguredTarget?>?) {
+        this.actualTargets = actualTargets
     }
 
-    /** For debugging. */
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("directValues", directValues)
-          .add("futureUris", futureUris)
-          .add("localFiles", localFiles)
-          .toString();
+    /**
+     * Returns the actual set of targets which we attempted to build. This value is set during the
+     * build, after the target patterns have been parsed and resolved. If --keep_going is specified,
+     * this set may exclude targets that could not be found or successfully analyzed. It may be
+     * examined after the build. May be null even after the build, if there were errors in the loading
+     * or analysis phases.
+     */
+    fun getActualTargets(): MutableCollection<ConfiguredTarget?>? {
+        return actualTargets
     }
-  }
+
+    /** @see .getTestTargets
+     */
+    fun setTestTargets(testTargets: MutableCollection<ConfiguredTarget?>?) {
+        this.testTargets =
+            if (testTargets == null) null else Collections.unmodifiableCollection<ConfiguredTarget?>(testTargets)
+    }
+
+    /**
+     * Returns the actual unmodifiable collection of targets which we attempted to test. This value is
+     * set at the end of the build analysis phase, after the test target patterns have been parsed and
+     * resolved. If --keep_going is specified, this collection may exclude targets that could not be
+     * found or successfully analyzed. It may be examined after the build. May be null even after the
+     * build, if there were errors in the loading or analysis phases or if testing was not requested.
+     */
+    fun getTestTargets(): MutableCollection<ConfiguredTarget?>? {
+        return testTargets
+    }
+
+    /** @see .getSuccessfulTargets
+     */
+    fun setSuccessfulTargets(successfulTargets: MutableCollection<ConfiguredTarget?>?) {
+        this.successfulTargets = successfulTargets
+    }
+
+    /** See #getSuccessfulAspects  */
+    fun setSuccessfulAspects(successfulAspects: com.google.common.collect.ImmutableSet<AspectKey?>?) {
+        this.successfulAspects = successfulAspects
+    }
+
+    fun setPostBuildCallbackFailureDetail(failureDetail: FailureDetail?) {
+        this.postBuildCallbackFailureDetail = failureDetail
+    }
+
+    val postBuildCallBackFailureDetail: FailureDetail?
+        /** @return only set if build was successful; if callback is successful as well, returns null.
+         */
+        get() = postBuildCallbackFailureDetail
+
+    /**
+     * Returns the set of targets that were successfully built. This value is set at the end of the
+     * build, after the target patterns have been parsed and resolved and after attempting to build
+     * the targets. If --keep_going is specified, this set may exclude targets that could not be found
+     * or successfully analyzed, or could not be built. It may be examined after the build. May be
+     * null if the execution phase was not attempted, as may happen if there are errors in the loading
+     * phase, for example.
+     */
+    fun getSuccessfulTargets(): MutableCollection<ConfiguredTarget?>? {
+        return successfulTargets
+    }
+
+    /**
+     * Returns the set of aspects that were successfully built. This value is set at the end of the
+     * build, after the target patterns have been parsed and resolved and after attempting to build
+     * the targets. If --keep_going is specified, this set may exclude targets that could not be found
+     * or successfully analyzed, or could not be built. It may be examined after the build. May be
+     * null if the execution phase was not attempted, as may happen if there are errors in the loading
+     * phase, for example.
+     */
+    fun getSuccessfulAspects(): com.google.common.collect.ImmutableSet<AspectKey?>? {
+        return successfulAspects
+    }
+
+    /** See [.getSkippedTargets].  */
+    fun setSkippedTargets(skippedTargets: MutableCollection<ConfiguredTarget?>?) {
+        this.skippedTargets = skippedTargets
+    }
+
+    /**
+     * Returns the set of targets which were skipped (Blaze didn't attempt to execute them) because
+     * they're not compatible with the build's target platform.
+     */
+    fun getSkippedTargets(): MutableCollection<ConfiguredTarget?>? {
+        return skippedTargets
+    }
+
+    /** For debugging.  */
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("startTimeMillis", startTimeMillis)
+            .add("stopTimeMillis", this.stopTime)
+            .add("crash", crash)
+            .add("catastrophe", catastrophe)
+            .add("detailedExitCode", detailedExitCode)
+            .add("actualTargets", actualTargets)
+            .add("testTargets", testTargets)
+            .add("successfulTargets", successfulTargets)
+            .add("buildToolLogCollection", buildToolLogCollection)
+            .toString()
+    }
+
+    /** Collection of data for the build tool logs event. See [BuildToolLogs] for details.  */
+    class BuildToolLogCollection {
+        private val directValues: MutableList<com.google.devtools.build.lib.util.Pair<String?, ByteString?>?> =
+            java.util.ArrayList<com.google.devtools.build.lib.util.Pair<String?, ByteString?>?>()
+        private val futureUris: MutableList<com.google.devtools.build.lib.util.Pair<String?, com.google.common.util.concurrent.ListenableFuture<String?>?>?> =
+            java.util.ArrayList<com.google.devtools.build.lib.util.Pair<String?, com.google.common.util.concurrent.ListenableFuture<String?>?>?>()
+        private val localFiles: MutableList<LogFileEntry?> = java.util.ArrayList<LogFileEntry?>()
+        private var frozen = false
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun freeze(): BuildToolLogCollection {
+            frozen = true
+            return this
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun getLocalFiles(): MutableList<LogFileEntry?> {
+            return localFiles
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addDirectValue(name: String?, data: ByteArray): BuildToolLogCollection {
+            com.google.common.base.Preconditions.checkState(!frozen)
+            this.directValues.add(
+                com.google.devtools.build.lib.util.Pair.of<String?, ByteString?>(
+                    name,
+                    ByteString.copyFrom(data)
+                )
+            )
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addUri(name: String?, uri: String?): BuildToolLogCollection {
+            com.google.common.base.Preconditions.checkState(!frozen)
+            this.futureUris.add(
+                com.google.devtools.build.lib.util.Pair.of<String?, com.google.common.util.concurrent.ListenableFuture<String?>?>(
+                    name,
+                    com.google.common.util.concurrent.Futures.immediateFuture<String?>(uri)
+                )
+            )
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addUriFuture(
+            name: String?,
+            uriFuture: com.google.common.util.concurrent.ListenableFuture<String?>?
+        ): BuildToolLogCollection {
+            com.google.common.base.Preconditions.checkState(!frozen)
+            this.futureUris.add(
+                com.google.devtools.build.lib.util.Pair.of<String?, com.google.common.util.concurrent.ListenableFuture<String?>?>(
+                    name,
+                    uriFuture
+                )
+            )
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addLocalFile(name: String?, path: com.google.devtools.build.lib.vfs.Path?): BuildToolLogCollection {
+            return addLocalFile(name, path, LocalFileType.LOG, LocalFileCompression.NONE)
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addLocalFile(
+            name: String?,
+            path: com.google.devtools.build.lib.vfs.Path?,
+            localFileType: LocalFileType?,
+            compression: LocalFileCompression?
+        ): BuildToolLogCollection {
+            return addLocalFile(
+                name, LocalFile(path, localFileType, compression,  /* artifactMetadata= */null)
+            )
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addLocalFile(name: String?, localFile: LocalFile): BuildToolLogCollection {
+            var name = name
+            com.google.common.base.Preconditions.checkState(!frozen)
+            if (localFile.compression == LocalFileCompression.GZIP) {
+                name += ".gz"
+            }
+            this.localFiles.add(LogFileEntry(name, localFile))
+            return this
+        }
+
+        fun toEvent(): BuildToolLogs {
+            com.google.common.base.Preconditions.checkState(frozen)
+            return BuildToolLogs(directValues, futureUris, localFiles)
+        }
+
+        /** For debugging.  */
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("directValues", directValues)
+                .add("futureUris", futureUris)
+                .add("localFiles", localFiles)
+                .toString()
+        }
+    }
 }

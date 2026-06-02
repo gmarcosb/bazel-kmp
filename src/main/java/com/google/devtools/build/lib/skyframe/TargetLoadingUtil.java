@@ -45,7 +45,7 @@ public class TargetLoadingUtil {
   // load full packages unless needed.
   public static Object loadTarget(Environment env, Label label)
       throws NoSuchTargetException, NoSuchPackageException, InterruptedException {
-    if (label.getName().contains("/")) {
+    if (label.name.contains("/")) {
       // This target is in a subdirectory, therefore it could potentially be invalidated by
       // a new BUILD file appearing in the hierarchy.
       PathFragment containingDirectory = getContainingDirectory(label);
@@ -95,7 +95,7 @@ public class TargetLoadingUtil {
     }
 
     Package pkg = packageValue.getPackage();
-    Target target = pkg.getTarget(label.getName());
+    Target target = pkg.getTarget(label.name);
     NoSuchTargetException error = pkg.containsErrors() ? new NoSuchTargetException(target) : null;
     return new TargetAndErrorIfAny(
         /* packageLoadedSuccessfully= */ !pkg.containsErrors(), error, target, pkg);
@@ -103,7 +103,7 @@ public class TargetLoadingUtil {
 
   private static PathFragment getContainingDirectory(Label label) {
     PathFragment pkg = label.getPackageFragment();
-    String name = label.getName();
+    String name = label.name;
     return name.equals(".") ? pkg : pkg.getRelative(name).getParentDirectory();
   }
 

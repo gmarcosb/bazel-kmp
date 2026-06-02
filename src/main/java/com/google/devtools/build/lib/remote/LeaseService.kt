@@ -11,111 +11,104 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import com.google.common.eventbus.AllowConcurrentEvents;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.cache.ActionCache;
-import com.google.devtools.build.lib.remote.common.LostInputsEvent;
-import com.google.devtools.build.lib.skyframe.ActionExecutionValue;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.FileArtifactValue
 
-/** A lease service that manages the lease of remote blobs. */
-public class LeaseService {
-  private final MemoizingEvaluator memoizingEvaluator;
-  private final Supplier<ActionCache> actionCacheSupplier;
-  private final AtomicBoolean leaseExtensionStarted = new AtomicBoolean(false);
-  @Nullable LeaseExtension leaseExtension;
-  private final AtomicBoolean hasMissingActionInputs = new AtomicBoolean(false);
+/** A lease service that manages the lease of remote blobs.  */
+class LeaseService(
+    memoizingEvaluator: MemoizingEvaluator,
+    actionCacheSupplier: java.util.function.Supplier<ActionCache?>,
+    leaseExtension: LeaseExtension?
+) {
+    private val memoizingEvaluator: MemoizingEvaluator
+    private val actionCacheSupplier: java.util.function.Supplier<ActionCache?>
+    private val leaseExtensionStarted: AtomicBoolean = AtomicBoolean(false)
+    var leaseExtension: LeaseExtension?
+    private val hasMissingActionInputs: AtomicBoolean = AtomicBoolean(false)
 
-  public LeaseService(
-      MemoizingEvaluator memoizingEvaluator,
-      Supplier<ActionCache> actionCacheSupplier,
-      @Nullable LeaseExtension leaseExtension) {
-    this.memoizingEvaluator = memoizingEvaluator;
-    this.actionCacheSupplier = actionCacheSupplier;
-    this.leaseExtension = leaseExtension;
-  }
-
-  public void finalizeAction() {
-    if (leaseExtensionStarted.compareAndSet(false, true)) {
-      if (leaseExtension != null) {
-        leaseExtension.start();
-      }
-    }
-  }
-
-  @AllowConcurrentEvents
-  @Subscribe
-  public void onLostInputs(LostInputsEvent event) {
-    hasMissingActionInputs.set(true);
-  }
-
-  public void finalizeExecution() {
-    if (leaseExtension != null) {
-      leaseExtension.stop();
+    init {
+        this.memoizingEvaluator = memoizingEvaluator
+        this.actionCacheSupplier = actionCacheSupplier
+        this.leaseExtension = leaseExtension
     }
 
-    if (hasMissingActionInputs.getAndSet(false)) {
-      handleMissingInputs();
-    }
-  }
-
-  /**
-   * An interface whose implementations extend the leases of remote outputs referenced by skyframe.
-   */
-  public interface LeaseExtension {
-    void start();
-
-    void stop();
-  }
-
-  /** Clean up internal state when files are evicted from remote CAS. */
-  private void handleMissingInputs() {
-    // If any outputs are evicted, remove all remote metadata from skyframe and local action cache.
-    //
-    // With TTL based discarding and lease extension, remote cache eviction error won't happen if
-    // remote cache can guarantee the TTL. However, if it happens, it usually means the remote cache
-    // is under high load and it could possibly evict more blobs that Bazel wouldn't aware of.
-    // Following builds could still fail for the same error (caused by different blobs).
-    memoizingEvaluator.delete(
-        key -> {
-          if (key.functionName().equals(SkyFunctions.ACTION_EXECUTION)) {
-            try {
-              var value = memoizingEvaluator.getExistingValue(key);
-              return value instanceof ActionExecutionValue actionExecutionValue
-                  && isRemote(actionExecutionValue);
-            } catch (InterruptedException ignored) {
-              return false;
+    fun finalizeAction() {
+        if (leaseExtensionStarted.compareAndSet(false, true)) {
+            if (leaseExtension != null) {
+                leaseExtension!!.start()
             }
-          }
-          return false;
-        });
-
-    var actionCache = actionCacheSupplier.get();
-    if (actionCache != null) {
-      actionCache.removeIf(
-          entry -> !entry.getOutputFiles().isEmpty() || !entry.getOutputTrees().isEmpty());
+        }
     }
-  }
 
-  private boolean isRemote(ActionExecutionValue value) {
-    return value.getAllFileValues().values().stream().anyMatch(FileArtifactValue::isRemote)
-        || value.getAllTreeArtifactValues().values().stream().anyMatch(this::isRemoteTree);
-  }
+    @com.google.common.eventbus.AllowConcurrentEvents
+    @com.google.common.eventbus.Subscribe
+    fun onLostInputs(event: LostInputsEvent?) {
+        hasMissingActionInputs.set(true)
+    }
 
-  private boolean isRemoteTree(TreeArtifactValue treeArtifactValue) {
-    return treeArtifactValue.getChildValues().values().stream()
+    fun finalizeExecution() {
+        if (leaseExtension != null) {
+            leaseExtension!!.stop()
+        }
+
+        if (hasMissingActionInputs.getAndSet(false)) {
+            handleMissingInputs()
+        }
+    }
+
+    /**
+     * An interface whose implementations extend the leases of remote outputs referenced by skyframe.
+     */
+    interface LeaseExtension {
+        fun start()
+
+        fun stop()
+    }
+
+    /** Clean up internal state when files are evicted from remote CAS.  */
+    private fun handleMissingInputs() {
+        // If any outputs are evicted, remove all remote metadata from skyframe and local action cache.
+        //
+        // With TTL based discarding and lease extension, remote cache eviction error won't happen if
+        // remote cache can guarantee the TTL. However, if it happens, it usually means the remote cache
+        // is under high load and it could possibly evict more blobs that Bazel wouldn't aware of.
+        // Following builds could still fail for the same error (caused by different blobs).
+        memoizingEvaluator.delete(
+            java.util.function.Predicate { key: SkyKey? ->
+                if (key.functionName() == SkyFunctions.ACTION_EXECUTION) {
+                    try {
+                        val value: SkyValue? = memoizingEvaluator.getExistingValue(key)
+                        return@delete value is ActionExecutionValue
+                                && isRemote(value)
+                    } catch (ignored: java.lang.InterruptedException) {
+                        return@delete false
+                    }
+                }
+                false
+            })
+
+        val actionCache: ActionCache? = actionCacheSupplier.get()
+        if (actionCache != null) {
+            actionCache.removeIf(
+                { entry -> !entry.getOutputFiles().isEmpty() || !entry.getOutputTrees().isEmpty() })
+        }
+    }
+
+    private fun isRemote(value: ActionExecutionValue): Boolean {
+        return value.getAllFileValues().values().stream().anyMatch(FileArtifactValue::isRemote)
+                || value.getAllTreeArtifactValues().values().stream()
+            .anyMatch(java.util.function.Predicate { treeArtifactValue: TreeArtifactValue? ->
+                this.isRemoteTree(treeArtifactValue)
+            })
+    }
+
+    private fun isRemoteTree(treeArtifactValue: TreeArtifactValue): Boolean {
+        return treeArtifactValue.getChildValues().values().stream()
             .anyMatch(FileArtifactValue::isRemote)
-        || treeArtifactValue
+                || treeArtifactValue
             .getArchivedRepresentation()
-            .map(ar -> ar.archivedFileValue().isRemote())
-            .orElse(false);
-  }
+            .map<Any?>(java.util.function.Function { ar: ArchivedRepresentation? -> ar.archivedFileValue.isRemote() })
+            .orElse(false)
+    }
 }

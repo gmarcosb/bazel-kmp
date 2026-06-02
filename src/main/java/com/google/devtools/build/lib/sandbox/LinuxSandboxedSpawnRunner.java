@@ -250,7 +250,7 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
     // Note that the value returned by context.getId() is only unique inside one given SpawnRunner,
     // so we have to prefix our name to turn it into a globally unique value.
     Path sandboxPath =
-        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.getId()));
+        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.id));
 
     // b/64689608: The execroot of the sandboxed process must end with the workspace name, just like
     // the normal execroot does.
@@ -293,7 +293,7 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
     }
 
     SandboxOutputs outputs = SandboxHelpers.getOutputs(spawn);
-    Duration timeout = context.getTimeout();
+    Duration timeout = context.timeout;
     SandboxOptions sandboxOptions = getSandboxOptions();
 
     boolean createNetworkNamespace =
@@ -322,7 +322,7 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
       if (sandboxOptions.getEnforceResources().matcher().test(spawn.getMnemonic())) {
         spawnResourceLimits = spawn.getLocalResources().getResources();
       }
-      VirtualCgroup cgroup = cgroupFactory.create(context.getId(), spawnResourceLimits);
+      VirtualCgroup cgroup = cgroupFactory.create(context.id, spawnResourceLimits);
       commandLineBuilder.setCgroupsDirs(cgroup.paths());
     } else if (sandboxOptions.getMemoryLimitMb() > 0) {
       // We put the sandbox inside a unique subdirectory using the context's ID. This ID is
@@ -330,7 +330,7 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
       CgroupsInfo sandboxCgroup =
           CgroupsInfo.getBlazeSpawnsCgroup()
               .createIndividualSpawnCgroup(
-                  "sandbox_" + context.getId(), sandboxOptions.getMemoryLimitMb());
+                  "sandbox_" + context.id, sandboxOptions.getMemoryLimitMb());
       if (sandboxCgroup.exists()) {
         commandLineBuilder.setCgroupsDirs(ImmutableSet.of(sandboxCgroup.getCgroupDir().toPath()));
       }
@@ -472,7 +472,7 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
     // Ref.
     // https://github.com/torvalds/linux/blob/58d4e450a490d5f02183f6834c12550ba26d3b47/include/linux/memcontrol.h#L69
     if (cgroupFactory != null) {
-      cgroupFactory.remove(context.getId());
+      cgroupFactory.remove(context.id);
     }
   }
 
@@ -487,7 +487,7 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
         continue;
       }
 
-      FileArtifactValue metadata = context.getInputMetadataProvider().getInputMetadata(input);
+      FileArtifactValue metadata = context.inputMetadataProvider.getInputMetadata(input);
       if (metadata == null) {
         // This can happen if we are executing a spawn in an action that has multiple spawns and
         // the output of one is the input of another. In this case, we assume that no one modifies

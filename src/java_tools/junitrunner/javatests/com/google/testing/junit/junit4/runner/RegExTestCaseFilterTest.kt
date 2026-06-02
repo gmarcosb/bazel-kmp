@@ -11,117 +11,116 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.junit4.runner
 
-package com.google.testing.junit.junit4.runner;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import java.util.regex.Pattern;
-import org.junit.Test;
-import org.junit.runner.Description;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import org.junit.Test
+import org.junit.runner.Description
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.regex.Pattern
 
 /**
- * Tests for {@link RegExTestCaseFilter}.
+ * Tests for [RegExTestCaseFilter].
  */
-@RunWith(JUnit4.class)
-public class RegExTestCaseFilterTest {
+@RunWith(JUnit4::class)
+class RegExTestCaseFilterTest {
+    @Test
+    fun testIncludesSuites() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("doNotMatch")
+        Truth.assertThat(filter.shouldRun(createSuiteDescription("suite"))).isTrue()
+    }
 
-  @Test
-  public void testIncludesSuites() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("doNotMatch");
-    assertThat(filter.shouldRun(createSuiteDescription("suite"))).isTrue();
-  }
+    private fun createSuiteDescription(name: String): Description {
+        val suite = Description.createSuiteDescription(name)
+        suite.addChild(Description.createTestDescription(Any::class.java, "child"))
+        return suite
+    }
 
-  private Description createSuiteDescription(String name) {
-    Description suite = Description.createSuiteDescription(name);
-    suite.addChild(Description.createTestDescription(Object.class, "child"));
-    return suite;
-  }
+    @Test
+    fun testIncludesMatchingTestByFullNameQuotedRegex() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include(
+            Pattern.quote("java.lang.Object#nameToMatch")
+        )
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingTestByFullNameQuotedRegex() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include(
-        Pattern.quote("java.lang.Object#nameToMatch"));
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isTrue();
-  }
+    @Test
+    fun testIncludesMatchingTestByFullNameRegex() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("^java.lang.Object#nameToMatch$")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingTestByFullNameRegex() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("^java.lang.Object#nameToMatch$");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isTrue();
-  }
+    @Test
+    fun testIncludesMatchingTestBySimpleClassNameAndMethodName() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("Object#nameToMatch")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingTestBySimpleClassNameAndMethodName() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("Object#nameToMatch");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isTrue();
-  }
+    @Test
+    fun testIncludesMatchingTestWithNullMethodName() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("java.lang.Object$")
+        Truth.assertThat(filter.shouldRun(Description.createSuiteDescription(Any::class.java))).isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingTestWithNullMethodName() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("java.lang.Object$");
-    assertThat(filter.shouldRun(Description.createSuiteDescription(Object.class))).isTrue();
-  }
+    @Test
+    fun testIncludesMatchingTestWithUnexpectedNameFormat() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include(
+            Pattern.quote("java.lang.Object.hashCode()")
+        )
+        Truth.assertThat(filter.shouldRun(Description.createSuiteDescription("java.lang.Object.hashCode()")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingTestWithUnexpectedNameFormat() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include(
-        Pattern.quote("java.lang.Object.hashCode()"));
-    assertThat(filter.shouldRun(Description.createSuiteDescription("java.lang.Object.hashCode()")))
-        .isTrue();
-  }
+    @Test
+    fun testIncludesMatchingTestByTestMethodName() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("nameToMatch")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingTestByTestMethodName() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("nameToMatch");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isTrue();
-  }
+    @Test
+    fun testExcludesNonmatchingTest() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("doNotMatch")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isFalse()
+    }
 
-  @Test
-  public void testExcludesNonmatchingTest() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("doNotMatch");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isFalse();
-  }
+    @Test
+    fun testFilterExcludeNonmatchingTest() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.exclude("nameToMatch")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isFalse()
+    }
 
-  @Test
-  public void testFilterExcludeNonmatchingTest() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.exclude("nameToMatch");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isFalse();
-  }
+    @Test
+    fun testIncludesEmptyString() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesEmptyString() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isTrue();
-  }
+    @Test
+    fun testIncludesMatchingByCaseRegex() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("[Nn]ameToMatch")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingByCaseRegex() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("[Nn]ameToMatch");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isTrue();
-  }
+    @Test
+    fun testIncludesMatchingByEscapedRegex() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("java\\.lang\\.Object#nameToMatch")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isTrue()
+    }
 
-  @Test
-  public void testIncludesMatchingByEscapedRegex() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("java\\.lang\\.Object#nameToMatch");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isTrue();
-  }
-
-  @Test
-  public void testIncludesMatchingByIncorrectCase() {
-    RegExTestCaseFilter filter = RegExTestCaseFilter.include("NAMETOMATCH");
-    assertThat(filter.shouldRun(Description.createTestDescription(Object.class, "nameToMatch")))
-        .isFalse();
-  }
+    @Test
+    fun testIncludesMatchingByIncorrectCase() {
+        val filter: RegExTestCaseFilter = RegExTestCaseFilter.Companion.include("NAMETOMATCH")
+        Truth.assertThat(filter.shouldRun(Description.createTestDescription(Any::class.java, "nameToMatch")))
+            .isFalse()
+    }
 }

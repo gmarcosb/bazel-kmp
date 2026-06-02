@@ -11,26 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
-
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import java.io.BufferedInputStream
+import java.io.IOException
+import java.io.InputStream
 
 /**
  * Creates a repository by unarchiving a .tar.gz file.
  */
-public class TarGzFunction extends CompressedTarFunction {
-  public static final Decompressor INSTANCE = new TarGzFunction();
+class TarGzFunction private constructor() : CompressedTarFunction() {
+    @Throws(IOException::class)
+    override fun getDecompressorStream(compressedInputStream: BufferedInputStream?): InputStream {
+        return GzipCompressorInputStream(compressedInputStream, true)
+    }
 
-  private TarGzFunction() {}
-
-  @Override
-  protected InputStream getDecompressorStream(BufferedInputStream compressedInputStream)
-      throws IOException {
-    return new GzipCompressorInputStream(compressedInputStream, true);
-  }
+    companion object {
+        val INSTANCE: DecompressorValue.Decompressor = TarGzFunction()
+    }
 }

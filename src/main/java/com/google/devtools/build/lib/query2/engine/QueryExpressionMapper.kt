@@ -11,174 +11,161 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
+import com.google.common.collect.ImmutableList
 
 /**
- * Performs an arbitrary contextual transformation of a {@link QueryExpression}.
- *
- * <p>For each subclass of {@link QueryExpression}, there's a corresponding {@link #visit} overload
- * that transforms a node of that type. By default, this method recursively applies this {@link
- * QueryExpressionMapper}'s transformation in a structure-preserving manner (trying to maintain
- * reference-equality, as an optimization). Subclasses of {@link QueryExpressionMapper} can override
+ * Performs an arbitrary contextual transformation of a [QueryExpression].
+ * 
+ * 
+ * For each subclass of [QueryExpression], there's a corresponding [.visit] overload
+ * that transforms a node of that type. By default, this method recursively applies this [ ]'s transformation in a structure-preserving manner (trying to maintain
+ * reference-equality, as an optimization). Subclasses of [QueryExpressionMapper] can override
  * these methods in order to implement an arbitrary transformation.
  */
-public abstract class QueryExpressionMapper<C>
-    implements QueryExpressionVisitor<QueryExpression, C> {
-
-  @Override
-  public QueryExpression visit(TargetLiteral targetLiteral, C context) {
-    return targetLiteral;
-  }
-
-  @Override
-  public QueryExpression visit(BinaryOperatorExpression binaryOperatorExpression, C context) {
-    boolean changed = false;
-    ImmutableList.Builder<QueryExpression> mappedOperandsBuilder = ImmutableList.builder();
-    for (QueryExpression operand : binaryOperatorExpression.getOperands()) {
-      QueryExpression mappedOperand = operand.accept(this, context);
-      if (mappedOperand != operand) {
-        changed = true;
-      }
-      mappedOperandsBuilder.add(mappedOperand);
+abstract class QueryExpressionMapper<C>
+    : QueryExpressionVisitor<QueryExpression?, C?> {
+    override fun visit(targetLiteral: TargetLiteral?, context: C?): QueryExpression? {
+        return targetLiteral
     }
-    return changed
-        ? new BinaryOperatorExpression(
-            binaryOperatorExpression.getOperator(), mappedOperandsBuilder.build())
-        : binaryOperatorExpression;
-  }
 
-  @Override
-  public QueryExpression visit(FunctionExpression functionExpression, C context) {
-    boolean changed = false;
-    ImmutableList.Builder<Argument> mappedArgumentBuilder = ImmutableList.builder();
-    for (Argument argument : functionExpression.getArgs()) {
-      switch (argument.getType()) {
-        case EXPRESSION -> {
-          QueryExpression expr = argument.getExpression();
-          QueryExpression mappedExpression = expr.accept(this, context);
-          mappedArgumentBuilder.add(Argument.of(mappedExpression));
-          if (expr != mappedExpression) {
-            changed = true;
-          }
+    override fun visit(binaryOperatorExpression: BinaryOperatorExpression, context: C?): QueryExpression? {
+        var changed = false
+        val mappedOperandsBuilder = ImmutableList.builder<QueryExpression?>()
+        for (operand in binaryOperatorExpression.getOperands()) {
+            val mappedOperand = operand.accept<QueryExpression, C?>(this, context)
+            if (mappedOperand !== operand) {
+                changed = true
+            }
+            mappedOperandsBuilder.add(mappedOperand)
         }
-        default -> mappedArgumentBuilder.add(argument);
-      }
-    }
-    return changed
-        ? new FunctionExpression(functionExpression.getFunction(), mappedArgumentBuilder.build())
-        : functionExpression;
-  }
-
-  @Override
-  public QueryExpression visit(LetExpression letExpression, C context) {
-    boolean changed = false;
-    QueryExpression mappedVarExpr = letExpression.getVarExpr().accept(this, context);
-    if (mappedVarExpr != letExpression.getVarExpr()) {
-      changed = true;
-    }
-    QueryExpression mappedBodyExpr = letExpression.getBodyExpr().accept(this, context);
-    if (mappedBodyExpr != letExpression.getBodyExpr()) {
-      changed = true;
-    }
-    return changed
-        ? new LetExpression(letExpression.getVarName(), mappedVarExpr, mappedBodyExpr)
-        : letExpression;
-  }
-
-  @Override
-  public QueryExpression visit(SetExpression setExpression, C context) {
-    return setExpression;
-  }
-
-  public static QueryExpressionMapper<Void> identity() {
-    return IdentityMapper.INSTANCE;
-  }
-
-  /**
-   * Returns a {@link QueryExpressionMapper} which applies all the mappings provided by {@code
-   * mappers}, in the reverse order of mapper array.
-   */
-  public static <C> QueryExpressionMapper<C> compose(
-      ImmutableList<QueryExpressionMapper<C>> mappers) {
-    return new ComposedQueryExpressionMapper<>(mappers);
-  }
-
-  private static class ComposedQueryExpressionMapper<C> extends QueryExpressionMapper<C> {
-    private final ImmutableList<QueryExpressionMapper<C>> mappers;
-
-    private ComposedQueryExpressionMapper(ImmutableList<QueryExpressionMapper<C>> mappers) {
-      this.mappers = mappers;
+        return if (changed)
+            BinaryOperatorExpression(
+                binaryOperatorExpression.getOperator(), mappedOperandsBuilder.build()
+            )
+        else
+            binaryOperatorExpression
     }
 
-    @Override
-    public QueryExpression visit(TargetLiteral targetLiteral, C context) {
-      return mapAll(targetLiteral, mappers, context);
+    override fun visit(functionExpression: FunctionExpression, context: C?): QueryExpression? {
+        var changed = false
+        val mappedArgumentBuilder = ImmutableList.builder<QueryEnvironment.Argument?>()
+        for (argument in functionExpression.getArgs()) {
+            when (argument.getType()) {
+                QueryEnvironment.ArgumentType.EXPRESSION -> {
+                    val expr = argument.getExpression()
+                    val mappedExpression = expr.accept<QueryExpression?, C?>(this, context)
+                    mappedArgumentBuilder.add(QueryEnvironment.Argument.Companion.of(mappedExpression))
+                    if (expr !== mappedExpression) {
+                        changed = true
+                    }
+                }
+
+                else -> mappedArgumentBuilder.add(argument)
+            }
+        }
+        return if (changed)
+            FunctionExpression(functionExpression.getFunction(), mappedArgumentBuilder.build())
+        else
+            functionExpression
     }
 
-    @Override
-    public QueryExpression visit(BinaryOperatorExpression binaryOperatorExpression, C context) {
-      return mapAll(binaryOperatorExpression, mappers, context);
+    override fun visit(letExpression: LetExpression, context: C?): QueryExpression? {
+        var changed = false
+        val mappedVarExpr = letExpression.getVarExpr().accept<QueryExpression?, C?>(this, context)
+        if (mappedVarExpr !== letExpression.getVarExpr()) {
+            changed = true
+        }
+        val mappedBodyExpr = letExpression.getBodyExpr().accept<QueryExpression?, C?>(this, context)
+        if (mappedBodyExpr !== letExpression.getBodyExpr()) {
+            changed = true
+        }
+        return if (changed)
+            LetExpression(letExpression.getVarName(), mappedVarExpr, mappedBodyExpr)
+        else
+            letExpression
     }
 
-    @Override
-    public QueryExpression visit(FunctionExpression functionExpression, C context) {
-      return mapAll(functionExpression, mappers, context);
+    override fun visit(setExpression: SetExpression?, context: C?): QueryExpression? {
+        return setExpression
     }
 
-    @Override
-    public QueryExpression visit(LetExpression letExpression, C context) {
-      return mapAll(letExpression, mappers, context);
+    private class ComposedQueryExpressionMapper<C>(private val mappers: ImmutableList<QueryExpressionMapper<C?>?>) :
+        QueryExpressionMapper<C?>() {
+        override fun visit(targetLiteral: TargetLiteral, context: C?): QueryExpression {
+            return mapAll<C?>(targetLiteral, mappers, context)
+        }
+
+        override fun visit(binaryOperatorExpression: BinaryOperatorExpression, context: C?): QueryExpression {
+            return mapAll<C?>(binaryOperatorExpression, mappers, context)
+        }
+
+        override fun visit(functionExpression: FunctionExpression, context: C?): QueryExpression {
+            return mapAll<C?>(functionExpression, mappers, context)
+        }
+
+        override fun visit(letExpression: LetExpression, context: C?): QueryExpression {
+            return mapAll<C?>(letExpression, mappers, context)
+        }
+
+        override fun visit(setExpression: SetExpression, context: C?): QueryExpression {
+            return mapAll<C?>(setExpression, mappers, context)
+        }
+
+        companion object {
+            private fun <C> mapAll(
+                expression: QueryExpression, mappers: ImmutableList<QueryExpressionMapper<C?>?>, context: C?
+            ): QueryExpression {
+                var expr = expression
+                for (i in mappers.indices.reversed()) {
+                    expr = expr.accept<QueryExpression, C?>(mappers.get(i), context)
+                }
+
+                return expr
+            }
+        }
     }
 
-    @Override
-    public QueryExpression visit(SetExpression setExpression, C context) {
-      return mapAll(setExpression, mappers, context);
+    private class IdentityMapper : QueryExpressionMapper<Void?>() {
+        override fun visit(targetLiteral: TargetLiteral?, context: Void?): QueryExpression? {
+            return targetLiteral
+        }
+
+        override fun visit(binaryOperatorExpression: BinaryOperatorExpression?, context: Void?): QueryExpression? {
+            return binaryOperatorExpression
+        }
+
+        override fun visit(functionExpression: FunctionExpression?, context: Void?): QueryExpression? {
+            return functionExpression
+        }
+
+        override fun visit(letExpression: LetExpression?, context: Void?): QueryExpression? {
+            return letExpression
+        }
+
+        override fun visit(setExpression: SetExpression?, context: Void?): QueryExpression? {
+            return setExpression
+        }
+
+        companion object {
+            private val INSTANCE = IdentityMapper()
+        }
     }
 
-    private static <C> QueryExpression mapAll(
-        QueryExpression expression, ImmutableList<QueryExpressionMapper<C>> mappers, C context) {
-      QueryExpression expr = expression;
-      for (int i = mappers.size() - 1; i >= 0; i--) {
-        expr = expr.accept(mappers.get(i), context);
-      }
+    companion object {
+        fun identity(): QueryExpressionMapper<Void?> {
+            return IdentityMapper.Companion.INSTANCE
+        }
 
-      return expr;
+        /**
+         * Returns a [QueryExpressionMapper] which applies all the mappings provided by `mappers`, in the reverse order of mapper array.
+         */
+        fun <C> compose(
+            mappers: ImmutableList<QueryExpressionMapper<C?>?>
+        ): QueryExpressionMapper<C?> {
+            return ComposedQueryExpressionMapper<C?>(mappers)
+        }
     }
-  }
-
-  private static class IdentityMapper extends QueryExpressionMapper<Void> {
-    private static final IdentityMapper INSTANCE = new IdentityMapper();
-
-    private IdentityMapper() {
-    }
-
-    @Override
-    public QueryExpression visit(TargetLiteral targetLiteral, Void context) {
-      return targetLiteral;
-    }
-
-    @Override
-    public QueryExpression visit(BinaryOperatorExpression binaryOperatorExpression, Void context) {
-      return binaryOperatorExpression;
-    }
-
-    @Override
-    public QueryExpression visit(FunctionExpression functionExpression, Void context) {
-      return functionExpression;
-    }
-
-    @Override
-    public QueryExpression visit(LetExpression letExpression, Void context) {
-      return letExpression;
-    }
-
-    @Override
-    public QueryExpression visit(SetExpression setExpression, Void context) {
-      return setExpression;
-    }
-  }
 }
 

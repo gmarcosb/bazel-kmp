@@ -471,7 +471,7 @@ class UiStateTracker {
   }
 
   synchronized void progressReceiverAvailable(ExecutionProgressReceiverAvailableEvent event) {
-    executionProgressReceiver = event.getExecutionProgressReceiver();
+    executionProgressReceiver = event.executionProgressReceiver;
   }
 
   Event buildComplete(BuildCompleteEvent event) {
@@ -520,9 +520,9 @@ class UiStateTracker {
 
   void downloadProgress(FetchProgress event) {
     runningDownloads.compute(
-        event.getResourceIdentifier(),
+            event.resourceIdentifier,
         (unusedKey, latestData) ->
-            event.isFinished()
+            event.isFinished
                 ? null
                 : new DownloadData(
                     event, latestData != null ? latestData.nanoStartTime : clock.nanoTime()));
@@ -1146,7 +1146,7 @@ class UiStateTracker {
     long nanoDownloadTime = currentNanoTime - downloadData.nanoStartTime();
     long downloadSeconds = nanoDownloadTime / NANOS_PER_SECOND;
 
-    String progress = downloadData.latestEvent().getProgress();
+    String progress = downloadData.latestEvent().progress;
     if (!progress.isEmpty()) {
       postfix = postfix + " " + progress;
     }

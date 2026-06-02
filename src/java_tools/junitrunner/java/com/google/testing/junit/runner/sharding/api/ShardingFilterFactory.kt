@@ -11,25 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding.api
 
-package com.google.testing.junit.runner.sharding.api;
-
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
-
-import java.util.Collection;
+import org.junit.runner.Description
+import org.junit.runner.manipulation.Filter
 
 /**
  * Creates custom test sharding filters. Classes that implement this interface must have a public
  * no-argument constructor.
  */
-public interface ShardingFilterFactory {
-  /**
-   * Creates a test sharding filter.
-   *  
-   * @param testDescriptions collection of descriptions of the tests to be run 
-   * @param shardIndex 0-indexed test shard number, where 0 <= shard index < totalShards
-   * @param totalShards the total number of test shards
-   */
-  Filter createFilter(Collection<Description> testDescriptions, int shardIndex, int totalShards);
+interface ShardingFilterFactory {
+    /**
+     * Creates a test sharding filter.
+     * 
+     * @param testDescriptions collection of descriptions of the tests to be run
+     * @param shardIndex 0-indexed test shard number, where 0 <= shard index < totalShards
+     * @param totalShards the total number of test shards
+     */
+    fun createFilter(testDescriptions: MutableCollection<Description?>?, shardIndex: Int, totalShards: Int): Filter?
 }

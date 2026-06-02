@@ -11,38 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.packages.AspectClass
+import com.google.devtools.build.lib.packages.AspectParameters
+import com.google.devtools.build.lib.packages.NativeAspectClass
+import com.google.devtools.build.lib.packages.StarlarkAspect
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
 
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+/** A natively-defined aspect that is may be referenced by Starlark attribute definitions.  */
+abstract class StarlarkNativeAspect : NativeAspectClass(), StarlarkAspect {
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("<native aspect>")
+    }
 
-/** A natively-defined aspect that is may be referenced by Starlark attribute definitions. */
-public abstract class StarlarkNativeAspect extends NativeAspectClass implements StarlarkAspect {
-  @SerializationConstant @VisibleForSerialization
-  static final Function<Rule, AspectParameters> EMPTY_FUNCTION = input -> AspectParameters.EMPTY;
+    override fun getAspectClass(): AspectClass {
+        return this
+    }
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<native aspect>");
-  }
+    override fun getParamAttributes(): com.google.common.collect.ImmutableSet<String?>? {
+        return com.google.common.collect.ImmutableSet.of<String?>()
+    }
 
-  @Override
-  public AspectClass getAspectClass() {
-    return this;
-  }
+    override fun getDefaultParametersExtractor(): com.google.common.base.Function<com.google.devtools.build.lib.packages.Rule?, AspectParameters?> {
+        return EMPTY_FUNCTION
+    }
 
-  @Override
-  public ImmutableSet<String> getParamAttributes() {
-    return ImmutableSet.of();
-  }
-
-  @Override
-  public Function<Rule, AspectParameters> getDefaultParametersExtractor() {
-    return EMPTY_FUNCTION;
-  }
+    companion object {
+        @SerializationConstant
+        @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+        val EMPTY_FUNCTION: com.google.common.base.Function<com.google.devtools.build.lib.packages.Rule?, AspectParameters?> =
+            com.google.common.base.Function { input: com.google.devtools.build.lib.packages.Rule? -> AspectParameters.Companion.EMPTY }
+    }
 }

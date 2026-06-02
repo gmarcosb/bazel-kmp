@@ -11,31 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel;
+package com.google.devtools.build.lib.bazel
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
+import com.google.devtools.build.lib.runtime.BlazeModule
 
-/** Provides Bazel startup flags. */
-public class BazelStartupOptionsModule extends BlazeModule {
-  /** Bazelrc file flags. */
-  @OptionsClass
-  public abstract static class Options extends OptionsBase {
-    @Option(
-        name = "bazelrc",
-        allowMultiple = true,
-        defaultValue = "null", // NOTE: purely decorative, rc files are read by the client.
-        documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-        effectTags = {OptionEffectTag.CHANGES_INPUTS},
-        valueHelp = "<path>",
-        help =
-            """
+/** Provides Bazel startup flags.  */
+class BazelStartupOptionsModule : BlazeModule() {
+    /** Bazelrc file flags.  */
+    @com.google.devtools.common.options.OptionsClass
+    abstract class Options : com.google.devtools.common.options.OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "bazelrc",
+            allowMultiple = true,
+            defaultValue = "null",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+            valueHelp = "<path>",
+            help = """
             The location of the user .bazelrc file containing default values of Bazel options.
             `/dev/null` indicates that all further `--bazelrc`s will be ignored, which is useful to
             disable the search for a user rc file, e.g. in release builds.
@@ -49,39 +41,41 @@ public class BazelStartupOptionsModule extends BlazeModule {
             directory.
 
             Note: command line options will always supersede any option in bazelrc.
-            """)
-    public abstract List<String> getBlazerc();
+            
+            """.trimIndent()
+        )
+        abstract val blazerc: MutableList<String?>?
 
-    // For the system_rc, it can be /etc/bazel.bazelrc, or a special Windows value, or can be
-    // custom-set by the Bazel distributor. We don't list a known path in the help output in order
-    // to avoid misdocumentation here.
-    @Option(
-        name = "system_rc",
-        defaultValue = "true", // NOTE: purely decorative, rc files are read by the client.
-        documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-        effectTags = {OptionEffectTag.CHANGES_INPUTS},
-        help = "Whether or not to look for the system-wide bazelrc.")
-    public abstract boolean getSystemRc();
+        @get:com.google.devtools.common.options.Option(
+            name = "system_rc",
+            defaultValue = "true",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+            help = "Whether or not to look for the system-wide bazelrc."
+        )
+        abstract val systemRc: Boolean
 
-    @Option(
-        name = "workspace_rc",
-        defaultValue = "true", // NOTE: purely decorative, rc files are read by the client.
-        documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-        effectTags = {OptionEffectTag.CHANGES_INPUTS},
-        help = "Whether or not to look for the workspace bazelrc file at `$workspace/.bazelrc`")
-    public abstract boolean getWorkspaceRc();
+        @get:com.google.devtools.common.options.Option(
+            name = "workspace_rc",
+            defaultValue = "true",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+            help = "Whether or not to look for the workspace bazelrc file at `\$workspace/.bazelrc`"
+        )
+        abstract val workspaceRc: Boolean
 
-    @Option(
-        name = "home_rc",
-        defaultValue = "true", // NOTE: purely decorative, rc files are read by the client.
-        documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-        effectTags = {OptionEffectTag.CHANGES_INPUTS},
-        help = "Whether or not to look for the home bazelrc file at `$HOME/.bazelrc`")
-    public abstract boolean getHomeRc();
-  }
+        @get:com.google.devtools.common.options.Option(
+            name = "home_rc",
+            defaultValue = "true",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+            help = "Whether or not to look for the home bazelrc file at `\$HOME/.bazelrc`"
+        )
+        abstract val homeRc: Boolean
+    }
 
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getStartupOptions() {
-    return ImmutableList.of(Options.class);
-  }
+    val startupOptions: Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase>>
+        get() = com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+            com.google.devtools.build.lib.bazel.BazelStartupOptionsModule.Options::class.java
+        )
 }

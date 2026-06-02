@@ -11,338 +11,342 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.starlark
 
-package com.google.devtools.build.lib.bazel.repository.starlark;
+import com.dylibso.chicory.compiler.InterpreterFallback
+import com.dylibso.chicory.compiler.MachineFactoryCompiler
+import com.dylibso.chicory.runtime.ExportFunction
+import com.dylibso.chicory.runtime.Instance
+import com.dylibso.chicory.runtime.Machine
+import com.dylibso.chicory.runtime.Memory
+import com.dylibso.chicory.wasm.ChicoryException
+import com.dylibso.chicory.wasm.Parser
+import com.dylibso.chicory.wasm.WasmModule
+import com.dylibso.chicory.wasm.types.MemoryLimits
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.github.benmanes.caffeine.cache.Scheduler
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import com.google.devtools.build.lib.profiler.Profiler
+import com.google.devtools.build.lib.profiler.ProfilerTask
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.*
+import java.io.IOException
+import java.lang.String
+import java.nio.charset.StandardCharsets
+import java.time.Duration
+import java.util.concurrent.*
+import java.util.function.Function
+import java.util.function.Supplier
+import kotlin.Any
+import kotlin.ArithmeticException
+import kotlin.Boolean
+import kotlin.ByteArray
+import kotlin.Int
+import kotlin.Long
+import kotlin.LongArray
 
-import static com.dylibso.chicory.runtime.Memory.PAGE_SIZE;
-import static com.dylibso.chicory.wasm.types.MemoryLimits.MAX_PAGES;
-import static com.google.devtools.build.lib.profiler.ProfilerTask.WASM_EXEC;
-import static com.google.devtools.build.lib.profiler.ProfilerTask.WASM_LOAD;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-
-import com.dylibso.chicory.compiler.InterpreterFallback;
-import com.dylibso.chicory.compiler.MachineFactoryCompiler;
-import com.dylibso.chicory.runtime.ByteArrayMemory;
-import com.dylibso.chicory.runtime.ExportFunction;
-import com.dylibso.chicory.runtime.Instance;
-import com.dylibso.chicory.runtime.InterpreterMachine;
-import com.dylibso.chicory.runtime.Machine;
-import com.dylibso.chicory.wasm.ChicoryException;
-import com.dylibso.chicory.wasm.WasmModule;
-import com.dylibso.chicory.wasm.types.MemoryLimits;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.Scheduler;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.function.Function;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkValue;
-
-@Immutable
+@ThreadSafety.Immutable
 @StarlarkBuiltin(
     name = "wasm_module",
     category = DocCategory.BUILTIN,
-    doc = "A WebAssembly module loaded by <code>repository_ctx.load_wasm()</code>.")
-final class StarlarkWasmModule implements StarlarkValue {
-  @ThreadSafe
-  static final class StarlarkWasmCompilationCache implements com.dylibso.chicory.compiler.Cache {
-    private static final int CACHE_MAX_SIZE = 1000;
-    private static final Duration CACHE_DURATION = Duration.ofMinutes(15);
+    doc = "A WebAssembly module loaded by <code>repository_ctx.load_wasm()</code>."
+)
+internal class StarlarkWasmModule(
+    path: StarlarkPath,
+    origPath: Any?,
+    moduleContent: ByteArray,
+    compile: Boolean,
+    allocFnName: String?
+) : StarlarkValue {
+    @ThreadSafety.ThreadSafe
+    internal class StarlarkWasmCompilationCache : com.dylibso.chicory.compiler.Cache {
+        private val cache: Cache<String?, ByteArray?>
 
-    private final Cache<String, byte[]> cache;
+        init {
+            this.cache =
+                Caffeine.newBuilder()
+                    .maximumSize(CACHE_MAX_SIZE.toLong())
+                    .expireAfterAccess(CACHE_DURATION)
+                    .scheduler(Scheduler.systemScheduler())
+                    .build<String?, ByteArray?>()
+        }
 
-    public StarlarkWasmCompilationCache() {
-      this.cache =
-          Caffeine.newBuilder()
-              .maximumSize(CACHE_MAX_SIZE)
-              .expireAfterAccess(CACHE_DURATION)
-              .scheduler(Scheduler.systemScheduler())
-              .build();
+        @Throws(IOException::class)
+        override fun get(key: String?): ByteArray? {
+            return cache.getIfPresent(key)
+        }
+
+        @Throws(IOException::class)
+        override fun putIfAbsent(key: String?, data: ByteArray?) {
+            cache.asMap().putIfAbsent(key, data)
+        }
+
+        companion object {
+            private const val CACHE_MAX_SIZE = 1000
+            private val CACHE_DURATION: Duration = Duration.ofMinutes(15)
+        }
     }
 
-    @Override
-    @Nullable
-    public byte[] get(String key) throws IOException {
-      return cache.getIfPresent(key);
+    val path: StarlarkPath?
+
+    @get:StarlarkMethod(
+        name = "path",
+        structField = true,
+        doc = "The path this WebAssembly module was loaded from."
+    )
+    val origPath: Any?
+    private val wasmModule: WasmModule
+    private val allocFnName: String?
+    private val hasInitializeFn: Boolean
+    private val machineFactory: Function<Instance?, Machine?>
+
+    init {
+        val wasmModule: WasmModule
+        Profiler.instance().profile(ProfilerTask.WASM_LOAD, Supplier { "load " + path.toString() }).use { c1 ->
+            Profiler.instance().profile(ProfilerTask.WASM_LOAD, "parse").use { c2 ->
+                try {
+                    wasmModule = Parser.parse(moduleContent)
+                } catch (e: ChicoryException) {
+                    throw EvalException(e)
+                }
+            }
+            validateModule(wasmModule, allocFnName)
+        }
+        this.path = path
+        this.origPath = origPath
+        this.wasmModule = wasmModule
+        this.allocFnName = allocFnName
+        this.hasInitializeFn = hasInitializeFn(wasmModule)
+        if (compile) {
+            this.machineFactory = MachineFactoryCompiler.builder(wasmModule)
+                .withInterpreterFallback(InterpreterFallback.SILENT)
+                .withCache(compilationCache)
+                .compile()
+        } else {
+            this.machineFactory = Function { instance: Instance? -> InterpreterMachine(instance) }
+        }
     }
 
-    @Override
-    public void putIfAbsent(String key, byte[] data) throws IOException {
-      cache.asMap().putIfAbsent(key, data);
+    override fun isImmutable(): Boolean {
+        return true
     }
-  }
 
-  private static final StarlarkWasmCompilationCache compilationCache =
-      new StarlarkWasmCompilationCache();
+    override fun repr(printer: Printer, semantics: StarlarkSemantics?) {
+        printer.append("<wasm_module path=")
+        printer.repr(origPath, semantics)
+        printer.append(" allocate_fn=")
+        printer.repr(allocFnName, semantics)
+        printer.append(">")
+    }
 
-  private final StarlarkPath path;
-  private final Object origPath;
-  private final WasmModule wasmModule;
-  private final String allocFnName;
-  private final boolean hasInitializeFn;
-  private final Function<Instance, Machine> machineFactory;
+    @Throws(EvalException::class, InterruptedException::class)
+    fun execute(
+        execFnName: String?, input: ByteArray, timeout: Duration, memLimitBytes: Long
+    ): StarlarkWasmExecutionResult? {
+        Profiler.instance().profile(ProfilerTask.WASM_EXEC, Supplier { "execute " + execFnName }).use { c ->
+            val memLimits = getMemLimits(memLimitBytes)
+            // Perform initialization and execution in a separate thread so it can be interrupted
+            // in case of timeout.
+            val wasmThreadFactory =
+                Thread.ofPlatform().name(Thread.currentThread().getName() + "_wasm").factory()
+            var result: StarlarkWasmExecutionResult?
+            val errMessage: String?
+            try {
+                Executors.newSingleThreadExecutor(wasmThreadFactory).use { executor ->
+                    return executor.invokeAny<StarlarkWasmExecutionResult?>(
+                        ImmutableList.of<Callable<StarlarkWasmExecutionResult?>?>(Callable {
+                            run(
+                                execFnName,
+                                input,
+                                memLimits
+                            )
+                        }),
+                        timeout.toMillis(),
+                        TimeUnit.MILLISECONDS
+                    )
+                }
+            } catch (e: TimeoutException) {
+                errMessage = String.format("Error executing %s: timed out", execFnName)
+            } catch (e: ExecutionException) {
+                errMessage = String.format("Error executing %s: %s", execFnName, e.getCause().getMessage())
+            }
+            return StarlarkWasmExecutionResult.Companion.newErr(errMessage)
+        }
+    }
 
-  public StarlarkWasmModule(
-      StarlarkPath path, Object origPath, byte[] moduleContent, boolean compile, String allocFnName)
-      throws EvalException {
-    WasmModule wasmModule;
-    try (SilentCloseable c1 =
-        Profiler.instance().profile(WASM_LOAD, () -> "load " + path.toString())) {
-      try (SilentCloseable c2 = Profiler.instance().profile(WASM_LOAD, "parse")) {
+    @Throws(EvalException::class, InterruptedException::class)
+    private fun run(
+        execFnName: kotlin.String?,
+        input: ByteArray,
+        memLimits: MemoryLimits?
+    ): StarlarkWasmExecutionResult {
+        val instance: Instance?
         try {
-          wasmModule = com.dylibso.chicory.wasm.Parser.parse(moduleContent);
-        } catch (ChicoryException e) {
-          throw new EvalException(e);
+            instance =
+                Instance.builder(wasmModule)
+                    .withMachineFactory(machineFactory)
+                    .withMemoryLimits(memLimits) // Disable calling `_start()`, which is the entry point for WASI-style
+                    // command modules.
+                    .withStart(false) // Chicory documentation recommends ByteArrayMemory for OpenJDK
+                    // https://chicory.dev/docs/advanced/memory
+                    .withMemoryFactory(Function { limits: MemoryLimits? -> ByteArrayMemory(limits) })
+                    .build()
+            // If `_initialize()` is present then call it to perform early setup.
+            //
+            // Note: The WebAssembly spec describes a "start function", named in a
+            // "start section", that is to be called as part of module initialization.
+            // Actual implementations such as LLVM have instead used the start function
+            // as the equivalent of a native binary's entry point, and expect (or emit)
+            // a function named `_initialize` to be used for early initialization.
+            //
+            // For additional context, see:
+            // - https://bugs.llvm.org/show_bug.cgi?id=37198
+            // - https://reviews.llvm.org/D40559
+            // - https://github.com/WebAssembly/design/issues/1160
+            if (hasInitializeFn) {
+                Profiler.instance().profile(ProfilerTask.WASM_EXEC, "initialize").use { c ->
+                    instance.export("_initialize").apply()
+                }
+            }
+        } catch (e: ChicoryException) {
+            throw EvalException(e)
         }
-      }
-      validateModule(wasmModule, allocFnName);
-    }
 
-    this.path = path;
-    this.origPath = origPath;
-    this.wasmModule = wasmModule;
-    this.allocFnName = allocFnName;
-    this.hasInitializeFn = hasInitializeFn(wasmModule);
-    if (compile) {
-      this.machineFactory = MachineFactoryCompiler.builder(wasmModule)
-          .withInterpreterFallback(InterpreterFallback.SILENT)
-          .withCache(compilationCache)
-          .compile();
-    } else {
-      this.machineFactory = InterpreterMachine::new;
-    }
-  }
-
-  private static boolean hasInitializeFn(WasmModule wasmModule) {
-    var exports = wasmModule.exportSection();
-    int exportCount = exports.exportCount();
-    for (int ii = 0; ii < exportCount; ii++) {
-      if (exports.getExport(ii).name().equals("_initialize")) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  @Override
-  public boolean isImmutable() {
-    return true;
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<wasm_module path=");
-    printer.repr(origPath, semantics);
-    printer.append(" allocate_fn=");
-    printer.repr(allocFnName, semantics);
-    printer.append(">");
-  }
-
-  public StarlarkPath getPath() {
-    return path;
-  }
-
-  @StarlarkMethod(
-      name = "path",
-      structField = true,
-      doc = "The path this WebAssembly module was loaded from.")
-  public Object getOrigPath() {
-    return origPath;
-  }
-
-  public StarlarkWasmExecutionResult execute(
-      String execFnName, byte[] input, Duration timeout, long memLimitBytes)
-      throws EvalException, InterruptedException {
-    try (SilentCloseable c =
-        Profiler.instance().profile(WASM_EXEC, () -> "execute " + execFnName)) {
-      var memLimits = getMemLimits(memLimitBytes);
-      // Perform initialization and execution in a separate thread so it can be interrupted
-      // in case of timeout.
-      var wasmThreadFactory =
-          Thread.ofPlatform().name(Thread.currentThread().getName() + "_wasm").factory();
-      StarlarkWasmExecutionResult result;
-      String errMessage;
-      try (var executor = Executors.newSingleThreadExecutor(wasmThreadFactory)) {
-        return executor.invokeAny(
-            ImmutableList.of(() -> run(execFnName, input, memLimits)),
-            timeout.toMillis(),
-            TimeUnit.MILLISECONDS);
-      } catch (TimeoutException e) {
-        errMessage = String.format("Error executing %s: timed out", execFnName);
-      } catch (ExecutionException e) {
-        errMessage = String.format("Error executing %s: %s", execFnName, e.getCause().getMessage());
-      }
-      return StarlarkWasmExecutionResult.newErr(errMessage);
-    }
-  }
-
-  private StarlarkWasmExecutionResult run(String execFnName, byte[] input, MemoryLimits memLimits)
-      throws EvalException, InterruptedException {
-    Instance instance;
-    try {
-      instance =
-          Instance.builder(wasmModule)
-              .withMachineFactory(machineFactory)
-              .withMemoryLimits(memLimits)
-              // Disable calling `_start()`, which is the entry point for WASI-style
-              // command modules.
-              .withStart(false)
-              // Chicory documentation recommends ByteArrayMemory for OpenJDK
-              // https://chicory.dev/docs/advanced/memory
-              .withMemoryFactory(ByteArrayMemory::new)
-              .build();
-      // If `_initialize()` is present then call it to perform early setup.
-      //
-      // Note: The WebAssembly spec describes a "start function", named in a
-      // "start section", that is to be called as part of module initialization.
-      // Actual implementations such as LLVM have instead used the start function
-      // as the equivalent of a native binary's entry point, and expect (or emit)
-      // a function named `_initialize` to be used for early initialization.
-      //
-      // For additional context, see:
-      // - https://bugs.llvm.org/show_bug.cgi?id=37198
-      // - https://reviews.llvm.org/D40559
-      // - https://github.com/WebAssembly/design/issues/1160
-      if (hasInitializeFn) {
-        try (SilentCloseable c = Profiler.instance().profile(WASM_EXEC, "initialize")) {
-          instance.export("_initialize").apply();
+        val memory = instance.memory()
+        val allocFn = instance.export(allocFnName)
+        // TODO: #26092 - Is this check needed? Might be redundant with validateModule().
+        if (allocFn == null) {
+            throw Starlark.errorf("WebAssembly module doesn't export \"%s\"", allocFnName)
         }
-      }
-    } catch (ChicoryException e) {
-      throw new EvalException(e);
-    }
-
-    var memory = instance.memory();
-    ExportFunction allocFn = instance.export(allocFnName);
-    // TODO: #26092 - Is this check needed? Might be redundant with validateModule().
-    if (allocFn == null) {
-      throw Starlark.errorf("WebAssembly module doesn't export \"%s\"", allocFnName);
-    }
-    ExportFunction execFn = instance.export(execFnName);
-    // TODO: #26092 - Validate execFn has the expected signature?
-    if (execFn == null) {
-      throw Starlark.errorf("WebAssembly module doesn't export \"%s\"", execFnName);
-    }
-
-    int inputLen = Math.toIntExact(input.length);
-    int inputPtr = alloc(allocFnName, allocFn, inputLen, 1);
-    try (SilentCloseable c = Profiler.instance().profile(WASM_EXEC, "copy input")) {
-      memory.write(inputPtr, input);
-    }
-
-    // struct { output_ptr_ptr: **u8, output_len_ptr: *u32 }
-    int paramsPtr = alloc(allocFnName, allocFn, 8, 4);
-    int outputPtrPtr = paramsPtr;
-    int outputLenPtr = paramsPtr + 4;
-    memory.writeI32(outputPtrPtr, 0);
-    memory.writeI32(outputLenPtr, 0);
-
-    long[] execResult;
-    try (SilentCloseable c = Profiler.instance().profile(WASM_EXEC, "execute")) {
-      execResult = execFn.apply(inputPtr, inputLen, outputPtrPtr, outputLenPtr);
-    }
-
-    // TODO: #26092 - Not 100% sure this check is necessary, but the ambiguity between
-    // signed/unsigned in Java vs WebAssembly makes me nervous.
-    //
-    // Might be unnecessary if the function signature is verified before execution?
-    long returnCode = execResult[0];
-    if (returnCode < 0 || returnCode > 0xFFFFFFFFL) {
-      returnCode = 0xFFFFFFFFL;
-    }
-    int outputPtr = memory.readInt(outputPtrPtr);
-    int outputLen = memory.readInt(outputLenPtr);
-
-    String output = "";
-    if (outputLen > 0) {
-      try (SilentCloseable c = Profiler.instance().profile(WASM_EXEC, "copy output")) {
-        byte[] outputBytes = memory.readBytes(outputPtr, outputLen);
-        output = new String(outputBytes, ISO_8859_1);
-      }
-    }
-    return StarlarkWasmExecutionResult.newOk(returnCode, output);
-  }
-
-  private static void validateModule(WasmModule wasmModule, String allocFnName)
-      throws EvalException {
-    var exports = wasmModule.exportSection();
-    int exportCount = exports.exportCount();
-    for (int ii = 0; ii < exportCount; ii++) {
-      var export = exports.getExport(ii);
-      if (export.name().equals(allocFnName)) {
-        // TODO: #26092 - Validate exported type is a function and has the expected signature?
-        return;
-      }
-    }
-    throw Starlark.errorf("WebAssembly module doesn't contain an export named \"%s\"", allocFnName);
-  }
-
-  MemoryLimits getMemLimits(long memLimitBytes) throws EvalException {
-    int initialPages = 1;
-    int memLimitPages = getMemLimitPages(memLimitBytes);
-
-    if (wasmModule.memorySection().isPresent()) {
-      var memories = wasmModule.memorySection().get();
-      int memoryCount = memories.memoryCount();
-      if (memoryCount > 1) {
-        // TODO: #26092 - Figure out what memory limits mean when applied to
-        // a WebAssembly module with multiple memories.
-        throw Starlark.errorf("WebAssembly modules with multiple memories not yet supported");
-      }
-      if (memoryCount != 0) {
-        MemoryLimits limits = memories.getMemory(0).limits();
-        if (limits.initialPages() > initialPages) {
-          initialPages = limits.initialPages();
+        val execFn = instance.export(execFnName)
+        // TODO: #26092 - Validate execFn has the expected signature?
+        if (execFn == null) {
+            throw Starlark.errorf("WebAssembly module doesn't export \"%s\"", execFnName)
         }
-      }
-    }
-    if (initialPages > memLimitPages) {
-      // TODO: #26092 - Should probably throw an exception. The execution will likely fail anyway,
-      // and
-      // throwing an exception from this point would provide more relevant details.
-      initialPages = memLimitPages;
-    }
-    return new MemoryLimits(initialPages, memLimitPages);
-  }
 
-  static int getMemLimitPages(long memLimitBytes) {
-    if (memLimitBytes == 0) {
-      return 1;
-    }
-    return (int) Math.min((long) MAX_PAGES, Math.ceilDiv(memLimitBytes, PAGE_SIZE));
-  }
+        val inputLen = Math.toIntExact(input.size.toLong())
+        val inputPtr: Int = alloc(allocFnName, allocFn, inputLen, 1)
+        Profiler.instance().profile(ProfilerTask.WASM_EXEC, "copy input").use { c ->
+            memory.write(inputPtr, input)
+        }
+        // struct { output_ptr_ptr: **u8, output_len_ptr: *u32 }
+        val paramsPtr: Int = alloc(allocFnName, allocFn, 8, 4)
+        val outputPtrPtr = paramsPtr
+        val outputLenPtr = paramsPtr + 4
+        memory.writeI32(outputPtrPtr, 0)
+        memory.writeI32(outputLenPtr, 0)
 
-  static int alloc(String allocFnName, ExportFunction allocFn, int size, int align)
-      throws ChicoryException, EvalException {
-    long[] allocResult = allocFn.apply(size, align);
-    long ptr = allocResult[0];
-    if (ptr == 0) {
-      throw Starlark.errorf(
-          "allocation failed: %s(%d, %d) returned NULL", allocFnName, size, align);
+        val execResult: LongArray
+        Profiler.instance().profile(ProfilerTask.WASM_EXEC, "execute").use { c ->
+            execResult =
+                execFn.apply(inputPtr.toLong(), inputLen.toLong(), outputPtrPtr.toLong(), outputLenPtr.toLong())
+        }
+        // TODO: #26092 - Not 100% sure this check is necessary, but the ambiguity between
+        // signed/unsigned in Java vs WebAssembly makes me nervous.
+        //
+        // Might be unnecessary if the function signature is verified before execution?
+        var returnCode = execResult[0]
+        if (returnCode < 0 || returnCode > 0xFFFFFFFFL) {
+            returnCode = 0xFFFFFFFFL
+        }
+        val outputPtr = memory.readInt(outputPtrPtr)
+        val outputLen = memory.readInt(outputLenPtr)
+
+        var output = ""
+        if (outputLen > 0) {
+            Profiler.instance().profile(ProfilerTask.WASM_EXEC, "copy output").use { c ->
+                val outputBytes = memory.readBytes(outputPtr, outputLen)
+                output = kotlin.String(outputBytes, StandardCharsets.ISO_8859_1)
+            }
+        }
+        return StarlarkWasmExecutionResult.Companion.newOk(returnCode, output)
     }
-    try {
-      return Math.toIntExact(ptr);
-    } catch (ArithmeticException e) {
-      throw Starlark.errorf(
-          "allocation failed: %s(%d, %d) returned invalid pointer 0x%08X (out of range)",
-          allocFnName, size, align, ptr);
+
+    @Throws(EvalException::class)
+    fun getMemLimits(memLimitBytes: Long): MemoryLimits {
+        var initialPages = 1
+        val memLimitPages: Int = getMemLimitPages(memLimitBytes)
+
+        if (wasmModule.memorySection().isPresent()) {
+            val memories = wasmModule.memorySection().get()
+            val memoryCount = memories.memoryCount()
+            if (memoryCount > 1) {
+                // TODO: #26092 - Figure out what memory limits mean when applied to
+                // a WebAssembly module with multiple memories.
+                throw Starlark.errorf("WebAssembly modules with multiple memories not yet supported")
+            }
+            if (memoryCount != 0) {
+                val limits = memories.getMemory(0).limits()
+                if (limits.initialPages() > initialPages) {
+                    initialPages = limits.initialPages()
+                }
+            }
+        }
+        if (initialPages > memLimitPages) {
+            // TODO: #26092 - Should probably throw an exception. The execution will likely fail anyway,
+            // and
+            // throwing an exception from this point would provide more relevant details.
+            initialPages = memLimitPages
+        }
+        return MemoryLimits(initialPages, memLimitPages)
     }
-  }
+
+    companion object {
+        private val compilationCache = StarlarkWasmCompilationCache()
+
+        private fun hasInitializeFn(wasmModule: WasmModule): Boolean {
+            val exports = wasmModule.exportSection()
+            val exportCount = exports.exportCount()
+            for (ii in 0..<exportCount) {
+                if (exports.getExport(ii).name() == "_initialize") {
+                    return true
+                }
+            }
+            return false
+        }
+
+        @Throws(EvalException::class)
+        private fun validateModule(wasmModule: WasmModule, allocFnName: kotlin.String?) {
+            val exports = wasmModule.exportSection()
+            val exportCount = exports.exportCount()
+            for (ii in 0..<exportCount) {
+                val export = exports.getExport(ii)
+                if (export.name() == allocFnName) {
+                    // TODO: #26092 - Validate exported type is a function and has the expected signature?
+                    return
+                }
+            }
+            throw Starlark.errorf("WebAssembly module doesn't contain an export named \"%s\"", allocFnName)
+        }
+
+        fun getMemLimitPages(memLimitBytes: Long): Int {
+            if (memLimitBytes == 0L) {
+                return 1
+            }
+            return Math.min(MemoryLimits.MAX_PAGES.toLong(), Math.ceilDiv(memLimitBytes, Memory.PAGE_SIZE)).toInt()
+        }
+
+        @Throws(ChicoryException::class, EvalException::class)
+        fun alloc(allocFnName: kotlin.String?, allocFn: ExportFunction, size: Int, align: Int): Int {
+            val allocResult = allocFn.apply(size.toLong(), align.toLong())
+            val ptr = allocResult[0]
+            if (ptr == 0L) {
+                throw Starlark.errorf(
+                    "allocation failed: %s(%d, %d) returned NULL", allocFnName, size, align
+                )
+            }
+            try {
+                return Math.toIntExact(ptr)
+            } catch (e: ArithmeticException) {
+                throw Starlark.errorf(
+                    "allocation failed: %s(%d, %d) returned invalid pointer 0x%08X (out of range)",
+                    allocFnName, size, align, ptr
+                )
+            }
+        }
+    }
 }

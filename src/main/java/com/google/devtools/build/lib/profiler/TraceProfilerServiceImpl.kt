@@ -11,938 +11,1032 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
+import com.google.devtools.build.lib.collect.Extrema
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.collect.Extrema;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.profiler.PredicateBasedStatRecorder.RecorderAndPredicate;
-import com.google.devtools.build.lib.profiler.TaskData.ActionTaskData;
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.common.options.OptionsProvider;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.sun.management.OperatingSystemMXBean;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.lang.management.ManagementFactory;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.EnumSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import java.util.regex.Pattern;
-import java.util.zip.GZIPOutputStream;
-import javax.annotation.Nullable;
+/** Blaze internal profiler implementation.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+// This code is very performance sensitive.
+class TraceProfilerServiceImpl : com.google.devtools.build.lib.profiler.TraceProfilerService {
+    /**
+     * Aggregator class that keeps track of the slowest tasks of the specified type.
+     * 
+     * 
+     * `extremaAggregators` is sharded so that all threads need not compete for the same
+     * lock if they do the same operation at the same time. Access to an individual [Extrema]
+     * is synchronized on the [Extrema] instance itself.
+     */
+    private class SlowestTaskAggregator {
+        private val extremaAggregators: Array<Extrema<com.google.devtools.build.lib.profiler.SlowTask?>> =
+            arrayOfNulls<Extrema>(
+                SHARDS
+            )
 
-/** Blaze internal profiler implementation. */
-@ThreadSafe
-@SuppressWarnings("GoodTime") // This code is very performance sensitive.
-public final class TraceProfilerServiceImpl implements TraceProfilerService {
-  private static final int HISTOGRAM_BUCKETS = 20;
-
-  private static final Duration ACTION_COUNT_BUCKET_DURATION = Duration.ofMillis(200);
-
-  private static final ImmutableMap<String, Predicate<? super String>> DEFAULT_VFS_TYPE_HEURISTICS =
-      ImmutableMap.of(
-          "blaze-out", Pattern.compile("/blaze-out/").asPredicate(),
-          "source", Predicates.<CharSequence>alwaysTrue());
-
-  /**
-   * Aggregator class that keeps track of the slowest tasks of the specified type.
-   *
-   * <p><code>extremaAggregators</p> is sharded so that all threads need not compete for the same
-   * lock if they do the same operation at the same time. Access to an individual {@link Extrema}
-   * is synchronized on the {@link Extrema} instance itself.
-   */
-  private static final class SlowestTaskAggregator {
-    private static final int SHARDS = 16;
-    private static final int SIZE = 30;
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private final Extrema<SlowTask>[] extremaAggregators = new Extrema[SHARDS];
-
-    SlowestTaskAggregator() {
-      for (int i = 0; i < SHARDS; i++) {
-        extremaAggregators[i] = Extrema.max(SIZE);
-      }
-    }
-
-    // @ThreadSafe
-    void add(TaskData taskData) {
-      Extrema<SlowTask> extrema = extremaAggregators[(int) (taskData.threadId % SHARDS)];
-      synchronized (extrema) {
-        extrema.aggregate(
-            new SlowTask(taskData.durationNanos, taskData.description, taskData.type));
-      }
-    }
-
-    // @ThreadSafe
-    void clear() {
-      for (int i = 0; i < SHARDS; i++) {
-        Extrema<SlowTask> extrema = extremaAggregators[i];
-        synchronized (extrema) {
-          extrema.clear();
+        init {
+            for (i in 0..<SHARDS) {
+                extremaAggregators[i] = Extrema.max(SIZE)
+            }
         }
-      }
-    }
 
-    // @ThreadSafe
-    ImmutableList<SlowTask> getSlowestTasks() {
-      // This is slow, but since it only happens during the end of the invocation, it's OK.
-      Extrema<SlowTask> mergedExtrema = Extrema.max(SIZE);
-      for (int i = 0; i < SHARDS; i++) {
-        Extrema<SlowTask> extrema = extremaAggregators[i];
-        synchronized (extrema) {
-          for (SlowTask task : extrema.getExtremeElements()) {
-            mergedExtrema.aggregate(task);
-          }
+        // @ThreadSafe
+        fun add(taskData: TaskData) {
+            val extrema: Extrema<com.google.devtools.build.lib.profiler.SlowTask?> =
+                extremaAggregators[(taskData.threadId % SHARDS).toInt()]
+            synchronized(extrema) {
+                extrema.aggregate(
+                    com.google.devtools.build.lib.profiler.SlowTask(
+                        taskData.durationNanos,
+                        taskData.description,
+                        taskData.type
+                    )
+                )
+            }
         }
-      }
-      return mergedExtrema.getExtremeElements();
-    }
-  }
 
-  private Clock clock;
-  private Set<ProfilerTask> profiledTasks;
-  private volatile boolean active = false;
-  private volatile boolean recordAllDurations = false;
-  private Duration profileCpuStartTime = Duration.ZERO;
-  private Duration profileCpuEndTime = Duration.ZERO;
-  private Duration profileStartTime = Duration.ZERO;
-  private Duration profileEndTime = Duration.ZERO;
-
-  /** Heuristics for determining the filesystem type of a given path. */
-  private ImmutableMap<String, ? extends Predicate<? super String>> vfsTypeHeuristics =
-      DEFAULT_VFS_TYPE_HEURISTICS;
-
-  /**
-   * The reference to the current writer, if any. If the referenced writer is null, then disk writes
-   * are disabled. This can happen when slowest task recording is enabled.
-   */
-  private final AtomicReference<JsonTraceFileWriter> writerRef = new AtomicReference<>();
-
-  private final SlowestTaskAggregator[] slowestTasks =
-      new SlowestTaskAggregator[ProfilerTask.values().length];
-
-  @VisibleForTesting
-  final StatRecorder[] tasksHistograms = new StatRecorder[ProfilerTask.values().length];
-
-  /** Collects local cpu usage data (if enabled). */
-  private final ResourceCollector resourceCollector = new ResourceCollector();
-
-  private final AtomicReference<TimeSeries> actionCountTimeSeriesRef = new AtomicReference<>();
-  private final AtomicReference<TimeSeries> actionCacheCountTimeSeriesRef = new AtomicReference<>();
-  private final AtomicReference<TimeSeries> localActionCountTimeSeriesRef = new AtomicReference<>();
-  private final AtomicReference<Map<String, TimeSeries>> inflightRpcTimeSeriesMapRef =
-      new AtomicReference<>();
-
-  private Duration actionCountStartTime;
-  private boolean collectTaskHistograms;
-  private boolean includePrimaryOutput;
-  private boolean includeTargetLabel;
-  private boolean includeConfiguration;
-
-  public TraceProfilerServiceImpl() {
-    initHistograms();
-    for (ProfilerTask task : ProfilerTask.values()) {
-      if (task.collectsSlowestInstances) {
-        slowestTasks[task.ordinal()] = new SlowestTaskAggregator();
-      }
-    }
-  }
-
-  private void initHistograms() {
-    for (ProfilerTask task : ProfilerTask.values()) {
-      if (task.isVfs()) {
-        List<RecorderAndPredicate> recorders = new ArrayList<>(vfsTypeHeuristics.size());
-        for (Map.Entry<String, ? extends Predicate<? super String>> e :
-            vfsTypeHeuristics.entrySet()) {
-          recorders.add(
-              new RecorderAndPredicate(
-                  new SingleStatRecorder(task + " " + e.getKey(), HISTOGRAM_BUCKETS),
-                  e.getValue()));
+        // @ThreadSafe
+        fun clear() {
+            for (i in 0..<SHARDS) {
+                val extrema: Extrema<com.google.devtools.build.lib.profiler.SlowTask?> = extremaAggregators[i]
+                synchronized(extrema) {
+                    extrema.clear()
+                }
+            }
         }
-        tasksHistograms[task.ordinal()] = new PredicateBasedStatRecorder(recorders);
-      } else {
-        tasksHistograms[task.ordinal()] = new SingleStatRecorder(task, HISTOGRAM_BUCKETS);
-      }
-    }
-  }
 
-  @Override
-  public void globalInit(OptionsProvider startupOptions, Iterable<BlazeService> blazeServices) {
-    // This is to ensure that the profiler is available as early as possible during the server
-    // startup.
-    Profiler.setTraceProfilerService(this);
-  }
-
-  // TODO(ulfjack): This returns incomplete data by design. Maybe we should return the histograms on
-  // stop instead? However, this is currently only called from one location in a module, and that
-  // can't call stop itself. What to do?
-  @Override
-  public synchronized ImmutableList<StatRecorder> getTasksHistograms() {
-    Preconditions.checkState(isActive());
-    return ImmutableList.copyOf(tasksHistograms);
-  }
-
-  @Override
-  public long nanoTimeMaybe() {
-    // Note that we fall back to an actual clock instead of disabling nanoTime entirely if the
-    // profiler is not active. This is because some callers of the profiler service may use
-    // nanoTime for latency tracking even without starting the rest of the profiler features.
-    return isActive() ? clock.nanoTime() : BlazeClock.nanoTime();
-  }
-
-  @Override
-  public Duration getProfileElapsedTime() {
-    Duration endTime = isActive() ? Duration.ofNanos(clock.nanoTime()) : profileEndTime;
-
-    return endTime.minus(profileStartTime);
-  }
-
-  private static Duration getProcessCpuTime() {
-    OperatingSystemMXBean bean =
-        (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-    return Duration.ofNanos(bean.getProcessCpuTime());
-  }
-
-  @Override
-  public Duration getServerProcessCpuTime() {
-    Duration cpuEndTime = isActive() ? getProcessCpuTime() : profileCpuEndTime;
-    return cpuEndTime.minus(profileCpuStartTime);
-  }
-
-  @Override
-  public void setVfsTypeHeuristics(
-      Map<String, ? extends Predicate<? super String>> vfsTypeHeuristics) {
-    this.vfsTypeHeuristics = ImmutableMap.copyOf(vfsTypeHeuristics);
-  }
-
-  @Override
-  public synchronized void start(
-      Set<ProfilerTask> profiledTasks,
-      OutputStream stream,
-      Format format,
-      String outputBase,
-      UUID buildID,
-      boolean recordAllDurations,
-      Clock clock,
-      long execStartTimeNanos,
-      boolean slimProfile,
-      boolean includePrimaryOutput,
-      boolean includeTargetLabel,
-      boolean includeConfiguration,
-      boolean collectTaskHistograms)
-      throws IOException {
-    checkState(!active, "Profiler already active");
-
-    initHistograms();
-
-    this.profiledTasks = profiledTasks.isEmpty() ? profiledTasks : EnumSet.copyOf(profiledTasks);
-    this.clock = clock;
-    this.actionCountStartTime = Duration.ofNanos(clock.nanoTime());
-    this.actionCountTimeSeriesRef.set(
-        createTimeSeries(actionCountStartTime, ACTION_COUNT_BUCKET_DURATION));
-    this.actionCacheCountTimeSeriesRef.set(
-        createTimeSeries(actionCountStartTime, ACTION_COUNT_BUCKET_DURATION));
-    this.localActionCountTimeSeriesRef.set(
-        createTimeSeries(actionCountStartTime, ACTION_COUNT_BUCKET_DURATION));
-    this.inflightRpcTimeSeriesMapRef.set(new ConcurrentHashMap<>());
-    this.collectTaskHistograms = collectTaskHistograms;
-    this.includePrimaryOutput = includePrimaryOutput;
-    this.includeTargetLabel = includeTargetLabel;
-    this.includeConfiguration = includeConfiguration;
-    this.recordAllDurations = recordAllDurations;
-
-    JsonTraceFileWriter writer = null;
-    if (stream != null && format != null) {
-      writer =
-          switch (format) {
-            case JSON_TRACE_FILE_FORMAT ->
-                new JsonTraceFileWriter(
-                    stream, execStartTimeNanos, slimProfile, outputBase, buildID);
-            case JSON_TRACE_FILE_COMPRESSED_FORMAT ->
-                new JsonTraceFileWriter(
-                    new GZIPOutputStream(stream),
-                    execStartTimeNanos,
-                    slimProfile,
-                    outputBase,
-                    buildID);
-          };
-      writer.start();
-    }
-    this.writerRef.set(writer);
-
-    // Activate profiler.
-    profileStartTime = Duration.ofNanos(execStartTimeNanos);
-    profileCpuStartTime = getProcessCpuTime();
-    active = true;
-
-    // Start collecting Bazel and system-wide CPU metric collection.
-    this.resourceCollector.start();
-  }
-
-  // TODO(ulfjack): This returns incomplete data by design. Also see getTasksHistograms.
-  @Override
-  public synchronized Iterable<SlowTask> getSlowestTasks() {
-    List<Iterable<SlowTask>> slowestTasksByType = new ArrayList<>();
-    for (SlowestTaskAggregator aggregator : slowestTasks) {
-      if (aggregator != null) {
-        slowestTasksByType.add(aggregator.getSlowestTasks());
-      }
-    }
-    return Iterables.concat(slowestTasksByType);
-  }
-
-  private void collectActionCounts() {
-    Duration endTime = Duration.ofNanos(clock.nanoTime());
-    int len = (int) endTime.minus(actionCountStartTime).dividedBy(ACTION_COUNT_BUCKET_DURATION) + 1;
-    Map<CounterSeriesTask, double[]> counterSeriesMap = new LinkedHashMap<>();
-    TimeSeries actionCountTimeSeries = actionCountTimeSeriesRef.get();
-    if (actionCountTimeSeries != null) {
-      double[] actionCountValues = actionCountTimeSeries.toDoubleArray(len);
-      actionCountTimeSeriesRef.set(null);
-      counterSeriesMap.put(
-          new CounterSeriesTask("action count", "action", /* color= */ null), actionCountValues);
-    }
-    TimeSeries actionCacheCountTimeSeries = actionCacheCountTimeSeriesRef.get();
-    if (actionCacheCountTimeSeries != null) {
-      double[] actionCacheCountValues = actionCacheCountTimeSeries.toDoubleArray(len);
-      actionCacheCountTimeSeriesRef.set(null);
-      counterSeriesMap.put(
-          new CounterSeriesTask("action cache count", "local action cache", /* color= */ null),
-          actionCacheCountValues);
-    }
-    if (!counterSeriesMap.isEmpty()) {
-      logCounters(counterSeriesMap, actionCountStartTime, ACTION_COUNT_BUCKET_DURATION);
-    }
-
-    Map<CounterSeriesTask, double[]> localCounterSeriesMap = new LinkedHashMap<>();
-    TimeSeries localActionCountTimeSeries = localActionCountTimeSeriesRef.get();
-    if (localActionCountTimeSeries != null) {
-      double[] localActionCountValues = localActionCountTimeSeries.toDoubleArray(len);
-      localActionCountTimeSeriesRef.set(null);
-      localCounterSeriesMap.put(
-          new CounterSeriesTask(
-              "action count (local)", "local action", CounterSeriesTask.Color.DETAILED_MEMORY_DUMP),
-          localActionCountValues);
-    }
-    if (hasNonZeroValues(localCounterSeriesMap)) {
-      logCounters(localCounterSeriesMap, actionCountStartTime, ACTION_COUNT_BUCKET_DURATION);
-    }
-
-    var inflightRpcTimeSeriesMap = inflightRpcTimeSeriesMapRef.getAndSet(null);
-    if (inflightRpcTimeSeriesMap != null) {
-      for (var entry : inflightRpcTimeSeriesMap.entrySet()) {
-        Map<CounterSeriesTask, double[]> inflightRpcCounterSeriesMap = new LinkedHashMap<>();
-        var name = entry.getKey();
-        var timeSeries = entry.getValue();
-        double[] values = timeSeries.toDoubleArray(len);
-        inflightRpcCounterSeriesMap.put(
-            new CounterSeriesTask("Inflight RPCs - " + name, name, /* color= */ null), values);
-        logCounters(
-            inflightRpcCounterSeriesMap, actionCountStartTime, ACTION_COUNT_BUCKET_DURATION);
-      }
-    }
-  }
-
-  private boolean hasNonZeroValues(Map<CounterSeriesTask, double[]> countersSeriesMap) {
-    return countersSeriesMap.values().stream()
-        .flatMapToDouble(Arrays::stream)
-        .anyMatch(v -> v != 0);
-  }
-
-  @Override
-  public synchronized void stop() throws IOException {
-    if (!active) {
-      return;
-    }
-    collectActionCounts();
-    resourceCollector.stop();
-    // Log a final event to update the duration of ProfilePhase.FINISH.
-    logEvent(ProfilerTask.INFO, "Finishing");
-    try {
-      JsonTraceFileWriter writer = writerRef.getAndSet(null);
-      if (writer != null) {
-        writer.shutdown();
-        writer = null;
-      }
-    } finally {
-      profileCpuEndTime = getProcessCpuTime();
-      profileEndTime = Duration.ofNanos(clock.nanoTime());
-      active = false;
-    }
-  }
-
-  @Override
-  public synchronized void clear() {
-    Preconditions.checkState(!active);
-    Arrays.fill(tasksHistograms, null);
-    profileStartTime = Duration.ZERO;
-    profileEndTime = Duration.ZERO;
-    profileCpuStartTime = Duration.ZERO;
-    profileCpuEndTime = Duration.ZERO;
-    for (SlowestTaskAggregator aggregator : slowestTasks) {
-      if (aggregator != null) {
-        aggregator.clear();
-      }
-    }
-    multiLaneGenerator.reset();
-  }
-
-  @Override
-  public boolean isActive() {
-    return active;
-  }
-
-  @Override
-  public boolean isProfiling(ProfilerTask type) {
-    return profiledTasks.contains(type);
-  }
-
-  /**
-   * Unless --record_full_profiler_data is given we drop small tasks and add their time to the
-   * parents duration.
-   */
-  private boolean wasTaskSlowEnoughToRecord(ProfilerTask type, long duration) {
-    return (recordAllDurations || duration >= type.minDuration);
-  }
-
-  @Override
-  public void registerCounterSeriesCollector(CounterSeriesCollector collector) {
-    resourceCollector.registerCounterSeriesCollector(collector);
-  }
-
-  @Override
-  public void unregisterCounterSeriesCollector(CounterSeriesCollector collector) {
-    resourceCollector.unregisterCounterSeriesCollector(collector);
-  }
-
-  @Override
-  public void logCounters(
-      Map<CounterSeriesTask, double[]> counterSeriesMap,
-      Duration profileStart,
-      Duration bucketDuration) {
-    JsonTraceFileWriter currentWriter = writerRef.get();
-    if (isActive() && currentWriter != null) {
-      CounterSeriesTraceData counterSeriesTraceData =
-          new CounterSeriesTraceData(counterSeriesMap, profileStart, bucketDuration);
-      currentWriter.enqueue(counterSeriesTraceData);
-    }
-  }
-
-  /**
-   * Adds task directly to the main queue bypassing task stack. Used for simple tasks that are known
-   * to not have any subtasks.
-   *
-   * @param startTimeNanos task start time (obtained through {@link Profiler#nanoTimeMaybe()})
-   * @param duration task duration
-   * @param type task type
-   * @param description task description. May be stored until end of build.
-   */
-  private void logTask(long startTimeNanos, long duration, ProfilerTask type, String description) {
-    var lane = borrowLane();
-    try {
-      checkNotNull(description);
-      checkState(!description.isEmpty(), "No description -> not helpful");
-      if (duration < 0) {
-        // See note in Clock#nanoTime, which is used by Profiler#nanoTimeMaybe.
-        duration = 0;
-      }
-
-      StatRecorder statRecorder = tasksHistograms[type.ordinal()];
-      if (collectTaskHistograms && statRecorder != null) {
-        statRecorder.addStat((int) Duration.ofNanos(duration).toMillis(), description);
-      }
-
-      if (isActive() && startTimeNanos >= 0 && isProfiling(type)) {
-        // Store instance fields as local variables so they are not nulled out from under us by
-        // #clear.
-        JsonTraceFileWriter currentWriter = writerRef.get();
-        if (wasTaskSlowEnoughToRecord(type, duration)) {
-          TaskData data = new TaskData(getLaneId(lane), startTimeNanos, type, description);
-          data.durationNanos = duration;
-          if (currentWriter != null) {
-            currentWriter.enqueue(data);
-          }
-
-          SlowestTaskAggregator aggregator = slowestTasks[type.ordinal()];
-
-          if (aggregator != null) {
-            aggregator.add(data);
-          }
+        // @ThreadSafe
+        fun getSlowestTasks(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.profiler.SlowTask?> {
+            // This is slow, but since it only happens during the end of the invocation, it's OK.
+            val mergedExtrema: Extrema<com.google.devtools.build.lib.profiler.SlowTask?> = Extrema.max(SIZE)
+            for (i in 0..<SHARDS) {
+                val extrema: Extrema<com.google.devtools.build.lib.profiler.SlowTask?> = extremaAggregators[i]
+                synchronized(extrema) {
+                    for (task in extrema.extremeElements) {
+                        mergedExtrema.aggregate(task)
+                    }
+                }
+            }
+            return mergedExtrema.extremeElements
         }
-      }
-    } finally {
-      releaseLane(lane);
-    }
-  }
 
-  @Override
-  public void logSimpleTask(long startTimeNanos, ProfilerTask type, String description) {
-    if (clock != null) {
-      logTask(startTimeNanos, clock.nanoTime() - startTimeNanos, type, description);
-    }
-  }
-
-  @Override
-  public void logSimpleTask(
-      long startTimeNanos, long stopTimeNanos, ProfilerTask type, String description) {
-    logTask(startTimeNanos, stopTimeNanos - startTimeNanos, type, description);
-  }
-
-  @Override
-  public void logSimpleTaskDuration(
-      long startTimeNanos, Duration duration, ProfilerTask type, String description) {
-    logTask(startTimeNanos, duration.toNanos(), type, description);
-  }
-
-  @Override
-  public void logEventAtTime(long atTimeNanos, ProfilerTask type, String description) {
-    logTask(atTimeNanos, 0, type, description);
-  }
-
-  @Override
-  public void logEvent(ProfilerTask type, String description) {
-    logEventAtTime(clock.nanoTime(), type, description);
-  }
-
-  private SilentCloseable reallyProfile(ProfilerTask type, String description) {
-    final long startTimeNanos = clock.nanoTime();
-    var lane = borrowLane();
-    return () -> {
-      try {
-        completeTask(getLaneId(lane), startTimeNanos, type, description);
-      } finally {
-        releaseLane(lane);
-      }
-    };
-  }
-
-  @Override
-  public SilentCloseable profile(ProfilerTask type, String description) {
-    return (isActive() && isProfiling(type)) ? reallyProfile(type, description) : NOP;
-  }
-
-  @Override
-  public SilentCloseable profile(ProfilerTask type, Supplier<String> description) {
-    return (isActive() && isProfiling(type)) ? reallyProfile(type, description.get()) : NOP;
-  }
-
-  @Override
-  public SilentCloseable profile(String description) {
-    return profile(ProfilerTask.INFO, description);
-  }
-
-  @Override
-  public SilentCloseable profileAction(
-      ProfilerTask type,
-      String mnemonic,
-      String description,
-      String primaryOutput,
-      String targetLabel,
-      String configuration) {
-    checkNotNull(description);
-    if (isActive() && isProfiling(type)) {
-      final long startTimeNanos = clock.nanoTime();
-      var lane = borrowLane();
-      return () -> {
-        try {
-          completeAction(
-              getLaneId(lane),
-              startTimeNanos,
-              type,
-              description,
-              mnemonic,
-              includePrimaryOutput ? primaryOutput : null,
-              includeTargetLabel ? targetLabel : null,
-              includeConfiguration ? configuration : null);
-        } finally {
-          releaseLane(lane);
+        companion object {
+            private const val SHARDS = 16
+            private const val SIZE = 30
         }
-      };
-    } else {
-      return NOP;
-    }
-  }
-
-  private static final SilentCloseable NOP = () -> {};
-
-  private boolean countAction(ProfilerTask type) {
-    return type == ProfilerTask.ACTION || type == ProfilerTask.DISCOVER_INPUTS;
-  }
-
-  @Override
-  public void completeTask(long startTimeNanos, ProfilerTask type, String description) {
-    var lane = borrowLane();
-    try {
-      completeTask(getLaneId(lane), startTimeNanos, type, description);
-    } finally {
-      releaseLane(lane);
-    }
-  }
-
-  private void completeTask(
-      long laneId, long startTimeNanos, ProfilerTask type, String description) {
-    if (isActive()) {
-      long endTimeNanos = clock.nanoTime();
-      long duration = endTimeNanos - startTimeNanos;
-      if (wasTaskSlowEnoughToRecord(type, duration)) {
-        recordTask(new TaskData(laneId, startTimeNanos, duration, type, description));
-      }
-
-      if (type == ProfilerTask.RPC) {
-        var inflightRpcTimeSerieMap = inflightRpcTimeSeriesMapRef.get();
-        if (inflightRpcTimeSerieMap != null) {
-          var timeSeries =
-              inflightRpcTimeSerieMap.computeIfAbsent(
-                  description,
-                  (unused) -> createTimeSeries(actionCountStartTime, ACTION_COUNT_BUCKET_DURATION));
-          timeSeries.addRange(Duration.ofNanos(startTimeNanos), Duration.ofNanos(endTimeNanos));
-        }
-      }
-    }
-  }
-
-  private void completeAction(
-      long threadId,
-      long startTimeNanos,
-      ProfilerTask type,
-      String description,
-      String mnemonic,
-      @Nullable String primaryOutput,
-      @Nullable String targetLabel,
-      @Nullable String configuration) {
-    if (isActive()) {
-      long endTimeNanos = clock.nanoTime();
-      long duration = endTimeNanos - startTimeNanos;
-      boolean shouldRecordTask = wasTaskSlowEnoughToRecord(type, duration);
-      if (shouldRecordTask) {
-        recordTask(
-            new ActionTaskData(
-                threadId,
-                startTimeNanos,
-                duration,
-                type,
-                mnemonic,
-                description,
-                primaryOutput,
-                targetLabel,
-                configuration));
-      }
-    }
-  }
-
-  private void recordTask(TaskData data) {
-    JsonTraceFileWriter writer = writerRef.get();
-    if (writer != null) {
-      writer.enqueue(data);
-    }
-    long endTimeNanos = data.startTimeNanos + data.durationNanos;
-    TimeSeries actionCountTimeSeries = actionCountTimeSeriesRef.get();
-    TimeSeries actionCacheCountTimeSeries = actionCacheCountTimeSeriesRef.get();
-    TimeSeries localActionCountTimeSeries = localActionCountTimeSeriesRef.get();
-    if (actionCountTimeSeries != null && countAction(data.type)) {
-      actionCountTimeSeries.addRange(
-          Duration.ofNanos(data.startTimeNanos), Duration.ofNanos(endTimeNanos));
-    }
-    if (actionCacheCountTimeSeries != null && data.type == ProfilerTask.ACTION_CHECK) {
-      actionCacheCountTimeSeries.addRange(
-          Duration.ofNanos(data.startTimeNanos), Duration.ofNanos(endTimeNanos));
     }
 
-    if (localActionCountTimeSeries != null && data.type == ProfilerTask.LOCAL_ACTION_COUNTS) {
-      localActionCountTimeSeries.addRange(
-          Duration.ofNanos(data.startTimeNanos), Duration.ofNanos(endTimeNanos));
-    }
-    SlowestTaskAggregator aggregator = slowestTasks[data.type.ordinal()];
-    if (aggregator != null) {
-      aggregator.add(data);
-    }
-  }
+    private var clock: com.google.devtools.build.lib.clock.Clock? = null
+    private var profiledTasks: MutableSet<com.google.devtools.build.lib.profiler.ProfilerTask?>? = null
 
-  @Override
-  public void markPhase(ProfilePhase phase) throws InterruptedException {
-    if (isActive() && isProfiling(ProfilerTask.PHASE)) {
-      logEvent(ProfilerTask.PHASE, phase.description);
-    }
-  }
+    @kotlin.concurrent.Volatile
+    private var active = false
 
-  private final AtomicLong nextLaneId = new AtomicLong(1_000_000);
-  private final MultiLaneGenerator multiLaneGenerator = new MultiLaneGenerator();
+    @kotlin.concurrent.Volatile
+    private var recordAllDurations = false
+    private var profileCpuStartTime: java.time.Duration = java.time.Duration.ZERO
+    private var profileCpuEndTime: java.time.Duration = java.time.Duration.ZERO
+    private var profileStartTime: java.time.Duration = java.time.Duration.ZERO
+    private var profileEndTime: java.time.Duration = java.time.Duration.ZERO
 
-  private class MultiLaneGenerator {
-    private final Map<String, LaneGenerator> laneGenerators = new ConcurrentHashMap<>();
+    /** Heuristics for determining the filesystem type of a given path.  */
+    private var vfsTypeHeuristics: com.google.common.collect.ImmutableMap<String?, out java.util.function.Predicate<in String?>?> =
+        DEFAULT_VFS_TYPE_HEURISTICS
 
     /**
-     * @return the lane if it's active, otherwise null.
+     * The reference to the current writer, if any. If the referenced writer is null, then disk writes
+     * are disabled. This can happen when slowest task recording is enabled.
      */
-    @Nullable
-    private Lane acquire(String prefix) {
-      if (!isActive()) {
-        return null;
-      }
-      var laneGenerator =
-          laneGenerators.computeIfAbsent(prefix, unused -> new LaneGenerator(prefix));
-      return laneGenerator.acquire();
-    }
+    private val writerRef: AtomicReference<JsonTraceFileWriter?> = AtomicReference<JsonTraceFileWriter?>()
 
-    private void release(Lane lane) {
-      var laneGenerator = lane.laneGenerator;
-      laneGenerator.release(lane);
-    }
+    private val slowestTasks =
+        arrayOfNulls<SlowestTaskAggregator>(com.google.devtools.build.lib.profiler.ProfilerTask.entries.toTypedArray().length)
 
-    private void reset() {
-      multiLaneGenerator.laneGenerators.clear();
-    }
-  }
+    @com.google.common.annotations.VisibleForTesting
+    val tasksHistograms: Array<com.google.devtools.build.lib.profiler.StatRecorder?> =
+        arrayOfNulls<com.google.devtools.build.lib.profiler.StatRecorder>(com.google.devtools.build.lib.profiler.ProfilerTask.entries.toTypedArray().length)
 
-  private static class Lane implements Comparable<Lane> {
-    private final LaneGenerator laneGenerator;
-    private final long id;
-    private int refCount;
+    /** Collects local cpu usage data (if enabled).  */
+    private val resourceCollector: ResourceCollector = ResourceCollector()
 
-    private Lane(LaneGenerator laneGenerator, long id) {
-      this.laneGenerator = laneGenerator;
-      this.id = id;
-    }
+    private val actionCountTimeSeriesRef: AtomicReference<com.google.devtools.build.lib.profiler.TimeSeries?> =
+        AtomicReference<com.google.devtools.build.lib.profiler.TimeSeries?>()
+    private val actionCacheCountTimeSeriesRef: AtomicReference<com.google.devtools.build.lib.profiler.TimeSeries?> =
+        AtomicReference<com.google.devtools.build.lib.profiler.TimeSeries?>()
+    private val localActionCountTimeSeriesRef: AtomicReference<com.google.devtools.build.lib.profiler.TimeSeries?> =
+        AtomicReference<com.google.devtools.build.lib.profiler.TimeSeries?>()
+    private val inflightRpcTimeSeriesMapRef: AtomicReference<MutableMap<String?, com.google.devtools.build.lib.profiler.TimeSeries>?> =
+        AtomicReference<MutableMap<String?, com.google.devtools.build.lib.profiler.TimeSeries>?>()
 
-    @Override
-    public int compareTo(Lane o) {
-      return Long.compare(id, o.id);
-    }
-  }
+    private var actionCountStartTime: java.time.Duration? = null
+    private var collectTaskHistograms = false
+    private var includePrimaryOutput = false
+    private var includeTargetLabel = false
+    private var includeConfiguration = false
 
-  private class LaneGenerator {
-    private final String prefix;
-    private final Queue<Lane> availableLanes = new ConcurrentLinkedQueue<>();
-    private final AtomicInteger count = new AtomicInteger(0);
-
-    private LaneGenerator(String prefix) {
-      this.prefix = prefix;
-    }
-
-    public Lane acquire() {
-      var lane = availableLanes.poll();
-      // It might create more virtual lanes, but it's fine for our purpose.
-      if (lane == null) {
-        lane = new Lane(this, nextLaneId.getAndIncrement());
-        int newLaneIndex = count.getAndIncrement();
-        String newLaneName =
-            prefix.endsWith("-")
-                ? prefix + newLaneIndex + " (Virtual)"
-                : prefix + "-" + newLaneIndex + " (Virtual)";
-        var threadMetadata = new ThreadMetadata(newLaneName, lane.id);
-        var writer = TraceProfilerServiceImpl.this.writerRef.get();
-        if (writer != null) {
-          writer.enqueue(threadMetadata);
-        }
-      }
-      return lane;
-    }
-
-    public void release(Lane lane) {
-      availableLanes.offer(lane);
-    }
-  }
-
-  private final ThreadLocal<String> virtualThreadPrefix =
-      ThreadLocal.withInitial(this::guessThreadPrefix);
-  private final ThreadLocal<Lane> borrowedLane =
-      ThreadLocal.withInitial(
-          () -> {
-            var prefix = virtualThreadPrefix.get();
-            var lane = multiLaneGenerator.acquire(prefix);
-            if (lane == null) {
-              return null;
+    private fun initHistograms() {
+        for (task in com.google.devtools.build.lib.profiler.ProfilerTask.entries) {
+            if (task.isVfs()) {
+                val recorders: MutableList<RecorderAndPredicate?> =
+                    java.util.ArrayList<RecorderAndPredicate?>(vfsTypeHeuristics.size())
+                for (e in vfsTypeHeuristics.entrySet()) {
+                    recorders.add(
+                        RecorderAndPredicate(
+                            SingleStatRecorder(task.toString() + " " + e.getKey(), HISTOGRAM_BUCKETS),
+                            e.getValue()
+                        )
+                    )
+                }
+                tasksHistograms[task.ordinal()] = PredicateBasedStatRecorder(recorders)
+            } else {
+                tasksHistograms[task.ordinal()] = SingleStatRecorder(task, HISTOGRAM_BUCKETS)
             }
-            checkState(lane.refCount == 0);
-            return lane;
-          });
-
-  @Nullable
-  private Lane borrowLane() {
-    if (!Thread.currentThread().isVirtual() || !isActive()) {
-      return null;
-    }
-    var lane = borrowedLane.get();
-    if (lane == null) {
-      return null;
-    }
-    lane.refCount += 1;
-    return lane;
-  }
-
-  private long getLaneId(@Nullable Lane lane) {
-    if (lane == null) {
-      return Thread.currentThread().threadId();
-    }
-    return lane.id;
-  }
-
-  private void releaseLane(@Nullable Lane lane) {
-    if (lane == null) {
-      return;
-    }
-    lane.refCount -= 1;
-    if (lane.refCount == 0) {
-      borrowedLane.remove();
-      multiLaneGenerator.release(lane);
-    }
-  }
-
-  private String guessThreadPrefix() {
-    var currentThread = Thread.currentThread();
-    checkState(currentThread.isVirtual());
-    var threadName = currentThread.getName();
-
-    // Assume the thread name has format "prefix%d"
-    for (int i = threadName.length() - 1; i > 0; i--) {
-      var ch = threadName.charAt(i);
-      if (ch < '0' || ch > '9') {
-        if (i < threadName.length() - 1) {
-          return threadName.substring(0, i + 1);
         }
-      }
-    }
-    return "Other";
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public <T> ListenableFuture<T> profileFuture(
-      ListenableFuture<T> future, String prefix, ProfilerTask type, String description) {
-    Lane lane = multiLaneGenerator.acquire(prefix);
-    if (lane == null) {
-      return future;
     }
 
-    long startTimeNanos = clock.nanoTime();
-    future.addListener(
-        () -> {
-          try {
-            completeTask(lane.id, startTimeNanos, type, description);
-          } finally {
-            multiLaneGenerator.release(lane);
-          }
-        },
-        directExecutor());
-    return future;
-  }
-
-  /**
-   * Implementation of {@link AsyncProfiler}.
-   *
-   * <p>This class is thread-compatible but not thread-safe. You should create one profiler per
-   * task.
-   */
-  public class AsyncProfilerImpl implements AsyncProfiler {
-    @Nullable private final Lane lane;
-    private final long startTimeNanos;
-    private final String description;
-
-    private AsyncProfilerImpl(String prefix, String description) {
-      this.lane = multiLaneGenerator.acquire(prefix);
-      this.startTimeNanos = clock.nanoTime();
-      this.description = description;
+    override fun globalInit(
+        startupOptions: com.google.devtools.common.options.OptionsProvider?,
+        blazeServices: Iterable<com.google.devtools.build.lib.runtime.BlazeService?>?
+    ) {
+        // This is to ensure that the profiler is available as early as possible during the server
+        // startup.
+        com.google.devtools.build.lib.profiler.Profiler.setTraceProfilerService(this)
     }
 
-    @Override
-    public SilentCloseable profile(ProfilerTask type, String description) {
-      if (!(lane != null && isProfiling(type))) {
-        return NOP;
-      }
-      long startTimeNanos = clock.nanoTime();
-      return () -> completeTask(lane.id, startTimeNanos, type, description);
+    // TODO(ulfjack): This returns incomplete data by design. Maybe we should return the histograms on
+    // stop instead? However, this is currently only called from one location in a module, and that
+    // can't call stop itself. What to do?
+    @kotlin.jvm.Synchronized
+    override fun getTasksHistograms(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.profiler.StatRecorder?> {
+        com.google.common.base.Preconditions.checkState(isActive())
+        return com.google.common.collect.ImmutableList.copyOf<com.google.devtools.build.lib.profiler.StatRecorder?>(
+            tasksHistograms
+        )
     }
 
-    @Override
-    public SilentCloseable profile(String description) {
-      return profile(ProfilerTask.INFO, description);
+    override fun nanoTimeMaybe(): Long {
+        // Note that we fall back to an actual clock instead of disabling nanoTime entirely if the
+        // profiler is not active. This is because some callers of the profiler service may use
+        // nanoTime for latency tracking even without starting the rest of the profiler features.
+        return if (isActive()) clock.nanoTime() else com.google.devtools.build.lib.clock.BlazeClock.nanoTime()
     }
 
-    @Override
-    public <T> ListenableFuture<T> profileFuture(ListenableFuture<T> future, String description) {
-      return profileFuture(future, ProfilerTask.INFO, description);
+    override fun getProfileElapsedTime(): java.time.Duration? {
+        val endTime: java.time.Duration =
+            if (isActive()) java.time.Duration.ofNanos(clock.nanoTime()) else profileEndTime
+
+        return endTime.minus(profileStartTime)
     }
 
-    @Override
-    @CanIgnoreReturnValue
-    public <T> ListenableFuture<T> profileFuture(
-        ListenableFuture<T> future, ProfilerTask type, String description) {
-      var s = profile(type, description);
-      future.addListener(s::close, directExecutor());
-      return future;
+    override fun getServerProcessCpuTime(): java.time.Duration? {
+        val cpuEndTime: java.time.Duration = if (isActive()) getProcessCpuTime() else profileCpuEndTime
+        return cpuEndTime.minus(profileCpuStartTime)
     }
 
-    @Override
-    public Runnable profileCallback(Runnable runnable, String description) {
-      return profileCallback(runnable, ProfilerTask.INFO, description);
+    override fun setVfsTypeHeuristics(
+        vfsTypeHeuristics: MutableMap<String?, out java.util.function.Predicate<in String?>?>
+    ) {
+        this.vfsTypeHeuristics = com.google.common.collect.ImmutableMap.copyOf(vfsTypeHeuristics)
     }
 
-    @Override
-    public Runnable profileCallback(Runnable runnable, ProfilerTask type, String description) {
-      var s = profile(type, description);
-      return () -> {
-        s.close();
-        runnable.run();
-      };
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class)
+    override fun start(
+        profiledTasks: MutableSet<com.google.devtools.build.lib.profiler.ProfilerTask?>,
+        stream: java.io.OutputStream?,
+        format: com.google.devtools.build.lib.profiler.TraceProfilerService.Format?,
+        outputBase: String?,
+        buildID: UUID?,
+        recordAllDurations: Boolean,
+        clock: com.google.devtools.build.lib.clock.Clock,
+        execStartTimeNanos: Long,
+        slimProfile: Boolean,
+        includePrimaryOutput: Boolean,
+        includeTargetLabel: Boolean,
+        includeConfiguration: Boolean,
+        collectTaskHistograms: Boolean
+    ) {
+        com.google.common.base.Preconditions.checkState(!active, "Profiler already active")
+
+        initHistograms()
+
+        this.profiledTasks =
+            if (profiledTasks.isEmpty()) profiledTasks else EnumSet.copyOf<com.google.devtools.build.lib.profiler.ProfilerTask?>(
+                profiledTasks
+            )
+        this.clock = clock
+        this.actionCountStartTime = java.time.Duration.ofNanos(clock.nanoTime())
+        this.actionCountTimeSeriesRef.set(
+            createTimeSeries(actionCountStartTime, ACTION_COUNT_BUCKET_DURATION)
+        )
+        this.actionCacheCountTimeSeriesRef.set(
+            createTimeSeries(actionCountStartTime, ACTION_COUNT_BUCKET_DURATION)
+        )
+        this.localActionCountTimeSeriesRef.set(
+            createTimeSeries(actionCountStartTime, ACTION_COUNT_BUCKET_DURATION)
+        )
+        this.inflightRpcTimeSeriesMapRef.set(ConcurrentHashMap<String?, com.google.devtools.build.lib.profiler.TimeSeries?>())
+        this.collectTaskHistograms = collectTaskHistograms
+        this.includePrimaryOutput = includePrimaryOutput
+        this.includeTargetLabel = includeTargetLabel
+        this.includeConfiguration = includeConfiguration
+        this.recordAllDurations = recordAllDurations
+
+        var writer: JsonTraceFileWriter? = null
+        if (stream != null && format != null) {
+            writer =
+                when (format) {
+                    com.google.devtools.build.lib.profiler.TraceProfilerService.Format.JSON_TRACE_FILE_FORMAT -> JsonTraceFileWriter(
+                        stream, execStartTimeNanos, slimProfile, outputBase, buildID
+                    )
+
+                    com.google.devtools.build.lib.profiler.TraceProfilerService.Format.JSON_TRACE_FILE_COMPRESSED_FORMAT -> JsonTraceFileWriter(
+                        GZIPOutputStream(stream),
+                        execStartTimeNanos,
+                        slimProfile,
+                        outputBase,
+                        buildID
+                    )
+                }
+            writer.start()
+        }
+        this.writerRef.set(writer)
+
+        // Activate profiler.
+        profileStartTime = java.time.Duration.ofNanos(execStartTimeNanos)
+        profileCpuStartTime = getProcessCpuTime()
+        active = true
+
+        // Start collecting Bazel and system-wide CPU metric collection.
+        this.resourceCollector.start()
     }
 
-    @Override
-    public <T> Consumer<T> profileCallback(Consumer<T> consumer, String description) {
-      return profileCallback(consumer, ProfilerTask.INFO, description);
+    // TODO(ulfjack): This returns incomplete data by design. Also see getTasksHistograms.
+    @kotlin.jvm.Synchronized
+    override fun getSlowestTasks(): Iterable<com.google.devtools.build.lib.profiler.SlowTask?> {
+        val slowestTasksByType: MutableList<Iterable<com.google.devtools.build.lib.profiler.SlowTask?>?> =
+            java.util.ArrayList<Iterable<com.google.devtools.build.lib.profiler.SlowTask?>?>()
+        for (aggregator in slowestTasks) {
+            if (aggregator != null) {
+                slowestTasksByType.add(aggregator.getSlowestTasks())
+            }
+        }
+        return com.google.common.collect.Iterables.concat<com.google.devtools.build.lib.profiler.SlowTask?>(
+            slowestTasksByType
+        )
     }
 
-    @Override
-    public <T> Consumer<T> profileCallback(
-        Consumer<T> consumer, ProfilerTask type, String description) {
-      var s = profile(type, description);
-      return t -> {
-        s.close();
-        consumer.accept(t);
-      };
+    private fun collectActionCounts() {
+        val endTime: java.time.Duration = java.time.Duration.ofNanos(clock.nanoTime())
+        val len: Int = endTime.minus(actionCountStartTime).dividedBy(ACTION_COUNT_BUCKET_DURATION).toInt() + 1
+        val counterSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?> =
+            LinkedHashMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?>()
+        val actionCountTimeSeries: com.google.devtools.build.lib.profiler.TimeSeries? = actionCountTimeSeriesRef.get()
+        if (actionCountTimeSeries != null) {
+            val actionCountValues: DoubleArray? = actionCountTimeSeries.toDoubleArray(len)
+            actionCountTimeSeriesRef.set(null)
+            counterSeriesMap.put(
+                com.google.devtools.build.lib.profiler.CounterSeriesTask("action count", "action",  /* color= */null),
+                actionCountValues
+            )
+        }
+        val actionCacheCountTimeSeries: com.google.devtools.build.lib.profiler.TimeSeries? =
+            actionCacheCountTimeSeriesRef.get()
+        if (actionCacheCountTimeSeries != null) {
+            val actionCacheCountValues: DoubleArray? = actionCacheCountTimeSeries.toDoubleArray(len)
+            actionCacheCountTimeSeriesRef.set(null)
+            counterSeriesMap.put(
+                com.google.devtools.build.lib.profiler.CounterSeriesTask(
+                    "action cache count",
+                    "local action cache",  /* color= */
+                    null
+                ),
+                actionCacheCountValues
+            )
+        }
+        if (!counterSeriesMap.isEmpty()) {
+            logCounters(counterSeriesMap, actionCountStartTime, ACTION_COUNT_BUCKET_DURATION)
+        }
+
+        val localCounterSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?> =
+            LinkedHashMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?>()
+        val localActionCountTimeSeries: com.google.devtools.build.lib.profiler.TimeSeries? =
+            localActionCountTimeSeriesRef.get()
+        if (localActionCountTimeSeries != null) {
+            val localActionCountValues: DoubleArray? = localActionCountTimeSeries.toDoubleArray(len)
+            localActionCountTimeSeriesRef.set(null)
+            localCounterSeriesMap.put(
+                com.google.devtools.build.lib.profiler.CounterSeriesTask(
+                    "action count (local)",
+                    "local action",
+                    com.google.devtools.build.lib.profiler.CounterSeriesTask.Color.DETAILED_MEMORY_DUMP
+                ),
+                localActionCountValues
+            )
+        }
+        if (hasNonZeroValues(localCounterSeriesMap)) {
+            logCounters(localCounterSeriesMap, actionCountStartTime, ACTION_COUNT_BUCKET_DURATION)
+        }
+
+        val inflightRpcTimeSeriesMap: MutableMap<String?, com.google.devtools.build.lib.profiler.TimeSeries>? =
+            inflightRpcTimeSeriesMapRef.getAndSet(null)
+        if (inflightRpcTimeSeriesMap != null) {
+            for (entry in inflightRpcTimeSeriesMap.entrySet()) {
+                val inflightRpcCounterSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?> =
+                    LinkedHashMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?>()
+                val name: String? = entry.getKey()
+                val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries = entry.getValue()
+                val values: DoubleArray? = timeSeries.toDoubleArray(len)
+                inflightRpcCounterSeriesMap.put(
+                    com.google.devtools.build.lib.profiler.CounterSeriesTask(
+                        "Inflight RPCs - " + name,
+                        name,  /* color= */
+                        null
+                    ), values
+                )
+                logCounters(
+                    inflightRpcCounterSeriesMap, actionCountStartTime, ACTION_COUNT_BUCKET_DURATION
+                )
+            }
+        }
     }
 
-    @Override
-    public void close() {
-      completeTask(lane.id, startTimeNanos, ProfilerTask.INFO, description);
-      multiLaneGenerator.release(lane);
+    private fun hasNonZeroValues(countersSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?>): Boolean {
+        return countersSeriesMap.values().stream()
+            .flatMapToDouble(java.util.function.Function { array: DoubleArray? -> java.util.Arrays.stream(array) })
+            .anyMatch(DoublePredicate { v: Double -> v != 0.0 })
     }
-  }
 
-  @Override
-  public AsyncProfiler profileAsync(String prefix, String description) {
-    return new AsyncProfilerImpl(prefix, description);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class)
+    override fun stop() {
+        if (!active) {
+            return
+        }
+        collectActionCounts()
+        resourceCollector.stop()
+        // Log a final event to update the duration of ProfilePhase.FINISH.
+        logEvent(com.google.devtools.build.lib.profiler.ProfilerTask.INFO, "Finishing")
+        try {
+            var writer: JsonTraceFileWriter? = writerRef.getAndSet(null)
+            if (writer != null) {
+                writer.shutdown()
+                writer = null
+            }
+        } finally {
+            profileCpuEndTime = getProcessCpuTime()
+            profileEndTime = java.time.Duration.ofNanos(clock.nanoTime())
+            active = false
+        }
+    }
 
-  @Override
-  public TimeSeries createTimeSeries(Duration startTime, Duration bucketDuration) {
-    return new TimeSeriesImpl(startTime, bucketDuration);
-  }
+    @kotlin.jvm.Synchronized
+    override fun clear() {
+        com.google.common.base.Preconditions.checkState(!active)
+        java.util.Arrays.fill(tasksHistograms, null)
+        profileStartTime = java.time.Duration.ZERO
+        profileEndTime = java.time.Duration.ZERO
+        profileCpuStartTime = java.time.Duration.ZERO
+        profileCpuEndTime = java.time.Duration.ZERO
+        for (aggregator in slowestTasks) {
+            if (aggregator != null) {
+                aggregator.clear()
+            }
+        }
+        multiLaneGenerator.reset()
+    }
+
+    override fun isActive(): Boolean {
+        return active
+    }
+
+    override fun isProfiling(type: com.google.devtools.build.lib.profiler.ProfilerTask?): Boolean {
+        return profiledTasks!!.contains(type)
+    }
+
+    /**
+     * Unless --record_full_profiler_data is given we drop small tasks and add their time to the
+     * parents duration.
+     */
+    private fun wasTaskSlowEnoughToRecord(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        duration: Long
+    ): Boolean {
+        return (recordAllDurations || duration >= type.minDuration)
+    }
+
+    override fun registerCounterSeriesCollector(collector: com.google.devtools.build.lib.profiler.CounterSeriesCollector?) {
+        resourceCollector.registerCounterSeriesCollector(collector)
+    }
+
+    override fun unregisterCounterSeriesCollector(collector: com.google.devtools.build.lib.profiler.CounterSeriesCollector?) {
+        resourceCollector.unregisterCounterSeriesCollector(collector)
+    }
+
+    override fun logCounters(
+        counterSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?>,
+        profileStart: java.time.Duration?,
+        bucketDuration: java.time.Duration?
+    ) {
+        val currentWriter: JsonTraceFileWriter? = writerRef.get()
+        if (isActive() && currentWriter != null) {
+            val counterSeriesTraceData: CounterSeriesTraceData =
+                CounterSeriesTraceData(counterSeriesMap, profileStart, bucketDuration)
+            currentWriter.enqueue(counterSeriesTraceData)
+        }
+    }
+
+    /**
+     * Adds task directly to the main queue bypassing task stack. Used for simple tasks that are known
+     * to not have any subtasks.
+     * 
+     * @param startTimeNanos task start time (obtained through [Profiler.nanoTimeMaybe])
+     * @param duration task duration
+     * @param type task type
+     * @param description task description. May be stored until end of build.
+     */
+    private fun logTask(
+        startTimeNanos: Long,
+        duration: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ) {
+        var duration = duration
+        val lane = borrowLane()
+        try {
+            com.google.common.base.Preconditions.checkNotNull<String?>(description)
+            com.google.common.base.Preconditions.checkState(!description.isEmpty(), "No description -> not helpful")
+            if (duration < 0) {
+                // See note in Clock#nanoTime, which is used by Profiler#nanoTimeMaybe.
+                duration = 0
+            }
+
+            val statRecorder: com.google.devtools.build.lib.profiler.StatRecorder? = tasksHistograms[type.ordinal()]
+            if (collectTaskHistograms && statRecorder != null) {
+                statRecorder.addStat(java.time.Duration.ofNanos(duration).toMillis().toInt(), description)
+            }
+
+            if (isActive() && startTimeNanos >= 0 && isProfiling(type)) {
+                // Store instance fields as local variables so they are not nulled out from under us by
+                // #clear.
+                val currentWriter: JsonTraceFileWriter? = writerRef.get()
+                if (wasTaskSlowEnoughToRecord(type, duration)) {
+                    val data: TaskData = TaskData(getLaneId(lane), startTimeNanos, type, description)
+                    data.durationNanos = duration
+                    if (currentWriter != null) {
+                        currentWriter.enqueue(data)
+                    }
+
+                    val aggregator = slowestTasks[type.ordinal()]
+
+                    if (aggregator != null) {
+                        aggregator.add(data)
+                    }
+                }
+            }
+        } finally {
+            releaseLane(lane)
+        }
+    }
+
+    override fun logSimpleTask(
+        startTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ) {
+        if (clock != null) {
+            logTask(startTimeNanos, clock.nanoTime() - startTimeNanos, type, description)
+        }
+    }
+
+    override fun logSimpleTask(
+        startTimeNanos: Long,
+        stopTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ) {
+        logTask(startTimeNanos, stopTimeNanos - startTimeNanos, type, description)
+    }
+
+    override fun logSimpleTaskDuration(
+        startTimeNanos: Long,
+        duration: java.time.Duration,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ) {
+        logTask(startTimeNanos, duration.toNanos(), type, description)
+    }
+
+    override fun logEventAtTime(
+        atTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ) {
+        logTask(atTimeNanos, 0, type, description)
+    }
+
+    override fun logEvent(type: com.google.devtools.build.lib.profiler.ProfilerTask, description: String?) {
+        logEventAtTime(clock.nanoTime(), type, description)
+    }
+
+    private fun reallyProfile(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ): com.google.devtools.build.lib.profiler.SilentCloseable {
+        val startTimeNanos: Long = clock.nanoTime()
+        val lane = borrowLane()
+        return com.google.devtools.build.lib.profiler.SilentCloseable {
+            try {
+                completeTask(getLaneId(lane), startTimeNanos, type, description)
+            } finally {
+                releaseLane(lane)
+            }
+        }
+    }
+
+    override fun profile(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ): com.google.devtools.build.lib.profiler.SilentCloseable {
+        return if (isActive() && isProfiling(type)) reallyProfile(type, description) else NOP
+    }
+
+    override fun profile(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: java.util.function.Supplier<String?>
+    ): com.google.devtools.build.lib.profiler.SilentCloseable {
+        return if (isActive() && isProfiling(type)) reallyProfile(type, description.get()) else NOP
+    }
+
+    override fun profile(description: String?): com.google.devtools.build.lib.profiler.SilentCloseable {
+        return profile(com.google.devtools.build.lib.profiler.ProfilerTask.INFO, description)
+    }
+
+    override fun profileAction(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        mnemonic: String?,
+        description: String?,
+        primaryOutput: String?,
+        targetLabel: String?,
+        configuration: String?
+    ): com.google.devtools.build.lib.profiler.SilentCloseable {
+        com.google.common.base.Preconditions.checkNotNull<String?>(description)
+        if (isActive() && isProfiling(type)) {
+            val startTimeNanos: Long = clock.nanoTime()
+            val lane = borrowLane()
+            return com.google.devtools.build.lib.profiler.SilentCloseable {
+                try {
+                    completeAction(
+                        getLaneId(lane),
+                        startTimeNanos,
+                        type,
+                        description,
+                        mnemonic,
+                        if (includePrimaryOutput) primaryOutput else null,
+                        if (includeTargetLabel) targetLabel else null,
+                        if (includeConfiguration) configuration else null
+                    )
+                } finally {
+                    releaseLane(lane)
+                }
+            }
+        } else {
+            return NOP
+        }
+    }
+
+    private fun countAction(type: com.google.devtools.build.lib.profiler.ProfilerTask?): Boolean {
+        return type == com.google.devtools.build.lib.profiler.ProfilerTask.ACTION || type == com.google.devtools.build.lib.profiler.ProfilerTask.DISCOVER_INPUTS
+    }
+
+    override fun completeTask(
+        startTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ) {
+        val lane = borrowLane()
+        try {
+            completeTask(getLaneId(lane), startTimeNanos, type, description)
+        } finally {
+            releaseLane(lane)
+        }
+    }
+
+    private fun completeTask(
+        laneId: Long,
+        startTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ) {
+        if (isActive()) {
+            val endTimeNanos: Long = clock.nanoTime()
+            val duration = endTimeNanos - startTimeNanos
+            if (wasTaskSlowEnoughToRecord(type, duration)) {
+                recordTask(TaskData(laneId, startTimeNanos, duration, type, description))
+            }
+
+            if (type == com.google.devtools.build.lib.profiler.ProfilerTask.RPC) {
+                val inflightRpcTimeSerieMap: MutableMap<String?, com.google.devtools.build.lib.profiler.TimeSeries>? =
+                    inflightRpcTimeSeriesMapRef.get()
+                if (inflightRpcTimeSerieMap != null) {
+                    val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+                        inflightRpcTimeSerieMap.computeIfAbsent(
+                            description,
+                            java.util.function.Function { unused: String? ->
+                                createTimeSeries(
+                                    actionCountStartTime,
+                                    ACTION_COUNT_BUCKET_DURATION
+                                )
+                            })
+                    timeSeries.addRange(
+                        java.time.Duration.ofNanos(startTimeNanos),
+                        java.time.Duration.ofNanos(endTimeNanos)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun completeAction(
+        threadId: Long,
+        startTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?,
+        mnemonic: String?,
+        primaryOutput: String?,
+        targetLabel: String?,
+        configuration: String?
+    ) {
+        if (isActive()) {
+            val endTimeNanos: Long = clock.nanoTime()
+            val duration = endTimeNanos - startTimeNanos
+            val shouldRecordTask = wasTaskSlowEnoughToRecord(type, duration)
+            if (shouldRecordTask) {
+                recordTask(
+                    ActionTaskData(
+                        threadId,
+                        startTimeNanos,
+                        duration,
+                        type,
+                        mnemonic,
+                        description,
+                        primaryOutput,
+                        targetLabel,
+                        configuration
+                    )
+                )
+            }
+        }
+    }
+
+    private fun recordTask(data: TaskData) {
+        val writer: JsonTraceFileWriter? = writerRef.get()
+        if (writer != null) {
+            writer.enqueue(data)
+        }
+        val endTimeNanos: Long = data.startTimeNanos + data.durationNanos
+        val actionCountTimeSeries: com.google.devtools.build.lib.profiler.TimeSeries? = actionCountTimeSeriesRef.get()
+        val actionCacheCountTimeSeries: com.google.devtools.build.lib.profiler.TimeSeries? =
+            actionCacheCountTimeSeriesRef.get()
+        val localActionCountTimeSeries: com.google.devtools.build.lib.profiler.TimeSeries? =
+            localActionCountTimeSeriesRef.get()
+        if (actionCountTimeSeries != null && countAction(data.type)) {
+            actionCountTimeSeries.addRange(
+                java.time.Duration.ofNanos(data.startTimeNanos), java.time.Duration.ofNanos(endTimeNanos)
+            )
+        }
+        if (actionCacheCountTimeSeries != null && data.type == com.google.devtools.build.lib.profiler.ProfilerTask.ACTION_CHECK) {
+            actionCacheCountTimeSeries.addRange(
+                java.time.Duration.ofNanos(data.startTimeNanos), java.time.Duration.ofNanos(endTimeNanos)
+            )
+        }
+
+        if (localActionCountTimeSeries != null && data.type == com.google.devtools.build.lib.profiler.ProfilerTask.LOCAL_ACTION_COUNTS) {
+            localActionCountTimeSeries.addRange(
+                java.time.Duration.ofNanos(data.startTimeNanos), java.time.Duration.ofNanos(endTimeNanos)
+            )
+        }
+        val aggregator = slowestTasks[data.type.ordinal()]
+        if (aggregator != null) {
+            aggregator.add(data)
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun markPhase(phase: com.google.devtools.build.lib.profiler.ProfilePhase) {
+        if (isActive() && isProfiling(com.google.devtools.build.lib.profiler.ProfilerTask.PHASE)) {
+            logEvent(com.google.devtools.build.lib.profiler.ProfilerTask.PHASE, phase.description)
+        }
+    }
+
+    private val nextLaneId: AtomicLong = AtomicLong(1000000)
+    private val multiLaneGenerator = MultiLaneGenerator()
+
+    private inner class MultiLaneGenerator {
+        private val laneGenerators: MutableMap<String?, LaneGenerator> = ConcurrentHashMap<String?, LaneGenerator>()
+
+        /**
+         * @return the lane if it's active, otherwise null.
+         */
+        fun acquire(prefix: String): Lane? {
+            if (!isActive()) {
+                return null
+            }
+            val laneGenerator: LaneGenerator =
+                laneGenerators.computeIfAbsent(
+                    prefix,
+                    java.util.function.Function { unused: String? -> LaneGenerator(prefix) })
+            return laneGenerator.acquire()
+        }
+
+        fun release(lane: Lane) {
+            val laneGenerator = lane.laneGenerator
+            laneGenerator.release(lane)
+        }
+
+        fun reset() {
+            multiLaneGenerator.laneGenerators.clear()
+        }
+    }
+
+    private class Lane(laneGenerator: LaneGenerator, id: Long) : Comparable<Lane?> {
+        private val laneGenerator: LaneGenerator
+        private val id: Long
+        private var refCount = 0
+
+        init {
+            this.laneGenerator = laneGenerator
+            this.id = id
+        }
+
+        override fun compareTo(o: Lane): Int {
+            return java.lang.Long.compare(id, o.id)
+        }
+    }
+
+    private inner class LaneGenerator(prefix: String) {
+        private val prefix: String
+        private val availableLanes: java.util.Queue<Lane?> = ConcurrentLinkedQueue<Lane?>()
+        private val count: AtomicInteger = AtomicInteger(0)
+
+        init {
+            this.prefix = prefix
+        }
+
+        fun acquire(): Lane {
+            var lane: Lane? = availableLanes.poll()
+            // It might create more virtual lanes, but it's fine for our purpose.
+            if (lane == null) {
+                lane = Lane(this, nextLaneId.getAndIncrement())
+                val newLaneIndex: Int = count.getAndIncrement()
+                val newLaneName =
+                    if (prefix.endsWith("-"))
+                        prefix + newLaneIndex + " (Virtual)"
+                    else
+                        prefix + "-" + newLaneIndex + " (Virtual)"
+                val threadMetadata: ThreadMetadata = ThreadMetadata(newLaneName, lane.id)
+                val writer: JsonTraceFileWriter? = this@TraceProfilerServiceImpl.writerRef.get()
+                if (writer != null) {
+                    writer.enqueue(threadMetadata)
+                }
+            }
+            return lane
+        }
+
+        fun release(lane: Lane?) {
+            availableLanes.offer(lane)
+        }
+    }
+
+    private val virtualThreadPrefix: java.lang.ThreadLocal<String> =
+        java.lang.ThreadLocal.withInitial<String?>(java.util.function.Supplier { this.guessThreadPrefix() })
+    private val borrowedLane: java.lang.ThreadLocal<Lane?> = java.lang.ThreadLocal.withInitial<Lane?>(
+        java.util.function.Supplier {
+            val prefix: String = virtualThreadPrefix.get()
+            val lane = multiLaneGenerator.acquire(prefix)
+            if (lane == null) {
+                return@withInitial null
+            }
+            com.google.common.base.Preconditions.checkState(lane.refCount == 0)
+            lane
+        })
+
+    init {
+        initHistograms()
+        for (task in com.google.devtools.build.lib.profiler.ProfilerTask.entries) {
+            if (task.collectsSlowestInstances) {
+                slowestTasks[task.ordinal()] = SlowestTaskAggregator()
+            }
+        }
+    }
+
+    private fun borrowLane(): Lane? {
+        if (!java.lang.Thread.currentThread().isVirtual() || !isActive()) {
+            return null
+        }
+        val lane: Lane? = borrowedLane.get()
+        if (lane == null) {
+            return null
+        }
+        lane.refCount += 1
+        return lane
+    }
+
+    private fun getLaneId(lane: Lane?): Long {
+        if (lane == null) {
+            return java.lang.Thread.currentThread().threadId()
+        }
+        return lane.id
+    }
+
+    private fun releaseLane(lane: Lane?) {
+        if (lane == null) {
+            return
+        }
+        lane.refCount -= 1
+        if (lane.refCount == 0) {
+            borrowedLane.remove()
+            multiLaneGenerator.release(lane)
+        }
+    }
+
+    private fun guessThreadPrefix(): String {
+        val currentThread: java.lang.Thread = java.lang.Thread.currentThread()
+        com.google.common.base.Preconditions.checkState(currentThread.isVirtual())
+        val threadName: String = currentThread.getName()
+
+        // Assume the thread name has format "prefix%d"
+        for (i in threadName.length() - 1 downTo 1) {
+            val ch: Char = threadName.charAt(i)
+            if (ch < '0' || ch > '9') {
+                if (i < threadName.length() - 1) {
+                    return threadName.substring(0, i + 1)
+                }
+            }
+        }
+        return "Other"
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun <T> profileFuture(
+        future: com.google.common.util.concurrent.ListenableFuture<T?>,
+        prefix: String,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask,
+        description: String?
+    ): com.google.common.util.concurrent.ListenableFuture<T?> {
+        val lane = multiLaneGenerator.acquire(prefix)
+        if (lane == null) {
+            return future
+        }
+
+        val startTimeNanos: Long = clock.nanoTime()
+        future.addListener(
+            java.lang.Runnable {
+                try {
+                    completeTask(lane.id, startTimeNanos, type, description)
+                } finally {
+                    multiLaneGenerator.release(lane)
+                }
+            },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+        return future
+    }
+
+    /**
+     * Implementation of [AsyncProfiler].
+     * 
+     * 
+     * This class is thread-compatible but not thread-safe. You should create one profiler per
+     * task.
+     */
+    inner class AsyncProfilerImpl private constructor(prefix: String, description: String?) :
+        com.google.devtools.build.lib.profiler.AsyncProfiler {
+        private val lane: Lane?
+        private val startTimeNanos: Long
+        private val description: String?
+
+        init {
+            this.lane = multiLaneGenerator.acquire(prefix)
+            this.startTimeNanos = clock.nanoTime()
+            this.description = description
+        }
+
+        override fun profile(
+            type: com.google.devtools.build.lib.profiler.ProfilerTask,
+            description: String?
+        ): com.google.devtools.build.lib.profiler.SilentCloseable {
+            if (!(lane != null && isProfiling(type))) {
+                return NOP
+            }
+            val startTimeNanos: Long = clock.nanoTime()
+            return com.google.devtools.build.lib.profiler.SilentCloseable {
+                completeTask(
+                    lane.id,
+                    startTimeNanos,
+                    type,
+                    description
+                )
+            }
+        }
+
+        override fun profile(description: String?): com.google.devtools.build.lib.profiler.SilentCloseable {
+            return profile(com.google.devtools.build.lib.profiler.ProfilerTask.INFO, description)
+        }
+
+        override fun <T> profileFuture(
+            future: com.google.common.util.concurrent.ListenableFuture<T?>,
+            description: String?
+        ): com.google.common.util.concurrent.ListenableFuture<T?> {
+            return profileFuture<T?>(future, com.google.devtools.build.lib.profiler.ProfilerTask.INFO, description)
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        override fun <T> profileFuture(
+            future: com.google.common.util.concurrent.ListenableFuture<T?>,
+            type: com.google.devtools.build.lib.profiler.ProfilerTask,
+            description: String?
+        ): com.google.common.util.concurrent.ListenableFuture<T?> {
+            val s: com.google.devtools.build.lib.profiler.SilentCloseable = profile(type, description)
+            future.addListener(
+                java.lang.Runnable { s.close() },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+            return future
+        }
+
+        override fun profileCallback(runnable: java.lang.Runnable, description: String?): java.lang.Runnable {
+            return profileCallback(runnable, com.google.devtools.build.lib.profiler.ProfilerTask.INFO, description)
+        }
+
+        override fun profileCallback(
+            runnable: java.lang.Runnable,
+            type: com.google.devtools.build.lib.profiler.ProfilerTask,
+            description: String?
+        ): java.lang.Runnable {
+            val s: com.google.devtools.build.lib.profiler.SilentCloseable = profile(type, description)
+            return java.lang.Runnable {
+                s.close()
+                runnable.run()
+            }
+        }
+
+        override fun <T> profileCallback(
+            consumer: java.util.function.Consumer<T?>,
+            description: String?
+        ): java.util.function.Consumer<T?> {
+            return profileCallback<T?>(consumer, com.google.devtools.build.lib.profiler.ProfilerTask.INFO, description)
+        }
+
+        override fun <T> profileCallback(
+            consumer: java.util.function.Consumer<T?>,
+            type: com.google.devtools.build.lib.profiler.ProfilerTask,
+            description: String?
+        ): java.util.function.Consumer<T?> {
+            val s: com.google.devtools.build.lib.profiler.SilentCloseable = profile(type, description)
+            return java.util.function.Consumer { t: T? ->
+                s.close()
+                consumer.accept(t)
+            }
+        }
+
+        override fun close() {
+            completeTask(lane.id, startTimeNanos, com.google.devtools.build.lib.profiler.ProfilerTask.INFO, description)
+            multiLaneGenerator.release(lane!!)
+        }
+    }
+
+    override fun profileAsync(
+        prefix: String,
+        description: String?
+    ): com.google.devtools.build.lib.profiler.AsyncProfiler {
+        return AsyncProfilerImpl(prefix, description)
+    }
+
+    override fun createTimeSeries(
+        startTime: java.time.Duration?,
+        bucketDuration: java.time.Duration
+    ): com.google.devtools.build.lib.profiler.TimeSeries {
+        return TimeSeriesImpl(startTime, bucketDuration)
+    }
+
+    companion object {
+        private const val HISTOGRAM_BUCKETS = 20
+
+        private val ACTION_COUNT_BUCKET_DURATION: java.time.Duration = java.time.Duration.ofMillis(200)
+
+        private val DEFAULT_VFS_TYPE_HEURISTICS: com.google.common.collect.ImmutableMap<String?, java.util.function.Predicate<in String?>?> =
+            com.google.common.collect.ImmutableMap.of<String?, java.util.function.Predicate<in String?>?>(
+                "blaze-out", java.util.regex.Pattern.compile("/blaze-out/").asPredicate(),
+                "source", com.google.common.base.Predicates.alwaysTrue<CharSequence?>()
+            )
+
+        private fun getProcessCpuTime(): java.time.Duration {
+            val bean: com.sun.management.OperatingSystemMXBean =
+                java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
+            return java.time.Duration.ofNanos(bean.getProcessCpuTime())
+        }
+
+        private val NOP: com.google.devtools.build.lib.profiler.SilentCloseable =
+            com.google.devtools.build.lib.profiler.SilentCloseable {}
+    }
 }

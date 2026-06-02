@@ -11,310 +11,193 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.StarlarkThreadContext;
-import com.google.devtools.build.lib.packages.Package.Builder.PackageLimits;
-import com.google.devtools.build.lib.packages.Package.Builder.PackageSettings;
-import com.google.devtools.build.lib.packages.Package.ConfigSettingVisibilityPolicy;
-import com.google.devtools.build.lib.packages.Package.Declarations;
-import com.google.devtools.build.lib.packages.Package.Metadata;
-import com.google.devtools.build.lib.packages.TargetRecorder.MacroNamespaceViolationException;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.Semaphore;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Module;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.SymbolGenerator;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * A piece of a {@link Package}: either the subset obtained by evaluating a BUILD file and not
+ * A piece of a [Package]: either the subset obtained by evaluating a BUILD file and not
  * expanding any symbolic macros; or the subset obtained by evaluating exactly one symbolic macro
  * instance.
- *
- * <p>To obtain a {@link Package} from a {@link PackagePiece}, use a PackageProvider or skyframe
+ * 
+ * 
+ * To obtain a [Package] from a [PackagePiece], use a PackageProvider or skyframe
  * machinery.
  */
 // TODO(https://github.com/bazelbuild/bazel/issues/23852): as a future optimization, consider adding
 // another class of package piece obtained by evaluating a set of macros.
-public abstract sealed class PackagePiece extends Packageoid
-    permits PackagePiece.ForBuildFile, PackagePiece.ForMacro {
-  /**
-   * The collection of all symbolic macro instances defined in this package piece, indexed by their
-   * name (not by {@link MacroInstance#getId id} - contrast with {@link Package#macros}). Null until
-   * the package piece is fully initialized by {@link #setMacrosByName}, in turn called by this
-   * package piece's builder's {@code finishBuild()}.
-   */
-  @Nullable private ImmutableSortedMap<String, MacroInstance> macrosByName;
+abstract class PackagePiece protected constructor(
+    metadata: com.google.devtools.build.lib.packages.Package.Metadata?,
+    declarations: Declarations?
+) : Packageoid(metadata, declarations) {
+    /**
+     * The collection of all symbolic macro instances defined in this package piece, indexed by their
+     * name (not by [id][MacroInstance.getId] - contrast with [Package.macros]). Null until
+     * the package piece is fully initialized by [.setMacrosByName], in turn called by this
+     * package piece's builder's `finishBuild()`.
+     */
+    private var macrosByName: com.google.common.collect.ImmutableSortedMap<String?, MacroInstance?>? = null
 
-  public abstract PackagePieceIdentifier getIdentifier();
+    abstract fun getIdentifier(): PackagePieceIdentifier?
 
-  /**
-   * Returns a (read-only, ordered) iterable of all the targets belonging to this package piece
-   * which are instances of the specified class. Doesn't search in any other package pieces.
-   */
-  public <T extends Target> Iterable<T> getTargets(Class<T> targetClass) {
-    return Iterables.filter(targets.values(), targetClass);
-  }
-
-  @Override
-  public Target getTarget(String targetName) throws NoSuchTargetException {
-    Target target = targets.get(targetName);
-    if (target != null) {
-      return target;
+    /**
+     * Returns a (read-only, ordered) iterable of all the targets belonging to this package piece
+     * which are instances of the specified class. Doesn't search in any other package pieces.
+     */
+    fun <T : com.google.devtools.build.lib.packages.Target?> getTargets(targetClass: java.lang.Class<T?>): Iterable<T?> {
+        return com.google.common.collect.Iterables.filter<T?>(targets.values(), targetClass)
     }
 
-    throw noSuchTargetException(targetName);
-  }
+    @Throws(NoSuchTargetException::class)
+    override fun getTarget(targetName: String?): com.google.devtools.build.lib.packages.Target {
+        val target: com.google.devtools.build.lib.packages.Target? = targets.get(targetName)
+        if (target != null) {
+            return target
+        }
 
-  /**
-   * Returns the macro instance declared in this package piece having the provided name; or null if
-   * no such macro instance exists.
-   */
-  @Nullable
-  public MacroInstance getMacroByName(String name) {
-    return macrosByName.get(name);
-  }
-
-  /** Returns a list of all the macro instances defined in this package piece, ordered by name. */
-  public ImmutableList<MacroInstance> getMacros() {
-    return ImmutableList.copyOf(macrosByName.values());
-  }
-
-  private NoSuchTargetException noSuchTargetException(String targetName) {
-    Label label;
-    try {
-      label = Label.create(getPackageIdentifier(), targetName);
-    } catch (LabelSyntaxException e) {
-      throw new IllegalArgumentException(targetName, e);
+        throw noSuchTargetException(targetName)
     }
 
-    if (getMetadata().succinctTargetNotFoundErrors()) {
-      return new NoSuchTargetException(
-          label,
-          String.format("target '%s' not declared in %s", targetName, getShortDescription()));
-    } else {
-      String alternateTargetSuggestion =
-          Package.getAlternateTargetSuggestion(getMetadata(), targetName, targets.keySet());
-      return new NoSuchTargetException(
-          label,
-          String.format(
-              "target '%s' not declared in %s%s",
-              targetName, getShortDescription(), alternateTargetSuggestion));
-    }
-  }
-
-  @Override
-  public String toString() {
-    return String.format(
-        "PackagePiece(%s defined by %s)=%s",
-        getIdentifier().getCanonicalFormName(),
-        getCanonicalFormDefinedBy(),
-        targets != null ? getTargets(Rule.class) : "initializing...");
-  }
-
-  /**
-   * Returns the canonical form of the BUILD file label if this is a {@link
-   * PackagePiece.ForBuildFile}, or the canonical form of the macro class's declaring .bzl label and
-   * macro name, in {@code label%name} format, if this is a {@link PackagePiece.ForMacro}.
-   */
-  public abstract String getCanonicalFormDefinedBy();
-
-  /**
-   * Sets the macros map for this package piece. Intended only to be called by this package piece's
-   * builder.
-   *
-   * @param macros a collection of macro instances, which must have unique names.
-   */
-  protected void setMacrosByName(Collection<MacroInstance> macros) {
-    ImmutableSortedMap.Builder<String, MacroInstance> macrosByName =
-        ImmutableSortedMap.naturalOrder();
-    for (MacroInstance macro : macros) {
-      macrosByName.put(macro.getName(), macro);
-    }
-    this.macrosByName = macrosByName.buildOrThrow();
-  }
-
-  protected PackagePiece(Metadata metadata, Declarations declarations) {
-    super(metadata, declarations);
-  }
-
-  /**
-   * A {@link PackagePiece} obtained by evaluating a BUILD file, without expanding any symbolic
-   * macros.
-   */
-  public static final class ForBuildFile extends PackagePiece {
-    private final PackagePieceIdentifier.ForBuildFile identifier;
-    // Can be changed during BUILD file evaluation due to exports_files() modifying its visibility.
-    // Cannot be in declarations because, since it's a Target, it holds a back reference to this
-    // PackagePiece.ForBuildFile object.
-    private InputFile buildFile;
-
-    @Override
-    public PackagePieceIdentifier.ForBuildFile getIdentifier() {
-      return identifier;
+    /**
+     * Returns the macro instance declared in this package piece having the provided name; or null if
+     * no such macro instance exists.
+     */
+    fun getMacroByName(name: String?): MacroInstance? {
+        return macrosByName.get(name)
     }
 
-    @Override
-    public String getCanonicalFormDefinedBy() {
-      return getMetadata().buildFileLabel().getCanonicalForm();
+    /** Returns a list of all the macro instances defined in this package piece, ordered by name.  */
+    fun getMacros(): com.google.common.collect.ImmutableList<MacroInstance?> {
+        return com.google.common.collect.ImmutableList.copyOf<MacroInstance?>(macrosByName.values())
     }
 
-    @Override
-    public String getShortDescription() {
-      return String.format("top-level package piece defined by %s", getCanonicalFormDefinedBy());
+    private fun noSuchTargetException(targetName: String?): NoSuchTargetException {
+        val label: Label?
+        try {
+            label = Label.create(getPackageIdentifier(), targetName)
+        } catch (e: LabelSyntaxException) {
+            throw java.lang.IllegalArgumentException(targetName, e)
+        }
+
+        if (getMetadata().succinctTargetNotFoundErrors) {
+            return NoSuchTargetException(
+                label,
+                java.lang.String.format("target '%s' not declared in %s", targetName, getShortDescription())
+            )
+        } else {
+            val alternateTargetSuggestion: String =
+                com.google.devtools.build.lib.packages.Package.Companion.getAlternateTargetSuggestion(
+                    getMetadata(),
+                    targetName,
+                    targets.keySet()
+                )
+            return NoSuchTargetException(
+                label,
+                java.lang.String.format(
+                    "target '%s' not declared in %s%s",
+                    targetName, getShortDescription(), alternateTargetSuggestion
+                )
+            )
+        }
     }
 
-    /** Returns the InputFile target for this package's BUILD file. */
-    public InputFile getBuildFile() {
-      return buildFile;
+    override fun toString(): String {
+        return java.lang.String.format(
+            "PackagePiece(%s defined by %s)=%s",
+            getIdentifier().getCanonicalFormName(),
+            getCanonicalFormDefinedBy(),
+            if (targets != null) getTargets<com.google.devtools.build.lib.packages.Rule?>(com.google.devtools.build.lib.packages.Rule::class.java) else "initializing..."
+        )
     }
 
-    @Override
-    public void checkMacroNamespaceCompliance(Target target) {
-      checkArgument(this.equals(target.getPackageoid()), "Target must belong to this packageoid");
-      // No-op: no macros to violate.
+    /**
+     * Returns the canonical form of the BUILD file label if this is a [ ], or the canonical form of the macro class's declaring .bzl label and
+     * macro name, in `label%name` format, if this is a [PackagePiece.ForMacro].
+     */
+    abstract fun getCanonicalFormDefinedBy(): String?
+
+    /**
+     * Sets the macros map for this package piece. Intended only to be called by this package piece's
+     * builder.
+     * 
+     * @param macros a collection of macro instances, which must have unique names.
+     */
+    protected fun setMacrosByName(macros: MutableCollection<MacroInstance>) {
+        val macrosByName: com.google.common.collect.ImmutableSortedMap.Builder<String?, MacroInstance?> =
+            com.google.common.collect.ImmutableSortedMap.naturalOrder<String?, MacroInstance?>()
+        for (macro in macros) {
+            macrosByName.put(macro.getName(), macro)
+        }
+        this.macrosByName = macrosByName.buildOrThrow()
     }
 
-    private ForBuildFile(PackagePieceIdentifier.ForBuildFile identifier, Metadata metadata) {
-      super(metadata, new Declarations.Builder());
-      checkArgument(identifier.getPackageIdentifier().equals(metadata.packageIdentifier()));
-      this.identifier = identifier;
-    }
+    /**
+     * A [PackagePiece] obtained by evaluating a BUILD file, without expanding any symbolic
+     * macros.
+     */
+    class ForBuildFile private constructor(
+        identifier: com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForBuildFile,
+        metadata: com.google.devtools.build.lib.packages.Package.Metadata
+    ) : PackagePiece(metadata, com.google.devtools.build.lib.packages.Package.Declarations.Builder()) {
+        private val identifier: com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForBuildFile
 
-    /** Creates a new {@link PackagePiece.ForBuildFile.Builder}. */
-    // TODO(bazel-team): when JEP 482 ("flexible constructors") is enabled, we can remove this
-    // method and use the builder's constructor directly.
-    public static Builder newBuilder(
-        PackageSettings packageSettings,
-        PackagePieceIdentifier.ForBuildFile identifier,
-        RootedPath filename,
-        String workspaceName,
-        Optional<String> associatedModuleName,
-        Optional<String> associatedModuleVersion,
-        boolean noImplicitFileExport,
-        boolean simplifyUnconditionalSelectsInRuleAttrs,
-        RepositoryMapping repositoryMapping,
-        RepositoryMapping mainRepositoryMapping,
-        @Nullable Semaphore cpuBoundSemaphore,
-        PackageOverheadEstimator packageOverheadEstimator,
-        @Nullable ImmutableMap<Location, String> generatorMap,
-        @Nullable ConfigSettingVisibilityPolicy configSettingVisibilityPolicy,
-        @Nullable Globber globber,
-        boolean enableNameConflictChecking,
-        boolean trackFullMacroInformation,
-        PackageLimits packageLimits) {
-      Metadata metadata =
-          Metadata.builder()
-              .packageIdentifier(identifier.getPackageIdentifier())
-              .buildFilename(filename)
-              .workspaceName(workspaceName)
-              .repositoryMapping(repositoryMapping)
-              .associatedModuleName(associatedModuleName)
-              .associatedModuleVersion(associatedModuleVersion)
-              .configSettingVisibilityPolicy(configSettingVisibilityPolicy)
-              .succinctTargetNotFoundErrors(packageSettings.succinctTargetNotFoundErrors())
-              .build();
-      ForBuildFile forBuildFile = new ForBuildFile(identifier, metadata);
-      return new Builder(
-          forBuildFile,
-          packageSettings.precomputeTransitiveLoads(),
-          noImplicitFileExport,
-          simplifyUnconditionalSelectsInRuleAttrs,
-          mainRepositoryMapping,
-          cpuBoundSemaphore,
-          packageOverheadEstimator,
-          generatorMap,
-          globber,
-          enableNameConflictChecking,
-          trackFullMacroInformation,
-          packageLimits);
-    }
+        // Can be changed during BUILD file evaluation due to exports_files() modifying its visibility.
+        // Cannot be in declarations because, since it's a Target, it holds a back reference to this
+        // PackagePiece.ForBuildFile object.
+        private var buildFile: InputFile? = null
 
-    /** A builder for {@link PackagePiece.ForBuildFile} objects. */
-    public static class Builder extends Package.AbstractBuilder {
+        override fun getIdentifier(): com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForBuildFile {
+            return identifier
+        }
 
-      /** Retrieves this object from a Starlark thread. Returns null if not present. */
-      @Nullable
-      public static Builder fromOrNull(StarlarkThread thread) {
-        StarlarkThreadContext ctx = thread.getThreadLocal(StarlarkThreadContext.class);
-        return ctx instanceof Builder builder ? builder : null;
-      }
+        override fun getCanonicalFormDefinedBy(): String {
+            return getMetadata().buildFileLabel.getCanonicalForm()
+        }
 
-      public PackagePiece.ForBuildFile getPackagePiece() {
-        return (PackagePiece.ForBuildFile) pkg;
-      }
+        override fun getShortDescription(): String? {
+            return java.lang.String.format("top-level package piece defined by %s", getCanonicalFormDefinedBy())
+        }
 
-      @Override
-      @CanIgnoreReturnValue
-      public Builder setLoads(Iterable<Module> directLoads) {
-        return (Builder) super.setLoads(directLoads);
-      }
+        /** Returns the InputFile target for this package's BUILD file.  */
+        fun getBuildFile(): InputFile? {
+            return buildFile
+        }
 
-      @Override
-      public boolean eagerlyExpandMacros() {
-        return false;
-      }
+        override fun checkMacroNamespaceCompliance(target: com.google.devtools.build.lib.packages.Target) {
+            com.google.common.base.Preconditions.checkArgument(
+                this == target.getPackageoid(),
+                "Target must belong to this packageoid"
+            )
+            // No-op: no macros to violate.
+        }
 
-      @Override
-      @CanIgnoreReturnValue
-      public Builder buildPartial() throws NoSuchPackageException {
-        return (Builder) super.buildPartial();
-      }
+        init {
+            com.google.common.base.Preconditions.checkArgument(
+                identifier.getPackageIdentifier().equals(metadata.packageIdentifier)
+            )
+            this.identifier = identifier
+        }
 
-      @Override
-      protected void setBuildFile(InputFile buildFile) {
-        ((ForBuildFile) pkg).buildFile = checkNotNull(buildFile);
-      }
-
-      @Override
-      public ForBuildFile finishBuild() {
-        return (ForBuildFile) super.finishBuild();
-      }
-
-      @Override
-      protected void packageoidInitializationHook() {
-        super.packageoidInitializationHook();
-        getPackagePiece().computationSteps = getComputationSteps();
-        getPackagePiece().setMacrosByName(recorder.getMacroMap().values());
-      }
-
-      private Builder(
-          ForBuildFile forBuildFile,
-          boolean precomputeTransitiveLoads,
-          boolean noImplicitFileExport,
-          boolean simplifyUnconditionalSelectsInRuleAttrs,
-          RepositoryMapping mainRepositoryMapping,
-          @Nullable Semaphore cpuBoundSemaphore,
-          PackageOverheadEstimator packageOverheadEstimator,
-          @Nullable ImmutableMap<Location, String> generatorMap,
-          @Nullable Globber globber,
-          boolean enableNameConflictChecking,
-          boolean trackFullMacroInformation,
-          PackageLimits packageLimits) {
-        super(
+        /** A builder for [PackagePiece.ForBuildFile] objects.  */
+        class Builder private constructor(
+            forBuildFile: ForBuildFile,
+            precomputeTransitiveLoads: Boolean,
+            noImplicitFileExport: Boolean,
+            simplifyUnconditionalSelectsInRuleAttrs: Boolean,
+            mainRepositoryMapping: RepositoryMapping?,
+            cpuBoundSemaphore: Semaphore?,
+            packageOverheadEstimator: PackageOverheadEstimator?,
+            generatorMap: com.google.common.collect.ImmutableMap<net.starlark.java.syntax.Location?, String?>?,
+            globber: Globber?,
+            enableNameConflictChecking: Boolean,
+            trackFullMacroInformation: Boolean,
+            packageLimits: PackageLimits?
+        ) : com.google.devtools.build.lib.packages.Package.AbstractBuilder(
             forBuildFile.getMetadata(),
             forBuildFile,
-            SymbolGenerator.create(forBuildFile.getIdentifier()),
+            net.starlark.java.eval.SymbolGenerator.create<com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForBuildFile?>(
+                forBuildFile.getIdentifier()
+            ),
             precomputeTransitiveLoads,
             noImplicitFileExport,
             simplifyUnconditionalSelectsInRuleAttrs,
@@ -324,220 +207,338 @@ public abstract sealed class PackagePiece extends Packageoid
             generatorMap,
             globber,
             enableNameConflictChecking,
-            trackFullMacroInformation,
-            /* enableTargetMapSnapshotting= */ false,
-            packageLimits);
-      }
-    }
-  }
+            trackFullMacroInformation,  /* enableTargetMapSnapshotting= */
+            false,
+            packageLimits
+        ) {
+            fun getPackagePiece(): ForBuildFile? {
+                return pkg as ForBuildFile?
+            }
 
-  /** A {@link PackagePiece} obtained by evaluating a symbolic macro instance. */
-  public static final class ForMacro extends PackagePiece {
-    private final PackagePieceIdentifier.ForMacro identifier;
-    private final MacroInstance evaluatedMacro;
-    // Null until the package piece is fully initialized by its builder's {@code finishBuild()}.
-    @Nullable private ImmutableSet<String> macroNamespaceViolations = null;
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            override fun setLoads(directLoads: Iterable<net.starlark.java.eval.Module?>?): Builder? {
+                return super.setLoads(directLoads) as Builder?
+            }
 
-    @Override
-    public PackagePieceIdentifier.ForMacro getIdentifier() {
-      return identifier;
-    }
+            override fun eagerlyExpandMacros(): Boolean {
+                return false
+            }
 
-    @Override
-    public String getCanonicalFormDefinedBy() {
-      MacroClass macroClass = evaluatedMacro.getMacroClass();
-      return String.format(
-          "%s%%%s", macroClass.getDefiningBzlLabel().getCanonicalForm(), macroClass.getName());
-    }
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            @Throws(NoSuchPackageException::class)
+            override fun buildPartial(): Builder? {
+                return super.buildPartial() as Builder?
+            }
 
-    @Override
-    public String getShortDescription() {
-      return String.format(
-          "package piece for %smacro %s defined by %s",
-          getEvaluatedMacro().getMacroClass().isFinalizer() ? "finalizer " : "",
-          getIdentifier().getCanonicalFormName(),
-          getCanonicalFormDefinedBy());
-    }
+            override fun setBuildFile(buildFile: InputFile?) {
+                (pkg as ForBuildFile).buildFile =
+                    com.google.common.base.Preconditions.checkNotNull<InputFile?>(buildFile)
+            }
 
-    public MacroInstance getEvaluatedMacro() {
-      return evaluatedMacro;
-    }
+            override fun finishBuild(): ForBuildFile? {
+                return super.finishBuild() as ForBuildFile?
+            }
 
-    /**
-     * Returns the ID of the package of the .bzl file declaring the macro which was expanded to
-     * produce this package piece; it is considered to be the location in which this package piece's
-     * targets are declared for visibility purposes.
-     */
-    public PackageIdentifier getDeclaringPackage() {
-      return evaluatedMacro.getMacroClass().getDefiningBzlLabel().getPackageIdentifier();
-    }
+            override fun packageoidInitializationHook() {
+                super.packageoidInitializationHook()
+                getPackagePiece().computationSteps = getComputationSteps()
+                getPackagePiece().setMacrosByName(recorder.getMacroMap().values())
+            }
 
-    @Override
-    public void checkMacroNamespaceCompliance(Target target)
-        throws MacroNamespaceViolationException {
-      checkArgument(this.equals(target.getPackageoid()), "Target must belong to this packageoid");
-      checkNotNull(
-          macroNamespaceViolations,
-          "This method is only available after the package piece has been fully initialized.");
-      if (macroNamespaceViolations.contains(target.getName())) {
-        throw new MacroNamespaceViolationException(
-            String.format(
-                "Target %s declared in symbolic macro '%s' violates macro naming rules and cannot"
-                    + " be built. %s",
-                target.getLabel(), evaluatedMacro.getName(), TargetRecorder.MACRO_NAMING_RULES),
-            target);
-      }
-    }
+            companion object {
+                /** Retrieves this object from a Starlark thread. Returns null if not present.  */
+                fun fromOrNull(thread: net.starlark.java.eval.StarlarkThread): Builder? {
+                    val ctx: StarlarkThreadContext? =
+                        thread.getThreadLocal<StarlarkThreadContext?>(StarlarkThreadContext::class.java)
+                    return if (ctx is Builder) ctx else null
+                }
+            }
+        }
 
-    private static void checkIdentifierMatchesMacro(
-        PackagePieceIdentifier.ForMacro identifier, MacroInstance macro) {
-      checkArgument(
-          macro.getPackageMetadata().packageIdentifier().equals(identifier.getPackageIdentifier()));
-      checkArgument(macro.getName().equals(identifier.getInstanceName()));
-    }
-
-    private ForMacro(
-        Metadata metadata,
-        Declarations declarations,
-        MacroInstance evaluatedMacro,
-        PackagePieceIdentifier parentIdentifier) {
-      super(metadata, declarations.checkImmutable());
-      checkArgument(
-          metadata
-              .packageIdentifier()
-              .equals(evaluatedMacro.getPackageMetadata().packageIdentifier()));
-      checkArgument(metadata.packageIdentifier().equals(parentIdentifier.getPackageIdentifier()));
-      if (evaluatedMacro.getParent() != null) {
-        checkIdentifierMatchesMacro(
-            (PackagePieceIdentifier.ForMacro) parentIdentifier, evaluatedMacro.getParent());
-      } else {
-        checkArgument(parentIdentifier instanceof PackagePieceIdentifier.ForBuildFile);
-      }
-      this.identifier =
-          new PackagePieceIdentifier.ForMacro(
-              metadata.packageIdentifier(), parentIdentifier, evaluatedMacro.getName());
-      this.evaluatedMacro = evaluatedMacro;
-    }
-
-    /** Creates a new {@link PackagePiece.ForMacro.Builder}. */
-    // TODO(bazel-team): when JEP 482 ("flexible constructors") is enabled, we can remove this
-    // method and use the builder's constructor directly.
-    public static Builder newBuilder(
-        Metadata metadata,
-        Declarations declarations,
-        MacroInstance evaluatedMacro,
-        PackagePieceIdentifier parentIdentifier,
-        boolean simplifyUnconditionalSelectsInRuleAttrs,
-        RepositoryMapping mainRepositoryMapping,
-        @Nullable Semaphore cpuBoundSemaphore,
-        PackageOverheadEstimator packageOverheadEstimator,
-        boolean enableNameConflictChecking,
-        boolean trackFullMacroInformation,
-        PackageLimits packageLimits,
-        @Nullable ImmutableMap<String, Rule> existingRulesMapForFinalizer) {
-      ForMacro forMacro = new ForMacro(metadata, declarations, evaluatedMacro, parentIdentifier);
-      return new Builder(
-          forMacro,
-          simplifyUnconditionalSelectsInRuleAttrs,
-          mainRepositoryMapping,
-          cpuBoundSemaphore,
-          packageOverheadEstimator,
-          enableNameConflictChecking,
-          trackFullMacroInformation,
-          packageLimits,
-          existingRulesMapForFinalizer);
+        companion object {
+            /** Creates a new [PackagePiece.ForBuildFile.Builder].  */ // TODO(bazel-team): when JEP 482 ("flexible constructors") is enabled, we can remove this
+            // method and use the builder's constructor directly.
+            fun newBuilder(
+                packageSettings: PackageSettings,
+                identifier: com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForBuildFile,
+                filename: RootedPath?,
+                workspaceName: String?,
+                associatedModuleName: java.util.Optional<String?>?,
+                associatedModuleVersion: java.util.Optional<String?>?,
+                noImplicitFileExport: Boolean,
+                simplifyUnconditionalSelectsInRuleAttrs: Boolean,
+                repositoryMapping: RepositoryMapping?,
+                mainRepositoryMapping: RepositoryMapping?,
+                cpuBoundSemaphore: Semaphore?,
+                packageOverheadEstimator: PackageOverheadEstimator?,
+                generatorMap: com.google.common.collect.ImmutableMap<net.starlark.java.syntax.Location?, String?>?,
+                configSettingVisibilityPolicy: ConfigSettingVisibilityPolicy?,
+                globber: Globber?,
+                enableNameConflictChecking: Boolean,
+                trackFullMacroInformation: Boolean,
+                packageLimits: PackageLimits?
+            ): Builder {
+                val metadata: com.google.devtools.build.lib.packages.Package.Metadata =
+                    com.google.devtools.build.lib.packages.Package.Metadata.Companion.builder()
+                        .packageIdentifier(identifier.getPackageIdentifier())
+                        .buildFilename(filename)
+                        .workspaceName(workspaceName)
+                        .repositoryMapping(repositoryMapping)
+                        .associatedModuleName(associatedModuleName)
+                        .associatedModuleVersion(associatedModuleVersion)
+                        .configSettingVisibilityPolicy(configSettingVisibilityPolicy)
+                        .succinctTargetNotFoundErrors(packageSettings.succinctTargetNotFoundErrors())
+                        .build()
+                val forBuildFile: ForBuildFile =
+                    com.google.devtools.build.lib.packages.PackagePiece.ForBuildFile(identifier, metadata)
+                return com.google.devtools.build.lib.packages.PackagePiece.ForBuildFile.Builder(
+                    forBuildFile,
+                    packageSettings.precomputeTransitiveLoads(),
+                    noImplicitFileExport,
+                    simplifyUnconditionalSelectsInRuleAttrs,
+                    mainRepositoryMapping,
+                    cpuBoundSemaphore,
+                    packageOverheadEstimator,
+                    generatorMap,
+                    globber,
+                    enableNameConflictChecking,
+                    trackFullMacroInformation,
+                    packageLimits
+                )
+            }
+        }
     }
 
-    /** A builder for {@link PackagePieceForMacro} objects. */
-    public static class Builder extends TargetDefinitionContext {
-      // Non-null iff this is a builder for a finalizer package piece and the non-finalizer package
-      // pieces that it depends upon are not in error. Used for native.existing_rules() and
-      // native.existing_rule().
-      @Nullable private final ImmutableMap<String, Rule> existingRulesMapForFinalizer;
+    /** A [PackagePiece] obtained by evaluating a symbolic macro instance.  */
+    class ForMacro private constructor(
+        metadata: com.google.devtools.build.lib.packages.Package.Metadata,
+        declarations: Declarations,
+        evaluatedMacro: MacroInstance,
+        parentIdentifier: PackagePieceIdentifier
+    ) : PackagePiece(metadata, declarations.checkImmutable()) {
+        private val identifier: com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForMacro
+        private val evaluatedMacro: MacroInstance
 
-      /** Retrieves this object from a Starlark thread. Returns null if not present. */
-      @Nullable
-      public static Builder fromOrNull(StarlarkThread thread) {
-        StarlarkThreadContext ctx = thread.getThreadLocal(StarlarkThreadContext.class);
-        return ctx instanceof Builder builder ? builder : null;
-      }
+        // Null until the package piece is fully initialized by its builder's {@code finishBuild()}.
+        private var macroNamespaceViolations: com.google.common.collect.ImmutableSet<String?>? = null
 
-      public PackagePiece.ForMacro getPackagePiece() {
-        return (PackagePiece.ForMacro) pkg;
-      }
+        override fun getIdentifier(): com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForMacro {
+            return identifier
+        }
 
-      @Override
-      public boolean eagerlyExpandMacros() {
-        return false;
-      }
+        override fun getCanonicalFormDefinedBy(): String? {
+            val macroClass: MacroClass = evaluatedMacro.getMacroClass()
+            return java.lang.String.format(
+                "%s%%%s", macroClass.getDefiningBzlLabel().getCanonicalForm(), macroClass.getName()
+            )
+        }
 
-      /** Can only be called for a finalizer package piece. */
-      @Override
-      Map<String, Rule> getRulesSnapshotView() {
-        checkState(
-            getPackagePiece().getEvaluatedMacro().getMacroClass().isFinalizer(),
-            "%s is defined by a non-finalizer macro",
-            getPackagePiece().getShortDescription());
-        return checkNotNull(
-            existingRulesMapForFinalizer,
-            "native.existing_rules map was not set in builder for %s",
-            getPackagePiece().getShortDescription());
-      }
+        override fun getShortDescription(): String? {
+            return java.lang.String.format(
+                "package piece for %smacro %s defined by %s",
+                if (getEvaluatedMacro().getMacroClass().isFinalizer()) "finalizer " else "",
+                getIdentifier().getCanonicalFormName(),
+                getCanonicalFormDefinedBy()
+            )
+        }
 
-      /** Can only be called for a finalizer package piece. */
-      @Nullable
-      @Override
-      Rule getNonFinalizerInstantiatedRule(String name) {
-        return getRulesSnapshotView().get(name);
-      }
+        fun getEvaluatedMacro(): MacroInstance {
+            return evaluatedMacro
+        }
 
-      @Override
-      @CanIgnoreReturnValue
-      public Builder buildPartial() throws NoSuchPackageException {
-        return (Builder) super.buildPartial();
-      }
+        /**
+         * Returns the ID of the package of the .bzl file declaring the macro which was expanded to
+         * produce this package piece; it is considered to be the location in which this package piece's
+         * targets are declared for visibility purposes.
+         */
+        fun getDeclaringPackage(): PackageIdentifier {
+            return evaluatedMacro.getMacroClass().getDefiningBzlLabel().getPackageIdentifier()
+        }
 
-      @Override
-      public ForMacro finishBuild() {
-        return (ForMacro) super.finishBuild();
-      }
+        @Throws(MacroNamespaceViolationException::class)
+        override fun checkMacroNamespaceCompliance(target: com.google.devtools.build.lib.packages.Target) {
+            com.google.common.base.Preconditions.checkArgument(
+                this == target.getPackageoid(),
+                "Target must belong to this packageoid"
+            )
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSet<String?>?>(
+                macroNamespaceViolations,
+                "This method is only available after the package piece has been fully initialized."
+            )
+            if (macroNamespaceViolations.contains(target.getName())) {
+                throw MacroNamespaceViolationException(
+                    java.lang.String.format(
+                        "Target %s declared in symbolic macro '%s' violates macro naming rules and cannot"
+                                + " be built. %s",
+                        target.getLabel(), evaluatedMacro.getName(), TargetRecorder.Companion.MACRO_NAMING_RULES
+                    ),
+                    target
+                )
+            }
+        }
 
-      @Override
-      protected void packageoidInitializationHook() {
-        getPackagePiece().computationSteps = getComputationSteps();
-        super.packageoidInitializationHook();
-        ForMacro forMacro = getPackagePiece();
-        forMacro.setMacrosByName(recorder.getMacroMap().values());
-        forMacro.macroNamespaceViolations =
-            ImmutableSet.copyOf(recorder.getMacroNamespaceViolatingTargets().keySet());
-      }
+        init {
+            com.google.common.base.Preconditions.checkArgument(
+                metadata
+                    .packageIdentifier
+                    .equals(evaluatedMacro.getPackageMetadata().packageIdentifier)
+            )
+            com.google.common.base.Preconditions.checkArgument(metadata.packageIdentifier.equals(parentIdentifier.getPackageIdentifier()))
+            if (evaluatedMacro.getParent() != null) {
+                com.google.devtools.build.lib.packages.PackagePiece.ForMacro.Companion.checkIdentifierMatchesMacro(
+                    parentIdentifier as com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForMacro,
+                    evaluatedMacro.getParent()
+                )
+            } else {
+                com.google.common.base.Preconditions.checkArgument(parentIdentifier is com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForBuildFile)
+            }
+            this.identifier =
+                com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForMacro(
+                    metadata.packageIdentifier, parentIdentifier, evaluatedMacro.getName()
+                )
+            this.evaluatedMacro = evaluatedMacro
+        }
 
-      private Builder(
-          ForMacro forMacro,
-          boolean simplifyUnconditionalSelectsInRuleAttrs,
-          RepositoryMapping mainRepositoryMapping,
-          @Nullable Semaphore cpuBoundSemaphore,
-          PackageOverheadEstimator packageOverheadEstimator,
-          boolean enableNameConflictChecking,
-          boolean trackFullMacroInformation,
-          PackageLimits packageLimits,
-          @Nullable ImmutableMap<String, Rule> existingRulesMapForFinalizer) {
-        super(
+        /** A builder for [PackagePieceForMacro] objects.  */
+        class Builder private constructor(
+            forMacro: ForMacro,
+            simplifyUnconditionalSelectsInRuleAttrs: Boolean,
+            mainRepositoryMapping: RepositoryMapping?,
+            cpuBoundSemaphore: Semaphore?,
+            packageOverheadEstimator: PackageOverheadEstimator?,
+            enableNameConflictChecking: Boolean,
+            trackFullMacroInformation: Boolean,
+            packageLimits: PackageLimits?,
+            existingRulesMapForFinalizer: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.packages.Rule?>?
+        ) : TargetDefinitionContext(
             forMacro.getMetadata(),
             forMacro,
-            SymbolGenerator.create(forMacro.getIdentifier()),
+            net.starlark.java.eval.SymbolGenerator.create<com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForMacro?>(
+                forMacro.getIdentifier()
+            ),
             simplifyUnconditionalSelectsInRuleAttrs,
             mainRepositoryMapping,
             cpuBoundSemaphore,
-            packageOverheadEstimator,
-            /* generatorMap= */ null,
-            /* globber= */ null,
+            packageOverheadEstimator,  /* generatorMap= */
+            null,  /* globber= */
+            null,
             enableNameConflictChecking,
-            trackFullMacroInformation,
-            /* enableTargetMapSnapshotting= */ false,
-            packageLimits);
-        this.existingRulesMapForFinalizer = existingRulesMapForFinalizer;
-      }
+            trackFullMacroInformation,  /* enableTargetMapSnapshotting= */
+            false,
+            packageLimits
+        ) {
+            // Non-null iff this is a builder for a finalizer package piece and the non-finalizer package
+            // pieces that it depends upon are not in error. Used for native.existing_rules() and
+            // native.existing_rule().
+            private val existingRulesMapForFinalizer: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.packages.Rule?>?
+
+            fun getPackagePiece(): ForMacro {
+                return pkg as ForMacro
+            }
+
+            override fun eagerlyExpandMacros(): Boolean {
+                return false
+            }
+
+            /** Can only be called for a finalizer package piece.  */
+            override fun getRulesSnapshotView(): MutableMap<String?, com.google.devtools.build.lib.packages.Rule?> {
+                com.google.common.base.Preconditions.checkState(
+                    getPackagePiece().getEvaluatedMacro().getMacroClass().isFinalizer(),
+                    "%s is defined by a non-finalizer macro",
+                    getPackagePiece().getShortDescription()
+                )
+                return
+                com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.packages.Rule?>?>(
+                    existingRulesMapForFinalizer,
+                    "native.existing_rules map was not set in builder for %s",
+                    getPackagePiece().getShortDescription()
+                )
+            }
+
+            /** Can only be called for a finalizer package piece.  */
+            override fun getNonFinalizerInstantiatedRule(name: String?): com.google.devtools.build.lib.packages.Rule? {
+                return getRulesSnapshotView().get(name)
+            }
+
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            @Throws(NoSuchPackageException::class)
+            override fun buildPartial(): Builder? {
+                return super.buildPartial() as Builder?
+            }
+
+            override fun finishBuild(): ForMacro? {
+                return super.finishBuild() as ForMacro?
+            }
+
+            override fun packageoidInitializationHook() {
+                getPackagePiece().computationSteps = getComputationSteps()
+                super.packageoidInitializationHook()
+                val forMacro = getPackagePiece()
+                forMacro.setMacrosByName(recorder.getMacroMap().values())
+                forMacro.macroNamespaceViolations =
+                    com.google.common.collect.ImmutableSet.copyOf<String?>(
+                        recorder.getMacroNamespaceViolatingTargets().keySet()
+                    )
+            }
+
+            init {
+                this.existingRulesMapForFinalizer = existingRulesMapForFinalizer
+            }
+
+            companion object {
+                /** Retrieves this object from a Starlark thread. Returns null if not present.  */
+                fun fromOrNull(thread: net.starlark.java.eval.StarlarkThread): Builder? {
+                    val ctx: StarlarkThreadContext? =
+                        thread.getThreadLocal<StarlarkThreadContext?>(StarlarkThreadContext::class.java)
+                    return if (ctx is Builder) ctx else null
+                }
+            }
+        }
+
+        companion object {
+            private fun checkIdentifierMatchesMacro(
+                identifier: com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForMacro, macro: MacroInstance
+            ) {
+                com.google.common.base.Preconditions.checkArgument(
+                    macro.getPackageMetadata().packageIdentifier.equals(identifier.getPackageIdentifier())
+                )
+                com.google.common.base.Preconditions.checkArgument(macro.getName() == identifier.getInstanceName())
+            }
+
+            /** Creates a new [PackagePiece.ForMacro.Builder].  */ // TODO(bazel-team): when JEP 482 ("flexible constructors") is enabled, we can remove this
+            // method and use the builder's constructor directly.
+            fun newBuilder(
+                metadata: com.google.devtools.build.lib.packages.Package.Metadata,
+                declarations: Declarations,
+                evaluatedMacro: MacroInstance,
+                parentIdentifier: PackagePieceIdentifier,
+                simplifyUnconditionalSelectsInRuleAttrs: Boolean,
+                mainRepositoryMapping: RepositoryMapping?,
+                cpuBoundSemaphore: Semaphore?,
+                packageOverheadEstimator: PackageOverheadEstimator?,
+                enableNameConflictChecking: Boolean,
+                trackFullMacroInformation: Boolean,
+                packageLimits: PackageLimits?,
+                existingRulesMapForFinalizer: com.google.common.collect.ImmutableMap<String?, com.google.devtools.build.lib.packages.Rule?>?
+            ): Builder {
+                val forMacro: ForMacro = com.google.devtools.build.lib.packages.PackagePiece.ForMacro(
+                    metadata,
+                    declarations,
+                    evaluatedMacro,
+                    parentIdentifier
+                )
+                return com.google.devtools.build.lib.packages.PackagePiece.ForMacro.Builder(
+                    forMacro,
+                    simplifyUnconditionalSelectsInRuleAttrs,
+                    mainRepositoryMapping,
+                    cpuBoundSemaphore,
+                    packageOverheadEstimator,
+                    enableNameConflictChecking,
+                    trackFullMacroInformation,
+                    packageLimits,
+                    existingRulesMapForFinalizer
+                )
+            }
+        }
     }
-  }
 }

@@ -11,255 +11,292 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventservice.client
 
-package com.google.devtools.build.lib.buildeventservice.client;
+import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient
+import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.CommandContext
+import java.time.Instant
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.time.Instant;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.Future;
-import javax.annotation.Nullable;
+/** Interface used to abstract the Stubby and gRPC client implementations.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface BuildEventServiceClient {
+    /** Context for a build command.  */
+    @kotlin.jvm.JvmRecord
+    data class CommandContext(
+        val buildId: String?,
+        val invocationId: String?,
+        val attemptNumber: Int,
+        val keywords: MutableSet<String?>?,
+        val projectId: String?,
+        val checkPrecedingLifecycleEvents: Boolean
+    ) {
+        /** Builder for [CommandContext].  */
+        class Builder private constructor() {
+            private var buildId: String? = null
+            private var invocationId: String? = null
+            private var attemptNumber = 0
+            private var keywords: MutableSet<String?>? = null
+            private var projectId: String? = null
+            private var checkPrecedingLifecycleEvents = false
 
-/** Interface used to abstract the Stubby and gRPC client implementations. */
-@SkybridgeInterface
-public interface BuildEventServiceClient {
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun setBuildId(buildId: String?): Builder {
+                this.buildId = buildId
+                return this
+            }
 
-  /** Context for a build command. */
-  public record CommandContext(
-      String buildId,
-      String invocationId,
-      int attemptNumber,
-      Set<String> keywords,
-      @Nullable String projectId,
-      boolean checkPrecedingLifecycleEvents) {
-    public CommandContext {
-      Objects.requireNonNull(buildId, "buildId");
-      Objects.requireNonNull(invocationId, "invocationId");
-      Objects.requireNonNull(keywords, "keywords");
-      if (attemptNumber < 1) {
-        throw new IllegalArgumentException("attemptNumber must be >= 1");
-      }
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun setInvocationId(invocationId: String?): Builder {
+                this.invocationId = invocationId
+                return this
+            }
+
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun setAttemptNumber(attemptNumber: Int): Builder {
+                this.attemptNumber = attemptNumber
+                return this
+            }
+
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun setKeywords(keywords: MutableSet<String?>?): Builder {
+                this.keywords = keywords
+                return this
+            }
+
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun setProjectId(projectId: String?): Builder {
+                this.projectId = projectId
+                return this
+            }
+
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun setCheckPrecedingLifecycleEvents(checkPrecedingLifecycleEvents: Boolean): Builder {
+                this.checkPrecedingLifecycleEvents = checkPrecedingLifecycleEvents
+                return this
+            }
+
+            fun build(): CommandContext {
+                return CommandContext(
+                    buildId,
+                    invocationId,
+                    attemptNumber,
+                    keywords,
+                    projectId,
+                    checkPrecedingLifecycleEvents
+                )
+            }
+        }
+
+        init {
+            java.util.Objects.requireNonNull<String?>(buildId, "buildId")
+            java.util.Objects.requireNonNull<String?>(invocationId, "invocationId")
+            java.util.Objects.requireNonNull<MutableSet<String?>?>(keywords, "keywords")
+            require(attemptNumber >= 1) { "attemptNumber must be >= 1" }
+        }
+
+        companion object {
+            @kotlin.jvm.JvmStatic
+            fun builder(): Builder {
+                return com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.CommandContext.Builder()
+            }
+        }
     }
 
-    public static Builder builder() {
-      return new Builder();
+    /** The status of an invocation.  */
+    enum class InvocationStatus {
+        /** No information is available about the invocation status.  */
+        UNKNOWN,
+
+        /** The invocation succeeded.  */
+        SUCCEEDED,
+
+        /** The invocation failed.  */
+        FAILED,
     }
 
-    /** Builder for {@link CommandContext}. */
-    public static final class Builder {
-      private String buildId;
-      private String invocationId;
-      private int attemptNumber;
-      private Set<String> keywords;
-      private String projectId;
-      private boolean checkPrecedingLifecycleEvents;
+    /** A lifecycle event.  */
+    interface LifecycleEvent {
+        /** The time at which the event occurred.  */
+        fun eventTime(): Instant?
 
-      private Builder() {}
+        /** The lifecycle event signalling that the build was enqueued.  */
+        class BuildEnqueued(eventTime: Instant?) : LifecycleEvent {
+            val eventTime: Instant?
 
-      @CanIgnoreReturnValue
-      public Builder setBuildId(String buildId) {
-        this.buildId = buildId;
-        return this;
-      }
+            init {
+                this.eventTime = eventTime
+            }
+        }
 
-      @CanIgnoreReturnValue
-      public Builder setInvocationId(String invocationId) {
-        this.invocationId = invocationId;
-        return this;
-      }
+        /** The lifecycle event signalling that the invocation was started.  */
+        class InvocationStarted(eventTime: Instant?) : LifecycleEvent {
+            val eventTime: Instant?
 
-      @CanIgnoreReturnValue
-      public Builder setAttemptNumber(int attemptNumber) {
-        this.attemptNumber = attemptNumber;
-        return this;
-      }
+            init {
+                this.eventTime = eventTime
+            }
+        }
 
-      @CanIgnoreReturnValue
-      public Builder setKeywords(Set<String> keywords) {
-        this.keywords = keywords;
-        return this;
-      }
+        /**
+         * The lifecycle event signalling that the invocation was finished.
+         * 
+         * @param status the invocation status
+         */
+        class InvocationFinished(eventTime: Instant?, status: InvocationStatus?) : LifecycleEvent {
+            val eventTime: Instant?
+            val status: InvocationStatus?
 
-      @CanIgnoreReturnValue
-      public Builder setProjectId(@Nullable String projectId) {
-        this.projectId = projectId;
-        return this;
-      }
+            init {
+                this.eventTime = eventTime
+                this.status = status
+            }
+        }
 
-      @CanIgnoreReturnValue
-      public Builder setCheckPrecedingLifecycleEvents(boolean checkPrecedingLifecycleEvents) {
-        this.checkPrecedingLifecycleEvents = checkPrecedingLifecycleEvents;
-        return this;
-      }
+        /**
+         * The lifecycle event signalling that the build was finished.
+         * 
+         * @param status the invocation status
+         */
+        class BuildFinished(eventTime: Instant?, status: InvocationStatus?) : LifecycleEvent {
+            val eventTime: Instant?
+            val status: InvocationStatus?
 
-      public CommandContext build() {
-        return new CommandContext(
-            buildId,
-            invocationId,
-            attemptNumber,
-            keywords,
-            projectId,
-            checkPrecedingLifecycleEvents);
-      }
-    }
-  }
-
-  /** The status of an invocation. */
-  enum InvocationStatus {
-    /** No information is available about the invocation status. */
-    UNKNOWN,
-    /** The invocation succeeded. */
-    SUCCEEDED,
-    /** The invocation failed. */
-    FAILED,
-  }
-
-  /** A lifecycle event. */
-  sealed interface LifecycleEvent {
-    /** The time at which the event occurred. */
-    Instant eventTime();
-
-    /** The lifecycle event signalling that the build was enqueued. */
-    record BuildEnqueued(Instant eventTime) implements LifecycleEvent {}
-
-    /** The lifecycle event signalling that the invocation was started. */
-    record InvocationStarted(Instant eventTime) implements LifecycleEvent {}
-
-    /**
-     * The lifecycle event signalling that the invocation was finished.
-     *
-     * @param status the invocation status
-     */
-    record InvocationFinished(Instant eventTime, InvocationStatus status)
-        implements LifecycleEvent {}
-
-    /**
-     * The lifecycle event signalling that the build was finished.
-     *
-     * @param status the invocation status
-     */
-    record BuildFinished(Instant eventTime, InvocationStatus status) implements LifecycleEvent {}
-  }
-
-  /** An event sent over a {@link StreamContext}. */
-  sealed interface StreamEvent {
-    /** The time at which the event occurred. */
-    Instant eventTime();
-
-    /** The sequence number of the event. */
-    long sequenceNumber();
-
-    /**
-     * An event containing a {@link BuildEventStreamProtos.BuildEvent}.
-     *
-     * @param payload the {@link BuildEventStreamProtos.BuildEvent} in wire format
-     */
-    @SuppressWarnings("ArrayRecordComponent")
-    record BazelEvent(Instant eventTime, long sequenceNumber, byte[] payload)
-        implements StreamEvent {}
-
-    /** An event signalling the end of the stream. */
-    record StreamFinished(Instant eventTime, long sequenceNumber) implements StreamEvent {}
-  }
-
-  /** Callback for ACKed build events. */
-  @FunctionalInterface
-  interface AckCallback {
-    /**
-     * Called whenever an ACK from the BES server is received. ACKs are expected to be received in
-     * sequence. Implementations must be thread-safe.
-     */
-    void apply(long sequenceNumber);
-  }
-
-  /** The status of a stream. */
-  public interface StreamStatus {
-    /** Returns whether the status is successful. */
-    boolean isOk();
-
-    /** Returns whether the status is retriable. */
-    boolean isRetriable();
-
-    /** Returns whether the status indicates a failed precondition. */
-    boolean isFailedPrecondition();
-
-    /** Returns an error message for this status. */
-    String getErrorMessage();
-  }
-
-  /** An exception with an underlying {@link StreamStatus}. */
-  public class StreamException extends Exception {
-    private final StreamStatus status;
-
-    public StreamException(StreamStatus status, @Nullable Throwable cause) {
-      super(status.getErrorMessage(), cause);
-      this.status = status;
+            init {
+                this.eventTime = eventTime
+                this.status = status
+            }
+        }
     }
 
-    /** Returns the underlying {@link StreamStatus}. */
-    public StreamStatus getStatus() {
-      return status;
+    /** An event sent over a [StreamContext].  */
+    interface StreamEvent {
+        /** The time at which the event occurred.  */
+        fun eventTime(): Instant?
+
+        /** The sequence number of the event.  */
+        fun sequenceNumber(): Long
+
+        /**
+         * An event containing a [BuildEventStreamProtos.BuildEvent].
+         * 
+         * @param payload the [BuildEventStreamProtos.BuildEvent] in wire format
+         */
+        class BazelEvent(eventTime: Instant?, sequenceNumber: Long, payload: ByteArray?) : StreamEvent {
+            val eventTime: Instant?
+            val sequenceNumber: Long
+            val payload: ByteArray?
+
+            init {
+                this.eventTime = eventTime
+                this.sequenceNumber = sequenceNumber
+                this.payload = payload
+            }
+        }
+
+        /** An event signalling the end of the stream.  */
+        class StreamFinished(eventTime: Instant?, sequenceNumber: Long) : StreamEvent {
+            val eventTime: Instant?
+            val sequenceNumber: Long
+
+            init {
+                this.eventTime = eventTime
+                this.sequenceNumber = sequenceNumber
+            }
+        }
     }
-  }
 
-  /** The reason why a stream is being aborted. */
-  enum AbortReason {
-    /** The operation was cancelled. */
-    CANCELLED,
-    /** A precondition was failed. */
-    FAILED_PRECONDITION,
-  }
+    /** Callback for ACKed build events.  */
+    fun interface AckCallback {
+        /**
+         * Called whenever an ACK from the BES server is received. ACKs are expected to be received in
+         * sequence. Implementations must be thread-safe.
+         */
+        fun apply(sequenceNumber: Long)
+    }
 
-  /** A handle to a bidirectional stream. */
-  interface StreamContext {
+    /** The status of a stream.  */
+    interface StreamStatus {
+        /** Returns whether the status is successful.  */
+        @kotlin.jvm.JvmField
+        val isOk: Boolean
+
+        /** Returns whether the status is retriable.  */
+        val isRetriable: Boolean
+
+        /** Returns whether the status indicates a failed precondition.  */
+        val isFailedPrecondition: Boolean
+
+        /** Returns an error message for this status.  */
+        @kotlin.jvm.JvmField
+        val errorMessage: String?
+    }
+
+    /** An exception with an underlying [StreamStatus].  */
+    class StreamException(
+        /** Returns the underlying [StreamStatus].  */
+        val status: StreamStatus, cause: Throwable?
+    ) : java.lang.Exception(status.errorMessage, cause)
+
+    /** The reason why a stream is being aborted.  */
+    enum class AbortReason {
+        /** The operation was cancelled.  */
+        CANCELLED,
+
+        /** A precondition was failed.  */
+        FAILED_PRECONDITION,
+    }
+
+    /** A handle to a bidirectional stream.  */
+    interface StreamContext {
+        /**
+         * The completed status of the stream. The future will never fail, but in case of error will
+         * contain a corresponding status.
+         */
+        @kotlin.jvm.JvmField
+        val status: java.util.concurrent.Future<StreamStatus?>?
+
+        /**
+         * Sends a [StreamEvent] over the currently open stream. In case of error, this method
+         * will fail silently and report the error via the [Future] returned by [ ][.getStatus].
+         * 
+         * 
+         * This method may block due to flow control.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun sendOverStream(streamEvent: StreamEvent?)
+
+        /**
+         * Half closes the currently opened stream. This method does not block. Callers should block on
+         * the future returned by [.getStatus] in order to make sure that all `ackCallback` calls have been received.
+         */
+        fun halfCloseStream()
+
+        /**
+         * Closes the currently opened stream with an error. This method does not block. Callers should
+         * block on the future returned by [.getStatus] in order to make sure that all
+         * ackCallback calls have been received. This method is NOOP if the stream was already finished.
+         */
+        fun abortStream(reason: AbortReason?, description: String?)
+    }
+
+    /** Makes a blocking RPC call that publishes a [LifecycleEvent].  */
+    @Throws(
+        com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient.StreamException::class,
+        java.lang.InterruptedException::class
+    )
+    fun publish(commandContext: CommandContext?, lifecycleEvent: LifecycleEvent?)
 
     /**
-     * The completed status of the stream. The future will never fail, but in case of error will
-     * contain a corresponding status.
+     * Starts a new stream with the given [CommandContext] and [AckCallback]. Callers must
+     * wait on the returned future contained in the [StreamContext] in order to guarantee that
+     * all callback calls have been received.
      */
-    Future<StreamStatus> getStatus();
+    @Throws(java.lang.InterruptedException::class)
+    fun openStream(commandContext: CommandContext?, callback: AckCallback?): StreamContext?
 
     /**
-     * Sends a {@link StreamEvent} over the currently open stream. In case of error, this method
-     * will fail silently and report the error via the {@link Future} returned by {@link
-     * #getStatus()}.
-     *
-     * <p>This method may block due to flow control.
+     * Called once to dispose resources that this client might be holding (such as thread pools). This
+     * should be the last method called on this object.
      */
-    void sendOverStream(StreamEvent streamEvent) throws InterruptedException;
-
-    /**
-     * Half closes the currently opened stream. This method does not block. Callers should block on
-     * the future returned by {@link #getStatus()} in order to make sure that all {@code
-     * ackCallback} calls have been received.
-     */
-    void halfCloseStream();
-
-    /**
-     * Closes the currently opened stream with an error. This method does not block. Callers should
-     * block on the future returned by {@link #getStatus()} in order to make sure that all
-     * ackCallback calls have been received. This method is NOOP if the stream was already finished.
-     */
-    void abortStream(AbortReason reason, @Nullable String description);
-  }
-
-  /** Makes a blocking RPC call that publishes a {@link LifecycleEvent}. */
-  void publish(CommandContext commandContext, LifecycleEvent lifecycleEvent)
-      throws StreamException, InterruptedException;
-
-  /**
-   * Starts a new stream with the given {@link CommandContext} and {@link AckCallback}. Callers must
-   * wait on the returned future contained in the {@link StreamContext} in order to guarantee that
-   * all callback calls have been received.
-   */
-  StreamContext openStream(CommandContext commandContext, AckCallback callback)
-      throws InterruptedException;
-
-  /**
-   * Called once to dispose resources that this client might be holding (such as thread pools). This
-   * should be the last method called on this object.
-   */
-  void shutdown();
+    fun shutdown()
 }

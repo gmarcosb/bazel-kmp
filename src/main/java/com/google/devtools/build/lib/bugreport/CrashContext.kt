@@ -11,157 +11,140 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bugreport;
+package com.google.devtools.build.lib.bugreport
 
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.common.base.MoreObjects
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.events.Event
+import com.google.devtools.build.lib.events.EventHandler
+import com.google.errorprone.annotations.CanIgnoreReturnValue
 
-/** Context describing when a {@link Crash} occurred and how it should be handled. */
-public final class CrashContext {
+/** Context describing when a [Crash] occurred and how it should be handled.  */
+class CrashContext private constructor(private val haltJvm: Boolean, private val returnIfCrashInProgress: Boolean) {
+    var args: ImmutableList<String?> = ImmutableList.of<String?>()
+        private set
+    private var sendBugReport = true
+    var extraOomInfo: String? = ""
+        private set
 
-  /**
-   * Creates a {@link CrashContext} that instructs {@link BugReporter} to halt the JVM when handling
-   * a crash.
-   *
-   * <p>This should only be used when it is not feasible to conduct an orderly shutdown, for example
-   * a crash in an async thread.
-   */
-  public static CrashContext halt() {
-    return new CrashContext(/* haltJvm= */ true, /* returnIfCrashInProgress= */ false);
-  }
+    /**
+     * Sets the path at which to write a heap dump when handling [OutOfMemoryError].
+     * 
+     * 
+     * The path *must* end in `.hprof` for the heap dump to succeed.
+     * 
+     * 
+     * If not called, there will be no heap dump.
+     */
+    @kotlin.jvm.JvmField
+    var heapDumpPath: String? = null
+    var eventHandler: EventHandler? =
+        EventHandler { event: Event? -> System.err.println(event!!.getKind().toString() + ": " + event.getMessage()) }
+        private set
 
-  /**
-   * Creates a {@link CrashContext} that instructs {@link BugReporter} <em>not</em> to halt the JVM
-   * when handling a crash.
-   *
-   * <p>The caller is responsible for terminating the server with an appropriate exit code.
-   */
-  public static CrashContext keepAlive() {
-    return new CrashContext(/* haltJvm= */ false, /* returnIfCrashInProgress= */ false);
-  }
+    /** Sets the arguments that [BugReporter] should include with the bug report.  */
+    @CanIgnoreReturnValue
+    fun withArgs(vararg args: String?): CrashContext {
+        this.args = ImmutableList.copyOf<String?>(args)
+        return this
+    }
 
-  /**
-   * Creates a {@link CrashContext} that instructs {@link BugReporter} to halt the JVM when handling
-   * a crash if there is no other crash in progress, and return otherwise.
-   *
-   * <p>This should only be used when it is not feasible to conduct an orderly shutdown, for example
-   * a crash in an async thread, and where that async thread must make progress while another crash
-   * is already shutting down the {@code BlazeRuntime}. This can prevent deadlocks during shutdown.
-   */
-  public static CrashContext haltOrReturnIfCrashInProgress() {
-    return new CrashContext(/* haltJvm= */ true, /* returnIfCrashInProgress= */ true);
-  }
+    /** Sets the arguments that [BugReporter] should include with the bug report.  */
+    @CanIgnoreReturnValue
+    fun withArgs(args: MutableList<String?>): CrashContext {
+        this.args = ImmutableList.copyOf<String?>(args)
+        return this
+    }
 
-  private final boolean haltJvm;
-  private ImmutableList<String> args = ImmutableList.of();
-  private boolean sendBugReport = true;
-  private String extraOomInfo = "";
-  @Nullable private String heapDumpPath = null;
-  private EventHandler eventHandler =
-      event -> System.err.println(event.getKind() + ": " + event.getMessage());
-  private final boolean returnIfCrashInProgress;
+    /** Disables bug reporting.  */
+    @CanIgnoreReturnValue
+    fun withoutBugReport(): CrashContext {
+        sendBugReport = false
+        return this
+    }
 
-  private CrashContext(boolean haltJvm, boolean returnIfCrashInProgress) {
-    this.haltJvm = haltJvm;
-    this.returnIfCrashInProgress = returnIfCrashInProgress;
-  }
+    /**
+     * Sets a custom additional message that should be including when handling an [ ].
+     */
+    @CanIgnoreReturnValue
+    fun withExtraOomInfo(extraOomInfo: String?): CrashContext {
+        this.extraOomInfo = extraOomInfo
+        return this
+    }
 
-  /** Sets the arguments that {@link BugReporter} should include with the bug report. */
-  @CanIgnoreReturnValue
-  public CrashContext withArgs(String... args) {
-    this.args = ImmutableList.copyOf(args);
-    return this;
-  }
+    /**
+     * Sets the [EventHandler] that should be notified about the [EventKind.FATAL] crash
+     * event.
+     * 
+     * 
+     * If this method is not called, the event is printed to [System.err].
+     */
+    @CanIgnoreReturnValue
+    fun reportingTo(eventHandler: EventHandler?): CrashContext {
+        this.eventHandler = eventHandler
+        return this
+    }
 
-  /** Sets the arguments that {@link BugReporter} should include with the bug report. */
-  @CanIgnoreReturnValue
-  public CrashContext withArgs(List<String> args) {
-    this.args = ImmutableList.copyOf(args);
-    return this;
-  }
+    fun shouldHaltJvm(): Boolean {
+        return haltJvm
+    }
 
-  /** Disables bug reporting. */
-  @CanIgnoreReturnValue
-  public CrashContext withoutBugReport() {
-    sendBugReport = false;
-    return this;
-  }
+    fun shouldSendBugReport(): Boolean {
+        return sendBugReport
+    }
 
-  /**
-   * Sets a custom additional message that should be including when handling an {@link
-   * OutOfMemoryError}.
-   */
-  @CanIgnoreReturnValue
-  public CrashContext withExtraOomInfo(String extraOomInfo) {
-    this.extraOomInfo = extraOomInfo;
-    return this;
-  }
+    fun returnIfCrashInProgress(): Boolean {
+        return returnIfCrashInProgress
+    }
 
-  /**
-   * Sets the path at which to write a heap dump when handling {@link OutOfMemoryError}.
-   *
-   * <p>The path <em>must</em> end in {@code .hprof} for the heap dump to succeed.
-   *
-   * <p>If not called, there will be no heap dump.
-   */
-  public void setHeapDumpPath(String heapDumpPath) {
-    this.heapDumpPath = heapDumpPath;
-  }
+    override fun toString(): String {
+        return MoreObjects.toStringHelper(this)
+            .add("haltJvm", haltJvm)
+            .add("args", args)
+            .add("sendBugReport", sendBugReport)
+            .add("extraOomInfo", extraOomInfo)
+            .add("eventHandler", eventHandler)
+            .toString()
+    }
 
-  /**
-   * Sets the {@link EventHandler} that should be notified about the {@link EventKind#FATAL} crash
-   * event.
-   *
-   * <p>If this method is not called, the event is printed to {@link System#err}.
-   */
-  @CanIgnoreReturnValue
-  public CrashContext reportingTo(EventHandler eventHandler) {
-    this.eventHandler = eventHandler;
-    return this;
-  }
+    companion object {
+        /**
+         * Creates a [CrashContext] that instructs [BugReporter] to halt the JVM when handling
+         * a crash.
+         * 
+         * 
+         * This should only be used when it is not feasible to conduct an orderly shutdown, for example
+         * a crash in an async thread.
+         */
+        @kotlin.jvm.JvmStatic
+        fun halt(): CrashContext {
+            return CrashContext( /* haltJvm= */true,  /* returnIfCrashInProgress= */false)
+        }
 
-  boolean shouldHaltJvm() {
-    return haltJvm;
-  }
+        /**
+         * Creates a [CrashContext] that instructs [BugReporter] *not* to halt the JVM
+         * when handling a crash.
+         * 
+         * 
+         * The caller is responsible for terminating the server with an appropriate exit code.
+         */
+        @kotlin.jvm.JvmStatic
+        fun keepAlive(): CrashContext {
+            return CrashContext( /* haltJvm= */false,  /* returnIfCrashInProgress= */false)
+        }
 
-  ImmutableList<String> getArgs() {
-    return args;
-  }
-
-  boolean shouldSendBugReport() {
-    return sendBugReport;
-  }
-
-  String getExtraOomInfo() {
-    return extraOomInfo;
-  }
-
-  @Nullable
-  String getHeapDumpPath() {
-    return heapDumpPath;
-  }
-
-  EventHandler getEventHandler() {
-    return eventHandler;
-  }
-
-  boolean returnIfCrashInProgress() {
-    return returnIfCrashInProgress;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("haltJvm", haltJvm)
-        .add("args", args)
-        .add("sendBugReport", sendBugReport)
-        .add("extraOomInfo", extraOomInfo)
-        .add("eventHandler", eventHandler)
-        .toString();
-  }
+        /**
+         * Creates a [CrashContext] that instructs [BugReporter] to halt the JVM when handling
+         * a crash if there is no other crash in progress, and return otherwise.
+         * 
+         * 
+         * This should only be used when it is not feasible to conduct an orderly shutdown, for example
+         * a crash in an async thread, and where that async thread must make progress while another crash
+         * is already shutting down the `BlazeRuntime`. This can prevent deadlocks during shutdown.
+         */
+        @kotlin.jvm.JvmStatic
+        fun haltOrReturnIfCrashInProgress(): CrashContext {
+            return CrashContext( /* haltJvm= */true,  /* returnIfCrashInProgress= */true)
+        }
+    }
 }

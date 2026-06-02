@@ -11,56 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.compacthashset;
+package com.google.devtools.build.lib.collect.compacthashset
 
-import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec.DeferredValue
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-/** Codec implementation for {@link CompactHashSet}. */
-@SuppressWarnings("rawtypes")
-final class CompactHashSetCodec extends DeferredObjectCodec<CompactHashSet> {
-  @Override
-  public Class<CompactHashSet> getEncodedClass() {
-    return CompactHashSet.class;
-  }
+/** Codec implementation for [CompactHashSet].  */
+internal class CompactHashSetCodec :
+    DeferredObjectCodec<com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<*>?>() {
+    val encodedClass: java.lang.Class<com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<*>?>
+        get() = com.google.devtools.build.lib.collect.compacthashset.CompactHashSet::class.java
 
-  @Override
-  public void serialize(
-      SerializationContext context, CompactHashSet obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codedOut.writeInt32NoTag(obj.size());
-    for (Object elt : obj) {
-      context.serialize(elt, codedOut);
-    }
-  }
-
-  @Override
-  public DeferredValue<CompactHashSet> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int size = codedIn.readInt32();
-    var builder = new Builder(size);
-    for (int i = 0; i < size; i++) {
-      context.deserializeArrayElement(codedIn, builder.elements, i);
-    }
-    return builder;
-  }
-
-  private static final class Builder implements DeferredValue<CompactHashSet> {
-    private final Object[] elements;
-
-    private Builder(int size) {
-      this.elements = new Object[size];
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(
+        context: SerializationContext,
+        obj: com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<*>,
+        codedOut: CodedOutputStream
+    ) {
+        codedOut.writeInt32NoTag(obj.size())
+        for (elt in obj) {
+            context.serialize(elt, codedOut)
+        }
     }
 
-    @Override
-    public CompactHashSet call() {
-      return CompactHashSet.create(elements);
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeDeferred(
+        context: AsyncDeserializationContext, codedIn: CodedInputStream
+    ): DeferredValue<com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<*>?> {
+        val size: Int = codedIn.readInt32()
+        val builder: Builder = com.google.devtools.build.lib.collect.compacthashset.CompactHashSetCodec.Builder(size)
+        for (i in 0..<size) {
+            context.deserializeArrayElement(codedIn, builder.elements, i)
+        }
+        return builder
     }
-  }
+
+    private class Builder(size: Int) :
+        DeferredValue<com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<*>?> {
+        private val elements: Array<Any?>
+
+        init {
+            this.elements = arrayOfNulls<Any>(size)
+        }
+
+        override fun call(): com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<*> {
+            return com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.create<Any?>(*elements)
+        }
+    }
 }

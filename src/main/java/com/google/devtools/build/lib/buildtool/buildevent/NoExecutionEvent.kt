@@ -11,10 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool.buildevent
 
-package com.google.devtools.build.lib.buildtool.buildevent;
+import com.google.devtools.build.lib.events.ExtendedEventHandler
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-
-/** Event sent at the end of the analysis phase, if no execution of the target is requested. */
-public class NoExecutionEvent implements ExtendedEventHandler.Postable {}
+/** Event sent at the end of the analysis phase, if no execution of the target is requested.  */
+class NoExecutionEvent : ExtendedEventHandler.Postable

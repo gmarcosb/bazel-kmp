@@ -11,146 +11,126 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool.buildevent
 
-package com.google.devtools.build.lib.buildtool.buildevent;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.BlazeVersionInfo;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.JavaVersionInfo;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.buildeventstream.ProgressEvent;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.runtime.CommandLineEvent;
-import com.google.devtools.build.lib.util.NetUtil;
-import com.google.devtools.build.lib.util.UserUtils;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.protobuf.util.Timestamps;
-import javax.annotation.Nullable;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.analysis.BlazeDirectories
+import com.google.devtools.build.lib.profiler.Profiler
+import com.google.devtools.build.lib.profiler.ProfilerTask
+import com.google.devtools.build.lib.util.NetUtil
+import com.google.devtools.build.lib.vfs.FileSystemUtils
 
 /**
  * This event is fired from BuildTool#startRequest(). At this point, the set of target patters are
  * known, but have yet to be parsed.
  */
 @AutoValue
-public abstract class BuildStartingEvent implements BuildEvent {
-  BuildStartingEvent() {}
+abstract class BuildStartingEvent internal constructor() : BuildEvent {
+    /** Returns the name of output file system.  */
+    abstract fun outputFileSystem(): String?
 
-  /** Returns the name of output file system. */
-  public abstract String outputFileSystem();
+    /**
+     * Returns whether the build uses in-memory [ ][com.google.devtools.build.lib.vfs.OutputService.ActionFileSystemType.inMemoryFileSystem].
+     */
+    abstract fun usesInMemoryFileSystem(): Boolean
 
-  /**
-   * Returns whether the build uses in-memory {@link
-   * com.google.devtools.build.lib.vfs.OutputService.ActionFileSystemType#inMemoryFileSystem()}.
-   */
-  public abstract boolean usesInMemoryFileSystem();
+    /** Returns the active BuildRequest.  */
+    abstract fun request(): BuildRequest?
 
-  /** Returns the active BuildRequest. */
-  public abstract BuildRequest request();
+    abstract fun workspace(): String?
 
-  @Nullable
-  abstract String workspace();
+    abstract fun pwd(): String?
 
-  abstract String pwd();
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.buildStartedId()
 
-  /**
-   * Construct the BuildStartingEvent
-   *
-   * @param directories the server directories
-   * @param outputService the output service
-   * @param request the build request
-   */
-  public static BuildStartingEvent create(
-      BlazeDirectories directories, OutputService outputService, BuildRequest request) {
-    return create(
-        getOutputFileSystemName(directories, outputService),
-        outputService != null && outputService.actionFileSystemType().inMemoryFileSystem(),
-        request,
-        directories.getWorkspace() != null ? directories.getWorkspace().toString() : null,
-        directories.getWorkingDirectory().toString());
-  }
+    val childrenEvents: ImmutableList<BuildEventId>
+        get() = ImmutableList.of<BuildEventId?>(
+            ProgressEvent.Companion.INITIAL_PROGRESS_UPDATE,
+            BuildEventIdUtil.unstructuredCommandlineId(),
+            BuildEventIdUtil.structuredCommandlineId(CommandLineEvent.OriginalCommandLineEvent.LABEL),
+            BuildEventIdUtil.structuredCommandlineId(CommandLineEvent.CanonicalCommandLineEvent.LABEL),
+            BuildEventIdUtil.structuredCommandlineId(CommandLineEvent.ToolCommandLineEvent.LABEL),
+            BuildEventIdUtil.buildMetadataId(),
+            BuildEventIdUtil.optionsParsedId(),
+            BuildEventIdUtil.workspaceStatusId(),
+            BuildEventIdUtil.targetPatternExpanded(request().getTargets()),
+            BuildEventIdUtil.buildFinished()
+        )
 
-  @VisibleForTesting
-  public static BuildStartingEvent create(
-      String outputFileSystem,
-      boolean usesInMemoryFileSystem,
-      BuildRequest request,
-      @Nullable String workspace,
-      String pwd) {
-    return new AutoValue_BuildStartingEvent(
-        outputFileSystem, usesInMemoryFileSystem, request, workspace, pwd);
-  }
-
-  @Override
-  public final BuildEventId getEventId() {
-    return BuildEventIdUtil.buildStartedId();
-  }
-
-  @Override
-  public final ImmutableList<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of(
-        ProgressEvent.INITIAL_PROGRESS_UPDATE,
-        BuildEventIdUtil.unstructuredCommandlineId(),
-        BuildEventIdUtil.structuredCommandlineId(CommandLineEvent.OriginalCommandLineEvent.LABEL),
-        BuildEventIdUtil.structuredCommandlineId(CommandLineEvent.CanonicalCommandLineEvent.LABEL),
-        BuildEventIdUtil.structuredCommandlineId(CommandLineEvent.ToolCommandLineEvent.LABEL),
-        BuildEventIdUtil.buildMetadataId(),
-        BuildEventIdUtil.optionsParsedId(),
-        BuildEventIdUtil.workspaceStatusId(),
-        BuildEventIdUtil.targetPatternExpanded(request().getTargets()),
-        BuildEventIdUtil.buildFinished());
-  }
-
-  @Override
-  public final BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    Runtime.Version version = Runtime.version();
-    JavaVersionInfo javaVersionInfo =
-        JavaVersionInfo.newBuilder()
-            .setJavaVersion(version.toString())
-            .setJavaMajorVersion(version.feature())
-            .setJavaMinorVersion(version.interim())
-            .build();
-    BuildEventStreamProtos.BuildStarted.Builder started =
-        BuildEventStreamProtos.BuildStarted.newBuilder()
-            .setUuid(request().getId().toString())
-            .setStartTime(Timestamps.fromMillis(request().getStartTime()))
-            .setStartTimeMillis(request().getStartTime())
-            .setBuildToolVersion(BlazeVersionInfo.instance().getVersion())
-            .setOptionsDescription(request().getOptionsDescription())
-            .setCommand(request().getCommandName())
-            .setServerPid(ProcessHandle.current().pid())
-            .setWorkingDirectory(pwd())
-            .setHost(NetUtil.getCachedShortHostName())
-            .setUser(UserUtils.getUserName())
-            .setJavaVersionInfo(javaVersionInfo);
-    if (workspace() != null) {
-      started.setWorkspaceDirectory(workspace());
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        val version = Runtime.version()
+        val javaVersionInfo: JavaVersionInfo? =
+            JavaVersionInfo.newBuilder()
+                .setJavaVersion(version.toString())
+                .setJavaMajorVersion(version.feature())
+                .setJavaMinorVersion(version.interim())
+                .build()
+        val started: BuildEventStreamProtos.BuildStarted.Builder =
+            BuildEventStreamProtos.BuildStarted.newBuilder()
+                .setUuid(request().getId().toString())
+                .setStartTime(Timestamps.fromMillis(request().getStartTime()))
+                .setStartTimeMillis(request().getStartTime())
+                .setBuildToolVersion(BlazeVersionInfo.instance().getVersion())
+                .setOptionsDescription(request().getOptionsDescription())
+                .setCommand(request().getCommandName())
+                .setServerPid(ProcessHandle.current().pid())
+                .setWorkingDirectory(pwd())
+                .setHost(NetUtil.getCachedShortHostName())
+                .setUser(UserUtils.getUserName())
+                .setJavaVersionInfo(javaVersionInfo)
+        if (workspace() != null) {
+            started.setWorkspaceDirectory(workspace())
+        }
+        return GenericBuildEvent.Companion.protoChaining(this).setStarted(started.build()).build()
     }
-    return GenericBuildEvent.protoChaining(this).setStarted(started.build()).build();
-  }
 
-  /** Returns the name of the file system we are writing output to. */
-  public static String getOutputFileSystemName(
-      BlazeDirectories directories, @Nullable OutputService outputService) {
-    if (outputService == null) {
-      return "";
+    companion object {
+        /**
+         * Construct the BuildStartingEvent
+         * 
+         * @param directories the server directories
+         * @param outputService the output service
+         * @param request the build request
+         */
+        fun create(
+            directories: BlazeDirectories, outputService: OutputService?, request: BuildRequest?
+        ): BuildStartingEvent {
+            return create(
+                getOutputFileSystemName(directories, outputService),
+                outputService != null && outputService.actionFileSystemType().inMemoryFileSystem(),
+                request,
+                if (directories.getWorkspace() != null) directories.getWorkspace().toString() else null,
+                directories.getWorkingDirectory().toString()
+            )
+        }
+
+        @VisibleForTesting
+        fun create(
+            outputFileSystem: String?,
+            usesInMemoryFileSystem: Boolean,
+            request: BuildRequest?,
+            workspace: String?,
+            pwd: String?
+        ): BuildStartingEvent {
+            return AutoValue_BuildStartingEvent(
+                outputFileSystem, usesInMemoryFileSystem, request, workspace, pwd
+            )
+        }
+
+        /** Returns the name of the file system we are writing output to.  */
+        fun getOutputFileSystemName(
+            directories: BlazeDirectories, outputService: OutputService?
+        ): String? {
+            if (outputService == null) {
+                return ""
+            }
+            val outputBaseFileSystemName: String?
+            Profiler.instance().profile(ProfilerTask.INFO, "Finding output file system").use { c ->
+                outputBaseFileSystemName = FileSystemUtils.getFileSystem(directories.getOutputBase())
+            }
+            return outputService.getFileSystemName(outputBaseFileSystemName)
+        }
     }
-    String outputBaseFileSystemName;
-    try (SilentCloseable c =
-        Profiler.instance().profile(ProfilerTask.INFO, "Finding output file system")) {
-      outputBaseFileSystemName = FileSystemUtils.getFileSystem(directories.getOutputBase());
-    }
-    return outputService.getFileSystemName(outputBaseFileSystemName);
-  }
 }

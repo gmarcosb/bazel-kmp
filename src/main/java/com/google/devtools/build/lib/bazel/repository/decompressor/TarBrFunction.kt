@@ -11,24 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import org.apache.commons.compress.compressors.brotli.BrotliCompressorInputStream
+import java.io.BufferedInputStream
+import java.io.IOException
+import java.io.InputStream
 
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import org.apache.commons.compress.compressors.brotli.BrotliCompressorInputStream;
+/** Creates a repository by unarchiving a .tar.br file.  */
+class TarBrFunction private constructor() : CompressedTarFunction() {
+    @Throws(IOException::class)
+    override fun getDecompressorStream(compressedInputStream: BufferedInputStream?): InputStream {
+        return BrotliCompressorInputStream(compressedInputStream)
+    }
 
-/** Creates a repository by unarchiving a .tar.br file. */
-public class TarBrFunction extends CompressedTarFunction {
-  public static final Decompressor INSTANCE = new TarBrFunction();
-
-  private TarBrFunction() {}
-
-  @Override
-  protected InputStream getDecompressorStream(BufferedInputStream compressedInputStream)
-      throws IOException {
-    return new BrotliCompressorInputStream(compressedInputStream);
-  }
+    companion object {
+        val INSTANCE: DecompressorValue.Decompressor = TarBrFunction()
+    }
 }

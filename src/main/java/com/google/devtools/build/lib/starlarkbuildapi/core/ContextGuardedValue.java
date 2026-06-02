@@ -51,7 +51,7 @@ public final class ContextGuardedValue {
 
           for (PackageIdentifier entry : allowedEntries) {
             String pattern;
-            if (entry.getRepository().getName().isEmpty()) {
+            if (entry.getRepository().name.isEmpty()) {
               // String.matches has ^$ implicilty, so an empty pattern matches exactly the empty
               // string.
               pattern = "";
@@ -59,9 +59,9 @@ public final class ContextGuardedValue {
               // Surrounding .* because String.matches has implicit "^$" anchor.
               // Surrounding \b so it doesn't match a substring of the intended repo name.
               // Quote the name so dots in the repo name don't get treated as part of the pattern
-              pattern = ".*\\b" + Pattern.quote(entry.getRepository().getName()) + "\\b.*";
+              pattern = ".*\\b" + Pattern.quote(entry.getRepository().name) + "\\b.*";
             }
-            if (label.getRepository().getName().matches(pattern)
+            if (label.getRepository().name.matches(pattern)
                 && label.getPackageFragment().startsWith(entry.getPackageFragment())) {
               return true;
             }

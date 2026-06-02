@@ -11,54 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
-
-import com.google.common.base.Preconditions;
+import com.google.common.base.Preconditions
 
 /**
  * A sample class that is under test by XmlOutputExercises.
  */
-public class ExampleObject implements Comparable<ExampleObject> {
-  private String data;
+class ExampleObject(data: String?) : Comparable<ExampleObject?> {
+    private var data: String
 
-  public ExampleObject(String data) {
-    this.data = Preconditions.checkNotNull(data);
-  }
-
-  public String getData() {
-    return data;
-  }
-
-  public void setData(String data) {
-    this.data = Preconditions.checkNotNull(data);
-  }
-
-  @Override
-  public int compareTo(ExampleObject that) {
-    return this.data.compareTo(that.data);
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
+    init {
+        this.data = Preconditions.checkNotNull<String>(data)
     }
 
-    ExampleObject that = (ExampleObject) o;
-    return data.equals(that.data);
-  }
+    fun getData(): String {
+        return data
+    }
 
-  @Override
-  public int hashCode() {
-    return data.hashCode();
-  }
+    fun setData(data: String?) {
+        this.data = Preconditions.checkNotNull<String>(data)
+    }
 
-  @Override
-  public String toString() {
-    return this.data;
-  }
+    override fun compareTo(that: ExampleObject): Int {
+        return this.data.compareTo(that.data)
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o == null || javaClass != o.javaClass) {
+            return false
+        }
+
+        val that = o as ExampleObject
+        return data == that.data
+    }
+
+    override fun hashCode(): Int {
+        return data.hashCode()
+    }
+
+    override fun toString(): String {
+        return this.data
+    }
 }

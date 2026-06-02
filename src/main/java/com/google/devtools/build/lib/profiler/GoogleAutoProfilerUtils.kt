@@ -11,143 +11,189 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler
 
-package com.google.devtools.build.lib.profiler;
+import com.google.common.flogger.GoogleLogger
+import com.google.common.flogger.LogSites
+import java.util.concurrent.TimeUnit
 
-import com.google.common.base.Ascii;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.flogger.LogSites;
-import com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver;
-import java.time.Duration;
-import java.util.concurrent.TimeUnit;
+/** Utility for creating [AutoProfiler] instances from [GoogleLogger] instances.  */
+object GoogleAutoProfilerUtils {
+    private val selfLogger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    private val LOGGING_MESSAGE_TEMPLATE =
+        "Spent %d " + com.google.common.base.Ascii.toLowerCase(TimeUnit.MILLISECONDS.toString()) + " doing %s"
 
-/** Utility for creating {@link AutoProfiler} instances from {@link GoogleLogger} instances. */
-public class GoogleAutoProfilerUtils {
-  private static final GoogleLogger selfLogger = GoogleLogger.forEnclosingClass();
-  private static final String LOGGING_MESSAGE_TEMPLATE =
-      "Spent %d " + Ascii.toLowerCase(TimeUnit.MILLISECONDS.toString()) + " doing %s";
-
-  private GoogleAutoProfilerUtils() {}
-
-  private static AutoProfiler logged(
-      String description, GoogleLogger logger, Duration minTimeForLogging) {
-    return AutoProfiler.create(makeReceiver(description, logger, minTimeForLogging));
-  }
-
-  public static AutoProfiler logged(String description, Duration minTimeForLogging) {
-    return logged(description, selfLogger, minTimeForLogging);
-  }
-
-  public static AutoProfiler logged(String description) {
-    return AutoProfiler.create(
-        createSimpleLogger(description, /* minTimeForLogging= */ Duration.ZERO));
-  }
-
-  private static ElapsedTimeReceiver createSimpleLogger(
-      String description, Duration minTimeForLogging) {
-    return elapsedTimeNanos -> {
-      if (elapsedTimeNanos >= minTimeForLogging.toNanos()) {
-        log(selfLogger, elapsedTimeNanos, description);
-      }
-    };
-  }
-
-  /**
-   * Returns an {@link AutoProfiler} that, when closed, records the elapsed time using {@link
-   * Profiler} and also logs it (in milliseconds) to the default logger.
-   *
-   * <p>The returned {@link AutoProfiler} is thread-safe.
-   */
-  public static AutoProfiler profiledAndLogged(
-      String taskDescription, ProfilerTask profilerTaskType) {
-    return profiledAndLogged(
-        taskDescription, profilerTaskType, /* minTimeForLogging= */ Duration.ZERO);
-  }
-
-  /**
-   * Like {@link #profiledAndLogged(String, ProfilerTask)} but only logs if the task takes at least
-   * {@code minTimeForLogging}.
-   *
-   * <p>The elapsed time is recorded using {@link Profiler} even if it is less than {@code
-   * minTimeForLogging}.
-   */
-  public static AutoProfiler profiledAndLogged(
-      String taskDescription, ProfilerTask profilerTaskType, Duration minTimeForLogging) {
-    ElapsedTimeReceiver profilingReceiver =
-        new AutoProfiler.ProfilingElapsedTimeReceiver(taskDescription, profilerTaskType);
-    return AutoProfiler.create(
-        new SequencedElapsedTimeReceiver(
-            profilingReceiver, createSimpleLogger(taskDescription, minTimeForLogging)));
-  }
-
-  /**
-   * Returns an {@link AutoProfiler} that, when closed, will log if the operation exceeds provided
-   * threshold and call the custom {@link ElapsedTimeReceiver} for any duration.
-   */
-  public static AutoProfiler loggedAndCustomReceiver(
-      String taskDescription, Duration minTimeForLogging, ElapsedTimeReceiver customReceiver) {
-    return AutoProfiler.create(
-        new SequencedElapsedTimeReceiver(
-            makeReceiver(taskDescription, selfLogger, minTimeForLogging), customReceiver));
-  }
-
-  private static ElapsedTimeReceiver makeReceiver(
-      String description, GoogleLogger logger, Duration minTimeForLogging) {
-    return new FloggerElapsedTimeReceiver(description, logger, minTimeForLogging);
-  }
-
-  /** {@link ElapsedTimeReceiver} that will not log a message if the time elapsed is too small. */
-  private static class FloggerElapsedTimeReceiver implements ElapsedTimeReceiver {
-    // Some classes in Google-internal Blaze use a specially configured logger. When those classes
-    // record elapsed time using this library, they pass their logger in here, which we use instead
-    // of this library's default selfLogger.
-    private final GoogleLogger logger;
-    private final String taskDescription;
-    private final Duration minTimeForLogging;
-
-    FloggerElapsedTimeReceiver(
-        String taskDescription, GoogleLogger logger, Duration minTimeForLogging) {
-      this.taskDescription = taskDescription;
-      this.minTimeForLogging = minTimeForLogging;
-      this.logger = logger;
+    private fun logged(
+        description: String?, logger: GoogleLogger, minTimeForLogging: java.time.Duration
+    ): com.google.devtools.build.lib.profiler.AutoProfiler {
+        return com.google.devtools.build.lib.profiler.AutoProfiler.Companion.create(
+            com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.makeReceiver(
+                description,
+                logger,
+                minTimeForLogging
+            )
+        )
     }
 
-    @Override
-    public final void accept(long elapsedTimeNanos) {
-      // We avoid eagerly converting elapsedTimeNanos to a Duration to minimize garbage creation.
-      if (elapsedTimeNanos < minTimeForLogging.toNanos()) {
-        return;
-      }
-      log(logger, elapsedTimeNanos, taskDescription);
-    }
-  }
-
-  private static void log(GoogleLogger logger, long elapsedTimeNanos, String taskDescription) {
-    logger
-        .atInfo()
-        .withInjectedLogSite(LogSites.callerOf(AutoProfiler.class))
-        .log(
-            LOGGING_MESSAGE_TEMPLATE,
-            // TODO(janakr): confirm that this doesn't show up as a source of garbage. Since it only
-            //  happens when we're actually logging, it shouldn't.
-            Duration.ofNanos(elapsedTimeNanos).toMillis(),
-            taskDescription);
-  }
-
-  private static class SequencedElapsedTimeReceiver implements ElapsedTimeReceiver {
-    private final ElapsedTimeReceiver firstReceiver;
-    private final ElapsedTimeReceiver secondReceiver;
-
-    private SequencedElapsedTimeReceiver(
-        ElapsedTimeReceiver firstReceiver, ElapsedTimeReceiver secondReceiver) {
-      this.firstReceiver = firstReceiver;
-      this.secondReceiver = secondReceiver;
+    fun logged(
+        description: String?,
+        minTimeForLogging: java.time.Duration
+    ): com.google.devtools.build.lib.profiler.AutoProfiler {
+        return com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.logged(
+            description,
+            com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.selfLogger,
+            minTimeForLogging
+        )
     }
 
-    @Override
-    public void accept(long elapsedTimeNanos) {
-      firstReceiver.accept(elapsedTimeNanos);
-      secondReceiver.accept(elapsedTimeNanos);
+    @kotlin.jvm.JvmStatic
+    fun logged(description: String?): com.google.devtools.build.lib.profiler.AutoProfiler {
+        return com.google.devtools.build.lib.profiler.AutoProfiler.Companion.create(
+            com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.createSimpleLogger(
+                description,  /* minTimeForLogging= */
+                java.time.Duration.ZERO
+            )
+        )
     }
-  }
+
+    private fun createSimpleLogger(
+        description: String?, minTimeForLogging: java.time.Duration
+    ): com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver {
+        return com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver { elapsedTimeNanos: Long ->
+            if (elapsedTimeNanos >= minTimeForLogging.toNanos()) {
+                com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.log(
+                    com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.selfLogger,
+                    elapsedTimeNanos,
+                    description
+                )
+            }
+        }
+    }
+
+    /**
+     * Like [.profiledAndLogged] but only logs if the task takes at least
+     * `minTimeForLogging`.
+     * 
+     * 
+     * The elapsed time is recorded using [Profiler] even if it is less than `minTimeForLogging`.
+     */
+    /**
+     * Returns an [AutoProfiler] that, when closed, records the elapsed time using [ ] and also logs it (in milliseconds) to the default logger.
+     * 
+     * 
+     * The returned [AutoProfiler] is thread-safe.
+     */
+    @kotlin.jvm.JvmOverloads
+    fun profiledAndLogged(
+        taskDescription: String?,
+        profilerTaskType: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        minTimeForLogging: java.time.Duration = java.time.Duration.ZERO
+    ): com.google.devtools.build.lib.profiler.AutoProfiler {
+        val profilingReceiver: com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver =
+            com.google.devtools.build.lib.profiler.AutoProfiler.ProfilingElapsedTimeReceiver(
+                taskDescription,
+                profilerTaskType
+            )
+        return com.google.devtools.build.lib.profiler.AutoProfiler.Companion.create(
+            com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.SequencedElapsedTimeReceiver(
+                profilingReceiver,
+                com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.createSimpleLogger(
+                    taskDescription,
+                    minTimeForLogging
+                )
+            )
+        )
+    }
+
+    /**
+     * Returns an [AutoProfiler] that, when closed, will log if the operation exceeds provided
+     * threshold and call the custom [ElapsedTimeReceiver] for any duration.
+     */
+    fun loggedAndCustomReceiver(
+        taskDescription: String?,
+        minTimeForLogging: java.time.Duration,
+        customReceiver: com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver
+    ): com.google.devtools.build.lib.profiler.AutoProfiler {
+        return com.google.devtools.build.lib.profiler.AutoProfiler.Companion.create(
+            com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.SequencedElapsedTimeReceiver(
+                com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.makeReceiver(
+                    taskDescription,
+                    com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.selfLogger,
+                    minTimeForLogging
+                ), customReceiver
+            )
+        )
+    }
+
+    private fun makeReceiver(
+        description: String?, logger: GoogleLogger, minTimeForLogging: java.time.Duration
+    ): com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver {
+        return com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.FloggerElapsedTimeReceiver(
+            description,
+            logger,
+            minTimeForLogging
+        )
+    }
+
+    private fun log(logger: GoogleLogger, elapsedTimeNanos: Long, taskDescription: String?) {
+        logger
+            .atInfo()
+            .withInjectedLogSite(LogSites.callerOf(com.google.devtools.build.lib.profiler.AutoProfiler::class.java))
+            .log(
+                com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.LOGGING_MESSAGE_TEMPLATE,  // TODO(janakr): confirm that this doesn't show up as a source of garbage. Since it only
+                //  happens when we're actually logging, it shouldn't.
+                java.time.Duration.ofNanos(elapsedTimeNanos).toMillis(),
+                taskDescription
+            )
+    }
+
+    /** [ElapsedTimeReceiver] that will not log a message if the time elapsed is too small.  */
+    private class FloggerElapsedTimeReceiver(
+        taskDescription: String?,
+        logger: GoogleLogger,
+        minTimeForLogging: java.time.Duration
+    ) : com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver {
+        // Some classes in Google-internal Blaze use a specially configured logger. When those classes
+        // record elapsed time using this library, they pass their logger in here, which we use instead
+        // of this library's default selfLogger.
+        private val logger: GoogleLogger
+        private val taskDescription: String?
+        private val minTimeForLogging: java.time.Duration
+
+        init {
+            this.taskDescription = taskDescription
+            this.minTimeForLogging = minTimeForLogging
+            this.logger = logger
+        }
+
+        override fun accept(elapsedTimeNanos: Long) {
+            // We avoid eagerly converting elapsedTimeNanos to a Duration to minimize garbage creation.
+            if (elapsedTimeNanos < minTimeForLogging.toNanos()) {
+                return
+            }
+            com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils.log(
+                logger,
+                elapsedTimeNanos,
+                taskDescription
+            )
+        }
+    }
+
+    private class SequencedElapsedTimeReceiver(
+        firstReceiver: com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver,
+        secondReceiver: com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver
+    ) : com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver {
+        private val firstReceiver: com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver
+        private val secondReceiver: com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver
+
+        init {
+            this.firstReceiver = firstReceiver
+            this.secondReceiver = secondReceiver
+        }
+
+        override fun accept(elapsedTimeNanos: Long) {
+            firstReceiver.accept(elapsedTimeNanos)
+            secondReceiver.accept(elapsedTimeNanos)
+        }
+    }
 }

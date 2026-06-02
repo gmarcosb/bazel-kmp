@@ -11,74 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.analysis.test.TestActionContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import com.google.devtools.build.lib.view.test.TestStatus.TestResultData;
+import com.google.devtools.build.lib.actions.SpawnResult
 
 /**
  * Contains information about the results of test execution.
- *
+ * 
  * @param spawnResults Returns the SpawnResults created by the test, if any.
  * @param testResultDataBuilder Returns the TestResultData for the test.
  */
-public record StandaloneTestResult(
-    ImmutableList<SpawnResult> spawnResults,
-    TestResultData.Builder testResultDataBuilder,
-    BuildEventStreamProtos.TestResult.ExecutionInfo executionInfo)
-    implements TestActionContext.TestAttemptResult {
-  public StandaloneTestResult {
-    requireNonNull(spawnResults, "spawnResults");
-    requireNonNull(testResultDataBuilder, "testResultDataBuilder");
-    requireNonNull(executionInfo, "executionInfo");
-  }
-
-  @Override
-  public TestActionContext.TestAttemptResult.Result result() {
-    // TODO(b/148785690): Establish proper retry policy for flaky tests in StandaloneTestStrategy.
-    return testResultDataBuilder().getStatus() == BlazeTestStatus.PASSED
-        ? Result.PASSED
-        : Result.FAILED_CAN_RETRY;
-  }
-
-  /** Returns a builder that can be used to construct a {@link StandaloneTestResult} object. */
-  public static Builder builder() {
-    return new AutoBuilder_StandaloneTestResult_Builder();
-  }
-
-  /** Builder for a {@link StandaloneTestResult} instance, which is immutable once built. */
-  @AutoBuilder
-  public abstract static class Builder {
-
-    /** Returns the SpawnResults for the test, if any. */
-    abstract ImmutableList<SpawnResult> spawnResults();
-
-    /** Sets the SpawnResults for the test. */
-    public abstract Builder setSpawnResults(ImmutableList<SpawnResult> spawnResults);
-
-    /** Sets the TestResultData for the test. */
-    public abstract Builder setTestResultDataBuilder(TestResultData.Builder testResultDataBuilder);
-
-    public abstract Builder setExecutionInfo(
-        BuildEventStreamProtos.TestResult.ExecutionInfo executionInfo);
-
-    abstract StandaloneTestResult realBuild();
-
-    /**
-     * Returns an immutable StandaloneTestResult object.
-     *
-     * <p>The list of SpawnResults is also made immutable here.
-     */
-    public StandaloneTestResult build() {
-      return this.setSpawnResults(spawnResults()).realBuild();
+class StandaloneTestResult(
+    spawnResults: com.google.common.collect.ImmutableList<SpawnResult?>?,
+    testResultDataBuilder: TestResultData.Builder?,
+    executionInfo: BuildEventStreamProtos.TestResult.ExecutionInfo?
+) : TestActionContext.TestAttemptResult {
+    public override fun result(): TestActionContext.TestAttemptResult.Result {
+        // TODO(b/148785690): Establish proper retry policy for flaky tests in StandaloneTestStrategy.
+        return if (this.testResultDataBuilder.getStatus() === BlazeTestStatus.PASSED)
+            Result.PASSED
+        else
+            Result.FAILED_CAN_RETRY
     }
-  }
+
+    /** Builder for a [StandaloneTestResult] instance, which is immutable once built.  */
+    @AutoBuilder
+    abstract class Builder {
+        /** Returns the SpawnResults for the test, if any.  */
+        abstract fun spawnResults(): com.google.common.collect.ImmutableList<SpawnResult?>?
+
+        /** Sets the SpawnResults for the test.  */
+        abstract fun setSpawnResults(spawnResults: com.google.common.collect.ImmutableList<SpawnResult?>?): Builder?
+
+        /** Sets the TestResultData for the test.  */
+        abstract fun setTestResultDataBuilder(testResultDataBuilder: TestResultData.Builder?): Builder?
+
+        abstract fun setExecutionInfo(
+            executionInfo: BuildEventStreamProtos.TestResult.ExecutionInfo?
+        ): Builder?
+
+        abstract fun realBuild(): StandaloneTestResult?
+
+        /**
+         * Returns an immutable StandaloneTestResult object.
+         * 
+         * 
+         * The list of SpawnResults is also made immutable here.
+         */
+        fun build(): StandaloneTestResult? {
+            return this.setSpawnResults(spawnResults())!!.realBuild()
+        }
+    }
+
+    val spawnResults: com.google.common.collect.ImmutableList<SpawnResult?>?
+    val testResultDataBuilder: TestResultData.Builder?
+    val executionInfo: BuildEventStreamProtos.TestResult.ExecutionInfo?
+
+    init {
+        this.executionInfo = executionInfo
+        this.testResultDataBuilder = testResultDataBuilder
+        this.spawnResults = spawnResults
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<SpawnResult?>?>(
+            spawnResults,
+            "spawnResults"
+        )
+        java.util.Objects.requireNonNull<Any?>(testResultDataBuilder, "testResultDataBuilder")
+        java.util.Objects.requireNonNull<Any?>(executionInfo, "executionInfo")
+    }
+
+    companion object {
+        /** Returns a builder that can be used to construct a [StandaloneTestResult] object.  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return AutoBuilder_StandaloneTestResult_Builder()
+        }
+    }
 }

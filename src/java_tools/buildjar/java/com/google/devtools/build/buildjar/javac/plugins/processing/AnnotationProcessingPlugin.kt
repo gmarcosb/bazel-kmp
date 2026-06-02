@@ -11,59 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac.plugins.processing
 
-package com.google.devtools.build.buildjar.javac.plugins.processing;
+import com.google.devtools.build.buildjar.javac.plugins.BlazeJavaCompilerPlugin
+import com.sun.tools.javac.comp.Env
+import java.nio.file.Path
 
-import com.google.devtools.build.buildjar.javac.plugins.BlazeJavaCompilerPlugin;
-import com.google.devtools.build.buildjar.proto.JavaCompilation.CompilationUnit;
-import com.sun.tools.javac.comp.AttrContext;
-import com.sun.tools.javac.comp.Env;
-import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.tree.JCTree.JCClassDecl;
-import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.HashSet;
+/** A plugin that records information about sources generated during annotation processing.  */
+class AnnotationProcessingPlugin(private val processingModule: AnnotationProcessingModule) : BlazeJavaCompilerPlugin() {
+    private val toplevels: HashSet<JCCompilationUnit?> = HashSet<JCCompilationUnit?>()
 
-/** A plugin that records information about sources generated during annotation processing. */
-public class AnnotationProcessingPlugin extends BlazeJavaCompilerPlugin {
-
-  private final HashSet<JCCompilationUnit> toplevels = new HashSet<>();
-  private final AnnotationProcessingModule processingModule;
-
-  public AnnotationProcessingPlugin(AnnotationProcessingModule processingModule) {
-    this.processingModule = processingModule;
-  }
-
-  @Override
-  public void postAttribute(Env<AttrContext> env) {
-    if (toplevels.add(env.toplevel)) {
-      recordInfo(env.toplevel);
-    }
-  }
-
-  private void recordInfo(JCCompilationUnit toplevel) {
-    CompilationUnit.Builder builder = CompilationUnit.newBuilder();
-
-    if (toplevel.sourcefile != null) {
-      // FileObject#getName() returns the original exec root-relative path of
-      // the source file, which is want we want.
-      // Paths.get(sourcefile.toUri()) would absolutize the path.
-      Path path = Paths.get(toplevel.sourcefile.getName());
-      builder.setPath(processingModule.stripSourceRoot(path).toString());
-      builder.setGeneratedByAnnotationProcessor(processingModule.isGenerated(path));
+    public override fun postAttribute(env: Env<AttrContext?>) {
+        if (toplevels.add(env.toplevel)) {
+            recordInfo(env.toplevel)
+        }
     }
 
-    if (toplevel.getPackageName() != null) {
-      builder.setPkg(toplevel.getPackageName().toString());
-    }
+    private fun recordInfo(toplevel: JCCompilationUnit) {
+        val builder: CompilationUnit.Builder = CompilationUnit.newBuilder()
 
-    for (JCTree decl : toplevel.defs) {
-      if (decl instanceof JCClassDecl) {
-        builder.addTopLevel(((JCClassDecl) decl).getSimpleName().toString());
-      }
-    }
+        if (toplevel.sourcefile != null) {
+            // FileObject#getName() returns the original exec root-relative path of
+            // the source file, which is want we want.
+            // Paths.get(sourcefile.toUri()) would absolutize the path.
+            val path: Path = Paths.get(toplevel.sourcefile.getName())
+            builder.setPath(processingModule.stripSourceRoot(path).toString())
+            builder.setGeneratedByAnnotationProcessor(processingModule.isGenerated(path))
+        }
 
-    processingModule.recordUnit(builder.build());
-  }
+        if (toplevel.getPackageName() != null) {
+            builder.setPkg(toplevel.getPackageName().toString())
+        }
+
+        for (decl in toplevel.defs) {
+            if (decl is JCClassDecl) {
+                builder.addTopLevel((decl as JCClassDecl).getSimpleName().toString())
+            }
+        }
+
+        processingModule.recordUnit(builder.build())
+    }
 }

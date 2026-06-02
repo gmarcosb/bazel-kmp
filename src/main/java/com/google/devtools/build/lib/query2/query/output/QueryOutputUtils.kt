@@ -11,90 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.query.output;
+package com.google.devtools.build.lib.query2.query.output
 
-import com.google.common.hash.HashFunction;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.graph.Digraph;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.query2.engine.DigraphQueryEvalResult;
-import com.google.devtools.build.lib.query2.engine.OutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.QueryEvalResult;
-import com.google.devtools.build.lib.query2.query.aspectresolvers.AspectResolver;
-import com.google.devtools.build.lib.query2.query.output.QueryOptions.OrderOutput;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.common.hash.HashFunction
+import com.google.devtools.build.lib.events.EventHandler
+import java.io.OutputStream
 
-/** Static utility methods for outputting a query. */
-public class QueryOutputUtils {
-  // Utility class cannot be instantiated.
-  private QueryOutputUtils() {}
+/** Static utility methods for outputting a query.  */
+object QueryOutputUtils {
+    fun lexicographicallySortOutput(
+        queryOptions: QueryOptions, formatter: OutputFormatter?
+    ): Boolean {
+        return queryOptions.getOrderOutput() == OrderOutput.AUTO
+                && formatter is StreamedFormatter
+    }
 
-  public static boolean lexicographicallySortOutput(
-      QueryOptions queryOptions, OutputFormatter formatter) {
-    return queryOptions.getOrderOutput() == OrderOutput.AUTO
-        && formatter instanceof StreamedFormatter;
-  }
+    fun shouldStreamUnorderedOutput(
+        queryOptions: QueryOptions, formatter: OutputFormatter?
+    ): Boolean {
+        return queryOptions.getOrderOutput() == OrderOutput.NO
+                && formatter is StreamedFormatter
+    }
 
-  public static boolean shouldStreamUnorderedOutput(
-      QueryOptions queryOptions, OutputFormatter formatter) {
-    return queryOptions.getOrderOutput() == OrderOutput.NO
-        && formatter instanceof StreamedFormatter;
-  }
+    fun shouldStreamResults(queryOptions: QueryOptions, formatter: OutputFormatter?): Boolean {
+        return shouldStreamUnorderedOutput(queryOptions, formatter)
+                || lexicographicallySortOutput(queryOptions, formatter)
+    }
 
-  public static boolean shouldStreamResults(QueryOptions queryOptions, OutputFormatter formatter) {
-    return shouldStreamUnorderedOutput(queryOptions, formatter)
-        || lexicographicallySortOutput(queryOptions, formatter);
-  }
-
-  public static void output(
-      QueryOptions queryOptions,
-      QueryEvalResult result,
-      Set<Target> targetsResult,
-      OutputFormatter formatter,
-      OutputStream outputStream,
-      AspectResolver aspectResolver,
-      @Nullable EventHandler eventHandler,
-      HashFunction hashFunction,
-      LabelPrinter labelPrinter)
-      throws IOException, InterruptedException {
-    /*
+    @Throws(IOException::class, InterruptedException::class)
+    fun output(
+        queryOptions: QueryOptions,
+        result: QueryEvalResult?,
+        targetsResult: MutableSet<Target?>,
+        formatter: OutputFormatter,
+        outputStream: OutputStream?,
+        aspectResolver: AspectResolver?,
+        eventHandler: EventHandler?,
+        hashFunction: HashFunction?,
+        labelPrinter: LabelPrinter?
+    ) {
+        /*
      * This is not really streaming, but we are using the streaming interface for writing into the
      * output everything in one batch. This happens when the QueryEnvironment does not
      * support streaming but we don't care about ordered results.
      */
-    if (shouldStreamResults(queryOptions, formatter)) {
-      StreamedFormatter streamedFormatter = (StreamedFormatter) formatter;
-      streamedFormatter.setOptions(queryOptions, aspectResolver, hashFunction);
-      streamedFormatter.setEventHandler(eventHandler);
-      OutputFormatterCallback.processAllTargets(
-          streamedFormatter.createPostFactoStreamCallback(outputStream, queryOptions, labelPrinter),
-          targetsResult);
-    } else {
-      @SuppressWarnings("unchecked")
-      DigraphQueryEvalResult<Target> digraphQueryEvalResult =
-          (DigraphQueryEvalResult<Target>) result;
-      Digraph<Target> subgraph;
+        if (shouldStreamResults(queryOptions, formatter)) {
+            val streamedFormatter = formatter as StreamedFormatter
+            streamedFormatter.setOptions(queryOptions, aspectResolver, hashFunction)
+            streamedFormatter.setEventHandler(eventHandler)
+            OutputFormatterCallback.Companion.processAllTargets<Target?>(
+                streamedFormatter.createPostFactoStreamCallback(outputStream, queryOptions, labelPrinter),
+                targetsResult
+            )
+        } else {
+            val digraphQueryEvalResult: DigraphQueryEvalResult<Target?> =
+                result as DigraphQueryEvalResult<Target?>
+            val subgraph: Digraph<Target?>?
 
-      try (SilentCloseable closeable = Profiler.instance().profile("digraph.extractSubgraph")) {
-        subgraph = digraphQueryEvalResult.getGraph().extractSubgraph(targetsResult);
-      }
-
-      try (SilentCloseable closeable = Profiler.instance().profile("formatter.output")) {
-        formatter.output(
-            queryOptions,
-            subgraph,
-            outputStream,
-            aspectResolver,
-            eventHandler,
-            hashFunction,
-            labelPrinter);
-      }
+            Profiler.instance().profile("digraph.extractSubgraph").use { closeable ->
+                subgraph = digraphQueryEvalResult.getGraph().extractSubgraph(targetsResult)
+            }
+            Profiler.instance().profile("formatter.output").use { closeable ->
+                formatter.output(
+                    queryOptions,
+                    subgraph,
+                    outputStream,
+                    aspectResolver,
+                    eventHandler,
+                    hashFunction,
+                    labelPrinter
+                )
+            }
+        }
     }
-  }
 }

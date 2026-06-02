@@ -11,125 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
+/** Specific retry logic for execute request with gapi Status.  */
+internal class ExecuteRetrier(
+    maxRetryAttempts: Int,
+    retryService: com.google.common.util.concurrent.ListeningScheduledExecutorService?,
+    circuitBreaker: com.google.devtools.build.lib.remote.Retrier.CircuitBreaker?
+) : RemoteRetrier(
+    java.util.function.Supplier { if (maxRetryAttempts > 0) RetryInfoBackoff(maxRetryAttempts) else Retrier.Companion.RETRIES_DISABLED },
+    ResultClassifier { e: java.lang.Exception? -> resultClassifier(e) },
+    retryService,
+    circuitBreaker
+) {
+    private class RetryInfoBackoff(private val maxRetryAttempts: Int) : Backoff {
+        var retryAttempts: Int = 0
 
-import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result;
-import com.google.devtools.build.lib.remote.common.BulkTransferException;
-import com.google.protobuf.Any;
-import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.util.Durations;
-import com.google.rpc.DebugInfo;
-import com.google.rpc.Help;
-import com.google.rpc.LocalizedMessage;
-import com.google.rpc.PreconditionFailure;
-import com.google.rpc.PreconditionFailure.Violation;
-import com.google.rpc.RequestInfo;
-import com.google.rpc.ResourceInfo;
-import com.google.rpc.RetryInfo;
-import com.google.rpc.Status;
-import io.grpc.Status.Code;
-import io.grpc.protobuf.StatusProto;
-
-/** Specific retry logic for execute request with gapi Status. */
-class ExecuteRetrier extends RemoteRetrier {
-
-  private static final String VIOLATION_TYPE_MISSING = "MISSING";
-
-  private static class RetryInfoBackoff implements Backoff {
-    private final int maxRetryAttempts;
-    int retries = 0;
-
-    RetryInfoBackoff(int maxRetryAttempts) {
-      this.maxRetryAttempts = maxRetryAttempts;
-    }
-
-    @Override
-    public long nextDelayMillis(Exception e) {
-      if (retries >= maxRetryAttempts) {
-        return -1;
-      }
-      RetryInfo retryInfo = getRetryInfo(e);
-      retries++;
-      return Durations.toMillis(retryInfo.getRetryDelay());
-    }
-
-    RetryInfo getRetryInfo(Exception e) {
-      RetryInfo retryInfo = RetryInfo.getDefaultInstance();
-      Status status = StatusProto.fromThrowable(e);
-      if (status != null) {
-        for (Any detail : status.getDetailsList()) {
-          if (detail.is(RetryInfo.class)) {
-            try {
-              retryInfo = detail.unpack(RetryInfo.class);
-            } catch (InvalidProtocolBufferException protoEx) {
-              // really shouldn't happen, ignore
+        override fun nextDelayMillis(e: java.lang.Exception?): Long {
+            if (this.retryAttempts >= maxRetryAttempts) {
+                return -1
             }
-          }
+            val retryInfo: RetryInfo = getRetryInfo(e)
+            this.retryAttempts++
+            return Durations.toMillis(retryInfo.getRetryDelay())
         }
-      }
-      return retryInfo;
-    }
 
-    @Override
-    public int getRetryAttempts() {
-      return retries;
-    }
-  }
-
-  ExecuteRetrier(
-      int maxRetryAttempts,
-      ListeningScheduledExecutorService retryService,
-      CircuitBreaker circuitBreaker) {
-    super(
-        () -> maxRetryAttempts > 0 ? new RetryInfoBackoff(maxRetryAttempts) : RETRIES_DISABLED,
-        ExecuteRetrier::resultClassifier,
-        retryService,
-        circuitBreaker);
-  }
-
-  private static Result resultClassifier(Exception e) {
-    if (BulkTransferException.allCausedByCacheNotFoundException(e)) {
-      return Result.TRANSIENT_FAILURE;
-    }
-    Status status = StatusProto.fromThrowable(e);
-    if (status == null || status.getDetailsCount() == 0) {
-      return Result.SUCCESS;
-    }
-    boolean failedPrecondition = status.getCode() == Code.FAILED_PRECONDITION.value();
-    for (Any detail : status.getDetailsList()) {
-      if (detail.is(RetryInfo.class)) {
-        // server says we can retry, regardless of other details
-        return Result.TRANSIENT_FAILURE;
-      } else if (failedPrecondition) {
-        if (detail.is(PreconditionFailure.class)) {
-          try {
-            PreconditionFailure f = detail.unpack(PreconditionFailure.class);
-            if (f.getViolationsCount() == 0) {
-              failedPrecondition = false;
+        fun getRetryInfo(e: java.lang.Exception?): RetryInfo {
+            var retryInfo: RetryInfo = RetryInfo.getDefaultInstance()
+            val status: Status? = StatusProto.fromThrowable(e)
+            if (status != null) {
+                for (detail in status.getDetailsList()) {
+                    if (detail.`is`(RetryInfo::class.java)) {
+                        try {
+                            retryInfo = detail.unpack(RetryInfo::class.java)
+                        } catch (protoEx: InvalidProtocolBufferException) {
+                            // really shouldn't happen, ignore
+                        }
+                    }
+                }
             }
-            for (Violation v : f.getViolationsList()) {
-              if (!v.getType().equals(VIOLATION_TYPE_MISSING)) {
-                failedPrecondition = false;
-              }
-            }
-            // if *all* > 0 precondition failure violations have type MISSING, failedPrecondition
-            // remains true
-          } catch (InvalidProtocolBufferException protoEx) {
-            // really shouldn't happen
-            return Result.PERMANENT_FAILURE;
-          }
-        } else if (!(detail.is(DebugInfo.class)
-            || detail.is(Help.class)
-            || detail.is(LocalizedMessage.class)
-            || detail.is(RequestInfo.class)
-            || detail.is(ResourceInfo.class))) { // ignore benign details
-          // consider all other details as failures
-          failedPrecondition = false;
+            return retryInfo
         }
-      }
     }
-    return failedPrecondition ? Result.TRANSIENT_FAILURE : Result.PERMANENT_FAILURE;
-  }
+
+    companion object {
+        private const val VIOLATION_TYPE_MISSING = "MISSING"
+
+        private fun resultClassifier(e: java.lang.Exception?): com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result {
+            if (BulkTransferException.Companion.allCausedByCacheNotFoundException(e)) {
+                return com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result.TRANSIENT_FAILURE
+            }
+            val status: Status? = StatusProto.fromThrowable(e)
+            if (status == null || status.getDetailsCount() === 0) {
+                return com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result.SUCCESS
+            }
+            var failedPrecondition = status.getCode() === io.grpc.Status.Code.FAILED_PRECONDITION.value()
+            for (detail in status.getDetailsList()) {
+                if (detail.`is`(RetryInfo::class.java)) {
+                    // server says we can retry, regardless of other details
+                    return com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result.TRANSIENT_FAILURE
+                } else if (failedPrecondition) {
+                    if (detail.`is`(PreconditionFailure::class.java)) {
+                        try {
+                            val f: PreconditionFailure = detail.unpack(PreconditionFailure::class.java)
+                            if (f.getViolationsCount() === 0) {
+                                failedPrecondition = false
+                            }
+                            for (v in f.getViolationsList()) {
+                                if (!v.getType().equals(VIOLATION_TYPE_MISSING)) {
+                                    failedPrecondition = false
+                                }
+                            }
+                            // if *all* > 0 precondition failure violations have type MISSING, failedPrecondition
+                            // remains true
+                        } catch (protoEx: InvalidProtocolBufferException) {
+                            // really shouldn't happen
+                            return com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result.PERMANENT_FAILURE
+                        }
+                    } else if (!(detail.`is`(DebugInfo::class.java)
+                                || detail.`is`(Help::class.java)
+                                || detail.`is`(LocalizedMessage::class.java)
+                                || detail.`is`(RequestInfo::class.java)
+                                || detail.`is`(ResourceInfo::class.java))
+                    ) { // ignore benign details
+                        // consider all other details as failures
+                        failedPrecondition = false
+                    }
+                }
+            }
+            return if (failedPrecondition) com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result.TRANSIENT_FAILURE else com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result.PERMANENT_FAILURE
+        }
+    }
 }

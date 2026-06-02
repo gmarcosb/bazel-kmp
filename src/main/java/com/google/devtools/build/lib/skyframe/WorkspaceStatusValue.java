@@ -39,8 +39,8 @@ public class WorkspaceStatusValue extends BasicActionLookupValue {
 
   WorkspaceStatusValue(WorkspaceStatusAction workspaceStatusAction) {
     super(ImmutableList.of(workspaceStatusAction));
-    this.stableArtifact = workspaceStatusAction.getStableStatus();
-    this.volatileArtifact = workspaceStatusAction.getVolatileStatus();
+    this.stableArtifact = workspaceStatusAction.stableStatus;
+    this.volatileArtifact = workspaceStatusAction.volatileStatus;
   }
 
   public Artifact getStableArtifact() {

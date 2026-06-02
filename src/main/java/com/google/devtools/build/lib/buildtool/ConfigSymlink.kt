@@ -11,49 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool
 
-package com.google.devtools.build.lib.buildtool;
+import com.google.devtools.build.lib.actions.ArtifactRoot
 
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
+/** Base class for symlinks to output roots. Used only by [OutputDirectoryLinksUtils].  */
+internal open class ConfigSymlink(private val suffix: String, private val configToRoot: ConfigPathGetter) :
+    SymlinkDefinition {
+    internal fun interface ConfigPathGetter {
+        fun apply(configuration: BuildConfigurationValue?, repositoryName: RepositoryName?): ArtifactRoot?
+    }
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.SymlinkDefinition;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.Set;
+    public override fun getLinkName(symlinkPrefix: String?, workspaceBaseName: String?): String {
+        return symlinkPrefix + suffix
+    }
 
-/** Base class for symlinks to output roots. Used only by {@link OutputDirectoryLinksUtils}. */
-class ConfigSymlink implements SymlinkDefinition {
-  @FunctionalInterface
-  interface ConfigPathGetter {
-    ArtifactRoot apply(BuildConfigurationValue configuration, RepositoryName repositoryName);
-  }
-
-  private final String suffix;
-  private final ConfigPathGetter configToRoot;
-
-  ConfigSymlink(String suffix, ConfigPathGetter configToRoot) {
-    this.suffix = suffix;
-    this.configToRoot = configToRoot;
-  }
-
-  @Override
-  public String getLinkName(String symlinkPrefix, String workspaceBaseName) {
-    return symlinkPrefix + suffix;
-  }
-
-  @Override
-  public ImmutableSet<Path> getLinkPaths(
-      BuildRequestOptions buildRequestOptions,
-      Set<BuildConfigurationValue> targetConfigs,
-      RepositoryName repositoryName,
-      Path outputPath,
-      Path execRoot) {
-    return targetConfigs.stream()
-        .map(config -> configToRoot.apply(config, repositoryName).getRoot().asPath())
-        .distinct()
-        .collect(toImmutableSet());
-  }
+    public override fun getLinkPaths(
+        buildRequestOptions: BuildRequestOptions?,
+        targetConfigs: MutableSet<BuildConfigurationValue?>,
+        repositoryName: RepositoryName?,
+        outputPath: com.google.devtools.build.lib.vfs.Path?,
+        execRoot: com.google.devtools.build.lib.vfs.Path?
+    ): com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.vfs.Path?>? {
+        return targetConfigs.stream()
+            .map<Any?>(java.util.function.Function { config: BuildConfigurationValue? ->
+                configToRoot.apply(
+                    config,
+                    repositoryName
+                ).getRoot().asPath()
+            })
+            .distinct()
+            .collect(com.google.common.collect.ImmutableSet.toImmutableSet<Any?>())
+    }
 }

@@ -11,249 +11,257 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.cmdline
 
-package com.google.devtools.build.lib.cmdline;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
+import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.lib.vfs.UnixGlob
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
+/** A set of subdirectories to ignore during target pattern matching or globbing.  */
+class IgnoredSubdirectories private constructor(
+    prefixes: com.google.common.collect.ImmutableSet<PathFragment>,
+    patterns: com.google.common.collect.ImmutableList<String>,
+    traversalExclusions: com.google.common.collect.ImmutableSet<PathFragment>
+) {
+    private val prefixes: com.google.common.collect.ImmutableSet<PathFragment>
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.UnixGlob;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.Objects;
-import javax.annotation.Nullable;
+    // String[] is mutable; we keep the split version because that's faster to match and the non-split
+    // one because that allows for simpler equality checking and then matchingEntry() doesn't need to
+    // allocate new objects.
+    private val patterns: com.google.common.collect.ImmutableList<String>
+    private val splitPatterns: com.google.common.collect.ImmutableList<Array<String?>?>
+    private val traversalExclusions: com.google.common.collect.ImmutableSet<PathFragment>
 
-/** A set of subdirectories to ignore during target pattern matching or globbing. */
-public final class IgnoredSubdirectories {
-  public static final IgnoredSubdirectories EMPTY =
-      new IgnoredSubdirectories(ImmutableSet.of(), ImmutableList.of(), ImmutableSet.of());
+    private class Codec : ObjectCodec<IgnoredSubdirectories?> {
+        val encodedClass: java.lang.Class<out IgnoredSubdirectories?>
+            get() = IgnoredSubdirectories::class.java
 
-  private static final Splitter SLASH_SPLITTER = Splitter.on("/");
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(
+            context: SerializationContext, obj: IgnoredSubdirectories, codedOut: CodedOutputStream?
+        ) {
+            context.serialize(obj.prefixes, codedOut)
+            context.serialize(obj.patterns, codedOut)
+            context.serialize(obj.traversalExclusions, codedOut)
+        }
 
-  private final ImmutableSet<PathFragment> prefixes;
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserialize(
+            context: DeserializationContext, codedIn: CodedInputStream?
+        ): IgnoredSubdirectories {
+            val prefixes: com.google.common.collect.ImmutableSet<PathFragment>? =
+                context.deserialize<com.google.common.collect.ImmutableSet<PathFragment>?>(codedIn)
+            val patterns: com.google.common.collect.ImmutableList<String>? =
+                context.deserialize<com.google.common.collect.ImmutableList<String>?>(codedIn)
+            val traversalExclusions: com.google.common.collect.ImmutableSet<PathFragment>? =
+                context.deserialize<com.google.common.collect.ImmutableSet<PathFragment>?>(codedIn)
 
-  // String[] is mutable; we keep the split version because that's faster to match and the non-split
-  // one because that allows for simpler equality checking and then matchingEntry() doesn't need to
-  // allocate new objects.
-  private final ImmutableList<String> patterns;
-  private final ImmutableList<String[]> splitPatterns;
-  private final ImmutableSet<PathFragment> traversalExclusions;
+            return IgnoredSubdirectories(prefixes, patterns, traversalExclusions)
+        }
 
-  private static class Codec implements ObjectCodec<IgnoredSubdirectories> {
-    private static final Codec INSTANCE = new Codec();
-
-    @Override
-    public Class<? extends IgnoredSubdirectories> getEncodedClass() {
-      return IgnoredSubdirectories.class;
+        companion object {
+            private val INSTANCE: Codec = com.google.devtools.build.lib.cmdline.IgnoredSubdirectories.Codec()
+        }
     }
 
-    @Override
-    public void serialize(
-        SerializationContext context, IgnoredSubdirectories obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serialize(obj.prefixes, codedOut);
-      context.serialize(obj.patterns, codedOut);
-      context.serialize(obj.traversalExclusions, codedOut);
+    init {
+        this.prefixes = prefixes
+        this.patterns = patterns
+        this.splitPatterns =
+            patterns.stream()
+                .map<Array<String?>?>(java.util.function.Function { p: String? ->
+                    com.google.common.collect.Iterables.toArray<String?>(
+                        SLASH_SPLITTER.split(p), String::class.java
+                    )
+                })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Array<String?>?>())
+        this.traversalExclusions = traversalExclusions
     }
 
-    @Override
-    public IgnoredSubdirectories deserialize(
-        DeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      ImmutableSet<PathFragment> prefixes = context.deserialize(codedIn);
-      ImmutableList<String> patterns = context.deserialize(codedIn);
-      ImmutableSet<PathFragment> traversalExclusions = context.deserialize(codedIn);
+    fun withPrefix(prefix: PathFragment): IgnoredSubdirectories {
+        com.google.common.base.Preconditions.checkArgument(!prefix.isAbsolute())
 
-      return new IgnoredSubdirectories(prefixes, patterns, traversalExclusions);
-    }
-  }
+        val prefixedPrefixes: com.google.common.collect.ImmutableSet<PathFragment> =
+            prefixes.stream()
+                .map<PathFragment?>(java.util.function.Function { other: PathFragment? -> prefix.getRelative(other) })
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<PathFragment?>())
 
-  private IgnoredSubdirectories(
-      ImmutableSet<PathFragment> prefixes,
-      ImmutableList<String> patterns,
-      ImmutableSet<PathFragment> traversalExclusions) {
-    this.prefixes = prefixes;
-    this.patterns = patterns;
-    this.splitPatterns =
-        patterns.stream()
-            .map(p -> Iterables.toArray(SLASH_SPLITTER.split(p), String.class))
-            .collect(toImmutableList());
-    this.traversalExclusions = traversalExclusions;
-  }
+        val prefixedPatterns: com.google.common.collect.ImmutableList<String> =
+            patterns.stream().map<String?>(java.util.function.Function { p: String? -> prefix.toString() + "/" + p })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
 
-  public static IgnoredSubdirectories of(ImmutableSet<PathFragment> prefixes) {
-    return of(prefixes, ImmutableList.of(), ImmutableSet.of());
-  }
+        val prefixedTraversalExclusions: com.google.common.collect.ImmutableSet<PathFragment> =
+            traversalExclusions.stream()
+                .map<PathFragment?>(java.util.function.Function { other: PathFragment? -> prefix.getRelative(other) })
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<PathFragment?>())
 
-  public static IgnoredSubdirectories of(
-      ImmutableSet<PathFragment> prefixes, ImmutableList<String> patterns) {
-    return of(prefixes, patterns, ImmutableSet.of());
-  }
-
-  public static IgnoredSubdirectories of(
-      ImmutableSet<PathFragment> prefixes,
-      ImmutableList<String> patterns,
-      ImmutableSet<PathFragment> traversalExclusions) {
-    if (prefixes.isEmpty() && patterns.isEmpty() && traversalExclusions.isEmpty()) {
-      return EMPTY;
+        return IgnoredSubdirectories(
+            prefixedPrefixes, prefixedPatterns, prefixedTraversalExclusions
+        )
     }
 
-    for (PathFragment prefix : prefixes) {
-      Preconditions.checkArgument(!prefix.isAbsolute());
-    }
-    for (PathFragment exclusion : traversalExclusions) {
-      Preconditions.checkArgument(!exclusion.isAbsolute());
-    }
-
-    return new IgnoredSubdirectories(prefixes, patterns, traversalExclusions);
-  }
-
-  public IgnoredSubdirectories withPrefix(PathFragment prefix) {
-    Preconditions.checkArgument(!prefix.isAbsolute());
-
-    ImmutableSet<PathFragment> prefixedPrefixes =
-        prefixes.stream().map(prefix::getRelative).collect(toImmutableSet());
-
-    ImmutableList<String> prefixedPatterns =
-        patterns.stream().map(p -> prefix + "/" + p).collect(toImmutableList());
-
-    ImmutableSet<PathFragment> prefixedTraversalExclusions =
-        traversalExclusions.stream().map(prefix::getRelative).collect(toImmutableSet());
-
-    return new IgnoredSubdirectories(
-        prefixedPrefixes, prefixedPatterns, prefixedTraversalExclusions);
-  }
-
-  public IgnoredSubdirectories union(IgnoredSubdirectories other) {
-    return new IgnoredSubdirectories(
-        ImmutableSet.<PathFragment>builder().addAll(prefixes).addAll(other.prefixes).build(),
-        ImmutableSet.<String>builder().addAll(patterns).addAll(other.patterns).build().asList(),
-        ImmutableSet.<PathFragment>builder()
-            .addAll(traversalExclusions)
-            .addAll(other.traversalExclusions)
-            .build());
-  }
-
-  public IgnoredSubdirectories withTraversalExclusions(
-      ImmutableSet<PathFragment> traversalExclusions) {
-    return new IgnoredSubdirectories(this.prefixes, this.patterns, traversalExclusions);
-  }
-
-  /** Filters out entries that cannot match anything under {@code directory}. */
-  public IgnoredSubdirectories filterForDirectory(PathFragment directory) {
-    ImmutableSet<PathFragment> filteredPrefixes =
-        prefixes.stream().filter(p -> p.startsWith(directory)).collect(toImmutableSet());
-
-    ImmutableSet<PathFragment> filteredTraversalExclusions =
-        traversalExclusions.stream().filter(p -> p.startsWith(directory)).collect(toImmutableSet());
-
-    String[] splitDirectory =
-        Iterables.toArray(SLASH_SPLITTER.split(directory.getPathString()), String.class);
-    ImmutableList.Builder<String> filteredPatterns = ImmutableList.builder();
-    for (int i = 0; i < patterns.size(); i++) {
-      if (UnixGlob.canMatchChild(splitPatterns.get(i), splitDirectory)) {
-        filteredPatterns.add(patterns.get(i));
-      }
+    fun union(other: IgnoredSubdirectories): IgnoredSubdirectories {
+        return IgnoredSubdirectories(
+            com.google.common.collect.ImmutableSet.builder<PathFragment?>().addAll(prefixes).addAll(other.prefixes)
+                .build(),
+            com.google.common.collect.ImmutableSet.builder<String?>().addAll(patterns).addAll(other.patterns).build()
+                .asList(),
+            com.google.common.collect.ImmutableSet.builder<PathFragment?>()
+                .addAll(traversalExclusions)
+                .addAll(other.traversalExclusions)
+                .build()
+        )
     }
 
-    return new IgnoredSubdirectories(
-        filteredPrefixes, filteredPatterns.build(), filteredTraversalExclusions);
-  }
-
-  public ImmutableSet<PathFragment> prefixes() {
-    return prefixes;
-  }
-
-  public boolean isEmpty() {
-    return this.prefixes.isEmpty() && this.patterns.isEmpty();
-  }
-
-  /**
-   * Checks whether every path in this instance can conceivably match something under {@code
-   * directory}.
-   */
-  public boolean allPathsAreUnder(PathFragment directory) {
-    for (PathFragment prefix : prefixes) {
-      if (!prefix.startsWith(directory)) {
-        return false;
-      }
-
-      if (prefix.equals(directory)) {
-        return false;
-      }
+    fun withTraversalExclusions(
+        traversalExclusions: com.google.common.collect.ImmutableSet<PathFragment>
+    ): IgnoredSubdirectories {
+        return IgnoredSubdirectories(this.prefixes, this.patterns, traversalExclusions)
     }
 
-    return true;
-  }
+    /** Filters out entries that cannot match anything under `directory`.  */
+    fun filterForDirectory(directory: PathFragment): IgnoredSubdirectories {
+        val filteredPrefixes: com.google.common.collect.ImmutableSet<PathFragment> =
+            prefixes.stream().filter(java.util.function.Predicate { p: PathFragment? -> p.startsWith(directory) })
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<PathFragment?>())
 
-  /** Returns the entry that matches a given directory or {@code null} if none. */
-  @Nullable
-  public String matchingEntry(PathFragment directory) {
-    for (PathFragment prefix : prefixes) {
-      if (directory.startsWith(prefix)) {
-        return prefix.getPathString();
-      }
+        val filteredTraversalExclusions: com.google.common.collect.ImmutableSet<PathFragment> =
+            traversalExclusions.stream()
+                .filter(java.util.function.Predicate { p: PathFragment? -> p.startsWith(directory) })
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<PathFragment?>())
+
+        val splitDirectory: Array<String?> =
+            com.google.common.collect.Iterables.toArray<String?>(
+                SLASH_SPLITTER.split(directory.getPathString()),
+                String::class.java
+            )
+        val filteredPatterns: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        for (i in patterns.indices) {
+            if (UnixGlob.canMatchChild(splitPatterns.get(i), splitDirectory)) {
+                filteredPatterns.add(patterns.get(i))
+            }
+        }
+
+        return IgnoredSubdirectories(
+            filteredPrefixes, filteredPatterns.build(), filteredTraversalExclusions
+        )
     }
 
-    String[] segmentArray = Iterables.toArray(directory.segments(), String.class);
-    for (int i = 0; i < patterns.size(); i++) {
-      if (UnixGlob.matchesPrefix(splitPatterns.get(i), segmentArray)) {
-        return patterns.get(i);
-      }
+    fun prefixes(): com.google.common.collect.ImmutableSet<PathFragment> {
+        return prefixes
     }
 
-    return null;
-  }
+    val isEmpty: Boolean
+        get() = this.prefixes.isEmpty() && this.patterns.isEmpty()
 
-  /** Returns true if the directory matches any traversal exclusion or standard ignored entry. */
-  public boolean matchingEntryForTraversal(PathFragment directory) {
-    if (matchingEntry(directory) != null) {
-      return true;
-    }
-    for (PathFragment exclusion : traversalExclusions) {
-      if (directory.startsWith(exclusion)) {
-        return true;
-      }
-    }
-    return false;
-  }
+    /**
+     * Checks whether every path in this instance can conceivably match something under `directory`.
+     */
+    fun allPathsAreUnder(directory: PathFragment?): Boolean {
+        for (prefix in prefixes) {
+            if (!prefix.startsWith(directory)) {
+                return false
+            }
 
-  @Override
-  public boolean equals(Object other) {
-    if (!(other instanceof IgnoredSubdirectories)) {
-      return false;
+            if (prefix == directory) {
+                return false
+            }
+        }
+
+        return true
     }
 
-    // splitPatterns is a function of patterns so it's enough to check if patterns is equal
-    IgnoredSubdirectories that = (IgnoredSubdirectories) other;
-    return Objects.equals(this.prefixes, that.prefixes)
-        && Objects.equals(this.patterns, that.patterns)
-        && Objects.equals(this.traversalExclusions, that.traversalExclusions);
-  }
+    /** Returns the entry that matches a given directory or `null` if none.  */
+    fun matchingEntry(directory: PathFragment): String? {
+        for (prefix in prefixes) {
+            if (directory.startsWith(prefix)) {
+                return prefix.getPathString()
+            }
+        }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(prefixes, patterns, traversalExclusions);
-  }
+        val segmentArray: Array<String?> =
+            com.google.common.collect.Iterables.toArray<String?>(directory.segments(), String::class.java)
+        for (i in patterns.indices) {
+            if (UnixGlob.matchesPrefix(splitPatterns.get(i), segmentArray)) {
+                return patterns.get(i)
+            }
+        }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper("IgnoredSubdirectories")
-        .add("prefixes", prefixes)
-        .add("patterns", patterns)
-        .add("traversalExclusions", traversalExclusions)
-        .toString();
-  }
+        return null
+    }
+
+    /** Returns true if the directory matches any traversal exclusion or standard ignored entry.  */
+    fun matchingEntryForTraversal(directory: PathFragment): Boolean {
+        if (matchingEntry(directory) != null) {
+            return true
+        }
+        for (exclusion in traversalExclusions) {
+            if (directory.startsWith(exclusion)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other !is IgnoredSubdirectories) {
+            return false
+        }
+
+        // splitPatterns is a function of patterns so it's enough to check if patterns is equal
+        val that = other
+        return this.prefixes == that.prefixes
+                && this.patterns == that.patterns
+                && this.traversalExclusions == that.traversalExclusions
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(prefixes, patterns, traversalExclusions)
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper("IgnoredSubdirectories")
+            .add("prefixes", prefixes)
+            .add("patterns", patterns)
+            .add("traversalExclusions", traversalExclusions)
+            .toString()
+    }
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val EMPTY: IgnoredSubdirectories = IgnoredSubdirectories(
+            com.google.common.collect.ImmutableSet.of<PathFragment?>(),
+            com.google.common.collect.ImmutableList.of<String?>(),
+            com.google.common.collect.ImmutableSet.of<PathFragment?>()
+        )
+
+        private val SLASH_SPLITTER: com.google.common.base.Splitter = com.google.common.base.Splitter.on("/")
+
+        @kotlin.jvm.JvmOverloads
+        fun of(
+            prefixes: com.google.common.collect.ImmutableSet<PathFragment>,
+            patterns: com.google.common.collect.ImmutableList<String> = com.google.common.collect.ImmutableList.of<String?>(),
+            traversalExclusions: com.google.common.collect.ImmutableSet<PathFragment> = com.google.common.collect.ImmutableSet.of<PathFragment?>()
+        ): IgnoredSubdirectories? {
+            if (prefixes.isEmpty() && patterns.isEmpty() && traversalExclusions.isEmpty()) {
+                return EMPTY
+            }
+
+            for (prefix in prefixes) {
+                com.google.common.base.Preconditions.checkArgument(!prefix.isAbsolute())
+            }
+            for (exclusion in traversalExclusions) {
+                com.google.common.base.Preconditions.checkArgument(!exclusion.isAbsolute())
+            }
+
+            return IgnoredSubdirectories(prefixes, patterns, traversalExclusions)
+        }
+    }
 }

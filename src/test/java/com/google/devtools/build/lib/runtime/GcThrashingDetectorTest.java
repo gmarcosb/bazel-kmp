@@ -195,9 +195,9 @@ public final class GcThrashingDetectorTest {
     ArgumentCaptor<Crash> crashArgument = ArgumentCaptor.forClass(Crash.class);
     verify(bugReporter).handleCrash(crashArgument.capture(), any());
     Crash crash = crashArgument.getValue();
-    Throwable oom = crash.getThrowable();
+    Throwable oom = crash.throwable;
     assertThat(oom).isInstanceOf(OutOfMemoryError.class);
-    assertThat(crash.getDetailedExitCode().getFailureDetail().getCrash().getOomCauseCategory())
+    assertThat(crash.detailedExitCode.getFailureDetail().getCrash().getOomCauseCategory())
         .isEqualTo(OomCauseCategory.GC_THRASHING);
     return (OutOfMemoryError) oom;
   }

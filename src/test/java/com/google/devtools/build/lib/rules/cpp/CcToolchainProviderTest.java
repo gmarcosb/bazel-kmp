@@ -396,7 +396,7 @@ public class CcToolchainProviderTest extends BuildViewTestCase {
             "com/google/devtools/build/lib/analysis/mock/cc_toolchain_config.bzl"));
     useConfiguration("--collect_code_coverage", "--instrumentation_filter=//a[:/]");
     InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider);
 
     assertThat(instrumentedFilesInfo.getCoverageEnvironment())
         .doesNotContainKey("COVERAGE_GCOV_PATH");
@@ -492,7 +492,7 @@ public class CcToolchainProviderTest extends BuildViewTestCase {
 
     ImmutableMap<String, String> coverageEnv =
         getConfiguredTarget("//a:lib")
-            .get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+            .get(InstrumentedFilesInfo.provider)
             .getCoverageEnvironment();
 
     assertThat(coverageEnv).containsKey("LLVM_COV");
@@ -549,7 +549,7 @@ public class CcToolchainProviderTest extends BuildViewTestCase {
 
     ImmutableMap<String, String> coverageEnv =
         getConfiguredTarget("//a:lib")
-            .get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+            .get(InstrumentedFilesInfo.provider)
             .getCoverageEnvironment();
 
     assertThat(coverageEnv).doesNotContainKey("LLVM_COV");
@@ -574,7 +574,7 @@ public class CcToolchainProviderTest extends BuildViewTestCase {
     CcToolchainProvider ccToolchainProvider =
         CcToolchainProvider.getFromTarget(getConfiguredTarget("//a:toolchain"));
     InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider);
 
     assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isNotEmpty();
     assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList())
@@ -596,7 +596,7 @@ public class CcToolchainProviderTest extends BuildViewTestCase {
         """);
 
     InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
+        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider);
 
     assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isEmpty();
   }

@@ -11,194 +11,212 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-package com.google.devtools.build.lib.authandtls.credentialhelper;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.errorprone.annotations.Immutable;
-import com.google.gson.JsonSyntaxException;
-import com.google.gson.TypeAdapter;
-import com.google.gson.annotations.JsonAdapter;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.JsonToken;
-import com.google.gson.stream.JsonWriter;
-import java.io.IOException;
-import java.time.DateTimeException;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.time.format.ResolverStyle;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import com.google.auto.value.AutoBuilder
+import com.google.auto.value.AutoValue.CopyAnnotations
+import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsResponse
+import com.google.gson.JsonSyntaxException
+import com.google.gson.TypeAdapter
+import com.google.gson.annotations.JsonAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonWriter
+import java.io.IOException
+import java.time.DateTimeException
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
+import java.util.Locale
 
 /**
- * Response from the {@code get} command of the <a
- * href="https://github.com/bazelbuild/proposals/blob/main/designs/2022-06-07-bazel-credential-helpers.md#proposal">Credential
- * Helper Protocol</a>.
- *
- * <p>See the <a
- * href="https://github.com/EngFlow/credential-helper-spec/blob/main/schemas/get-credentials-response.schema.json">specification</a>.
- *
+ * Response from the `get` command of the [Credential
+ * Helper Protocol](https://github.com/bazelbuild/proposals/blob/main/designs/2022-06-07-bazel-credential-helpers.md#proposal).
+ * 
+ * 
+ * See the [specification](https://github.com/EngFlow/credential-helper-spec/blob/main/schemas/get-credentials-response.schema.json).
+ * 
  * @param headers Returns the headers to attach to the request.
  * @param expires Returns the time the credentials expire and must be revalidated.
  */
-@AutoValue.CopyAnnotations
-@Immutable
-@JsonAdapter(GetCredentialsResponse.GsonTypeAdapter.class)
-public record GetCredentialsResponse(
-    ImmutableMap<String, ImmutableList<String>> headers, Optional<Instant> expires) {
-  public GetCredentialsResponse {
-    requireNonNull(headers, "headers");
-    requireNonNull(expires, "expires");
-  }
+@CopyAnnotations
+@com.google.errorprone.annotations.Immutable
+@JsonAdapter(com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsResponse.GsonTypeAdapter::class)
+class GetCredentialsResponse(
+    headers: com.google.common.collect.ImmutableMap<String?, com.google.common.collect.ImmutableList<String?>?>,
+    expires: java.util.Optional<Instant?>
+) {
+    /** Builder for [GetCredentialsResponse].  */
+    @AutoBuilder
+    abstract class Builder {
+        abstract fun headersBuilder(): com.google.common.collect.ImmutableMap.Builder<String?, com.google.common.collect.ImmutableList<String?>?>?
 
-  public static final DateTimeFormatter RFC_3339_FORMATTER =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX")
-          .withZone(ZoneId.from(ZoneOffset.UTC))
-          .withResolverStyle(ResolverStyle.LENIENT);
+        abstract fun setExpires(instant: Instant?): Builder?
 
-  /** Returns a new builder for {@link GetCredentialsRequest}. */
-  public static Builder newBuilder() {
-    return new AutoBuilder_GetCredentialsResponse_Builder();
-  }
-
-  /** Builder for {@link GetCredentialsResponse}. */
-  @AutoBuilder
-  public abstract static class Builder {
-    public abstract ImmutableMap.Builder<String, ImmutableList<String>> headersBuilder();
-
-    public abstract Builder setExpires(Instant instant);
-
-    /** Returns the newly constructed {@link GetCredentialsResponse}. */
-    public abstract GetCredentialsResponse build();
-  }
-
-  /** GSON adapter for GetCredentialsResponse. */
-  public static final class GsonTypeAdapter extends TypeAdapter<GetCredentialsResponse> {
-    @Override
-    public void write(JsonWriter writer, GetCredentialsResponse response) throws IOException {
-      Preconditions.checkNotNull(writer);
-      Preconditions.checkNotNull(response);
-
-      writer.beginObject();
-
-      ImmutableMap<String, ImmutableList<String>> headers = response.headers();
-      if (!headers.isEmpty()) {
-        writer.name("headers");
-        writer.beginObject();
-        for (Map.Entry<String, ImmutableList<String>> entry : headers.entrySet()) {
-          writer.name(entry.getKey());
-
-          writer.beginArray();
-          for (String value : entry.getValue()) {
-            writer.value(value);
-          }
-          writer.endArray();
-        }
-        writer.endObject();
-      }
-
-      var expires = response.expires();
-      if (expires.isPresent()) {
-        writer.name("expires");
-        writer.value(RFC_3339_FORMATTER.format(expires.get()));
-      }
-
-      writer.endObject();
+        /** Returns the newly constructed [GetCredentialsResponse].  */
+        abstract fun build(): GetCredentialsResponse?
     }
 
-    @Override
-    public GetCredentialsResponse read(JsonReader reader) throws IOException {
-      Preconditions.checkNotNull(reader);
+    /** GSON adapter for GetCredentialsResponse.  */
+    class GsonTypeAdapter : TypeAdapter<GetCredentialsResponse?>() {
+        @Throws(IOException::class)
+        override fun write(writer: JsonWriter?, response: GetCredentialsResponse?) {
+            com.google.common.base.Preconditions.checkNotNull<JsonWriter?>(writer)
+            com.google.common.base.Preconditions.checkNotNull<GetCredentialsResponse?>(response)
 
-      GetCredentialsResponse.Builder response = newBuilder();
+            writer.beginObject()
 
-      if (reader.peek() != JsonToken.BEGIN_OBJECT) {
-        throw new JsonSyntaxException(
-            String.format(Locale.US, "Expected object, got %s", reader.peek()));
-      }
-      reader.beginObject();
+            val headers: com.google.common.collect.ImmutableMap<String?, com.google.common.collect.ImmutableList<String?>?> =
+                response!!.headers
+            if (!headers.isEmpty()) {
+                writer.name("headers")
+                writer.beginObject()
+                for (entry in headers.entrySet()) {
+                    writer.name(entry.getKey())
 
-      while (reader.hasNext()) {
-        String name = reader.nextName();
-        switch (name) {
-          case "headers" -> {
-            if (reader.peek() != JsonToken.BEGIN_OBJECT) {
-              throw new JsonSyntaxException(
-                  String.format(
-                      Locale.US,
-                      "Expected value of 'headers' to be an object, got %s",
-                      reader.peek()));
+                    writer.beginArray()
+                    for (value in entry.getValue()) {
+                        writer.value(value)
+                    }
+                    writer.endArray()
+                }
+                writer.endObject()
             }
-            reader.beginObject();
+
+            val expires: java.util.Optional<Instant?> = response.expires
+            if (expires.isPresent()) {
+                writer.name("expires")
+                writer.value(RFC_3339_FORMATTER.format(expires.get()))
+            }
+
+            writer.endObject()
+        }
+
+        @Throws(IOException::class)
+        override fun read(reader: JsonReader?): GetCredentialsResponse? {
+            com.google.common.base.Preconditions.checkNotNull<JsonReader?>(reader)
+
+            val response = newBuilder()
+
+            if (reader.peek() != com.google.gson.stream.JsonToken.BEGIN_OBJECT) {
+                throw JsonSyntaxException(
+                    java.lang.String.format(Locale.US, "Expected object, got %s", reader.peek())
+                )
+            }
+            reader.beginObject()
 
             while (reader.hasNext()) {
-              String headerName = reader.nextName();
-              ImmutableList.Builder<String> headerValues = ImmutableList.builder();
+                val name: String = reader.nextName()
+                when (name) {
+                    "headers" -> {
+                        if (reader.peek() != com.google.gson.stream.JsonToken.BEGIN_OBJECT) {
+                            throw JsonSyntaxException(
+                                java.lang.String.format(
+                                    Locale.US,
+                                    "Expected value of 'headers' to be an object, got %s",
+                                    reader.peek()
+                                )
+                            )
+                        }
+                        reader.beginObject()
 
-              if (reader.peek() != JsonToken.BEGIN_ARRAY) {
-                throw new JsonSyntaxException(
-                    String.format(
-                        Locale.US,
-                        "Expected value of '%s' header to be an array of strings, got %s",
-                        headerName,
-                        reader.peek()));
-              }
-              reader.beginArray();
-              for (int i = 0; reader.hasNext(); i++) {
-                if (reader.peek() != JsonToken.STRING) {
-                  throw new JsonSyntaxException(
-                      String.format(
-                          Locale.US,
-                          "Expected value %s of '%s' header to be a string, got %s",
-                          i,
-                          headerName,
-                          reader.peek()));
+                        while (reader.hasNext()) {
+                            val headerName: String = reader.nextName()
+                            val headerValues: com.google.common.collect.ImmutableList.Builder<String?> =
+                                com.google.common.collect.ImmutableList.builder<String?>()
+
+                            if (reader.peek() != com.google.gson.stream.JsonToken.BEGIN_ARRAY) {
+                                throw JsonSyntaxException(
+                                    java.lang.String.format(
+                                        Locale.US,
+                                        "Expected value of '%s' header to be an array of strings, got %s",
+                                        headerName,
+                                        reader.peek()
+                                    )
+                                )
+                            }
+                            reader.beginArray()
+                            var i = 0
+                            while (reader.hasNext()) {
+                                if (reader.peek() != com.google.gson.stream.JsonToken.STRING) {
+                                    throw JsonSyntaxException(
+                                        java.lang.String.format(
+                                            Locale.US,
+                                            "Expected value %s of '%s' header to be a string, got %s",
+                                            i,
+                                            headerName,
+                                            reader.peek()
+                                        )
+                                    )
+                                }
+                                headerValues.add(reader.nextString())
+                                i++
+                            }
+                            reader.endArray()
+
+                            response.headersBuilder().put(headerName, headerValues.build())
+                        }
+
+                        reader.endObject()
+                    }
+
+                    "expires" -> {
+                        if (reader.peek() != com.google.gson.stream.JsonToken.STRING) {
+                            throw JsonSyntaxException(
+                                java.lang.String.format(
+                                    Locale.US,
+                                    "Expected value of 'expires' to be a string, got %s",
+                                    reader.peek()
+                                )
+                            )
+                        }
+                        try {
+                            response.setExpires(Instant.from(RFC_3339_FORMATTER.parse(reader.nextString())))
+                        } catch (e: DateTimeException) {
+                            throw JsonSyntaxException(
+                                java.lang.String.format(
+                                    Locale.US,
+                                    "Expected value of 'expires' to be a RFC 3339 formatted timestamp: %s",
+                                    e.getMessage()
+                                )
+                            )
+                        }
+                    }
+
+                    else ->  // We intentionally ignore unknown keys to achieve forward compatibility with
+                        // responses
+                        // coming from newer tools.
+                        reader.skipValue()
                 }
-                headerValues.add(reader.nextString());
-              }
-              reader.endArray();
-
-              response.headersBuilder().put(headerName, headerValues.build());
             }
-
-            reader.endObject();
-          }
-          case "expires" -> {
-            if (reader.peek() != JsonToken.STRING) {
-              throw new JsonSyntaxException(
-                  String.format(
-                      Locale.US,
-                      "Expected value of 'expires' to be a string, got %s",
-                      reader.peek()));
-            }
-            try {
-              response.setExpires(Instant.from(RFC_3339_FORMATTER.parse(reader.nextString())));
-            } catch (DateTimeException e) {
-              throw new JsonSyntaxException(
-                  String.format(
-                      Locale.US,
-                      "Expected value of 'expires' to be a RFC 3339 formatted timestamp: %s",
-                      e.getMessage()));
-            }
-          }
-          default ->
-              // We intentionally ignore unknown keys to achieve forward compatibility with
-              // responses
-              // coming from newer tools.
-              reader.skipValue();
+            reader.endObject()
+            return response.build()
         }
-      }
-      reader.endObject();
-      return response.build();
     }
-  }
+
+    val headers: com.google.common.collect.ImmutableMap<String?, com.google.common.collect.ImmutableList<String?>?>
+    val expires: java.util.Optional<Instant?>
+
+    init {
+        this.expires = expires
+        this.headers = headers
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, com.google.common.collect.ImmutableList<String?>?>?>(
+            headers,
+            "headers"
+        )
+        java.util.Objects.requireNonNull<java.util.Optional<Instant?>?>(expires, "expires")
+    }
+
+    companion object {
+        val RFC_3339_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX")
+            .withZone(ZoneId.from(ZoneOffset.UTC))
+            .withResolverStyle(ResolverStyle.LENIENT)
+
+        /** Returns a new builder for [GetCredentialsRequest].  */
+        @kotlin.jvm.JvmStatic
+        fun newBuilder(): Builder {
+            return AutoBuilder_GetCredentialsResponse_Builder()
+        }
+    }
 }

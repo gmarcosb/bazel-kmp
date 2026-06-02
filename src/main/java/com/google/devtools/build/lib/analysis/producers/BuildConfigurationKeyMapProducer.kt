@@ -11,118 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.BuildOptionsScopeFunction.BuildOptionsScopeFunctionException;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.config.PlatformMappingException;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.Map;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
 /**
- * Creates the needed {@link BuildConfigurationKey} instances for the given options.
- *
- * <p>This includes merging in platform mappings and platform-based flags.
- *
- * <p>The output preserves the iteration order of the input.
+ * Creates the needed [BuildConfigurationKey] instances for the given options.
+ * 
+ * 
+ * This includes merging in platform mappings and platform-based flags.
+ * 
+ * 
+ * The output preserves the iteration order of the input.
  */
-public class BuildConfigurationKeyMapProducer
-    implements StateMachine, BuildConfigurationKeyProducer.ResultSink<String> {
+class BuildConfigurationKeyMapProducer
+    (// -------------------- Input --------------------
+    private val sink: ResultSink,
+    runAfter: StateMachine?,
+    options: MutableMap<String?, BuildOptions?>,
+    label: com.google.devtools.build.lib.cmdline.Label?
+) : StateMachine, com.google.devtools.build.lib.analysis.producers.BuildConfigurationKeyProducer.ResultSink<String?> {
+    /** Interface for clients to accept results of this computation.  */
+    interface ResultSink {
+        fun acceptOptionsParsingError(e: com.google.devtools.common.options.OptionsParsingException?)
 
-  /** Interface for clients to accept results of this computation. */
-  public interface ResultSink {
+        fun acceptPlatformMappingError(e: PlatformMappingException?)
 
-    void acceptOptionsParsingError(OptionsParsingException e);
+        fun acceptPlatformFlagsError(error: InvalidPlatformException?)
 
-    void acceptPlatformMappingError(PlatformMappingException e);
+        fun acceptBuildOptionsScopeFunctionError(e: BuildOptionsScopeFunctionException?)
 
-    void acceptPlatformFlagsError(InvalidPlatformException error);
+        fun acceptTransitionedConfigurations(
+            transitionedOptions: com.google.common.collect.ImmutableMap<String?, BuildConfigurationKey?>?
+        )
+    }
 
-    void acceptBuildOptionsScopeFunctionError(BuildOptionsScopeFunctionException e);
+    private val runAfter: StateMachine?
+    private val options: MutableMap<String?, BuildOptions?>
+    private val label: com.google.devtools.build.lib.cmdline.Label?
 
-    void acceptTransitionedConfigurations(
-        ImmutableMap<String, BuildConfigurationKey> transitionedOptions);
-  }
+    // -------------------- Internal State --------------------
+    private val results: MutableMap<String?, BuildConfigurationKey?>
 
-  // -------------------- Input --------------------
-  private final ResultSink sink;
-  private final StateMachine runAfter;
-  private final Map<String, BuildOptions> options;
-  private final Label label;
+    init {
+        this.runAfter = runAfter
+        this.options = options
+        this.results =
+            com.google.common.collect.Maps.newHashMapWithExpectedSize<String?, BuildConfigurationKey?>(options.size)
+        this.label = label
+    }
 
-  // -------------------- Internal State --------------------
-  private final Map<String, BuildConfigurationKey> results;
-
-  public BuildConfigurationKeyMapProducer(
-      ResultSink sink, StateMachine runAfter, Map<String, BuildOptions> options, Label label) {
-    this.sink = sink;
-    this.runAfter = runAfter;
-    this.options = options;
-    this.results = Maps.newHashMapWithExpectedSize(options.size());
-    this.label = label;
-  }
-
-  @Override
-  public StateMachine step(Tasks tasks) {
-    options.forEach(
-        (context, buildOptions) ->
+    override fun step(tasks: StateMachine.Tasks): StateMachine {
+        options.forEach { (context: String?, buildOptions: BuildOptions?) ->
             tasks.enqueue(
-                new BuildConfigurationKeyProducer<>(
-                    (BuildConfigurationKeyProducer.ResultSink<String>) this,
+                BuildConfigurationKeyProducer<String?>(
+                    this as com.google.devtools.build.lib.analysis.producers.BuildConfigurationKeyProducer.ResultSink<String?>,
                     StateMachine.DONE,
                     context,
                     buildOptions,
-                    label)));
-    return this::combineResults;
-  }
-
-  private StateMachine combineResults(Tasks tasks) {
-    if (this.results.size() != this.options.size()) {
-      // An error occurred while processing at least one set of options.
-      return StateMachine.DONE;
+                    label
+                )
+            )
+        }
+        return StateMachine { tasks: StateMachine.Tasks? -> this.combineResults(tasks) }
     }
 
-    // Ensure that the result keys are in the same order as the original.
-    ImmutableMap.Builder<String, BuildConfigurationKey> output =
-        ImmutableMap.builderWithExpectedSize(this.options.size());
-    for (String transitionKey : this.options.keySet()) {
-      BuildConfigurationKey resultKey = this.results.get(transitionKey);
-      output.put(transitionKey, resultKey);
+    private fun combineResults(tasks: StateMachine.Tasks?): StateMachine? {
+        if (this.results.size != this.options.size) {
+            // An error occurred while processing at least one set of options.
+            return StateMachine.DONE
+        }
+
+        // Ensure that the result keys are in the same order as the original.
+        val output: com.google.common.collect.ImmutableMap.Builder<String?, BuildConfigurationKey?> =
+            com.google.common.collect.ImmutableMap.builderWithExpectedSize<String?, BuildConfigurationKey?>(this.options.size)
+        for (transitionKey in this.options.keys) {
+            val resultKey: BuildConfigurationKey? = this.results.get(transitionKey)
+            output.put(transitionKey, resultKey)
+        }
+
+        this.sink.acceptTransitionedConfigurations(output.buildOrThrow())
+        return this.runAfter
     }
 
-    this.sink.acceptTransitionedConfigurations(output.buildOrThrow());
-    return this.runAfter;
-  }
+    override fun acceptOptionsParsingError(e: com.google.devtools.common.options.OptionsParsingException?) {
+        this.sink.acceptOptionsParsingError(e)
+    }
 
-  @Override
-  public void acceptOptionsParsingError(OptionsParsingException e) {
-    this.sink.acceptOptionsParsingError(e);
-  }
+    override fun acceptPlatformMappingError(e: PlatformMappingException?) {
+        this.sink.acceptPlatformMappingError(e)
+    }
 
-  @Override
-  public void acceptPlatformMappingError(PlatformMappingException e) {
-    this.sink.acceptPlatformMappingError(e);
-  }
+    override fun acceptPlatformFlagsError(error: InvalidPlatformException?) {
+        this.sink.acceptPlatformFlagsError(error)
+    }
 
-  @Override
-  public void acceptPlatformFlagsError(InvalidPlatformException error) {
-    this.sink.acceptPlatformFlagsError(error);
-  }
+    override fun acceptTransitionedConfiguration(
+        transitionKey: String?, transitionedOptionKey: BuildConfigurationKey?
+    ) {
+        this.results.put(transitionKey, transitionedOptionKey)
+    }
 
-  @Override
-  public void acceptTransitionedConfiguration(
-      String transitionKey, BuildConfigurationKey transitionedOptionKey) {
-    this.results.put(transitionKey, transitionedOptionKey);
-  }
-
-  @Override
-  public void acceptBuildOptionsScopeFunctionError(BuildOptionsScopeFunctionException e) {
-    this.sink.acceptBuildOptionsScopeFunctionError(e);
-  }
+    override fun acceptBuildOptionsScopeFunctionError(e: BuildOptionsScopeFunctionException?) {
+        this.sink.acceptBuildOptionsScopeFunctionError(e)
+    }
 }

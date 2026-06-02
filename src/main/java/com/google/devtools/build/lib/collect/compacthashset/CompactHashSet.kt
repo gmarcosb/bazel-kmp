@@ -26,53 +26,434 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.google.devtools.build.lib.collect.compacthashset
 
-package com.google.devtools.build.lib.collect.compacthashset;
-
-import com.google.common.base.Preconditions;
-import com.google.common.primitives.Ints;
-import java.lang.reflect.Array;
-import java.util.AbstractSet;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.ConcurrentModificationException;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import java.util.AbstractSet
+import java.util.Collections
+import java.util.ConcurrentModificationException
 
 /**
  * CompactHashSet is an implementation of a Set. All optional operations (adding and removing) are
  * supported. The elements can be any objects.
- *
- * <p>{@code contains(x)}, {@code add(x)} and {@code remove(x)}, are all (expected and amortized)
+ * 
+ * 
+ * `contains(x)`, `add(x)` and `remove(x)`, are all (expected and amortized)
  * constant time operations. Expected in the hashtable sense (depends on the hash function doing a
  * good job of distributing the elements to the buckets to a distribution not far from uniform), and
  * amortized since some operations can trigger a hash table resize.
- *
- * <p>Unlike {@code java.util.HashSet}, iteration is only proportional to the actual {@code size()},
- * which is optimal, and <i>not</i> the size of the internal hashtable, which could be much larger
- * than {@code size()}. Furthermore, this structure only depends on a fixed number of arrays; {@code
- * add(x)} operations <i>do not</i> create objects for the garbage collector to deal with, and for
- * every element added, the garbage collector will have to traverse {@code 1.5} references on
- * average, in the marking phase, not {@code 5.0} as in {@code java.util.HashSet}.
- *
- * <p>If there are no removals, then {@link #iterator iteration} order is the same as insertion
+ * 
+ * 
+ * Unlike `java.util.HashSet`, iteration is only proportional to the actual `size()`,
+ * which is optimal, and *not* the size of the internal hashtable, which could be much larger
+ * than `size()`. Furthermore, this structure only depends on a fixed number of arrays; `add(x)` operations *do not* create objects for the garbage collector to deal with, and for
+ * every element added, the garbage collector will have to traverse `1.5` references on
+ * average, in the marking phase, not `5.0` as in `java.util.HashSet`.
+ * 
+ * 
+ * If there are no removals, then [iteration][.iterator] order is the same as insertion
  * order. Any removal invalidates any ordering guarantees.
- *
- * <p>NOTE: This is an older version of Guava's {@code
- * com.google.java.common.collect.CompactHashSet}, but it outperforms the newer version on large
+ * 
+ * 
+ * NOTE: This is an older version of Guava's `com.google.java.common.collect.CompactHashSet`, but it outperforms the newer version on large
  * builds significantly, as it uses only 50% of cpu time in comparison.
  */
-public class CompactHashSet<E> extends AbstractSet<E> {
-  // TODO(bazel-team): cache all field accesses in local vars
+class CompactHashSet<E> private constructor(expectedSize: Int) : AbstractSet<E?>() {
+    /**
+     * The hashtable. Its values are indexes to both the elements and entries arrays.
+     * 
+     * Currently, the UNSET value means "null pointer", and any non negative value x is
+     * the actual index.
+     * 
+     * Its size must be a power of two.
+     */
+    @Transient
+    private var table: IntArray
 
-  // A partial copy of com.google.common.collect.Hashing.
-  private static final int C1 = 0xcc9e2d51;
-  private static final int C2 = 0x1b873593;
+    /**
+     * Contains the logical entries, in the range of [0, size()). The high 32 bits of each
+     * long is the smeared hash of the element, whereas the low 32 bits is the "next" pointer
+     * (pointing to the next entry in the bucket chain). The pointers in [size(), entries.length)
+     * are all "null" (UNSET).
+     */
+    @Transient
+    private var entries: LongArray
 
-  /*
+    /** The elements contained in the set, in the range of [0, size()).  */
+    @Transient
+    private var elements: Array<Any?>
+
+    /**
+     * Keeps track of modifications of this set, to make it possible to throw
+     * ConcurrentModificationException in the iterator. Note that we choose not to make this volatile,
+     * so we do less of a "best effort" to track such errors, for better performance.
+     */
+    @Transient
+    private var modCount = 0
+
+    /**
+     * When we have this many elements, resize the hashtable.
+     */
+    @Transient
+    private var threshold: Int
+
+    /**
+     * The number of elements contained in the set.
+     */
+    @Transient
+    private var size = 0
+
+    /**
+     * Constructs a new instance of `CompactHashSet` with the specified capacity.
+     * 
+     * @param expectedSize the initial capacity of this `CompactHashSet`.
+     */
+    init {
+        com.google.common.base.Preconditions.checkArgument(expectedSize >= 0, "Initial capacity must be non-negative")
+        val buckets: Int =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.closedTableSize(expectedSize)
+        this.table = com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.newTable(buckets)
+        this.elements = arrayOfNulls<Any>(expectedSize)
+        this.entries =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.newEntries(expectedSize)
+        this.threshold = java.lang.Math.max(
+            1,
+            (buckets * com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.LOAD_FACTOR).toInt()
+        )
+    }
+
+    private fun hashTableMask(): Int {
+        return table.length - 1
+    }
+
+    override fun add(`object`: E?): Boolean {
+        val entries = this.entries
+        val elements = this.elements
+        val hash: Int =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.smearedHash(`object`)
+        val tableIndex = hash and hashTableMask()
+        val newEntryIndex = this.size // current size, and pointer to the entry to be appended
+        var next = table[tableIndex]
+        if (next == com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET) { // uninitialized bucket
+            table[tableIndex] = newEntryIndex
+        } else {
+            var last: Int
+            var entry: Long
+            do {
+                last = next
+                entry = entries[next]
+                if (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getHash(entry) == hash && `object` == elements[next]) {
+                    return false
+                }
+                next = com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getNext(entry)
+            } while (next != com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET)
+            entries[last] = com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.swapNext(
+                entry,
+                newEntryIndex
+            )
+        }
+        check(newEntryIndex != java.lang.Integer.MAX_VALUE) { "Cannot contain more than Integer.MAX_VALUE elements!" }
+        val newSize = newEntryIndex + 1
+        resizeMeMaybe(newSize)
+        insertEntry(newEntryIndex, `object`, hash)
+        this.size = newSize
+        if (newEntryIndex >= threshold) {
+            resizeTable(2 * table.length)
+        }
+        modCount++
+        return true
+    }
+
+    /**
+     * Creates a fresh entry with the specified object at the specified position in the entry arrays.
+     */
+    private fun insertEntry(entryIndex: Int, `object`: E?, hash: Int) {
+        this.entries[entryIndex] =
+            (hash.toLong() shl 32) or (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.NEXT_MASK and com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET.toLong())
+        this.elements[entryIndex] = `object`
+    }
+
+    /**
+     * Returns currentSize + 1, after resizing the entries storage if necessary.
+     */
+    private fun resizeMeMaybe(newSize: Int) {
+        val entriesSize: Int = entries.length
+        if (newSize > entriesSize) {
+            var newCapacity: Int = entriesSize + java.lang.Math.max(1, entriesSize ushr 1)
+            if (newCapacity < 0) {
+                newCapacity = java.lang.Integer.MAX_VALUE
+            }
+            if (newCapacity != entriesSize) {
+                resizeEntries(newCapacity)
+            }
+        }
+    }
+
+    /**
+     * Resizes the internal entries array to the specified capacity, which may be greater or less than
+     * the current capacity.
+     */
+    private fun resizeEntries(newCapacity: Int) {
+        this.elements = java.util.Arrays.copyOf<Any?>(elements, newCapacity)
+        var entries = this.entries
+        val oldSize: Int = entries.length
+        entries = java.util.Arrays.copyOf(entries, newCapacity)
+        if (newCapacity > oldSize) {
+            java.util.Arrays.fill(
+                entries,
+                oldSize,
+                newCapacity,
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET.toLong()
+            )
+        }
+        this.entries = entries
+    }
+
+    private fun resizeTable(newCapacity: Int) { // newCapacity always a power of two
+        val oldTable = table
+        val oldCapacity: Int = oldTable.length
+        if (oldCapacity >= com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.MAXIMUM_CAPACITY) {
+            threshold = java.lang.Integer.MAX_VALUE
+            return
+        }
+        val newThreshold: Int =
+            1 + (newCapacity * com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.LOAD_FACTOR).toInt()
+        val newTable: IntArray =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.newTable(newCapacity)
+        val entries = this.entries
+
+        val mask: Int = newTable.length - 1
+        for (i in 0..<size) {
+            val oldEntry = entries[i]
+            val hash: Int =
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getHash(oldEntry)
+            val tableIndex = hash and mask
+            val next = newTable[tableIndex]
+            newTable[tableIndex] = i
+            entries[i] =
+                (hash.toLong() shl 32) or (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.NEXT_MASK and next.toLong())
+        }
+
+        this.threshold = newThreshold
+        this.table = newTable
+    }
+
+    override fun contains(`object`: Any?): Boolean {
+        val hash: Int =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.smearedHash(`object`)
+        var next = table[hash and hashTableMask()]
+        while (next != com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET) {
+            val entry = entries[next]
+            if (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getHash(entry) == hash && `object` == elements[next]) {
+                return true
+            }
+            next = com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getNext(entry)
+        }
+        return false
+    }
+
+    override fun remove(`object`: Any?): Boolean {
+        return remove(
+            `object`,
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.smearedHash(`object`)
+        )
+    }
+
+    private fun remove(`object`: Any?, hash: Int): Boolean {
+        val tableIndex = hash and hashTableMask()
+        var next = table[tableIndex]
+        if (next == com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET) {
+            return false
+        }
+        var last: Int = com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET
+        do {
+            if (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getHash(entries[next]) == hash && `object` == elements[next]) {
+                if (last == com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET) {
+                    // we need to update the root link from table[]
+                    table[tableIndex] =
+                        com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getNext(entries[next])
+                } else {
+                    // we need to update the link from the chain
+                    entries[last] =
+                        com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.swapNext(
+                            entries[last],
+                            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getNext(
+                                entries[next]
+                            )
+                        )
+                }
+
+                moveEntry(next)
+                size--
+                modCount++
+                return true
+            }
+            last = next
+            next = com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getNext(entries[next])
+        } while (next != com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET)
+        return false
+    }
+
+    /**
+     * Moves the last entry in the entry array into `dstIndex`, and nulls out its old position.
+     */
+    private fun moveEntry(dstIndex: Int) {
+        val srcIndex = size() - 1
+        if (dstIndex < srcIndex) {
+            // move last entry to deleted spot
+            elements[dstIndex] = elements[srcIndex]
+            elements[srcIndex] = null
+
+            // move the last entry to the removed spot, just like we moved the element
+            val lastEntry = entries[srcIndex]
+            entries[dstIndex] = lastEntry
+            entries[srcIndex] =
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET.toLong()
+
+            // also need to update whoever's "next" pointer was pointing to the last entry place
+            // reusing "tableIndex" and "next"; these variables were no longer needed
+            val tableIndex: Int =
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getHash(lastEntry) and hashTableMask()
+            var lastNext = table[tableIndex]
+            if (lastNext == srcIndex) {
+                // we need to update the root pointer
+                table[tableIndex] = dstIndex
+            } else {
+                // we need to update a pointer in an entry
+                var previous: Int
+                var entry: Long
+                do {
+                    previous = lastNext
+                    lastNext =
+                        com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getNext(entries[lastNext].also {
+                            entry = it
+                        })
+                } while (lastNext != srcIndex)
+                // here, entries[previous] points to the old entry location; update it
+                entries[previous] =
+                    com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.swapNext(
+                        entry,
+                        dstIndex
+                    )
+            }
+        } else {
+            elements[dstIndex] = null
+            entries[dstIndex] =
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET.toLong()
+        }
+    }
+
+    override fun iterator(): MutableIterator<E?> {
+        return object : MutableIterator<E?> {
+            var expectedModCount: Int = modCount
+            var nextCalled: Boolean = false
+            var index: Int = 0
+
+            override fun hasNext(): Boolean {
+                return index < size
+            }
+
+            override fun next(): E? {
+                checkForConcurrentModification()
+                if (!hasNext()) {
+                    throw java.util.NoSuchElementException()
+                }
+                nextCalled = true
+                return elements[index++] as E?
+            }
+
+            override fun remove() {
+                checkForConcurrentModification()
+                com.google.common.base.Preconditions.checkState(
+                    nextCalled,
+                    "no calls to next() since the last call to remove()"
+                )
+                expectedModCount++
+                index--
+                this@CompactHashSet.remove(
+                    elements[index],
+                    com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.getHash(entries[index])
+                )
+                nextCalled = false
+            }
+
+            fun checkForConcurrentModification() {
+                if (modCount != expectedModCount) {
+                    throw ConcurrentModificationException()
+                }
+            }
+        }
+    }
+
+    override fun size(): Int {
+        return size
+    }
+
+    val isEmpty: Boolean
+        get() = size == 0
+
+    override fun toArray(): Array<Any?> {
+        return java.util.Arrays.copyOf<Any?>(elements, size)
+    }
+
+    override fun <T> toArray(a: Array<T?>): Array<T?> {
+        var a = a
+        if (a.length < size) {
+            a = java.lang.reflect.Array.newInstance(a.getClass().getComponentType(), size) as Array<T?>
+        }
+        java.lang.System.arraycopy(elements, 0, a, 0, size)
+        return a
+    }
+
+    /**
+     * Ensures that this `CompactHashSet` has the smallest representation in memory,
+     * given its current size.
+     */
+    fun trimToSize() {
+        val size = this.size
+        if (size < entries.length) {
+            resizeEntries(size)
+        }
+        // size / loadFactor gives the table size of the appropriate load factor,
+        // but that may not be a power of two. We floor it to a power of two by
+        // keeping its highest bit. But the smaller table may have a load factor
+        // larger than what we want; then we want to go to the next power of 2 if we can
+        var minimumTableSize: Int = java.lang.Math.max(
+            1,
+            java.lang.Integer.highestOneBit((size / com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.LOAD_FACTOR).toInt())
+        )
+        if (minimumTableSize < com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.MAXIMUM_CAPACITY) {
+            val load = size.toDouble() / minimumTableSize
+            if (load > com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.LOAD_FACTOR) {
+                minimumTableSize = minimumTableSize shl 1 // increase to next power if possible
+            }
+        }
+
+        if (minimumTableSize < table.length) {
+            resizeTable(minimumTableSize)
+        }
+    }
+
+    override fun clear() {
+        modCount++
+        java.util.Arrays.fill(elements, 0, size, null)
+        java.util.Arrays.fill(
+            table,
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET
+        )
+        java.util.Arrays.fill(
+            entries,
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET.toLong()
+        )
+        this.size = 0
+    }
+
+    companion object {
+        // TODO(bazel-team): cache all field accesses in local vars
+        // A partial copy of com.google.common.collect.Hashing.
+        private const val C1 = -0x3361d2af
+        private const val C2 = 0x1b873593
+
+        /*
    * This method was rewritten in Java from an intermediate step of the Murmur hash function in
    * http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp, which contained the
    * following header:
@@ -80,464 +461,139 @@ public class CompactHashSet<E> extends AbstractSet<E> {
    * MurmurHash3 was written by Austin Appleby, and is placed in the public domain. The author
    * hereby disclaims copyright to this source code.
    */
-  private static int smear(int hashCode) {
-    return C2 * Integer.rotateLeft(hashCode * C1, 15);
-  }
-
-  private static int smearedHash(@Nullable Object o) {
-    return smear((o == null) ? 0 : o.hashCode());
-  }
-
-  private static final int MAX_TABLE_SIZE = Ints.MAX_POWER_OF_TWO;
-
-  private static int closedTableSize(int expectedEntries) {
-    // Get the recommended table size.
-    // Round down to the nearest power of 2.
-    expectedEntries = Math.max(expectedEntries, 2);
-    int tableSize = Integer.highestOneBit(expectedEntries);
-    // Check to make sure that we will not exceed the maximum load factor.
-    if (expectedEntries > (int) (LOAD_FACTOR * tableSize)) {
-      tableSize <<= 1;
-      return (tableSize > 0) ? tableSize : MAX_TABLE_SIZE;
-    }
-    return tableSize;
-  }
-
-  /** Creates an empty {@code CompactHashSet} instance. */
-  public static <E> CompactHashSet<E> create() {
-    return new CompactHashSet<>(DEFAULT_SIZE);
-  }
-
-  /**
-   * Creates a <i>mutable</i> {@code CompactHashSet} instance containing the elements
-   * of the given collection in unspecified order.
-   *
-   * @param collection the elements that the set should contain
-   * @return a new {@code CompactHashSet} containing those elements (minus duplicates)
-   */
-  public static <E> CompactHashSet<E> create(Collection<? extends E> collection) {
-    CompactHashSet<E> set = createWithExpectedSize(collection.size());
-    set.addAll(collection);
-    return set;
-  }
-
-  /**
-   * Creates a <i>mutable</i> {@code CompactHashSet} instance containing the given
-   * elements in unspecified order.
-   *
-   * @param elements the elements that the set should contain
-   * @return a new {@code CompactHashSet} containing those elements (minus duplicates)
-   */
-  @SafeVarargs
-  public static <E> CompactHashSet<E> create(E... elements) {
-    CompactHashSet<E> set = createWithExpectedSize(elements.length);
-    Collections.addAll(set, elements);
-    return set;
-  }
-
-  /**
-   * Creates a {@code CompactHashSet} instance, with a high enough "initial capacity"
-   * that it <i>should</i> hold {@code expectedSize} elements without growth.
-   *
-   * @param expectedSize the number of elements you expect to add to the returned set
-   * @return a new, empty {@code CompactHashSet} with enough capacity to hold {@code
-   *         expectedSize} elements without resizing
-   * @throws IllegalArgumentException if {@code expectedSize} is negative
-   */
-  public static <E> CompactHashSet<E> createWithExpectedSize(int expectedSize) {
-    return new CompactHashSet<>(expectedSize);
-  }
-
-  private static final int MAXIMUM_CAPACITY = 1 << 30;
-
-  private static final float LOAD_FACTOR = 1.0f;
-
-  /**
-   * Bitmask that selects the low 32 bits.
-   */
-  private static final long NEXT_MASK  = (1L << 32) - 1;
-
-  /**
-   * Bitmask that selects the high 32 bits.
-   */
-  private static final long HASH_MASK = ~NEXT_MASK;
-
-  // TODO(bazel-team): decide default size
-  private static final int DEFAULT_SIZE = 3;
-
-  private static final int UNSET = -1;
-
-  /**
-   * The hashtable. Its values are indexes to both the elements and entries arrays.
-   *
-   * Currently, the UNSET value means "null pointer", and any non negative value x is
-   * the actual index.
-   *
-   * Its size must be a power of two.
-   */
-  private transient int[] table;
-
-  /**
-   * Contains the logical entries, in the range of [0, size()). The high 32 bits of each
-   * long is the smeared hash of the element, whereas the low 32 bits is the "next" pointer
-   * (pointing to the next entry in the bucket chain). The pointers in [size(), entries.length)
-   * are all "null" (UNSET).
-   */
-  private transient long[] entries;
-
-  /** The elements contained in the set, in the range of [0, size()). */
-  private transient Object[] elements;
-
-  /**
-   * Keeps track of modifications of this set, to make it possible to throw
-   * ConcurrentModificationException in the iterator. Note that we choose not to make this volatile,
-   * so we do less of a "best effort" to track such errors, for better performance.
-   */
-  private transient int modCount;
-
-  /**
-   * When we have this many elements, resize the hashtable.
-   */
-  private transient int threshold;
-
-  /**
-   * The number of elements contained in the set.
-   */
-  private transient int size;
-
-  /**
-   * Constructs a new instance of {@code CompactHashSet} with the specified capacity.
-   *
-   * @param expectedSize the initial capacity of this {@code CompactHashSet}.
-   */
-  private CompactHashSet(int expectedSize) {
-    Preconditions.checkArgument(expectedSize >= 0, "Initial capacity must be non-negative");
-    int buckets = closedTableSize(expectedSize);
-    this.table = newTable(buckets);
-    this.elements = new Object[expectedSize];
-    this.entries = newEntries(expectedSize);
-    this.threshold = Math.max(1, (int) (buckets * LOAD_FACTOR));
-  }
-
-  private static int[] newTable(int size) {
-    int[] array = new int[size];
-    Arrays.fill(array, UNSET);
-    return array;
-  }
-
-  private static long[] newEntries(int size) {
-    long[] array = new long[size];
-    Arrays.fill(array, UNSET);
-    return array;
-  }
-
-  private static int getHash(long entry) {
-    return (int) (entry >>> 32);
-  }
-
-  /**
-   * Returns the index, or UNSET if the pointer is "null"
-   */
-  private static int getNext(long entry) {
-    return (int) entry;
-  }
-
-  /**
-   * Returns a new entry value by changing the "next" index of an existing entry
-   */
-  private static long swapNext(long entry, int newNext) {
-    return (HASH_MASK & entry) | (NEXT_MASK & newNext);
-  }
-
-  private int hashTableMask() {
-    return table.length - 1;
-  }
-
-  @Override
-  public boolean add(@Nullable E object) {
-    long[] entries = this.entries;
-    Object[] elements = this.elements;
-    int hash = smearedHash(object);
-    int tableIndex = hash & hashTableMask();
-    int newEntryIndex = this.size; // current size, and pointer to the entry to be appended
-    int next = table[tableIndex];
-    if (next == UNSET) { // uninitialized bucket
-      table[tableIndex] = newEntryIndex;
-    } else {
-      int last;
-      long entry;
-      do {
-        last = next;
-        entry = entries[next];
-        if (getHash(entry) == hash && Objects.equals(object, elements[next])) {
-          return false;
-        }
-        next = getNext(entry);
-      } while (next != UNSET);
-      entries[last] = swapNext(entry, newEntryIndex);
-    }
-    if (newEntryIndex == Integer.MAX_VALUE) {
-      throw new IllegalStateException("Cannot contain more than Integer.MAX_VALUE elements!");
-    }
-    int newSize = newEntryIndex + 1;
-    resizeMeMaybe(newSize);
-    insertEntry(newEntryIndex, object, hash);
-    this.size = newSize;
-    if (newEntryIndex >= threshold) {
-      resizeTable(2 * table.length);
-    }
-    modCount++;
-    return true;
-  }
-
-  /**
-   * Creates a fresh entry with the specified object at the specified position in the entry arrays.
-   */
-  private void insertEntry(int entryIndex, E object, int hash) {
-    this.entries[entryIndex] = ((long) hash << 32) | (NEXT_MASK & UNSET);
-    this.elements[entryIndex] = object;
-  }
-
-  /**
-   * Returns currentSize + 1, after resizing the entries storage if necessary.
-   */
-  private void resizeMeMaybe(int newSize) {
-    int entriesSize = entries.length;
-    if (newSize > entriesSize) {
-      int newCapacity = entriesSize + Math.max(1, entriesSize >>> 1);
-      if (newCapacity < 0) {
-        newCapacity = Integer.MAX_VALUE;
-      }
-      if (newCapacity != entriesSize) {
-        resizeEntries(newCapacity);
-      }
-    }
-  }
-
-  /**
-   * Resizes the internal entries array to the specified capacity, which may be greater or less than
-   * the current capacity.
-   */
-  private void resizeEntries(int newCapacity) {
-    this.elements = Arrays.copyOf(elements, newCapacity);
-    long[] entries = this.entries;
-    int oldSize = entries.length;
-    entries = Arrays.copyOf(entries, newCapacity);
-    if (newCapacity > oldSize) {
-      Arrays.fill(entries, oldSize, newCapacity, UNSET);
-    }
-    this.entries = entries;
-  }
-
-  private void resizeTable(int newCapacity) { // newCapacity always a power of two
-    int[] oldTable = table;
-    int oldCapacity = oldTable.length;
-    if (oldCapacity >= MAXIMUM_CAPACITY) {
-      threshold = Integer.MAX_VALUE;
-      return;
-    }
-    int newThreshold = 1 + (int) (newCapacity * LOAD_FACTOR);
-    int[] newTable = newTable(newCapacity);
-    long[] entries = this.entries;
-
-    int mask = newTable.length - 1;
-    for (int i = 0; i < size; i++) {
-      long oldEntry = entries[i];
-      int hash = getHash(oldEntry);
-      int tableIndex = hash & mask;
-      int next = newTable[tableIndex];
-      newTable[tableIndex] = i;
-      entries[i] = ((long) hash << 32) | (NEXT_MASK & next);
-    }
-
-    this.threshold = newThreshold;
-    this.table = newTable;
-  }
-
-  @Override
-  public boolean contains(@Nullable Object object) {
-    int hash = smearedHash(object);
-    int next = table[hash & hashTableMask()];
-    while (next != UNSET) {
-      long entry = entries[next];
-      if (getHash(entry) == hash && Objects.equals(object, elements[next])) {
-        return true;
-      }
-      next = getNext(entry);
-    }
-    return false;
-  }
-
-  @Override
-  public boolean remove(@Nullable Object object) {
-    return remove(object, smearedHash(object));
-  }
-
-  private boolean remove(Object object, int hash) {
-    int tableIndex = hash & hashTableMask();
-    int next = table[tableIndex];
-    if (next == UNSET) {
-      return false;
-    }
-    int last = UNSET;
-    do {
-      if (getHash(entries[next]) == hash && Objects.equals(object, elements[next])) {
-        if (last == UNSET) {
-          // we need to update the root link from table[]
-          table[tableIndex] = getNext(entries[next]);
-        } else {
-          // we need to update the link from the chain
-          entries[last] = swapNext(entries[last], getNext(entries[next]));
+        private fun smear(hashCode: Int): Int {
+            return com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.C2 * java.lang.Integer.rotateLeft(
+                hashCode * com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.C1,
+                15
+            )
         }
 
-        moveEntry(next);
-        size--;
-        modCount++;
-        return true;
-      }
-      last = next;
-      next = getNext(entries[next]);
-    } while (next != UNSET);
-    return false;
-  }
-
-  /**
-   * Moves the last entry in the entry array into {@code dstIndex}, and nulls out its old position.
-   */
-  private void moveEntry(int dstIndex) {
-    int srcIndex = size() - 1;
-    if (dstIndex < srcIndex) {
-      // move last entry to deleted spot
-      elements[dstIndex] = elements[srcIndex];
-      elements[srcIndex] = null;
-
-      // move the last entry to the removed spot, just like we moved the element
-      long lastEntry = entries[srcIndex];
-      entries[dstIndex] = lastEntry;
-      entries[srcIndex] = UNSET;
-
-      // also need to update whoever's "next" pointer was pointing to the last entry place
-      // reusing "tableIndex" and "next"; these variables were no longer needed
-      int tableIndex = getHash(lastEntry) & hashTableMask();
-      int lastNext = table[tableIndex];
-      if (lastNext == srcIndex) {
-        // we need to update the root pointer
-        table[tableIndex] = dstIndex;
-      } else {
-        // we need to update a pointer in an entry
-        int previous;
-        long entry;
-        do {
-          previous = lastNext;
-          lastNext = getNext(entry = entries[lastNext]);
-        } while (lastNext != srcIndex);
-        // here, entries[previous] points to the old entry location; update it
-        entries[previous] = swapNext(entry, dstIndex);
-      }
-    } else {
-      elements[dstIndex] = null;
-      entries[dstIndex] = UNSET;
-    }
-  }
-
-  @Override
-  public Iterator<E> iterator() {
-    return new Iterator<E>() {
-      int expectedModCount = modCount;
-      boolean nextCalled = false;
-      int index = 0;
-
-      @Override
-      public boolean hasNext() {
-        return index < size;
-      }
-
-      @Override
-      @SuppressWarnings("unchecked")
-      public E next() {
-        checkForConcurrentModification();
-        if (!hasNext()) {
-          throw new NoSuchElementException();
+        private fun smearedHash(o: Any?): Int {
+            return com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.smear(if (o == null) 0 else o.hashCode())
         }
-        nextCalled = true;
-        return (E) elements[index++];
-      }
 
-      @Override
-      public void remove() {
-        checkForConcurrentModification();
-        Preconditions.checkState(nextCalled, "no calls to next() since the last call to remove()");
-        expectedModCount++;
-        index--;
-        CompactHashSet.this.remove(elements[index], getHash(entries[index]));
-        nextCalled = false;
-      }
+        private val MAX_TABLE_SIZE: Int = com.google.common.primitives.Ints.MAX_POWER_OF_TWO
 
-      private void checkForConcurrentModification() {
-        if (modCount != expectedModCount) {
-          throw new ConcurrentModificationException();
+        private fun closedTableSize(expectedEntries: Int): Int {
+            // Get the recommended table size.
+            // Round down to the nearest power of 2.
+            var expectedEntries = expectedEntries
+            expectedEntries = java.lang.Math.max(expectedEntries, 2)
+            var tableSize: Int = java.lang.Integer.highestOneBit(expectedEntries)
+            // Check to make sure that we will not exceed the maximum load factor.
+            if (expectedEntries > (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.LOAD_FACTOR * tableSize).toInt()) {
+                tableSize = tableSize shl 1
+                return if (tableSize > 0) tableSize else com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.MAX_TABLE_SIZE
+            }
+            return tableSize
         }
-      }
-    };
-  }
 
-  @Override
-  public int size() {
-    return size;
-  }
+        /** Creates an empty `CompactHashSet` instance.  */
+        fun <E> create(): CompactHashSet<E?> {
+            return com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<E?>(com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.DEFAULT_SIZE)
+        }
 
-  @Override
-  public boolean isEmpty() {
-    return size == 0;
-  }
+        /**
+         * Creates a *mutable* `CompactHashSet` instance containing the elements
+         * of the given collection in unspecified order.
+         * 
+         * @param collection the elements that the set should contain
+         * @return a new `CompactHashSet` containing those elements (minus duplicates)
+         */
+        fun <E> create(collection: MutableCollection<out E?>): CompactHashSet<E?> {
+            val set: CompactHashSet<E?> =
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.createWithExpectedSize<E?>(
+                    collection.size()
+                )
+            set.addAll(collection)
+            return set
+        }
 
-  @Override
-  public Object[] toArray() {
-    return Arrays.copyOf(elements, size);
-  }
+        /**
+         * Creates a *mutable* `CompactHashSet` instance containing the given
+         * elements in unspecified order.
+         * 
+         * @param elements the elements that the set should contain
+         * @return a new `CompactHashSet` containing those elements (minus duplicates)
+         */
+        @kotlin.jvm.JvmStatic
+        @java.lang.SafeVarargs
+        fun <E> create(vararg elements: E?): CompactHashSet<E?> {
+            val set: CompactHashSet<E?> =
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.createWithExpectedSize<E?>(
+                    elements.length
+                )
+            Collections.addAll<E?>(set, *elements)
+            return set
+        }
 
-  @SuppressWarnings("unchecked")
-  @Override
-  public <T> T[] toArray(T[] a) {
-    if (a.length < size) {
-      a = (T[]) Array.newInstance(a.getClass().getComponentType(), size);
+        /**
+         * Creates a `CompactHashSet` instance, with a high enough "initial capacity"
+         * that it *should* hold `expectedSize` elements without growth.
+         * 
+         * @param expectedSize the number of elements you expect to add to the returned set
+         * @return a new, empty `CompactHashSet` with enough capacity to hold `expectedSize` elements without resizing
+         * @throws IllegalArgumentException if `expectedSize` is negative
+         */
+        @kotlin.jvm.JvmStatic
+        fun <E> createWithExpectedSize(expectedSize: Int): CompactHashSet<E?> {
+            return com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<E?>(expectedSize)
+        }
+
+        private val MAXIMUM_CAPACITY = 1 shl 30
+
+        private const val LOAD_FACTOR = 1.0f
+
+        /**
+         * Bitmask that selects the low 32 bits.
+         */
+        private val NEXT_MASK = (1L shl 32) - 1
+
+        /**
+         * Bitmask that selects the high 32 bits.
+         */
+        private val HASH_MASK: Long =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.NEXT_MASK.inv()
+
+        // TODO(bazel-team): decide default size
+        private const val DEFAULT_SIZE = 3
+
+        private val UNSET = -1
+
+        private fun newTable(size: Int): IntArray {
+            val array = IntArray(size)
+            java.util.Arrays.fill(
+                array,
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET
+            )
+            return array
+        }
+
+        private fun newEntries(size: Int): LongArray {
+            val array = LongArray(size)
+            java.util.Arrays.fill(
+                array,
+                com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.UNSET.toLong()
+            )
+            return array
+        }
+
+        private fun getHash(entry: Long): Int {
+            return (entry ushr 32).toInt()
+        }
+
+        /**
+         * Returns the index, or UNSET if the pointer is "null"
+         */
+        private fun getNext(entry: Long): Int {
+            return entry.toInt()
+        }
+
+        /**
+         * Returns a new entry value by changing the "next" index of an existing entry
+         */
+        private fun swapNext(entry: Long, newNext: Int): Long {
+            return (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.HASH_MASK and entry) or (com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.Companion.NEXT_MASK and newNext.toLong())
+        }
     }
-    System.arraycopy(elements, 0, a, 0, size);
-    return a;
-  }
-
-  /**
-   * Ensures that this {@code CompactHashSet} has the smallest representation in memory,
-   * given its current size.
-   */
-  public void trimToSize() {
-    int size = this.size;
-    if (size < entries.length) {
-      resizeEntries(size);
-    }
-    // size / loadFactor gives the table size of the appropriate load factor,
-    // but that may not be a power of two. We floor it to a power of two by
-    // keeping its highest bit. But the smaller table may have a load factor
-    // larger than what we want; then we want to go to the next power of 2 if we can
-    int minimumTableSize = Math.max(1, Integer.highestOneBit((int) (size / LOAD_FACTOR)));
-    if (minimumTableSize < MAXIMUM_CAPACITY) {
-      double load = (double) size / minimumTableSize;
-      if (load > LOAD_FACTOR) {
-        minimumTableSize <<= 1; // increase to next power if possible
-      }
-    }
-
-    if (minimumTableSize < table.length) {
-      resizeTable(minimumTableSize);
-    }
-  }
-
-  @Override
-  public void clear() {
-    modCount++;
-    Arrays.fill(elements, 0, size, null);
-    Arrays.fill(table, UNSET);
-    Arrays.fill(entries, UNSET);
-    this.size = 0;
-  }
 }

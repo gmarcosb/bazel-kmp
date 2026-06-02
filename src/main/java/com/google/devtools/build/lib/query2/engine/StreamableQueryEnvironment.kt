@@ -11,61 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
+
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture
 
 /**
  * The environment of a Blaze query which supports predefined streaming operations.
- *
+ * 
  * @param <T> the node type of the dependency graph
- */
-public interface StreamableQueryEnvironment<T> extends QueryEnvironment<T> {
-  QueryTaskFuture<Void> getAllRdepsBoundedParallel(
-      QueryExpression expression,
-      int depth,
-      QueryExpressionContext<T> context,
-      Callback<T> callback);
+</T> */
+interface StreamableQueryEnvironment<T> : QueryEnvironment<T?> {
+    fun getAllRdepsBoundedParallel(
+        expression: QueryExpression?,
+        depth: Int,
+        context: QueryExpressionContext<T?>?,
+        callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>?
 
-  QueryTaskFuture<Void> getAllRdepsUnboundedParallel(
-      QueryExpression expression, QueryExpressionContext<T> context, Callback<T> callback);
+    fun getAllRdepsUnboundedParallel(
+        expression: QueryExpression?, context: QueryExpressionContext<T?>?, callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>?
 
-  QueryTaskFuture<Void> getRdepsBoundedParallel(
-      QueryExpression expression,
-      int depth,
-      QueryExpression universe,
-      QueryExpressionContext<T> context,
-      Callback<T> callback);
+    fun getRdepsBoundedParallel(
+        expression: QueryExpression?,
+        depth: Int,
+        universe: QueryExpression?,
+        context: QueryExpressionContext<T?>?,
+        callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>?
 
-  QueryTaskFuture<Void> getRdepsUnboundedParallel(
-      QueryExpression expression,
-      QueryExpression universe,
-      QueryExpressionContext<T> context,
-      Callback<T> callback);
+    fun getRdepsUnboundedParallel(
+        expression: QueryExpression?,
+        universe: QueryExpression?,
+        context: QueryExpressionContext<T?>?,
+        callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>?
 
-  QueryTaskFuture<Void> getDepsUnboundedParallel(
-      QueryExpression expression,
-      QueryExpressionContext<T> context,
-      Callback<T> callback,
-      QueryExpression caller);
+    fun getDepsUnboundedParallel(
+        expression: QueryExpression?,
+        context: QueryExpressionContext<T?>?,
+        callback: Callback<T?>?,
+        caller: QueryExpression?
+    ): QueryTaskFuture<Void?>?
 
-  // TODO(bazel-team): Make this parallel.
-  QueryTaskFuture<Void> getDepsBounded(
-      QueryExpression expression,
-      QueryExpressionContext<T> context,
-      Callback<T> callback,
-      int depth,
-      QueryExpression caller);
+    // TODO(bazel-team): Make this parallel.
+    fun getDepsBounded(
+        expression: QueryExpression?,
+        context: QueryExpressionContext<T?>?,
+        callback: Callback<T?>?,
+        depth: Int,
+        caller: QueryExpression?
+    ): QueryTaskFuture<Void?>?
 
-  QueryTaskFuture<Void> somePath(
-      QueryExpression fromExpression,
-      QueryExpression toExpression,
-      QueryExpressionContext<T> context,
-      Callback<T> callback,
-      QueryExpression caller);
+    fun somePath(
+        fromExpression: QueryExpression?,
+        toExpression: QueryExpression?,
+        context: QueryExpressionContext<T?>?,
+        callback: Callback<T?>?,
+        caller: QueryExpression?
+    ): QueryTaskFuture<Void?>?
 
-  QueryTaskFuture<Void> allPaths(
-      QueryExpression fromExpression,
-      QueryExpression toExpression,
-      QueryExpressionContext<T> context,
-      Callback<T> callback,
-      QueryExpression caller);
+    fun allPaths(
+        fromExpression: QueryExpression?,
+        toExpression: QueryExpression?,
+        context: QueryExpressionContext<T?>?,
+        callback: Callback<T?>?,
+        caller: QueryExpression?
+    ): QueryTaskFuture<Void?>?
 }

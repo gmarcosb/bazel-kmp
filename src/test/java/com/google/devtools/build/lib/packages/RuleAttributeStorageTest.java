@@ -313,7 +313,7 @@ public final class RuleAttributeStorageTest extends BuildViewTestCase {
     rule.setAttributeValue(computedDefaultAttr, computedDefault, /* explicit= */ false);
 
     assertThat(rule.getAttrIfStored(computedDefaultIndex)).isEqualTo(computedDefault);
-    assertThat(rule.getAttr(computedDefaultAttr.getName())).isEqualTo(computedDefault);
+    assertThat(rule.getAttr(computedDefaultAttr.name)).isEqualTo(computedDefault);
     assertThat(rule.isAttributeValueExplicitlySpecified(computedDefaultAttr)).isFalse();
   }
 
@@ -327,7 +327,7 @@ public final class RuleAttributeStorageTest extends BuildViewTestCase {
     rule.freeze();
 
     assertThat(rule.getAttrIfStored(computedDefaultIndex)).isNull();
-    assertThat(rule.getAttr(computedDefaultAttr.getName())).isEqualTo(computedDefault);
+    assertThat(rule.getAttr(computedDefaultAttr.name)).isEqualTo(computedDefault);
     assertThat(rule.isAttributeValueExplicitlySpecified(computedDefaultAttr)).isFalse();
   }
 
@@ -338,7 +338,7 @@ public final class RuleAttributeStorageTest extends BuildViewTestCase {
     rule.setAttributeValue(lateBoundDefaultAttr, lateBoundDefault, /* explicit= */ false);
 
     assertThat(rule.getAttrIfStored(lateBoundDefaultIndex)).isEqualTo(lateBoundDefault);
-    assertThat(rule.getAttr(lateBoundDefaultAttr.getName())).isEqualTo(lateBoundDefault);
+    assertThat(rule.getAttr(lateBoundDefaultAttr.name)).isEqualTo(lateBoundDefault);
     assertThat(rule.isAttributeValueExplicitlySpecified(lateBoundDefaultAttr)).isFalse();
   }
 
@@ -350,7 +350,7 @@ public final class RuleAttributeStorageTest extends BuildViewTestCase {
     rule.freeze();
 
     assertThat(rule.getAttrIfStored(lateBoundDefaultIndex)).isNull();
-    assertThat(rule.getAttr(lateBoundDefaultAttr.getName())).isEqualTo(lateBoundDefault);
+    assertThat(rule.getAttr(lateBoundDefaultAttr.name)).isEqualTo(lateBoundDefault);
     assertThat(rule.isAttributeValueExplicitlySpecified(lateBoundDefaultAttr)).isFalse();
   }
 

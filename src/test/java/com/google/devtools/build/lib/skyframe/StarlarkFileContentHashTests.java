@@ -204,7 +204,7 @@ public class StarlarkFileContentHashTests extends BuildViewTestCase {
     Collection<Target> targets = result.get(pkgLookupKey).getPackage().getTargets().values();
     for (Target target : targets) {
       if (target.getName().equals(name)) {
-        byte[] hash = ((Rule) target).getRuleClassObject().getRuleDefinitionEnvironmentDigest();
+        byte[] hash = ((Rule) target).getRuleClassObject().ruleDefinitionEnvironmentDigest;
         return BaseEncoding.base16().lowerCase().encode(hash); // hexify
       }
     }

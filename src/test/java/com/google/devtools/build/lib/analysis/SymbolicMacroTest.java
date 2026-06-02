@@ -403,7 +403,7 @@ public final class SymbolicMacroTest extends BuildViewTestCase {
 
     ConfiguredTarget target = getConfiguredTarget("//pkg:libabc.so");
     AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.STARLARK_CONSTRUCTOR.getKey());
+        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
     AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
     assertThat(failure.getMessage())
         .contains(
@@ -1734,8 +1734,7 @@ Label("@@//conditions:default"): None})\
             macroInstance
                 .getMacroClass()
                 .getAttributeProvider()
-                .getAttributeByName("tags")
-                .getDefaultValueUnchecked())
+                .getAttributeByName("tags").defaultValueUnchecked)
         .isEqualTo(ImmutableList.of("foo"));
     // non-inherited attr
     assertMacroDoesNotHaveAttributes(macroInstance, ImmutableList.of("features"));
@@ -1777,7 +1776,7 @@ Label("@@//conditions:default"): None})\
       StringBuilder fakeMandatoryArgs = new StringBuilder();
       for (Attribute attr : ruleClass.getAttributeProvider().getAttributes()) {
         String fakeValue = null;
-        if (attr.isPublic() && attr.isMandatory() && !attr.getName().equals("name")) {
+        if (attr.isPublic() && attr.isMandatory() && !attr.name.equals("name")) {
           Type<?> type = attr.getType();
           if (type.equals(Type.STRING)
               || type.equals(BuildType.OUTPUT)
@@ -1799,7 +1798,7 @@ Label("@@//conditions:default"): None})\
           }
         }
         if (fakeValue != null) {
-          fakeMandatoryArgs.append(", ").append(attr.getName()).append(" = ").append(fakeValue);
+          fakeMandatoryArgs.append(", ").append(attr.name).append(" = ").append(fakeValue);
         }
       }
 
@@ -2069,7 +2068,7 @@ my_macro = macro(
     Package pkg = getPackage("pkg");
     assertPackageNotInError(pkg);
     MacroInstance foo = getMacroById(pkg, "foo:1");
-    assertThat(foo.getGeneratorName()).isEqualTo("foo");
+    assertThat(foo.generatorName).isEqualTo("foo");
     assertThat(foo.getBuildFileLocation())
         .isEqualTo(Location.fromFileLineColumn("/workspace/pkg/BUILD", 3, 9));
     assertThat(foo.reconstructParentCallStack())
@@ -2146,7 +2145,7 @@ my_macro = macro(
     Package pkg = getPackage("pkg");
     assertPackageNotInError(pkg);
     MacroInstance foo = getMacroById(pkg, "foo:1");
-    assertThat(foo.getGeneratorName()).isNull();
+    assertThat(foo.generatorName).isNull();
     assertThat(foo.getBuildFileLocation())
         .isEqualTo(Location.fromFileLineColumn("/workspace/pkg/BUILD", 3, 24));
     assertThat(foo.reconstructParentCallStack())
@@ -2217,7 +2216,7 @@ my_macro = macro(
     Package pkg = getPackage("pkg");
     assertPackageNotInError(pkg);
     MacroInstance foo = getMacroById(pkg, "foo:1");
-    assertThat(foo.getGeneratorName()).isEqualTo("foo");
+    assertThat(foo.generatorName).isEqualTo("foo");
     assertThat(foo.getBuildFileLocation())
         .isEqualTo(Location.fromFileLineColumn("/workspace/pkg/BUILD", 3, 21));
     assertThat(foo.reconstructParentCallStack())
@@ -2231,7 +2230,7 @@ my_macro = macro(
         .inOrder();
 
     MacroInstance fooInner = getMacroById(pkg, "foo_inner:1");
-    assertThat(fooInner.getGeneratorName()).isEqualTo(foo.getGeneratorName());
+    assertThat(fooInner.generatorName).isEqualTo(foo.generatorName);
     assertThat(fooInner.getBuildFileLocation()).isEqualTo(foo.getBuildFileLocation());
     assertThat(fooInner.reconstructParentCallStack())
         .containsExactly(

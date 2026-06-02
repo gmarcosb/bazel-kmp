@@ -331,7 +331,7 @@ public final class ConfigurationsForTargetsTest extends AnalysisTestCase {
     Multimap<DependencyKind, ConfiguredTargetAndData> allDeps = getConfiguredDeps(target);
     for (DependencyKind kind : allDeps.keySet()) {
       Attribute attribute = kind.getAttribute();
-      if (attribute.getName().equals(attrName)) {
+      if (attribute.name.equals(attrName)) {
         return ImmutableList.copyOf(
             Collections2.transform(
                 allDeps.get(kind), ConfiguredTargetAndData::getConfiguredTarget));
@@ -355,7 +355,7 @@ public final class ConfigurationsForTargetsTest extends AnalysisTestCase {
     Multimap<DependencyKind, ConfiguredTargetAndData> allDeps = getConfiguredDeps(target);
     for (DependencyKind kind : allDeps.keySet()) {
       Attribute attribute = kind.getAttribute();
-      if (attribute.getName().equals(attrName)) {
+      if (attribute.name.equals(attrName)) {
         return ImmutableList.copyOf(allDeps.get(kind));
       }
     }

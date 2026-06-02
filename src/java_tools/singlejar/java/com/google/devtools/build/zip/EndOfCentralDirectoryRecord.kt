@@ -11,94 +11,105 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.zip
 
-package com.google.devtools.build.zip;
+import java.io.IOException
+import java.io.InputStream
+import java.util.zip.ZipException
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.zip.ZipException;
+internal object EndOfCentralDirectoryRecord {
+    const val SIGNATURE: Int = 0x06054b50
+    const val FIXED_DATA_SIZE: Int = 22
+    const val SIGNATURE_OFFSET: Int = 0
+    const val DISK_NUMBER_OFFSET: Int = 4
+    const val CD_DISK_OFFSET: Int = 6
+    const val DISK_ENTRIES_OFFSET: Int = 8
+    const val TOTAL_ENTRIES_OFFSET: Int = 10
+    const val CD_SIZE_OFFSET: Int = 12
+    const val CD_OFFSET_OFFSET: Int = 16
+    const val COMMENT_LENGTH_OFFSET: Int = 20
 
-class EndOfCentralDirectoryRecord {
-  static final int SIGNATURE = 0x06054b50;
-  static final int FIXED_DATA_SIZE = 22;
-  static final int SIGNATURE_OFFSET = 0;
-  static final int DISK_NUMBER_OFFSET = 4;
-  static final int CD_DISK_OFFSET = 6;
-  static final int DISK_ENTRIES_OFFSET = 8;
-  static final int TOTAL_ENTRIES_OFFSET = 10;
-  static final int CD_SIZE_OFFSET = 12;
-  static final int CD_OFFSET_OFFSET = 16;
-  static final int COMMENT_LENGTH_OFFSET = 20;
+    /**
+     * Read the end of central directory record from the input stream and parse [ZipFileData]
+     * from it.
+     */
+    @Throws(IOException::class)
+    fun read(`in`: InputStream?, file: ZipFileData): ZipFileData {
+        if (file == null) {
+            throw NullPointerException()
+        }
 
-  /**
-   * Read the end of central directory record from the input stream and parse {@link ZipFileData}
-   * from it.
-   */
-  static ZipFileData read(InputStream in, ZipFileData file) throws IOException {
-    if (file == null) {
-      throw new NullPointerException();
+        val fixedSizeData = ByteArray(FIXED_DATA_SIZE)
+        if (ZipUtil.readFully(`in`, fixedSizeData) != FIXED_DATA_SIZE) {
+            throw ZipException(
+                "Unexpected end of file while reading End of Central Directory Record."
+            )
+        }
+        if (!ZipUtil.arrayStartsWith(fixedSizeData, ZipUtil.intToLittleEndian(SIGNATURE))) {
+            throw ZipException(
+                String.format(
+                    "Malformed End of Central Directory Record; does not start with %08x", SIGNATURE
+                )
+            )
+        }
+
+        val comment = ByteArray(ZipUtil.getUnsignedShort(fixedSizeData, COMMENT_LENGTH_OFFSET))
+        if (comment.size > 0 && ZipUtil.readFully(`in`, comment) != comment.size) {
+            throw ZipException(
+                "Unexpected end of file while reading End of Central Directory Record."
+            )
+        }
+        val diskNumber = ZipUtil.get16(fixedSizeData, DISK_NUMBER_OFFSET)
+        val centralDirectoryDisk = ZipUtil.get16(fixedSizeData, CD_DISK_OFFSET)
+        val entriesOnDisk = ZipUtil.get16(fixedSizeData, DISK_ENTRIES_OFFSET)
+        val totalEntries = ZipUtil.get16(fixedSizeData, TOTAL_ENTRIES_OFFSET)
+        val centralDirectorySize = ZipUtil.get32(fixedSizeData, CD_SIZE_OFFSET)
+        val centralDirectoryOffset = ZipUtil.get32(fixedSizeData, CD_OFFSET_OFFSET)
+        if (diskNumber.toInt() == -1 || centralDirectoryDisk.toInt() == -1 || entriesOnDisk.toInt() == -1 || totalEntries.toInt() == -1 || centralDirectorySize == -1 || centralDirectoryOffset == -1) {
+            file.setMaybeZip64(true)
+        }
+        file.setComment(comment)
+        file.setCentralDirectorySize(ZipUtil.getUnsignedInt(fixedSizeData, CD_SIZE_OFFSET))
+        file.setCentralDirectoryOffset(ZipUtil.getUnsignedInt(fixedSizeData, CD_OFFSET_OFFSET))
+        file.setExpectedEntries(ZipUtil.getUnsignedShort(fixedSizeData, TOTAL_ENTRIES_OFFSET).toLong())
+        return file
     }
 
-    byte[] fixedSizeData = new byte[FIXED_DATA_SIZE];
-    if (ZipUtil.readFully(in, fixedSizeData) != FIXED_DATA_SIZE) {
-      throw new ZipException(
-          "Unexpected end of file while reading End of Central Directory Record.");
+    /**
+     * Generates the raw byte data of the end of central directory record for the specified
+     * [ZipFileData].
+     * @throws ZipException if the file comment is too long
+     */
+    @Throws(ZipException::class)
+    fun create(file: ZipFileData, allowZip64: Boolean): ByteArray {
+        val comment = file.getBytes(file.getComment())
+
+        val buf = ByteArray(FIXED_DATA_SIZE + comment.size)
+
+        // Allow writing of Zip file without Zip64 extensions for large archives as a special case
+        // since many reading implementations can handle this.
+        val numEntries = (if (file.getNumEntries() > 0xffff && allowZip64)
+            -1
+        else
+            file.getNumEntries()).toShort()
+        val cdSize = (if (file.getCentralDirectorySize() > 0xffffffffL && allowZip64)
+            -1
+        else
+            file.getCentralDirectorySize()).toInt()
+        val cdOffset = (if (file.getCentralDirectoryOffset() > 0xffffffffL && allowZip64)
+            -1
+        else
+            file.getCentralDirectoryOffset()).toInt()
+        ZipUtil.intToLittleEndian(buf, SIGNATURE_OFFSET, SIGNATURE)
+        ZipUtil.shortToLittleEndian(buf, DISK_NUMBER_OFFSET, 0.toShort())
+        ZipUtil.shortToLittleEndian(buf, CD_DISK_OFFSET, 0.toShort())
+        ZipUtil.shortToLittleEndian(buf, DISK_ENTRIES_OFFSET, numEntries)
+        ZipUtil.shortToLittleEndian(buf, TOTAL_ENTRIES_OFFSET, numEntries)
+        ZipUtil.intToLittleEndian(buf, CD_SIZE_OFFSET, cdSize)
+        ZipUtil.intToLittleEndian(buf, CD_OFFSET_OFFSET, cdOffset)
+        ZipUtil.shortToLittleEndian(buf, COMMENT_LENGTH_OFFSET, comment.size.toShort())
+        System.arraycopy(comment, 0, buf, FIXED_DATA_SIZE, comment.size)
+
+        return buf
     }
-    if (!ZipUtil.arrayStartsWith(fixedSizeData, ZipUtil.intToLittleEndian(SIGNATURE))) {
-      throw new ZipException(String.format(
-          "Malformed End of Central Directory Record; does not start with %08x", SIGNATURE));
-    }
-
-    byte[] comment = new byte[ZipUtil.getUnsignedShort(fixedSizeData, COMMENT_LENGTH_OFFSET)];
-    if (comment.length > 0 && ZipUtil.readFully(in, comment) != comment.length) {
-      throw new ZipException(
-          "Unexpected end of file while reading End of Central Directory Record.");
-    }
-    short diskNumber = ZipUtil.get16(fixedSizeData, DISK_NUMBER_OFFSET);
-    short centralDirectoryDisk = ZipUtil.get16(fixedSizeData, CD_DISK_OFFSET);
-    short entriesOnDisk = ZipUtil.get16(fixedSizeData, DISK_ENTRIES_OFFSET);
-    short totalEntries = ZipUtil.get16(fixedSizeData, TOTAL_ENTRIES_OFFSET);
-    int centralDirectorySize = ZipUtil.get32(fixedSizeData, CD_SIZE_OFFSET);
-    int centralDirectoryOffset = ZipUtil.get32(fixedSizeData, CD_OFFSET_OFFSET);
-    if (diskNumber == -1 || centralDirectoryDisk == -1 || entriesOnDisk == -1
-        || totalEntries == -1 || centralDirectorySize == -1 || centralDirectoryOffset == -1) {
-      file.setMaybeZip64(true);
-    }
-    file.setComment(comment);
-    file.setCentralDirectorySize(ZipUtil.getUnsignedInt(fixedSizeData, CD_SIZE_OFFSET));
-    file.setCentralDirectoryOffset(ZipUtil.getUnsignedInt(fixedSizeData, CD_OFFSET_OFFSET));
-    file.setExpectedEntries(ZipUtil.getUnsignedShort(fixedSizeData, TOTAL_ENTRIES_OFFSET));
-    return file;
-  }
-
-  /**
-   * Generates the raw byte data of the end of central directory record for the specified
-   * {@link ZipFileData}.
-   * @throws ZipException if the file comment is too long
-   */
-  static byte[] create(ZipFileData file, boolean allowZip64) throws ZipException {
-    byte[] comment = file.getBytes(file.getComment());
-
-    byte[] buf = new byte[FIXED_DATA_SIZE + comment.length];
-
-    // Allow writing of Zip file without Zip64 extensions for large archives as a special case
-    // since many reading implementations can handle this.
-    short numEntries = (short) (file.getNumEntries() > 0xffff && allowZip64
-        ? -1 : file.getNumEntries());
-    int cdSize = (int) (file.getCentralDirectorySize() > 0xffffffffL && allowZip64
-        ? -1 : file.getCentralDirectorySize());
-    int cdOffset = (int) (file.getCentralDirectoryOffset() > 0xffffffffL && allowZip64
-        ? -1 : file.getCentralDirectoryOffset());
-    ZipUtil.intToLittleEndian(buf, SIGNATURE_OFFSET, SIGNATURE);
-    ZipUtil.shortToLittleEndian(buf, DISK_NUMBER_OFFSET, (short) 0);
-    ZipUtil.shortToLittleEndian(buf, CD_DISK_OFFSET, (short) 0);
-    ZipUtil.shortToLittleEndian(buf, DISK_ENTRIES_OFFSET, numEntries);
-    ZipUtil.shortToLittleEndian(buf, TOTAL_ENTRIES_OFFSET, numEntries);
-    ZipUtil.intToLittleEndian(buf, CD_SIZE_OFFSET, cdSize);
-    ZipUtil.intToLittleEndian(buf, CD_OFFSET_OFFSET, cdOffset);
-    ZipUtil.shortToLittleEndian(buf, COMMENT_LENGTH_OFFSET, (short) comment.length);
-    System.arraycopy(comment, 0, buf, FIXED_DATA_SIZE, comment.length);
-
-    return buf;
-  }
 }

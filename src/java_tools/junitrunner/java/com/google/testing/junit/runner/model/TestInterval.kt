@@ -11,65 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.model
 
-package com.google.testing.junit.runner.model;
-
-import com.google.testing.junit.runner.util.TestClock.TestInstant;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeFormatterBuilder;
+import com.google.testing.junit.runner.util.TestClock.TestInstant
 
 /**
  * Implementation of an immutable time interval, representing a period of time between two instants.
- *
- * <p>This class is thread-safe and immutable.
+ * 
+ * 
+ * This class is thread-safe and immutable.
  */
-public final class TestInterval {
+class TestInterval(startInstant: TestInstant, endInstant: TestInstant) {
+    private val startInstant: TestInstant
+    private val endInstant: TestInstant
 
-  private static final DateTimeFormatter ISO8601_WITH_MILLIS_FORMATTER =
-      new DateTimeFormatterBuilder().appendInstant(3).toFormatter();
-  private final TestInstant startInstant;
-  private final TestInstant endInstant;
-
-  public TestInterval(TestInstant startInstant, TestInstant endInstant) {
-    if (startInstant.monotonicTime().compareTo(endInstant.monotonicTime()) > 0) {
-      throw new IllegalArgumentException("Start must be before end");
+    init {
+        require(
+            !(startInstant.monotonicTime().compareTo(endInstant.monotonicTime()) > 0)
+        ) { "Start must be before end" }
+        this.startInstant = startInstant
+        this.endInstant = endInstant
     }
-    this.startInstant = startInstant;
-    this.endInstant = endInstant;
-  }
 
-  public long getStartMillis() {
-    return startInstant.wallTime().toEpochMilli();
-  }
+    val startMillis: Long
+        get() = startInstant.wallTime().toEpochMilli()
 
-  public long getEndMillis() {
-    return endInstant.wallTime().toEpochMilli();
-  }
+    val endMillis: Long
+        get() = endInstant.wallTime().toEpochMilli()
 
-  public long toDurationMillis() {
-    return endInstant.monotonicTime().minus(startInstant.monotonicTime()).toMillis();
-  }
+    fun toDurationMillis(): Long {
+        return endInstant.monotonicTime().minus(startInstant.monotonicTime()).toMillis()
+    }
 
-  public TestInterval withEndMillis(TestInstant now) {
-    return new TestInterval(startInstant, now);
-  }
+    fun withEndMillis(now: TestInstant): TestInterval {
+        return TestInterval(startInstant, now)
+    }
 
-  public String startInstantToString() {
-    // Format as ISO8601 with 3 fractional digits on seconds
-    // This format is not affected by timezones and locale which improves interoperability
-    return ISO8601_WITH_MILLIS_FORMATTER.format(startInstant.wallTime());
-  }
+    fun startInstantToString(): String {
+        // Format as ISO8601 with 3 fractional digits on seconds
+        // This format is not affected by timezones and locale which improves interoperability
+        return ISO8601_WITH_MILLIS_FORMATTER.format(startInstant.wallTime())
+    }
 
-  /** Returns a TestInterval that contains both TestIntervals passed as parameter. */
-  public static TestInterval around(TestInterval a, TestInterval b) {
-    TestInstant start =
-        a.startInstant.monotonicTime().compareTo(b.startInstant.monotonicTime()) < 0
-            ? a.startInstant
-            : b.startInstant;
-    TestInstant end =
-        a.endInstant.monotonicTime().compareTo(b.endInstant.monotonicTime()) > 0
-            ? a.endInstant
-            : b.endInstant;
-    return new TestInterval(start, end);
-  }
+    companion object {
+        private val ISO8601_WITH_MILLIS_FORMATTER: DateTimeFormatter =
+            DateTimeFormatterBuilder().appendInstant(3).toFormatter()
+
+        /** Returns a TestInterval that contains both TestIntervals passed as parameter.  */
+        fun around(a: TestInterval, b: TestInterval): TestInterval {
+            val start: TestInstant =
+                if (a.startInstant.monotonicTime().compareTo(b.startInstant.monotonicTime()) < 0)
+                    a.startInstant
+                else
+                    b.startInstant
+            val end: TestInstant =
+                if (a.endInstant.monotonicTime().compareTo(b.endInstant.monotonicTime()) > 0)
+                    a.endInstant
+                else
+                    b.endInstant
+            return TestInterval(start, end)
+        }
+    }
 }

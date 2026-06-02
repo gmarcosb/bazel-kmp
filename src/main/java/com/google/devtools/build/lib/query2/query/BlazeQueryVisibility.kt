@@ -11,29 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query
 
-package com.google.devtools.build.lib.query2.query;
+import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents
 
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.engine.QueryVisibility;
+/** An adapter from [PackageGroupContents] to a [QueryVisibility].  */
+class BlazeQueryVisibility(packageSpecifications: PackageGroupContents) : QueryVisibility<Target?>() {
+    private val packageSpecifications: PackageGroupContents
 
-/** An adapter from {@link PackageGroupContents} to a {@link QueryVisibility}. */
-public class BlazeQueryVisibility extends QueryVisibility<Target> {
+    init {
+        this.packageSpecifications = packageSpecifications
+    }
 
-  private final PackageGroupContents packageSpecifications;
+    override fun contains(target: Target): Boolean {
+        return packageSpecifications.containsPackage(target.getLabel().getPackageIdentifier())
+    }
 
-  public BlazeQueryVisibility(PackageGroupContents packageSpecifications) {
-    this.packageSpecifications = packageSpecifications;
-  }
-
-  @Override
-  public boolean contains(Target target) {
-    return packageSpecifications.containsPackage(target.getLabel().getPackageIdentifier());
-  }
-
-  @Override
-  public String toString() {
-    return packageSpecifications.toString();
-  }
+    override fun toString(): String {
+        return packageSpecifications.toString()
+    }
 }

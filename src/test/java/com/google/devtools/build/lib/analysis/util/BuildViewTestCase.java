@@ -2244,7 +2244,7 @@ public abstract class BuildViewTestCase extends FoundationTestCase {
       throws Exception {
     ImmutableList<Artifact> baselineCoverageArtifacts =
         target
-            .get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+            .get(InstrumentedFilesInfo.provider)
             .getBaselineCoverageArtifacts()
             .toList();
 

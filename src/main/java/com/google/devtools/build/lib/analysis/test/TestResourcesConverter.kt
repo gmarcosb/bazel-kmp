@@ -11,56 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
+import BuildEventStreamProtos.TestSize
+import com.google.devtools.build.lib.packages.TestSize
+import com.google.devtools.build.lib.util.ResourceConverter
 
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.packages.TestSize;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.util.ResourceConverter;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.Map;
+class TestResourcesConverter
 
-public class TestResourcesConverter
-    extends Converter.Contextless<Pair<String, Map<TestSize, Double>>> {
-  private static final Converters.AssignmentConverter assignmentConverter =
-      new Converters.AssignmentConverter();
-  private static final ResourceConverter.DoubleConverter resourceConverter =
-      new ResourceConverter.DoubleConverter(
-          /* keywords= */ ImmutableMap.of(
-              ResourceConverter.HOST_CPUS_KEYWORD,
-                  () -> (double) ResourceConverter.HOST_CPUS_SUPPLIER.get(),
-              ResourceConverter.HOST_RAM_KEYWORD,
-                  () -> (double) ResourceConverter.HOST_RAM_SUPPLIER.get()),
-          /* minValue= */ 0.0,
-          /* maxValue= */ Double.MAX_VALUE);
+    :
+    com.google.devtools.common.options.Converter.Contextless<com.google.devtools.build.lib.util.Pair<String?, MutableMap<TestSize?, Double?>?>?>() {
+    val typeDescription: String
+        get() = "a resource name followed by equal and 1 float or 4 float, e.g memory=10,30,60,100"
 
-  @Override
-  public String getTypeDescription() {
-    return "a resource name followed by equal and 1 float or 4 float, e.g memory=10,30,60,100";
-  }
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    override fun convert(input: String): com.google.devtools.build.lib.util.Pair<String?, MutableMap<TestSize?, Double?>?> {
+        val assignment: MutableMap.MutableEntry<String?, String?> = assignmentConverter.convert(input)
+        val values: java.util.ArrayList<Double?> = java.util.ArrayList<Double?>(TestSize.entries.size)
+        for (s in com.google.common.base.Splitter.on(",").splitToList(assignment.value)) {
+            values.add(resourceConverter.convert(s))
+        }
 
-  @Override
-  public Pair<String, Map<TestSize, Double>> convert(String input) throws OptionsParsingException {
-    Map.Entry<String, String> assignment = assignmentConverter.convert(input);
-    ArrayList<Double> values = new ArrayList<>(TestSize.values().length);
-    for (String s : Splitter.on(",").splitToList(assignment.getValue())) {
-      values.add(resourceConverter.convert(s));
+        if (values.size != 1 && values.size != TestSize.entries.size) {
+            throw com.google.devtools.common.options.OptionsParsingException("Invalid number of comma-separated entries in " + input)
+        }
+
+        val amounts: java.util.EnumMap<TestSize?, Double?> = java.util.EnumMap<TestSize?, Double?>(TestSize::class.java)
+        for (size in TestSize.entries) {
+            amounts.put(size, values.get(min(values.size - 1, size.ordinal)))
+        }
+        return com.google.devtools.build.lib.util.Pair.of<String?, MutableMap<TestSize?, Double?>?>(
+            assignment.key,
+            amounts
+        )
     }
 
-    if (values.size() != 1 && values.size() != TestSize.values().length) {
-      throw new OptionsParsingException("Invalid number of comma-separated entries in " + input);
+    companion object {
+        private val assignmentConverter: com.google.devtools.common.options.Converters.AssignmentConverter =
+            com.google.devtools.common.options.Converters.AssignmentConverter()
+        private val resourceConverter: ResourceConverter.DoubleConverter =
+            ResourceConverter.DoubleConverter( /* keywords= */
+                com.google.common.collect.ImmutableMap.of<String?, java.util.function.Supplier<Double?>?>(
+                    ResourceConverter.HOST_CPUS_KEYWORD,
+                    java.util.function.Supplier { ResourceConverter.HOST_CPUS_SUPPLIER.get().toDouble() },
+                    ResourceConverter.HOST_RAM_KEYWORD,
+                    java.util.function.Supplier {
+                        ResourceConverter.HOST_RAM_SUPPLIER.get().toDouble()
+                    }),  /* minValue= */
+                0.0,  /* maxValue= */
+                Double.Companion.MAX_VALUE
+            )
     }
-
-    EnumMap<TestSize, Double> amounts = new EnumMap<>(TestSize.class);
-    for (TestSize size : TestSize.values()) {
-      amounts.put(size, values.get(Math.min(values.size() - 1, size.ordinal())));
-    }
-    return Pair.of(assignment.getKey(), amounts);
-  }
 }

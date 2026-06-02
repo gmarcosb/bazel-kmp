@@ -76,7 +76,7 @@ public final class StarlarkDocExtractTest extends BuildViewTestCase {
     String outputName = targetLabel.toPathFragment().getPathString() + ".binaryproto";
     if (!targetLabel.getRepository().isMain()) {
       outputName =
-          String.format("external/%s/%s", targetLabel.getRepository().getName(), outputName);
+          String.format("external/%s/%s", targetLabel.getRepository().name, outputName);
     }
     return protoFromBinaryFileWriteAction(getGeneratingAction(target, outputName));
   }

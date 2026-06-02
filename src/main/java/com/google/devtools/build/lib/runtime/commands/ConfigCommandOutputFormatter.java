@@ -65,11 +65,11 @@ abstract class ConfigCommandOutputFormatter {
       configurations.forEach(
           config ->
               writer.printf(
-                  "%s %s%s%n", config.getConfigHash(), config.getMnemonic(), getSuffix(config)));
+                  "%s %s%s%n", config.configHash, config.mnemonic, getSuffix(config)));
     }
 
     private static String getSuffix(ConfigurationForOutput config) {
-      if (config.isExec()) {
+      if (config.isExec) {
         return " (exec)";
       } else if (!config.hasTestConfig()) {
         return " (test-trimmed)";
@@ -79,21 +79,21 @@ abstract class ConfigCommandOutputFormatter {
 
     @Override
     public void writeConfiguration(ConfigurationForOutput configuration) {
-      writer.println("BuildConfigurationValue " + configuration.getConfigHash() + ":");
-      writer.println("Skyframe Key: " + configuration.getSkyKey());
+      writer.println("BuildConfigurationValue " + configuration.configHash + ":");
+      writer.println("Skyframe Key: " + configuration.skyKey);
 
       StringBuilder fragments = new StringBuilder();
       for (FragmentForOutput fragment : configuration.getFragments()) {
         fragments
-            .append(fragment.getName())
+            .append(fragment.name)
             .append(": [")
-            .append(String.join(",", fragment.getFragmentOptions()))
+            .append(String.join(",", fragment.fragmentOptions))
             .append("], ");
       }
 
       writer.println("Fragments: " + fragments);
       for (FragmentOptionsForOutput fragment : configuration.getFragmentOptions()) {
-        writer.println("FragmentOptions " + fragment.getName() + " {");
+        writer.println("FragmentOptions " + fragment.name + " {");
         for (Map.Entry<String, String> optionSetting : fragment.getOptions().entrySet()) {
           writer.printf("  %s: %s\n", optionSetting.getKey(), optionSetting.getValue());
         }
@@ -138,7 +138,7 @@ abstract class ConfigCommandOutputFormatter {
     public void writeConfigurationIDs(Iterable<ConfigurationForOutput> configurations) {
       Iterable<String> configurationIDs =
           Streams.stream(configurations)
-              .map(config -> config.getConfigHash())
+              .map(config -> config.configHash)
               .collect(Collectors.toList());
       writer.println(gson.toJson(ImmutableMap.of("configuration-IDs", configurationIDs)));
     }

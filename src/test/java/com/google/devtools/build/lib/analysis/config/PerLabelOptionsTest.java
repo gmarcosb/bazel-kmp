@@ -44,15 +44,15 @@ public class PerLabelOptionsTest {
       throws OptionsParsingException {
     createOptions(pattern + "@" + opts);
     assertRegexParsing(pattern);
-    assertThat(options.getOptions()).isNotNull();
-    assertThat(options.getOptions()).isEqualTo(expectedOptions);
+    assertThat(options.options).isNotNull();
+    assertThat(options.options).isEqualTo(expectedOptions);
   }
 
   @Test
   public void testEmpty() throws Exception {
     createOptions("");
     assertRegexParsing("");
-    assertThat(options.getOptions()).isEmpty();
+    assertThat(options.options).isEmpty();
   }
 
   @Test

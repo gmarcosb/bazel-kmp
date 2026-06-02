@@ -11,12 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.includescanning;
+package com.google.devtools.build.lib.includescanning
 
-import com.google.devtools.build.skyframe.SkyFunctionName;
+import com.google.devtools.build.skyframe.SkyFunctionName
 
-/** SkyFunctionNames specific to include scanning. */
-public class IncludeScanningSkyFunctions {
-  public static final SkyFunctionName INCLUDE_HINTS =
-      SkyFunctionName.createNonHermetic("INCLUDE_HINTS");
+/** SkyFunctionNames specific to include scanning.  */
+object IncludeScanningSkyFunctions {
+    val INCLUDE_HINTS: SkyFunctionName = SkyFunctionName.createNonHermetic("INCLUDE_HINTS")
 }

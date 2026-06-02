@@ -11,62 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Detects cpu speed events.  */
+class SystemCPUSpeedModule : BlazeModule() {
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var reporter: com.google.devtools.build.lib.events.Reporter? = null
 
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+    private var service: PlatformNativeDepsService? = null
 
-/** Detects cpu speed events. */
-public final class SystemCPUSpeedModule extends BlazeModule {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  @GuardedBy("this")
-  @Nullable
-  private Reporter reporter;
-
-  private PlatformNativeDepsService service;
-
-  @Override
-  public void workspaceInit(
-      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {
-    service = checkNotNull(runtime.getBlazeService(PlatformNativeDepsService.class));
-    service.registerCPUSpeedJni(this::cpuSpeedCallback);
-  }
-
-  @Override
-  public synchronized void beforeCommand(CommandEnvironment env) {
-    this.reporter = env.getReporter();
-    int startingSpeed = service.cpuSpeed();
-    if (startingSpeed < 100) {
-      cpuSpeedCallback(startingSpeed);
+    override fun workspaceInit(
+        runtime: BlazeRuntime, directories: BlazeDirectories?, builder: WorkspaceBuilder?
+    ) {
+        service = com.google.common.base.Preconditions.checkNotNull<PlatformNativeDepsService>(
+            runtime.getBlazeService<PlatformNativeDepsService?>(PlatformNativeDepsService::class.java)
+        )
+        service.registerCPUSpeedJni(IntConsumer { speed: Int -> this.cpuSpeedCallback(speed) })
     }
-  }
 
-  @Override
-  public synchronized void afterCommand() {
-    this.reporter = null;
-  }
+    @kotlin.jvm.Synchronized
+    override fun beforeCommand(env: CommandEnvironment) {
+        this.reporter = env.getReporter()
+        val startingSpeed: Int = service.cpuSpeed()
+        if (startingSpeed < 100) {
+            cpuSpeedCallback(startingSpeed)
+        }
+    }
 
-  private synchronized void cpuSpeedCallback(int speed) {
-    if (speed == -1) {
-      // Speeds of -1 imply an error occurred in our speed gathering code.
-      // It is expected that lower level code has logged the error, so we are just going to ignore.
-      return;
+    @kotlin.jvm.Synchronized
+    override fun afterCommand() {
+        this.reporter = null
     }
-    SystemCPUSpeedEvent event = new SystemCPUSpeedEvent(speed);
-    if (reporter != null) {
-      reporter.post(event);
+
+    @kotlin.jvm.Synchronized
+    private fun cpuSpeedCallback(speed: Int) {
+        if (speed == -1) {
+            // Speeds of -1 imply an error occurred in our speed gathering code.
+            // It is expected that lower level code has logged the error, so we are just going to ignore.
+            return
+        }
+        val event: SystemCPUSpeedEvent = SystemCPUSpeedEvent(speed)
+        if (reporter != null) {
+            reporter.post(event)
+        }
+        logger.atInfo().log("%s", event.logString())
     }
-    logger.atInfo().log("%s", event.logString());
-  }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

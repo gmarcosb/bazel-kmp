@@ -11,399 +11,468 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import java.io.IOException
+import java.util.Collections
+import java.util.UUID
 
 /**
- * Static accessor for the {@link TraceProfilerService}.
- *
- * <p>This class provides a global access point to the trace profiler so it doesn't have to be
+ * Static accessor for the [TraceProfilerService].
+ * 
+ * 
+ * This class provides a global access point to the trace profiler so it doesn't have to be
  * threaded through most of the codebase. Usage typically looks like:
- *
- * <p><code>
+ * 
+ * 
+ * `
  * try (SilentCloseable c = Profiler.instance().profile("my task")) {
- *   // code to be profiled
+ * // code to be profiled
  * }
- * </code>
- *
- * <p>It's also possible to save the {@code Profiler.instance()} return value in a variable and
+` * 
+ * 
+ * 
+ * It's also possible to save the `Profiler.instance()` return value in a variable and
  * re-use it later.
- *
- * <p>The purpose of this class is let both the LC and SC use the trace profiler without both of
+ * 
+ * 
+ * The purpose of this class is let both the LC and SC use the trace profiler without both of
  * them depending on the full implementation at compile time. At runtime, the symbolic references to
- * {@link Profiler} on both sides must link against the SC version. Any future additions to the
+ * [Profiler] on both sides must link against the SC version. Any future additions to the
  * profiler API should mirror the existing methods: a delegating implementation falling back to a
- * no-op, with the actual implementation in {@link TraceProfilerServiceImpl}.
+ * no-op, with the actual implementation in [TraceProfilerServiceImpl].
  */
-@SkybridgeInterface
-@SuppressWarnings("GoodTime") // This code is very performance sensitive.
-public final class Profiler implements TraceProfilerService {
-  private static final Profiler instance = new Profiler();
-
-  @Nullable private static volatile TraceProfilerService traceProfilerService;
-
-  private static final SilentCloseable NOP_CLOSEABLE = () -> {};
-  private static final TimeSeries NOP_TIME_SERIES = new NoOpTimeSeries();
-  private static final AsyncProfiler NOP_ASYNC_PROFILER = new NoOpAsyncProfiler();
-
-  private Profiler() {}
-
-  /**
-   * Returns the singleton {@link Profiler} instance, which is valid for the entire lifetime of the
-   * server.
-   *
-   * <p>With the exception of the {@link #start} method, the singleton instance provides a no-op
-   * implementation of {@link TraceProfilerService} until {@link #setTraceProfilerService} is
-   * called, after which it forwards all instance method calls to the implementation thus installed.
-   * Calling {@link #start} before {@link #setTraceProfilerService} will throw an exception.
-   *
-   * <p>With this arrangement, {@link Profiler} methods other than {@link #start} may be called
-   * liberally anywhere in the codebase, even if {@link #setTraceProfilerService} is called after
-   * the {@link Profiler} singleton has already been retrieved, or if it is never called (as might
-   * be the case in a test or a non-Bazel binary incorporating parts of the Bazel codebase).
-   */
-  public static Profiler instance() {
-    return instance;
-  }
-
-  /**
-   * Installs the {@link TraceProfilerService}. In a production context, this is expected to be
-   * called exactly once during server startup.
-   *
-   * <p>From this point onwards, methods called on the singleton {@link Profiler} instance will be
-   * forwarded to this {@link TraceProfilerService}.
-   */
-  public static void setTraceProfilerService(TraceProfilerService traceProfilerService) {
-    Profiler.traceProfilerService = traceProfilerService;
-  }
-
-  @Override
-  public long nanoTimeMaybe() {
-    if (traceProfilerService != null) {
-      return traceProfilerService.nanoTimeMaybe();
-    }
-    return -1;
-  }
-
-  @Override
-  public boolean isActive() {
-    if (traceProfilerService != null) {
-      return traceProfilerService.isActive();
-    }
-    return false;
-  }
-
-  @Override
-  public SilentCloseable profile(ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.profile(type, description);
-    }
-    return NOP_CLOSEABLE;
-  }
-
-  @Override
-  public SilentCloseable profile(ProfilerTask type, Supplier<String> description) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.profile(type, description);
-    }
-    return NOP_CLOSEABLE;
-  }
-
-  @Override
-  public SilentCloseable profile(String description) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.profile(description);
-    }
-    return NOP_CLOSEABLE;
-  }
-
-  @Override
-  public void logSimpleTask(long startTimeNanos, ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      traceProfilerService.logSimpleTask(startTimeNanos, type, description);
-    }
-  }
-
-  @Override
-  public void logSimpleTask(
-      long startTimeNanos, long stopTimeNanos, ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      traceProfilerService.logSimpleTask(startTimeNanos, stopTimeNanos, type, description);
-    }
-  }
-
-  @Override
-  public void logSimpleTaskDuration(
-      long startTimeNanos, Duration duration, ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      traceProfilerService.logSimpleTaskDuration(startTimeNanos, duration, type, description);
-    }
-  }
-
-  @Override
-  public void logEventAtTime(long atTimeNanos, ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      traceProfilerService.logEventAtTime(atTimeNanos, type, description);
-    }
-  }
-
-  @Override
-  public void logEvent(ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      traceProfilerService.logEvent(type, description);
-    }
-  }
-
-  @Override
-  public void setVfsTypeHeuristics(
-      Map<String, ? extends Predicate<? super String>> vfsTypeHeuristics) {
-    if (traceProfilerService != null) {
-      traceProfilerService.setVfsTypeHeuristics(vfsTypeHeuristics);
-    }
-  }
-
-  @Override
-  public void start(
-      Set<ProfilerTask> profiledTasks,
-      OutputStream stream,
-      Format format,
-      String outputBase,
-      UUID buildID,
-      boolean recordAllDurations,
-      Clock clock,
-      long execStartTimeNanos,
-      boolean slimProfile,
-      boolean includePrimaryOutput,
-      boolean includeTargetLabel,
-      boolean includeConfiguration,
-      boolean collectTaskHistograms)
-      throws IOException {
-    if (traceProfilerService == null) {
-      throw new IllegalStateException("cannot call start before setTraceProfilerService");
-    }
-    traceProfilerService.start(
-        profiledTasks,
-        stream,
-        format,
-        outputBase,
-        buildID,
-        recordAllDurations,
-        clock,
-        execStartTimeNanos,
-        /* slimProfile= */ slimProfile,
-        /* includePrimaryOutput= */ includePrimaryOutput,
-        /* includeTargetLabel= */ includeTargetLabel,
-        /* includeConfiguration= */ includeConfiguration,
-        /* collectTaskHistograms= */ collectTaskHistograms);
-  }
-
-  @Override
-  public void stop() throws IOException {
-    if (traceProfilerService != null) {
-      traceProfilerService.stop();
-    }
-  }
-
-  @Override
-  public void clear() {
-    if (traceProfilerService != null) {
-      traceProfilerService.clear();
-    }
-  }
-
-  @Override
-  public List<StatRecorder> getTasksHistograms() {
-    if (traceProfilerService != null) {
-      return traceProfilerService.getTasksHistograms();
-    }
-    return Collections.emptyList();
-  }
-
-  @Override
-  public Iterable<SlowTask> getSlowestTasks() {
-    if (traceProfilerService != null) {
-      return traceProfilerService.getSlowestTasks();
-    }
-    return Collections.emptyList();
-  }
-
-  @Override
-  public boolean isProfiling(ProfilerTask type) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.isProfiling(type);
-    }
-    return false;
-  }
-
-  @Override
-  public void markPhase(ProfilePhase phase) throws InterruptedException {
-    if (traceProfilerService != null) {
-      traceProfilerService.markPhase(phase);
-    }
-  }
-
-  @Override
-  public SilentCloseable profileAction(
-      ProfilerTask type,
-      String mnemonic,
-      String description,
-      String primaryOutput,
-      String targetLabel,
-      String configuration) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.profileAction(
-          type, mnemonic, description, primaryOutput, targetLabel, configuration);
-    }
-    return NOP_CLOSEABLE;
-  }
-
-  @Override
-  public void completeTask(long startTimeNanos, ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      traceProfilerService.completeTask(startTimeNanos, type, description);
-    }
-  }
-
-  @Override
-  public void registerCounterSeriesCollector(CounterSeriesCollector collector) {
-    if (traceProfilerService != null) {
-      traceProfilerService.registerCounterSeriesCollector(collector);
-    }
-  }
-
-  @Override
-  public void unregisterCounterSeriesCollector(CounterSeriesCollector collector) {
-    if (traceProfilerService != null) {
-      traceProfilerService.unregisterCounterSeriesCollector(collector);
-    }
-  }
-
-  @Override
-  public void logCounters(
-      Map<CounterSeriesTask, double[]> counterSeriesMap,
-      Duration profileStart,
-      Duration bucketDuration) {
-    if (traceProfilerService != null) {
-      traceProfilerService.logCounters(counterSeriesMap, profileStart, bucketDuration);
-    }
-  }
-
-  @Override
-  public Duration getProfileElapsedTime() {
-    if (traceProfilerService != null) {
-      return traceProfilerService.getProfileElapsedTime();
-    }
-    return Duration.ZERO;
-  }
-
-  @Override
-  public Duration getServerProcessCpuTime() {
-    if (traceProfilerService != null) {
-      return traceProfilerService.getServerProcessCpuTime();
-    }
-    return Duration.ZERO;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public <T> ListenableFuture<T> profileFuture(
-      ListenableFuture<T> future, String prefix, ProfilerTask type, String description) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.profileFuture(future, prefix, type, description);
-    }
-    return future;
-  }
-
-  @Override
-  public AsyncProfiler profileAsync(String prefix, String description) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.profileAsync(prefix, description);
-    }
-    return NOP_ASYNC_PROFILER;
-  }
-
-  @Override
-  public TimeSeries createTimeSeries(Duration startTime, Duration bucketDuration) {
-    if (traceProfilerService != null) {
-      return traceProfilerService.createTimeSeries(startTime, bucketDuration);
-    }
-    return NOP_TIME_SERIES;
-  }
-
-  private static class NoOpTimeSeries implements TimeSeries {
-    @Override
-    public void addRange(Duration startTime, Duration endTime) {}
-
-    @Override
-    public void addRange(Duration rangeStart, Duration rangeEnd, double value) {}
-
-    @Override
-    public double[] toDoubleArray(int len) {
-      return new double[len];
-    }
-  }
-
-  private static class NoOpAsyncProfiler implements AsyncProfiler {
-    @Override
-    public SilentCloseable profile(ProfilerTask type, String description) {
-      return NOP_CLOSEABLE;
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+// This code is very performance sensitive.
+class Profiler private constructor() : com.google.devtools.build.lib.profiler.TraceProfilerService {
+    override fun nanoTimeMaybe(): Long {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.nanoTimeMaybe()
+        }
+        return -1
     }
 
-    @Override
-    public SilentCloseable profile(String description) {
-      return NOP_CLOSEABLE;
+    override fun isActive(): Boolean {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.isActive()
+        }
+        return false
     }
 
-    @Override
-    public <T> ListenableFuture<T> profileFuture(ListenableFuture<T> future, String description) {
-      return future;
+    override fun profile(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ): com.google.devtools.build.lib.profiler.SilentCloseable? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.profile(
+                type,
+                description
+            )
+        }
+        return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_CLOSEABLE
     }
 
-    @Override
-    @CanIgnoreReturnValue
-    public <T> ListenableFuture<T> profileFuture(
-        ListenableFuture<T> future, ProfilerTask type, String description) {
-      return future;
+    override fun profile(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: java.util.function.Supplier<String?>?
+    ): com.google.devtools.build.lib.profiler.SilentCloseable? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.profile(
+                type,
+                description
+            )
+        }
+        return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_CLOSEABLE
     }
 
-    @Override
-    public Runnable profileCallback(Runnable runnable, String description) {
-      return runnable;
+    override fun profile(description: String?): com.google.devtools.build.lib.profiler.SilentCloseable? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.profile(description)
+        }
+        return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_CLOSEABLE
     }
 
-    @Override
-    public Runnable profileCallback(Runnable runnable, ProfilerTask type, String description) {
-      return runnable;
+    override fun logSimpleTask(
+        startTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.logSimpleTask(
+                startTimeNanos,
+                type,
+                description
+            )
+        }
     }
 
-    @Override
-    public <T> Consumer<T> profileCallback(Consumer<T> consumer, String description) {
-      return consumer;
+    override fun logSimpleTask(
+        startTimeNanos: Long,
+        stopTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.logSimpleTask(
+                startTimeNanos,
+                stopTimeNanos,
+                type,
+                description
+            )
+        }
     }
 
-    @Override
-    public <T> Consumer<T> profileCallback(
-        Consumer<T> consumer, ProfilerTask type, String description) {
-      return consumer;
+    override fun logSimpleTaskDuration(
+        startTimeNanos: Long,
+        duration: java.time.Duration?,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.logSimpleTaskDuration(
+                startTimeNanos,
+                duration,
+                type,
+                description
+            )
+        }
     }
 
-    @Override
-    public void close() {}
-  }
+    override fun logEventAtTime(
+        atTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.logEventAtTime(
+                atTimeNanos,
+                type,
+                description
+            )
+        }
+    }
+
+    override fun logEvent(type: com.google.devtools.build.lib.profiler.ProfilerTask?, description: String?) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.logEvent(type, description)
+        }
+    }
+
+    override fun setVfsTypeHeuristics(
+        vfsTypeHeuristics: MutableMap<String?, out java.util.function.Predicate<in String?>?>?
+    ) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.setVfsTypeHeuristics(
+                vfsTypeHeuristics
+            )
+        }
+    }
+
+    @Throws(IOException::class)
+    override fun start(
+        profiledTasks: MutableSet<com.google.devtools.build.lib.profiler.ProfilerTask?>?,
+        stream: java.io.OutputStream?,
+        format: com.google.devtools.build.lib.profiler.TraceProfilerService.Format?,
+        outputBase: String?,
+        buildID: UUID?,
+        recordAllDurations: Boolean,
+        clock: com.google.devtools.build.lib.clock.Clock?,
+        execStartTimeNanos: Long,
+        slimProfile: Boolean,
+        includePrimaryOutput: Boolean,
+        includeTargetLabel: Boolean,
+        includeConfiguration: Boolean,
+        collectTaskHistograms: Boolean
+    ) {
+        checkNotNull(com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService) { "cannot call start before setTraceProfilerService" }
+        com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.start(
+            profiledTasks,
+            stream,
+            format,
+            outputBase,
+            buildID,
+            recordAllDurations,
+            clock,
+            execStartTimeNanos,  /* slimProfile= */
+            slimProfile,  /* includePrimaryOutput= */
+            includePrimaryOutput,  /* includeTargetLabel= */
+            includeTargetLabel,  /* includeConfiguration= */
+            includeConfiguration,  /* collectTaskHistograms= */
+            collectTaskHistograms
+        )
+    }
+
+    @Throws(IOException::class)
+    override fun stop() {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.stop()
+        }
+    }
+
+    override fun clear() {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.clear()
+        }
+    }
+
+    override fun getTasksHistograms(): MutableList<com.google.devtools.build.lib.profiler.StatRecorder?>? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.getTasksHistograms()
+        }
+        return Collections.emptyList<com.google.devtools.build.lib.profiler.StatRecorder?>()
+    }
+
+    override fun getSlowestTasks(): Iterable<com.google.devtools.build.lib.profiler.SlowTask?>? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.getSlowestTasks()
+        }
+        return Collections.emptyList<com.google.devtools.build.lib.profiler.SlowTask?>()
+    }
+
+    override fun isProfiling(type: com.google.devtools.build.lib.profiler.ProfilerTask?): Boolean {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.isProfiling(type)
+        }
+        return false
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun markPhase(phase: com.google.devtools.build.lib.profiler.ProfilePhase?) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.markPhase(phase)
+        }
+    }
+
+    override fun profileAction(
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        mnemonic: String?,
+        description: String?,
+        primaryOutput: String?,
+        targetLabel: String?,
+        configuration: String?
+    ): com.google.devtools.build.lib.profiler.SilentCloseable? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.profileAction(
+                type, mnemonic, description, primaryOutput, targetLabel, configuration
+            )
+        }
+        return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_CLOSEABLE
+    }
+
+    override fun completeTask(
+        startTimeNanos: Long,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.completeTask(
+                startTimeNanos,
+                type,
+                description
+            )
+        }
+    }
+
+    override fun registerCounterSeriesCollector(collector: com.google.devtools.build.lib.profiler.CounterSeriesCollector?) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.registerCounterSeriesCollector(
+                collector
+            )
+        }
+    }
+
+    override fun unregisterCounterSeriesCollector(collector: com.google.devtools.build.lib.profiler.CounterSeriesCollector?) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.unregisterCounterSeriesCollector(
+                collector
+            )
+        }
+    }
+
+    override fun logCounters(
+        counterSeriesMap: MutableMap<com.google.devtools.build.lib.profiler.CounterSeriesTask?, DoubleArray?>?,
+        profileStart: java.time.Duration?,
+        bucketDuration: java.time.Duration?
+    ) {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.logCounters(
+                counterSeriesMap,
+                profileStart,
+                bucketDuration
+            )
+        }
+    }
+
+    override fun getProfileElapsedTime(): java.time.Duration? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.getProfileElapsedTime()
+        }
+        return java.time.Duration.ZERO
+    }
+
+    override fun getServerProcessCpuTime(): java.time.Duration? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.getServerProcessCpuTime()
+        }
+        return java.time.Duration.ZERO
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun <T> profileFuture(
+        future: com.google.common.util.concurrent.ListenableFuture<T?>?,
+        prefix: String?,
+        type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+        description: String?
+    ): com.google.common.util.concurrent.ListenableFuture<T?>? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.profileFuture<T?>(
+                future,
+                prefix,
+                type,
+                description
+            )
+        }
+        return future
+    }
+
+    override fun profileAsync(
+        prefix: String?,
+        description: String?
+    ): com.google.devtools.build.lib.profiler.AsyncProfiler? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.profileAsync(
+                prefix,
+                description
+            )
+        }
+        return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_ASYNC_PROFILER
+    }
+
+    override fun createTimeSeries(
+        startTime: java.time.Duration?,
+        bucketDuration: java.time.Duration?
+    ): com.google.devtools.build.lib.profiler.TimeSeries? {
+        if (com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService != null) {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService.createTimeSeries(
+                startTime,
+                bucketDuration
+            )
+        }
+        return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_TIME_SERIES
+    }
+
+    private class NoOpTimeSeries : com.google.devtools.build.lib.profiler.TimeSeries {
+        override fun addRange(startTime: java.time.Duration?, endTime: java.time.Duration?) {}
+
+        override fun addRange(rangeStart: java.time.Duration?, rangeEnd: java.time.Duration?, value: Double) {}
+
+        override fun toDoubleArray(len: Int): DoubleArray {
+            return DoubleArray(len)
+        }
+    }
+
+    private class NoOpAsyncProfiler : com.google.devtools.build.lib.profiler.AsyncProfiler {
+        override fun profile(
+            type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+            description: String?
+        ): com.google.devtools.build.lib.profiler.SilentCloseable {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_CLOSEABLE
+        }
+
+        override fun profile(description: String?): com.google.devtools.build.lib.profiler.SilentCloseable {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.NOP_CLOSEABLE
+        }
+
+        override fun <T> profileFuture(
+            future: com.google.common.util.concurrent.ListenableFuture<T?>?,
+            description: String?
+        ): com.google.common.util.concurrent.ListenableFuture<T?>? {
+            return future
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        override fun <T> profileFuture(
+            future: com.google.common.util.concurrent.ListenableFuture<T?>?,
+            type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+            description: String?
+        ): com.google.common.util.concurrent.ListenableFuture<T?>? {
+            return future
+        }
+
+        override fun profileCallback(runnable: java.lang.Runnable?, description: String?): java.lang.Runnable? {
+            return runnable
+        }
+
+        override fun profileCallback(
+            runnable: java.lang.Runnable?,
+            type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+            description: String?
+        ): java.lang.Runnable? {
+            return runnable
+        }
+
+        override fun <T> profileCallback(
+            consumer: java.util.function.Consumer<T?>?,
+            description: String?
+        ): java.util.function.Consumer<T?>? {
+            return consumer
+        }
+
+        override fun <T> profileCallback(
+            consumer: java.util.function.Consumer<T?>?,
+            type: com.google.devtools.build.lib.profiler.ProfilerTask?,
+            description: String?
+        ): java.util.function.Consumer<T?>? {
+            return consumer
+        }
+
+        override fun close() {}
+    }
+
+    companion object {
+        private val instance: Profiler = com.google.devtools.build.lib.profiler.Profiler()
+
+        @kotlin.concurrent.Volatile
+        private var traceProfilerService: com.google.devtools.build.lib.profiler.TraceProfilerService? = null
+
+        private val NOP_CLOSEABLE: com.google.devtools.build.lib.profiler.SilentCloseable =
+            com.google.devtools.build.lib.profiler.SilentCloseable {}
+        private val NOP_TIME_SERIES: com.google.devtools.build.lib.profiler.TimeSeries =
+            com.google.devtools.build.lib.profiler.Profiler.NoOpTimeSeries()
+        private val NOP_ASYNC_PROFILER: com.google.devtools.build.lib.profiler.AsyncProfiler =
+            com.google.devtools.build.lib.profiler.Profiler.NoOpAsyncProfiler()
+
+        /**
+         * Returns the singleton [Profiler] instance, which is valid for the entire lifetime of the
+         * server.
+         * 
+         * 
+         * With the exception of the [.start] method, the singleton instance provides a no-op
+         * implementation of [TraceProfilerService] until [.setTraceProfilerService] is
+         * called, after which it forwards all instance method calls to the implementation thus installed.
+         * Calling [.start] before [.setTraceProfilerService] will throw an exception.
+         * 
+         * 
+         * With this arrangement, [Profiler] methods other than [.start] may be called
+         * liberally anywhere in the codebase, even if [.setTraceProfilerService] is called after
+         * the [Profiler] singleton has already been retrieved, or if it is never called (as might
+         * be the case in a test or a non-Bazel binary incorporating parts of the Bazel codebase).
+         */
+        @kotlin.jvm.JvmStatic
+        fun instance(): Profiler {
+            return com.google.devtools.build.lib.profiler.Profiler.Companion.instance
+        }
+
+        /**
+         * Installs the [TraceProfilerService]. In a production context, this is expected to be
+         * called exactly once during server startup.
+         * 
+         * 
+         * From this point onwards, methods called on the singleton [Profiler] instance will be
+         * forwarded to this [TraceProfilerService].
+         */
+        fun setTraceProfilerService(traceProfilerService: com.google.devtools.build.lib.profiler.TraceProfilerService?) {
+            com.google.devtools.build.lib.profiler.Profiler.Companion.traceProfilerService = traceProfilerService
+        }
+    }
 }

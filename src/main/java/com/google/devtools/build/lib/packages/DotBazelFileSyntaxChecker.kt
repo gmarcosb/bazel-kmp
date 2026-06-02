@@ -12,157 +12,145 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadHostile;
-import net.starlark.java.syntax.Argument;
-import net.starlark.java.syntax.CallExpression;
-import net.starlark.java.syntax.DefStatement;
-import net.starlark.java.syntax.DictExpression;
-import net.starlark.java.syntax.ForStatement;
-import net.starlark.java.syntax.IfStatement;
-import net.starlark.java.syntax.LambdaExpression;
-import net.starlark.java.syntax.LoadStatement;
-import net.starlark.java.syntax.Location;
-import net.starlark.java.syntax.NodeVisitor;
-import net.starlark.java.syntax.StarlarkFile;
-import net.starlark.java.syntax.SyntaxError;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadHostile
 
 /**
- * A {@link NodeVisitor} that can be used to check that a Starlark AST conforms to the restricted
+ * A [NodeVisitor] that can be used to check that a Starlark AST conforms to the restricted
  * syntax that BUILD, WORKSPACE, REPO.bazel, and MODULE.bazel files use. This restricted syntax
  * disallows:
- *
- * <ul>
- *   <li>control-flow statements ({@code for} and {@code if}, but not comprehensions and {@code if}
- *       expressions),
- *   <li>function definitions ({@code def} and {@code lambda}),
- *   <li>variadic arguments ({@code *args} and {@code **kwargs}) in function call sites, and
- *   <li>optionally, {@code load()} statements.
- * </ul>
+ * 
+ * 
+ *  * control-flow statements (`for` and `if`, but not comprehensions and `if`
+ * expressions),
+ *  * function definitions (`def` and `lambda`),
+ *  * variadic arguments (`*args` and `**kwargs`) in function call sites, and
+ *  * optionally, `load()` statements.
+ * 
  */
 @ThreadHostile
-public class DotBazelFileSyntaxChecker extends NodeVisitor {
-  private final String where;
-  private final boolean canLoadBzl;
-  private final boolean allowLiteralStarStarArgs;
-  private ImmutableList.Builder<SyntaxError> errors = ImmutableList.builder();
+open class DotBazelFileSyntaxChecker @kotlin.jvm.JvmOverloads constructor(
+    where: String?,
+    canLoadBzl: Boolean,
+    allowLiteralStarStarArgs: Boolean = false
+) : net.starlark.java.syntax.NodeVisitor() {
+    private val where: String?
+    private val canLoadBzl: Boolean
+    private val allowLiteralStarStarArgs: Boolean
+    private var errors: com.google.common.collect.ImmutableList.Builder<net.starlark.java.syntax.SyntaxError?> =
+        com.google.common.collect.ImmutableList.builder<net.starlark.java.syntax.SyntaxError?>()
 
-  /**
-   * @param where describes the type of file being checked.
-   * @param canLoadBzl whether the file type being check supports load statements. This is used to
-   *     generate more informative error messages.
-   * @param allowLiteralStarStarArgs whether to allow **kwargs in function calls if the dict is a
-   *     literal. This is needed for some functions that take arbitrary keyword arguments whose keys
-   *     may have to contain non-identifier characters.
-   */
-  public DotBazelFileSyntaxChecker(
-      String where, boolean canLoadBzl, boolean allowLiteralStarStarArgs) {
-    this.where = where;
-    this.canLoadBzl = canLoadBzl;
-    this.allowLiteralStarStarArgs = allowLiteralStarStarArgs;
-  }
-
-  public DotBazelFileSyntaxChecker(String where, boolean canLoadBzl) {
-    this(where, canLoadBzl, /* allowLiteralStarStarArgs= */ false);
-  }
-
-  public final void check(StarlarkFile file) throws SyntaxError.Exception {
-    this.errors = ImmutableList.builder();
-    visit(file);
-    ImmutableList<SyntaxError> errors = this.errors.build();
-    if (!errors.isEmpty()) {
-      throw new SyntaxError.Exception(errors);
+    /**
+     * @param where describes the type of file being checked.
+     * @param canLoadBzl whether the file type being check supports load statements. This is used to
+     * generate more informative error messages.
+     * @param allowLiteralStarStarArgs whether to allow **kwargs in function calls if the dict is a
+     * literal. This is needed for some functions that take arbitrary keyword arguments whose keys
+     * may have to contain non-identifier characters.
+     */
+    init {
+        this.where = where
+        this.canLoadBzl = canLoadBzl
+        this.allowLiteralStarStarArgs = allowLiteralStarStarArgs
     }
-  }
 
-  protected void error(Location loc, String message) {
-    errors.add(new SyntaxError(loc, message));
-  }
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun check(file: net.starlark.java.syntax.StarlarkFile) {
+        this.errors = com.google.common.collect.ImmutableList.builder<net.starlark.java.syntax.SyntaxError?>()
+        visit(file)
+        val errors: com.google.common.collect.ImmutableList<net.starlark.java.syntax.SyntaxError?> = this.errors.build()
+        if (!errors.isEmpty()) {
+            throw net.starlark.java.syntax.SyntaxError.Exception(errors)
+        }
+    }
 
-  // Reject f(*args) and f(**kwargs) calls.
-  private void rejectStarArgs(CallExpression call) {
-    for (Argument arg : call.getArguments()) {
-      if (arg instanceof Argument.StarStar starStar) {
-        if (!allowLiteralStarStarArgs) {
-          error(
-              arg.getStartLocation(),
-              "**kwargs arguments are not allowed in "
-                  + where
-                  + ". Pass the arguments in explicitly.");
+    protected fun error(loc: net.starlark.java.syntax.Location?, message: String?) {
+        errors.add(net.starlark.java.syntax.SyntaxError(loc, message))
+    }
+
+    // Reject f(*args) and f(**kwargs) calls.
+    private fun rejectStarArgs(call: net.starlark.java.syntax.CallExpression) {
+        for (arg in call.getArguments()) {
+            if (arg is net.starlark.java.syntax.Argument.StarStar) {
+                if (!allowLiteralStarStarArgs) {
+                    error(
+                        arg.getStartLocation(),
+                        ("**kwargs arguments are not allowed in "
+                                + where
+                                + ". Pass the arguments in explicitly.")
+                    )
+                }
+                if (arg.getValue() !is net.starlark.java.syntax.DictExpression) {
+                    error(
+                        arg.getStartLocation(),
+                        "**kwargs arguments must be a literal dict in " + where + "."
+                    )
+                }
+            } else if (arg is net.starlark.java.syntax.Argument.Star) {
+                error(
+                    arg.getStartLocation(),
+                    "*args arguments are not allowed in " + where + ". Pass the arguments in explicitly."
+                )
+            }
         }
-        if (!(starStar.getValue() instanceof DictExpression)) {
-          error(
-              arg.getStartLocation(),
-              "**kwargs arguments must be a literal dict in " + where + ".");
+    }
+
+    override fun visit(node: net.starlark.java.syntax.LoadStatement) {
+        if (!canLoadBzl) {
+            error(node.getStartLocation(), "`load` statements may not be used in " + where)
         }
-      } else if (arg instanceof Argument.Star) {
+    }
+
+    // We prune the traversal if we encounter disallowed keywords, as we have already reported the
+    // root error and there's no point reporting more.
+    override fun visit(node: net.starlark.java.syntax.DefStatement) {
         error(
-            arg.getStartLocation(),
-            "*args arguments are not allowed in " + where + ". Pass the arguments in explicitly.");
-      }
+            node.getStartLocation(),
+            ("functions may not be defined in "
+                    + where
+                    + (if (canLoadBzl) ". You may move the function to a .bzl file and load it." else "."))
+        )
     }
-  }
 
-  @Override
-  public void visit(LoadStatement node) {
-    if (!canLoadBzl) {
-      error(node.getStartLocation(), "`load` statements may not be used in " + where);
+    override fun visit(node: net.starlark.java.syntax.LambdaExpression) {
+        error(
+            node.getStartLocation(),
+            ("functions may not be defined in "
+                    + where
+                    + (if (canLoadBzl) ". You may move the function to a .bzl file and load it." else "."))
+        )
     }
-  }
 
-  // We prune the traversal if we encounter disallowed keywords, as we have already reported the
-  // root error and there's no point reporting more.
+    override fun visit(node: net.starlark.java.syntax.ForStatement) {
+        error(
+            node.getStartLocation(),
+            ("`for` statements are not allowed in "
+                    + where
+                    + ". You may inline the loop"
+                    + (if (canLoadBzl) ", move it to a function definition (in a .bzl file)," else "")
+                    + " or as a last resort use a list comprehension.")
+        )
+    }
 
-  @Override
-  public void visit(DefStatement node) {
-    error(
-        node.getStartLocation(),
-        "functions may not be defined in "
-            + where
-            + (canLoadBzl ? ". You may move the function to a .bzl file and load it." : "."));
-  }
+    override fun visit(node: net.starlark.java.syntax.IfStatement) {
+        error(
+            node.getStartLocation(),
+            ("`if` statements are not allowed in "
+                    + where
+                    + ". You may"
+                    + (if (canLoadBzl)
+                " move conditional logic to a function definition (in a .bzl file), or"
+            else
+                "")
+                    + " use an `if` expression for simple cases.")
+        )
+    }
 
-  @Override
-  public void visit(LambdaExpression node) {
-    error(
-        node.getStartLocation(),
-        "functions may not be defined in "
-            + where
-            + (canLoadBzl ? ". You may move the function to a .bzl file and load it." : "."));
-  }
-
-  @Override
-  public void visit(ForStatement node) {
-    error(
-        node.getStartLocation(),
-        "`for` statements are not allowed in "
-            + where
-            + ". You may inline the loop"
-            + (canLoadBzl ? ", move it to a function definition (in a .bzl file)," : "")
-            + " or as a last resort use a list comprehension.");
-  }
-
-  @Override
-  public void visit(IfStatement node) {
-    error(
-        node.getStartLocation(),
-        "`if` statements are not allowed in "
-            + where
-            + ". You may"
-            + (canLoadBzl
-                ? " move conditional logic to a function definition (in a .bzl file), or"
-                : "")
-            + " use an `if` expression for simple cases.");
-  }
-
-  @Override
-  public void visit(CallExpression node) {
-    rejectStarArgs(node);
-    // Continue traversal so as not to miss nested calls
-    // like cc_binary(..., f(**kwargs), ...).
-    super.visit(node);
-  }
+    override fun visit(node: net.starlark.java.syntax.CallExpression) {
+        rejectStarArgs(node)
+        // Continue traversal so as not to miss nested calls
+        // like cc_binary(..., f(**kwargs), ...).
+        super.visit(node)
+    }
 }

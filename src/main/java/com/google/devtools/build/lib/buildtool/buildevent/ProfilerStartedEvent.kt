@@ -11,22 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool.buildevent;
+package com.google.devtools.build.lib.buildtool.buildevent
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.runtime.InstrumentationOutput;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import com.google.devtools.build.lib.runtime.InstrumentationOutput
 
-/** This event is fired when the profiler is started. */
-public final class ProfilerStartedEvent implements ExtendedEventHandler.Postable {
-  @Nullable private final InstrumentationOutput profile;
-
-  public ProfilerStartedEvent(@Nullable InstrumentationOutput profile) {
-    this.profile = profile;
-  }
-
-  @Nullable
-  public InstrumentationOutput getProfile() {
-    return profile;
-  }
-}
+/** This event is fired when the profiler is started.  */
+class ProfilerStartedEvent(@kotlin.jvm.JvmField val profile: InstrumentationOutput?) : ExtendedEventHandler.Postable

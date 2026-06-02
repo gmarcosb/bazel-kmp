@@ -12,207 +12,251 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static com.google.common.collect.Comparators.lexicographical;
-import static com.google.common.primitives.Booleans.falseFirst;
-import static com.google.common.primitives.Booleans.trueFirst;
-import static java.util.Comparator.comparing;
-
-import com.google.common.base.Splitter;
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import java.util.Comparator;
-import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import java.util.function.IntPredicate
 
 /**
- * Represents a version in the Bazel module system. The version format we support is {@code
- * RELEASE[-PRERELEASE][+BUILD]}, where {@code RELEASE}, {@code PRERELEASE}, and {@code BUILD} are
+ * Represents a version in the Bazel module system. The version format we support is `RELEASE[-PRERELEASE][+BUILD]`, where `RELEASE`, `PRERELEASE`, and `BUILD` are
  * each a sequence of "identifiers" (defined as a non-empty sequence of ASCII alphanumerical
- * characters and hyphens) separated by dots. The {@code RELEASE} part may not contain hyphens.
- *
- * <p>Otherwise, this format is identical to SemVer, especially in terms of the <a
- * href="https://semver.org/#spec-item-11">comparison algorithm</a>. In other words, this format is
+ * characters and hyphens) separated by dots. The `RELEASE` part may not contain hyphens.
+ * 
+ * 
+ * Otherwise, this format is identical to SemVer, especially in terms of the [comparison algorithm](https://semver.org/#spec-item-11). In other words, this format is
  * intentionally looser than SemVer; in particular:
- *
- * <ul>
- *   <li>the "release" part isn't limited to exactly 3 segments (major, minor, patch), but can be
- *       fewer or more;
- *   <li>each segment in the "release" part can be identifiers instead of just numbers (so letters
- *       are also allowed -- although hyphens are not).
- * </ul>
- *
- * <p>Any valid SemVer version is a valid Bazel module version. Additionally, two SemVer versions
- * {@code a} and {@code b} compare {@code a < b} iff the same holds when they're compared as Bazel
+ * 
+ * 
+ *  * the "release" part isn't limited to exactly 3 segments (major, minor, patch), but can be
+ * fewer or more;
+ *  * each segment in the "release" part can be identifiers instead of just numbers (so letters
+ * are also allowed -- although hyphens are not).
+ * 
+ * 
+ * 
+ * Any valid SemVer version is a valid Bazel module version. Additionally, two SemVer versions
+ * `a` and `b` compare `a < b` iff the same holds when they're compared as Bazel
  * module versions.
- *
- * <p>Versions with a "build" part are generally accepted as input, but they're treated as if the
+ * 
+ * 
+ * Versions with a "build" part are generally accepted as input, but they're treated as if the
  * "build" part is completely absent. That is, when Bazel outputs version strings, it never outputs
  * the "build" part (in fact, it doesn't even store it); similarly, when Bazel accesses registries
  * to request versions, the "build" part is never included. This gives us the nice property of
- * "consistent with equals" natural ordering (see {@link Comparable}); that is, {@code
- * a.compareTo(b) == 0} iff {@code a.equals(b)}.
- *
- * <p>The special "empty string" version can also be used, and compares higher than everything else.
- * It signifies that there is a {@link NonRegistryOverride} for a module.
+ * "consistent with equals" natural ordering (see [Comparable]); that is, `a.compareTo(b) == 0` iff `a.equals(b)`.
+ * 
+ * 
+ * The special "empty string" version can also be used, and compares higher than everything else.
+ * It signifies that there is a [NonRegistryOverride] for a module.
  */
 @AutoCodec
-public record Version(
-    ImmutableList<Identifier> release, ImmutableList<Identifier> prerelease, String normalized)
-    implements Comparable<Version> {
-
-  // We don't care about the "build" part at all so don't capture it.
-  private static final Pattern PATTERN =
-      Pattern.compile(
-          "(?<release>[a-zA-Z0-9.]+)(?:-(?<prerelease>[a-zA-Z0-9.-]+))?(?:\\+[a-zA-Z0-9.-]+)?");
-
-  private static final Splitter DOT_SPLITTER = Splitter.on('.');
-
-  /**
-   * Represents the special "empty string" version, which compares higher than everything else and
-   * signifies that there is a {@link NonRegistryOverride} for the module.
-   */
-  @SuppressWarnings("deprecation") // private usage of constructor
-  public static final Version EMPTY = new Version(ImmutableList.of(), ImmutableList.of(), "");
-
-  /**
-   * @deprecated Use {@link Version#parse(String)} instead.
-   */
-  @Deprecated
-  public Version {}
-
-  /**
-   * Represents an "identifier", a dot-separated segment in the version string. An identifier is
-   * compared differently based on whether it's digits-only or not.
-   */
-  @AutoCodec
-  record Identifier(boolean isDigitsOnly, long asNumber, String asString)
-      implements Comparable<Identifier> {
-    static Identifier from(String string) throws ParseException {
-      if (Strings.isNullOrEmpty(string)) {
-        throw new ParseException("identifier is empty");
-      }
-      if (string.chars().allMatch(Character::isDigit)) {
-        try {
-          return new Identifier(true, Long.parseUnsignedLong(string), string);
-        } catch (NumberFormatException e) {
-          throw new ParseException("numeric version segment is too large: " + string, e);
+class Version @Deprecated("Use {@link Version#parse(String)} instead.") constructor(
+    release: com.google.common.collect.ImmutableList<Identifier?>?,
+    prerelease: com.google.common.collect.ImmutableList<Identifier?>?,
+    /** Returns the normalized version string (that is, with any "build" part stripped).  */
+    @kotlin.jvm.JvmField val normalized: String?
+) : Comparable<Version?> {
+    /**
+     * Represents an "identifier", a dot-separated segment in the version string. An identifier is
+     * compared differently based on whether it's digits-only or not.
+     */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    internal data class Identifier(val isDigitsOnly: Boolean, val asNumber: Long, val asString: String?) :
+        Comparable<Identifier?> {
+        override fun compareTo(o: Identifier?): Int {
+            return java.util.Objects.compare<Identifier?>(
+                this,
+                o,
+                com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier.Companion.COMPARATOR
+            )
         }
-      } else {
-        return new Identifier(false, 0, string);
-      }
-    }
 
-    private static final Comparator<Identifier> COMPARATOR =
-        comparing(Identifier::isDigitsOnly, trueFirst())
-            .thenComparing((a, b) -> Long.compareUnsigned(a.asNumber, b.asNumber))
-            .thenComparing(Identifier::asString);
+        companion object {
+            @Throws(com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException::class)
+            fun from(string: String?): Identifier {
+                if (com.google.common.base.Strings.isNullOrEmpty(string)) {
+                    throw com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException("identifier is empty")
+                }
+                if (string.chars()
+                        .allMatch(IntPredicate { codePoint: Int -> java.lang.Character.isDigit(codePoint) })
+                ) {
+                    try {
+                        return com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier(
+                            true,
+                            java.lang.Long.parseUnsignedLong(string),
+                            string
+                        )
+                    } catch (e: java.lang.NumberFormatException) {
+                        throw com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException(
+                            "numeric version segment is too large: " + string,
+                            e
+                        )
+                    }
+                } else {
+                    return com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier(false, 0, string)
+                }
+            }
 
-    @Override
-    public int compareTo(Identifier o) {
-      return Objects.compare(this, o, COMPARATOR);
-    }
-  }
-
-  /** Returns the normalized version string (that is, with any "build" part stripped). */
-  public String getNormalized() {
-    return normalized;
-  }
-
-  /**
-   * Whether this is just the "empty string" version, which signifies a non-registry override for
-   * the module.
-   */
-  boolean isEmpty() {
-    return getNormalized().isEmpty();
-  }
-
-  /**
-   * Whether this is a prerelease version (i.e. the prerelease part of the version string is
-   * non-empty). A prerelease version compares lower than the same version without the prerelease
-   * part.
-   */
-  boolean isPrerelease() {
-    return !prerelease.isEmpty();
-  }
-
-  /** Parses a version string into a {@link Version} object. */
-  public static Version parse(String version) throws ParseException {
-    if (version.isEmpty()) {
-      return Version.EMPTY;
-    }
-    Matcher matcher = PATTERN.matcher(version);
-    if (!matcher.matches()) {
-      throw new ParseException("bad version (does not match regex): " + version);
-    }
-    String release = matcher.group("release");
-    @Nullable String prerelease = matcher.group("prerelease");
-
-    ImmutableList.Builder<Identifier> releaseSplit = new ImmutableList.Builder<>();
-    for (String ident : DOT_SPLITTER.split(release)) {
-      try {
-        releaseSplit.add(Identifier.from(ident));
-      } catch (ParseException e) {
-        throw new ParseException("error parsing version: " + version, e);
-      }
-    }
-
-    ImmutableList.Builder<Identifier> prereleaseSplit = new ImmutableList.Builder<>();
-    if (!Strings.isNullOrEmpty(prerelease)) {
-      for (String ident : DOT_SPLITTER.split(prerelease)) {
-        try {
-          prereleaseSplit.add(Identifier.from(ident));
-        } catch (ParseException e) {
-          throw new ParseException("error parsing version: " + version, e);
+            private val COMPARATOR: java.util.Comparator<Identifier?> =
+                java.util.Comparator.comparing<Identifier?, Boolean?>(
+                    com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier::isDigitsOnly,
+                    com.google.common.primitives.Booleans.trueFirst()
+                )
+                    .thenComparing(java.util.Comparator { a: Identifier?, b: Identifier? ->
+                        java.lang.Long.compareUnsigned(
+                            a!!.asNumber,
+                            b!!.asNumber
+                        )
+                    })
+                    .thenComparing<String?>(com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier::asString)
         }
-      }
     }
 
-    String normalized = Strings.isNullOrEmpty(prerelease) ? release : release + '-' + prerelease;
-    @SuppressWarnings("deprecation") // private usage of constructor
-    Version result = new Version(releaseSplit.build(), prereleaseSplit.build(), normalized);
-    return result;
-  }
+    val isEmpty: Boolean
+        /**
+         * Whether this is just the "empty string" version, which signifies a non-registry override for
+         * the module.
+         */
+        get() = this.normalized.isEmpty()
 
-  private static final Comparator<Version> COMPARATOR =
-      comparing(Version::isEmpty, falseFirst())
-          .thenComparing(Version::release, lexicographical(Identifier.COMPARATOR))
-          .thenComparing(Version::isPrerelease, trueFirst())
-          .thenComparing(Version::prerelease, lexicographical(Identifier.COMPARATOR));
-
-  @Override
-  public int compareTo(Version o) {
-    return Objects.compare(this, o, COMPARATOR);
-  }
-
-  @Override
-  public String toString() {
-    return getNormalized();
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    return this == o || (o instanceof Version v && v.getNormalized().equals(getNormalized()));
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash("version", getNormalized().hashCode());
-  }
-
-  /** An exception encountered while trying to {@link Version#parse parse} a version. */
-  public static class ParseException extends Exception {
-    public ParseException(String message) {
-      super(message);
+    /**
+     * Whether this is a prerelease version (i.e. the prerelease part of the version string is
+     * non-empty). A prerelease version compares lower than the same version without the prerelease
+     * part.
+     */
+    fun isPrerelease(): Boolean {
+        return !prerelease.isEmpty()
     }
 
-    public ParseException(String message, Throwable cause) {
-      super(message, cause);
+    override fun compareTo(o: Version?): Int {
+        return java.util.Objects.compare<Version?>(
+            this,
+            o,
+            com.google.devtools.build.lib.bazel.bzlmod.Version.Companion.COMPARATOR
+        )
     }
-  }
+
+    override fun toString(): String {
+        return this.normalized!!
+    }
+
+    override fun equals(o: Any?): Boolean {
+        return this === o || (o is Version && o.normalized == this.normalized)
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash("version", this.normalized!!.hashCode())
+    }
+
+    /** An exception encountered while trying to [parse][Version.parse] a version.  */
+    class ParseException : java.lang.Exception {
+        constructor(message: String?) : super(message)
+
+        constructor(message: String?, cause: Throwable?) : super(message, cause)
+    }
+
+    val release: com.google.common.collect.ImmutableList<Identifier?>?
+    val prerelease: com.google.common.collect.ImmutableList<Identifier?>?
+
+    init {
+        this.prerelease = prerelease
+        this.release = release
+    }
+
+    companion object {
+        // We don't care about the "build" part at all so don't capture it.
+        private val PATTERN: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+            "(?<release>[a-zA-Z0-9.]+)(?:-(?<prerelease>[a-zA-Z0-9.-]+))?(?:\\+[a-zA-Z0-9.-]+)?"
+        )
+
+        private val DOT_SPLITTER: com.google.common.base.Splitter = com.google.common.base.Splitter.on('.')
+
+        /**
+         * Represents the special "empty string" version, which compares higher than everything else and
+         * signifies that there is a [NonRegistryOverride] for the module.
+         */
+        @kotlin.jvm.JvmField
+        @Suppress("deprecation") // private usage of constructor
+        val EMPTY: Version = com.google.devtools.build.lib.bazel.bzlmod.Version(
+            com.google.common.collect.ImmutableList.of<Identifier?>(),
+            com.google.common.collect.ImmutableList.of<Identifier?>(),
+            ""
+        )
+
+        /** Parses a version string into a [Version] object.  */
+        @kotlin.jvm.JvmStatic
+        @Throws(com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException::class)
+        fun parse(version: String): Version {
+            if (version.isEmpty()) {
+                return com.google.devtools.build.lib.bazel.bzlmod.Version.Companion.EMPTY
+            }
+            val matcher: java.util.regex.Matcher =
+                com.google.devtools.build.lib.bazel.bzlmod.Version.Companion.PATTERN.matcher(version)
+            if (!matcher.matches()) {
+                throw com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException("bad version (does not match regex): " + version)
+            }
+            val release: String = matcher.group("release")
+            val prerelease: String? = matcher.group("prerelease")
+
+            val releaseSplit: com.google.common.collect.ImmutableList.Builder<Identifier?> =
+                com.google.common.collect.ImmutableList.Builder<Identifier?>()
+            for (ident in com.google.devtools.build.lib.bazel.bzlmod.Version.Companion.DOT_SPLITTER.split(release)) {
+                try {
+                    releaseSplit.add(com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier.Companion.from(ident))
+                } catch (e: ParseException) {
+                    throw com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException(
+                        "error parsing version: " + version,
+                        e
+                    )
+                }
+            }
+
+            val prereleaseSplit: com.google.common.collect.ImmutableList.Builder<Identifier?> =
+                com.google.common.collect.ImmutableList.Builder<Identifier?>()
+            if (!com.google.common.base.Strings.isNullOrEmpty(prerelease)) {
+                for (ident in com.google.devtools.build.lib.bazel.bzlmod.Version.Companion.DOT_SPLITTER.split(prerelease)) {
+                    try {
+                        prereleaseSplit.add(
+                            com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier.Companion.from(
+                                ident
+                            )
+                        )
+                    } catch (e: ParseException) {
+                        throw com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException(
+                            "error parsing version: " + version,
+                            e
+                        )
+                    }
+                }
+            }
+
+            val normalized =
+                if (com.google.common.base.Strings.isNullOrEmpty(prerelease)) release else release + '-' + prerelease
+            @Suppress("deprecation") val result:  // private usage of constructor
+                    Version = com.google.devtools.build.lib.bazel.bzlmod.Version(
+                releaseSplit.build(),
+                prereleaseSplit.build(),
+                normalized
+            )
+            return result
+        }
+
+        private val COMPARATOR: java.util.Comparator<Version?>? = java.util.Comparator.comparing<Version?, Boolean?>(
+            java.util.function.Function { obj: Version? -> obj!!.isEmpty },
+            com.google.common.primitives.Booleans.falseFirst()
+        )
+            .thenComparing<com.google.common.collect.ImmutableList<Identifier?>?>(
+                com.google.devtools.build.lib.bazel.bzlmod.Version::release,
+                com.google.common.collect.Comparators.lexicographical<Identifier?, Identifier?>(com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier.Companion.COMPARATOR)
+            )
+            .thenComparing<Boolean?>(
+                java.util.function.Function { obj: Version? -> obj!!.isPrerelease() },
+                com.google.common.primitives.Booleans.trueFirst()
+            )
+            .thenComparing<com.google.common.collect.ImmutableList<Identifier?>?>(
+                com.google.devtools.build.lib.bazel.bzlmod.Version::prerelease,
+                com.google.common.collect.Comparators.lexicographical<Identifier?, Identifier?>(com.google.devtools.build.lib.bazel.bzlmod.Version.Identifier.Companion.COMPARATOR)
+            )
+    }
 }

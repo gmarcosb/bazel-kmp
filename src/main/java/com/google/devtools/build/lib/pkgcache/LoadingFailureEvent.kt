@@ -11,56 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.Objects;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * This event is fired during the build, when it becomes known that the loading
  * of a target cannot be completed because of an error in one of its
  * dependencies.
  */
-public class LoadingFailureEvent {
-  private final Label failedTarget;
-  private final Label failureReason;
+class LoadingFailureEvent(failedTarget: Label?, failureReason: Label?) {
+    private val failedTarget: Label?
+    private val failureReason: Label?
 
-  public LoadingFailureEvent(Label failedTarget, Label failureReason) {
-    this.failedTarget = failedTarget;
-    this.failureReason = failureReason;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("failedTarget", failedTarget)
-        .add("failureReason", failureReason)
-        .toString();
-  }
-
-  public Label getFailedTarget() {
-    return failedTarget;
-  }
-
-  public Label getFailureReason() {
-    return failureReason;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    } else if (!(o instanceof LoadingFailureEvent)) {
-      return false;
+    init {
+        this.failedTarget = failedTarget
+        this.failureReason = failureReason
     }
-    LoadingFailureEvent a = (LoadingFailureEvent) o;
-    return Objects.equals(failedTarget, a.failedTarget)
-        && Objects.equals(failureReason, a.failureReason);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(failedTarget, failureReason);
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("failedTarget", failedTarget)
+            .add("failureReason", failureReason)
+            .toString()
+    }
+
+    fun getFailedTarget(): Label? {
+        return failedTarget
+    }
+
+    fun getFailureReason(): Label? {
+        return failureReason
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        } else if (o !is LoadingFailureEvent) {
+            return false
+        }
+        val a = o
+        return failedTarget == a.failedTarget
+                && failureReason == a.failureReason
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(failedTarget, failureReason)
+    }
 }

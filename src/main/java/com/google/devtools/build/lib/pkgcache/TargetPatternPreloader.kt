@@ -11,46 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.pkgcache
 
-package com.google.devtools.build.lib.pkgcache;
-
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.Target;
-import java.util.Collection;
-import java.util.Map;
+import com.google.devtools.build.lib.cmdline.TargetParsingException
 
 /**
  * A preloader for target patterns. Target patterns are a generalisation of labels to include
  * wildcards for finding all packages recursively beneath some root, and for finding all targets
  * within a package.
- *
- * <p>A list of target patterns implies a union of all the labels of each pattern. Each item in a
+ * 
+ * 
+ * A list of target patterns implies a union of all the labels of each pattern. Each item in a
  * list of target patterns may include a prefix negation operator, indicating that the sets of
  * targets for this pattern should be subtracted from the set of targets for the preceding patterns
  * (note this means that order matters). Thus, the following list of target patterns:
- *
+ * 
  * <pre>foo/... -foo/bar:all</pre>
- *
+ * 
  * means "all targets beneath <tt>foo</tt> except for those targets in package <tt>foo/bar</tt>.
  */
 @ThreadSafety.ThreadSafe
-public interface TargetPatternPreloader {
-  /**
-   * Attempts to parse and load the given collection of patterns; the returned map contains the
-   * results for each pattern successfully parsed. As a side effect, calling this method populates
-   * the Skyframe graph, so subsequent calls are faster.
-   *
-   * <p>If an error is encountered, a {@link TargetParsingException} is thrown, unless {@code
-   * keepGoing} is set to true. In that case, the patterns that failed to load have the error flag
-   * set.
-   */
-  Map<String, Collection<Target>> preloadTargetPatterns(
-      ExtendedEventHandler eventHandler,
-      TargetPattern.Parser mainRepoTargetParser,
-      Collection<String> patterns,
-      boolean keepGoing)
-      throws TargetParsingException, InterruptedException;
+interface TargetPatternPreloader {
+    /**
+     * Attempts to parse and load the given collection of patterns; the returned map contains the
+     * results for each pattern successfully parsed. As a side effect, calling this method populates
+     * the Skyframe graph, so subsequent calls are faster.
+     * 
+     * 
+     * If an error is encountered, a [TargetParsingException] is thrown, unless `keepGoing` is set to true. In that case, the patterns that failed to load have the error flag
+     * set.
+     */
+    @Throws(TargetParsingException::class, java.lang.InterruptedException::class)
+    fun preloadTargetPatterns(
+        eventHandler: ExtendedEventHandler?,
+        mainRepoTargetParser: TargetPattern.Parser?,
+        patterns: MutableCollection<String?>?,
+        keepGoing: Boolean
+    ): MutableMap<String?, MutableCollection<com.google.devtools.build.lib.packages.Target?>?>?
 }

@@ -11,154 +11,162 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
-import static java.util.concurrent.TimeUnit.SECONDS;
+package com.google.devtools.build.lib.concurrent
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Throwables;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 
 /**
  * An implementation of MultiThreadPoolsQuiescingExecutor that has 2 ExecutorServices, one with a
  * larger thread pool for IO/Network-bound tasks, and one with a smaller thread pool for CPU-bound
  * tasks.
- *
- * <p>With merged analysis and execution phases, this QueueVisitor is responsible for all 3 phases:
+ * 
+ * 
+ * With merged analysis and execution phases, this QueueVisitor is responsible for all 3 phases:
  * loading, analysis and execution. There's an additional 3rd pool for execution tasks. This is done
  * for performance reason: each of these phases has an optimal number of threads for its thread
  * pool.
- *
- * <p>Created anew each build.
+ * 
+ * 
+ * Created anew each build.
  */
-public final class MultiExecutorQueueVisitor extends AbstractQueueVisitor
-    implements MultiThreadPoolsQuiescingExecutor {
-  private final ExecutorService regularPoolExecutorService;
-  private final ExecutorService cpuHeavyPoolExecutorService;
-  @Nullable private final ExecutorService executionPhaseExecutorService;
+class MultiExecutorQueueVisitor private constructor(
+    regularPoolExecutorService: ExecutorService?,
+    cpuHeavyPoolExecutorService: ExecutorService?,
+    executionPhaseExecutorService: ExecutorService?,
+    exceptionHandlingMode: com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExceptionHandlingMode?,
+    errorClassifier: com.google.devtools.build.lib.concurrent.ErrorClassifier?
+) : com.google.devtools.build.lib.concurrent.AbstractQueueVisitor(
+    regularPoolExecutorService,
+    com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExecutorOwnership.PRIVATE,
+    exceptionHandlingMode,
+    errorClassifier
+), com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor {
+    private val regularPoolExecutorService: ExecutorService
+    private val cpuHeavyPoolExecutorService: ExecutorService
+    private val executionPhaseExecutorService: ExecutorService?
 
-  // Whether execution phase tasks should be allowed to move forward.
-  private boolean executionPhaseTasksGoAhead;
+    // Whether execution phase tasks should be allowed to move forward.
+    private var executionPhaseTasksGoAhead: Boolean
 
-  @GuardedBy("this")
-  @Nullable
-  private List<Runnable> queuedPendingGoAhead;
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var queuedPendingGoAhead: MutableList<java.lang.Runnable?>? = null
 
-  private MultiExecutorQueueVisitor(
-      ExecutorService regularPoolExecutorService,
-      ExecutorService cpuHeavyPoolExecutorService,
-      @Nullable ExecutorService executionPhaseExecutorService,
-      ExceptionHandlingMode exceptionHandlingMode,
-      ErrorClassifier errorClassifier) {
-    super(
-        regularPoolExecutorService,
-        ExecutorOwnership.PRIVATE,
-        exceptionHandlingMode,
-        errorClassifier);
-    this.regularPoolExecutorService = super.getExecutorService();
-    this.cpuHeavyPoolExecutorService = Preconditions.checkNotNull(cpuHeavyPoolExecutorService);
-    this.executionPhaseExecutorService = executionPhaseExecutorService;
-    this.executionPhaseTasksGoAhead = executionPhaseExecutorService == null;
+    init {
+        this.regularPoolExecutorService = super.getExecutorService()
+        this.cpuHeavyPoolExecutorService =
+            com.google.common.base.Preconditions.checkNotNull<ExecutorService>(cpuHeavyPoolExecutorService)
+        this.executionPhaseExecutorService = executionPhaseExecutorService
+        this.executionPhaseTasksGoAhead = executionPhaseExecutorService == null
 
-    if (executionPhaseExecutorService != null) {
-      queuedPendingGoAhead = new ArrayList<>();
-    }
-  }
-
-  public static MultiExecutorQueueVisitor createWithExecutorServices(
-      ExecutorService regularPoolExecutorService,
-      ExecutorService cpuHeavyPoolExecutorService,
-      ExceptionHandlingMode exceptionHandlingMode,
-      ErrorClassifier errorClassifier) {
-    return createWithExecutorServices(
-        regularPoolExecutorService,
-        cpuHeavyPoolExecutorService,
-        /* executionPhaseExecutorService= */ null,
-        exceptionHandlingMode,
-        errorClassifier);
-  }
-
-  public static MultiExecutorQueueVisitor createWithExecutorServices(
-      ExecutorService regularPoolExecutorService,
-      ExecutorService cpuHeavyPoolExecutorService,
-      ExecutorService executionPhaseExecutorService,
-      ExceptionHandlingMode exceptionHandlingMode,
-      ErrorClassifier errorClassifier) {
-    return new MultiExecutorQueueVisitor(
-        regularPoolExecutorService,
-        cpuHeavyPoolExecutorService,
-        executionPhaseExecutorService,
-        exceptionHandlingMode,
-        errorClassifier);
-  }
-
-  @Override
-  public void execute(
-      Runnable runnable, ThreadPoolType threadPoolType, boolean shouldStallAwaitingSignal) {
-    if (shouldStallAwaitingSignal && !executionPhaseTasksGoAhead) {
-      synchronized (this) {
-        if (!executionPhaseTasksGoAhead) {
-          Preconditions.checkNotNull(queuedPendingGoAhead).add(runnable);
-          return;
+        if (executionPhaseExecutorService != null) {
+            queuedPendingGoAhead = java.util.ArrayList<java.lang.Runnable?>()
         }
-      }
     }
-    super.executeWithExecutorService(runnable, getExecutorServiceByThreadPoolType(threadPoolType));
-  }
 
-  @VisibleForTesting
-  ExecutorService getExecutorServiceByThreadPoolType(ThreadPoolType threadPoolType) {
-    return switch (threadPoolType) {
-      case REGULAR -> regularPoolExecutorService;
-      case CPU_HEAVY -> cpuHeavyPoolExecutorService;
-      case EXECUTION_PHASE -> {
-        Preconditions.checkNotNull(executionPhaseExecutorService);
-        yield executionPhaseExecutorService;
-      }
-    };
-  }
-
-  @Override
-  protected void shutdownExecutorService(Throwable catastrophe) {
-    if (catastrophe != null) {
-      Throwables.throwIfUnchecked(catastrophe);
+    override fun execute(
+        runnable: java.lang.Runnable?,
+        threadPoolType: com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType,
+        shouldStallAwaitingSignal: Boolean
+    ) {
+        if (shouldStallAwaitingSignal && !executionPhaseTasksGoAhead) {
+            synchronized(this) {
+                if (!executionPhaseTasksGoAhead) {
+                    com.google.common.base.Preconditions.checkNotNull<MutableList<java.lang.Runnable?>?>(
+                        queuedPendingGoAhead
+                    ).add(runnable)
+                    return
+                }
+            }
+        }
+        super.executeWithExecutorService(runnable, getExecutorServiceByThreadPoolType(threadPoolType))
     }
-    internalShutdownExecutorService(regularPoolExecutorService);
-    internalShutdownExecutorService(cpuHeavyPoolExecutorService);
-    if (executionPhaseExecutorService != null) {
-      internalShutdownExecutorService(executionPhaseExecutorService);
-    }
-  }
 
-  private void internalShutdownExecutorService(ExecutorService executorService) {
-    executorService.shutdown();
-    while (true) {
-      try {
-        executorService.awaitTermination(Integer.MAX_VALUE, SECONDS);
-        break;
-      } catch (InterruptedException e) {
-        setInterrupted();
-      }
+    @com.google.common.annotations.VisibleForTesting
+    fun getExecutorServiceByThreadPoolType(threadPoolType: com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType): ExecutorService? {
+        return when (threadPoolType) {
+            com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType.REGULAR -> regularPoolExecutorService
+            com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType.CPU_HEAVY -> cpuHeavyPoolExecutorService
+            com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType.EXECUTION_PHASE -> {
+                com.google.common.base.Preconditions.checkNotNull<ExecutorService?>(executionPhaseExecutorService)
+                executionPhaseExecutorService
+            }
+        }
     }
-  }
 
-  @Override
-  public void launchQueuedUpExecutionPhaseTasks() {
-    synchronized (this) {
-      executionPhaseTasksGoAhead = true;
-      for (Runnable runnable : Preconditions.checkNotNull(queuedPendingGoAhead)) {
-        execute(runnable, ThreadPoolType.EXECUTION_PHASE, /* shouldStallAwaitingSignal= */ false);
-      }
-      queuedPendingGoAhead = null;
+    public override fun shutdownExecutorService(catastrophe: Throwable?) {
+        if (catastrophe != null) {
+            com.google.common.base.Throwables.throwIfUnchecked(catastrophe)
+        }
+        internalShutdownExecutorService(regularPoolExecutorService)
+        internalShutdownExecutorService(cpuHeavyPoolExecutorService)
+        if (executionPhaseExecutorService != null) {
+            internalShutdownExecutorService(executionPhaseExecutorService)
+        }
     }
-  }
 
-  @Override
-  public boolean hasSeparatePoolForExecutionTasks() {
-    return executionPhaseExecutorService != null;
-  }
+    private fun internalShutdownExecutorService(executorService: ExecutorService) {
+        executorService.shutdown()
+        while (true) {
+            try {
+                executorService.awaitTermination(java.lang.Integer.MAX_VALUE.toLong(), TimeUnit.SECONDS)
+                break
+            } catch (e: java.lang.InterruptedException) {
+                setInterrupted()
+            }
+        }
+    }
+
+    override fun launchQueuedUpExecutionPhaseTasks() {
+        synchronized(this) {
+            executionPhaseTasksGoAhead = true
+            for (runnable in com.google.common.base.Preconditions.checkNotNull<MutableList<java.lang.Runnable?>?>(
+                queuedPendingGoAhead
+            )) {
+                execute(
+                    runnable,
+                    com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType.EXECUTION_PHASE,  /* shouldStallAwaitingSignal= */
+                    false
+                )
+            }
+            queuedPendingGoAhead = null
+        }
+    }
+
+    override fun hasSeparatePoolForExecutionTasks(): Boolean {
+        return executionPhaseExecutorService != null
+    }
+
+    companion object {
+        fun createWithExecutorServices(
+            regularPoolExecutorService: ExecutorService?,
+            cpuHeavyPoolExecutorService: ExecutorService?,
+            exceptionHandlingMode: com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExceptionHandlingMode?,
+            errorClassifier: com.google.devtools.build.lib.concurrent.ErrorClassifier?
+        ): MultiExecutorQueueVisitor {
+            return com.google.devtools.build.lib.concurrent.MultiExecutorQueueVisitor.Companion.createWithExecutorServices(
+                regularPoolExecutorService,
+                cpuHeavyPoolExecutorService,  /* executionPhaseExecutorService= */
+                null,
+                exceptionHandlingMode,
+                errorClassifier
+            )
+        }
+
+        fun createWithExecutorServices(
+            regularPoolExecutorService: ExecutorService?,
+            cpuHeavyPoolExecutorService: ExecutorService?,
+            executionPhaseExecutorService: ExecutorService?,
+            exceptionHandlingMode: com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExceptionHandlingMode?,
+            errorClassifier: com.google.devtools.build.lib.concurrent.ErrorClassifier?
+        ): MultiExecutorQueueVisitor {
+            return com.google.devtools.build.lib.concurrent.MultiExecutorQueueVisitor(
+                regularPoolExecutorService,
+                cpuHeavyPoolExecutorService,
+                executionPhaseExecutorService,
+                exceptionHandlingMode,
+                errorClassifier
+            )
+        }
+    }
 }

@@ -11,66 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.commands;
+package com.google.devtools.build.lib.bazel.commands
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
+import com.google.devtools.common.options.*
 
-/** Defines the options specific to Bazel's fetch command */
+/** Defines the options specific to Bazel's fetch command  */
 @OptionsClass
-public abstract class FetchOptions extends OptionsBase {
-
-  @Option(
-      name = "all",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.EXECUTION_STRATEGY,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      help =
-          """
+abstract class FetchOptions : OptionsBase() {
+    @Option(
+        name = "all",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.EXECUTION_STRATEGY,
+        effectTags = [OptionEffectTag.CHANGES_INPUTS],
+        help = """
           Fetches all external repositories necessary for building any target or repository.
           This is the default if no other flags and arguments are provided. Only works
           when `--enable_bzlmod` is on.
-          """)
-  public abstract boolean getAll();
+          
+          """.trimIndent()
+    )
+    abstract fun getAll(): Boolean
 
-  @Option(
-      name = "configure",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      help =
-          """
+    @Option(
+        name = "configure",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.BZLMOD,
+        effectTags = [OptionEffectTag.CHANGES_INPUTS],
+        help = """
           Only fetches repositories marked as `configure` for system-configuration purpose. Only
           works when `--enable_bzlmod` is on.
-          """)
-  public abstract boolean getConfigure();
+          
+          """.trimIndent()
+    )
+    abstract fun getConfigure(): Boolean
 
-  @Option(
-      name = "repo",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      help =
-          """
+    @Option(
+        name = "repo",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = OptionDocumentationCategory.BZLMOD,
+        effectTags = [OptionEffectTag.CHANGES_INPUTS],
+        help = """
           Only fetches the specified repository, which can be either `@apparent_repo_name` or
           `@@canonical_repo_name`. Only works when `--enable_bzlmod` is on.
-          """)
-  public abstract List<String> getRepos();
+          
+          """.trimIndent()
+    )
+    abstract fun getRepos(): MutableList<String?>?
 
-  @Option(
-      name = "force",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.BZLMOD,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      help =
-          """
+    @Option(
+        name = "force",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.BZLMOD,
+        effectTags = [OptionEffectTag.CHANGES_INPUTS],
+        help = """
           Ignore existing repository if any and force fetch the repository again. Only works when
           `--enable_bzlmod` is on.
-          """)
-  public abstract boolean getForce();
+          
+          """.trimIndent()
+    )
+    abstract fun getForce(): Boolean
 }

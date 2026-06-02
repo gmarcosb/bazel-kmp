@@ -12,56 +12,57 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Optional;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.bazel.bzlmod.InterimModule
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
  * The result of the selection process, containing both the pruned and the un-pruned dependency
  * graphs.
  */
 @AutoValue
-public abstract class BazelModuleResolutionValue implements SkyValue {
+abstract class BazelModuleResolutionValue : SkyValue {
+    /** Final dep graph sorted in BFS iteration order, with unused modules removed.  */
+    abstract fun getResolvedDepGraph(): com.google.common.collect.ImmutableMap<ModuleKey?, com.google.devtools.build.lib.bazel.bzlmod.Module?>?
 
-  @SerializationConstant
-  public static final SkyKey KEY = () -> SkyFunctions.BAZEL_MODULE_RESOLUTION;
+    /**
+     * Un-pruned dep graph, with updated dep keys, and additionally containing the unused modules
+     * which were initially discovered (and their MODULE.bazel files loaded). Does not contain modules
+     * overridden by `single_version_override` or [NonRegistryOverride], only by `multiple_version_override`.
+     */
+    abstract fun getUnprunedDepGraph(): com.google.common.collect.ImmutableMap<ModuleKey?, InterimModule?>?
 
-  /** Final dep graph sorted in BFS iteration order, with unused modules removed. */
-  abstract ImmutableMap<ModuleKey, Module> getResolvedDepGraph();
+    /**
+     * Hashes of files obtained (or known to be missing) from registries while performing resolution.
+     */
+    abstract fun getRegistryFileHashes(): com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?
 
-  /**
-   * Un-pruned dep graph, with updated dep keys, and additionally containing the unused modules
-   * which were initially discovered (and their MODULE.bazel files loaded). Does not contain modules
-   * overridden by {@code single_version_override} or {@link NonRegistryOverride}, only by {@code
-   * multiple_version_override}.
-   */
-  abstract ImmutableMap<ModuleKey, InterimModule> getUnprunedDepGraph();
+    /**
+     * Selected module versions that are known to be yanked (and hence must have been explicitly
+     * allowed by the user).
+     */
+    abstract fun getSelectedYankedVersions(): com.google.common.collect.ImmutableMap<ModuleKey?, String?>?
 
-  /**
-   * Hashes of files obtained (or known to be missing) from registries while performing resolution.
-   */
-  public abstract ImmutableMap<String, Optional<Checksum>> getRegistryFileHashes();
+    companion object {
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val KEY: SkyKey = SkyKey { SkyFunctions.BAZEL_MODULE_RESOLUTION }
 
-  /**
-   * Selected module versions that are known to be yanked (and hence must have been explicitly
-   * allowed by the user).
-   */
-  abstract ImmutableMap<ModuleKey, String> getSelectedYankedVersions();
-
-  static BazelModuleResolutionValue create(
-      ImmutableMap<ModuleKey, Module> resolvedDepGraph,
-      ImmutableMap<ModuleKey, InterimModule> unprunedDepGraph,
-      ImmutableMap<String, Optional<Checksum>> registryFileHashes,
-      ImmutableMap<ModuleKey, String> selectedYankedVersions) {
-    return new AutoValue_BazelModuleResolutionValue(
-        resolvedDepGraph, unprunedDepGraph, registryFileHashes, selectedYankedVersions);
-  }
+        fun create(
+            resolvedDepGraph: com.google.common.collect.ImmutableMap<ModuleKey?, com.google.devtools.build.lib.bazel.bzlmod.Module?>?,
+            unprunedDepGraph: com.google.common.collect.ImmutableMap<ModuleKey?, InterimModule?>?,
+            registryFileHashes: com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?,
+            selectedYankedVersions: com.google.common.collect.ImmutableMap<ModuleKey?, String?>?
+        ): BazelModuleResolutionValue {
+            return AutoValue_BazelModuleResolutionValue(
+                resolvedDepGraph, unprunedDepGraph, registryFileHashes, selectedYankedVersions
+            )
+        }
+    }
 }

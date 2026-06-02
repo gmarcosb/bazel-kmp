@@ -11,28 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.devtools.build.lib.analysis.AspectCollection.AspectCycleOnPathException;
-import com.google.devtools.build.lib.cmdline.Label;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.analysis.AspectCollection.AspectCycleOnPathException
 
 /**
  * Signals an inconsistency on an aspect path: an aspect occurs twice on the path and the second
  * occurrence sees a different set of aspects.
- *
- * <p>{@see AspectCycleOnPathException}
+ * 
+ * 
+ * {@see AspectCycleOnPathException}
  */
-public class InconsistentAspectOrderException extends Exception {
-  private final Location location;
+class InconsistentAspectOrderException(
+    targetLabel: com.google.devtools.build.lib.cmdline.Label?,
+    location: net.starlark.java.syntax.Location?,
+    e: AspectCycleOnPathException
+) : java.lang.Exception(java.lang.String.format("%s (when propagating to %s)", e.getMessage(), targetLabel)) {
+    private val location: net.starlark.java.syntax.Location?
 
-  public InconsistentAspectOrderException(
-      Label targetLabel, Location location, AspectCycleOnPathException e) {
-    super(String.format("%s (when propagating to %s)", e.getMessage(), targetLabel));
-    this.location = location;
-  }
+    init {
+        this.location = location
+    }
 
-  public Location getLocation() {
-    return location;
-  }
+    fun getLocation(): net.starlark.java.syntax.Location? {
+        return location
+    }
 }

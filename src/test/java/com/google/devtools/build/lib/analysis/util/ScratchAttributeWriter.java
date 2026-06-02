@@ -146,7 +146,7 @@ public class ScratchAttributeWriter {
   public static ScratchAttributeWriter fromLabel(
       BuildViewTestCase testCase, String ruleName, Label label) {
     return new ScratchAttributeWriter(
-        testCase, "", ruleName, label.getPackageName(), label.getName());
+        testCase, "", ruleName, label.getPackageName(), label.name);
   }
 
   /**
@@ -157,7 +157,7 @@ public class ScratchAttributeWriter {
       BuildViewTestCase testCase, String buildFilePreamble, String ruleName, String labelString) {
     Label label = Label.parseCanonicalUnchecked(labelString);
     return new ScratchAttributeWriter(
-        testCase, buildFilePreamble, ruleName, label.getPackageName(), label.getName());
+        testCase, buildFilePreamble, ruleName, label.getPackageName(), label.name);
   }
 
   /**

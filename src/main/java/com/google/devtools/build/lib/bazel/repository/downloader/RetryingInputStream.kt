@@ -11,135 +11,147 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
-
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InterruptedIOException;
-import java.net.SocketTimeoutException;
-import java.net.URLConnection;
-import java.util.ArrayList;
-import java.util.List;
+import com.google.common.base.Strings
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import java.io.IOException
+import java.io.InputStream
+import java.io.InterruptedIOException
+import java.lang.String
+import java.net.SocketTimeoutException
+import java.net.URLConnection
+import kotlin.ByteArray
+import kotlin.Exception
+import kotlin.Int
+import kotlin.Long
+import kotlin.Throwable
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
 
 /**
  * Input stream that reconnects on read timeouts and errors.
- *
- * <p>This class is not thread safe, but it is safe to message pass between threads.
+ * 
+ * 
+ * This class is not thread safe, but it is safe to message pass between threads.
  */
-@ThreadCompatible
-class RetryingInputStream extends InputStream {
+@ThreadSafety.ThreadCompatible
+internal class RetryingInputStream(private var delegate: InputStream, private val reconnector: Reconnector) :
+    InputStream() {
+    /** Lambda for establishing a connection.  */
+    internal interface Reconnector {
+        /** Establishes a connection with the same parameters as what was passed to us initially.  */
+        @Throws(IOException::class)
+        fun connect(cause: Throwable?, extraHeaders: ImmutableMap<String?, MutableList<String?>?>?): URLConnection
+    }
 
-  private static final int MAX_RESUMES = 3;
+    private var toto: Long = 0
+    private var resumes = 0
+    private val suppressed = ArrayList<Throwable>()
 
-  /** Lambda for establishing a connection. */
-  interface Reconnector {
-    /** Establishes a connection with the same parameters as what was passed to us initially. */
-    URLConnection connect(Throwable cause, ImmutableMap<String, List<String>> extraHeaders)
-        throws IOException;
-  }
-
-  private InputStream delegate;
-  private final Reconnector reconnector;
-  private long toto;
-  private int resumes;
-  private final ArrayList<Throwable> suppressed = new ArrayList<>();
-
-  RetryingInputStream(InputStream delegate, Reconnector reconnector) {
-    this.delegate = delegate;
-    this.reconnector = reconnector;
-  }
-
-  @Override
-  public int read() throws IOException {
-    while (true) {
-      try {
-        int result = delegate.read();
-        if (result != -1) {
-          toto++;
+    @Throws(IOException::class)
+    override fun read(): Int {
+        while (true) {
+            try {
+                val result = delegate.read()
+                if (result != -1) {
+                    toto++
+                }
+                return result
+            } catch (e: IOException) {
+                tryAgainIfPossible(e)
+            }
         }
-        return result;
-      } catch (IOException e) {
-        tryAgainIfPossible(e);
-      }
     }
-  }
 
-  @Override
-  public int read(byte[] buffer, int offset, int length) throws IOException {
-    while (true) {
-      try {
-        int amount = delegate.read(buffer, offset, length);
-        if (amount != -1) {
-          toto += amount;
+    @Throws(IOException::class)
+    override fun read(buffer: ByteArray?, offset: Int, length: Int): Int {
+        while (true) {
+            try {
+                val amount = delegate.read(buffer, offset, length)
+                if (amount != -1) {
+                    toto += amount.toLong()
+                }
+                return amount
+            } catch (e: IOException) {
+                tryAgainIfPossible(e)
+            }
         }
-        return amount;
-      } catch (IOException e) {
-        tryAgainIfPossible(e);
-      }
     }
-  }
 
-  @Override
-  public int available() throws IOException {
-    return delegate.available();
-  }
-
-  @Override
-  public void close() throws IOException {
-    delegate.close();
-  }
-
-  private void tryAgainIfPossible(IOException cause) throws IOException {
-    if (cause instanceof InterruptedIOException && !(cause instanceof SocketTimeoutException)) {
-      throw cause;
+    @Throws(IOException::class)
+    override fun available(): Int {
+        return delegate.available()
     }
-    if (resumes >= MAX_RESUMES) {
-      propagate(cause);
-    }
-    resumes++;
-    try {
-      delegate.close();
-    } catch (Exception ignored) {
-      // We know this connection failed so if it reminds us we're going to ignore it.
-    }
-    suppressed.add(cause);
-    reconnectWhereWeLeftOff(cause);
-  }
 
-  private void reconnectWhereWeLeftOff(IOException cause) throws IOException {
-    try {
-      URLConnection connection;
-      long amountRead = toto;
-      if (amountRead == 0) {
-        connection = reconnector.connect(cause, ImmutableMap.of());
-      } else {
-        connection =
-            reconnector.connect(
-                cause,
-                ImmutableMap.of("Range", ImmutableList.of(String.format("bytes=%d-", amountRead))));
-        if (!Strings.nullToEmpty(connection.getHeaderField("Content-Range"))
-                .startsWith(String.format("bytes %d-", amountRead))) {
-          throw new IOException(String.format(
-              "Tried to reconnect at offset %,d but server didn't support it", amountRead));
+    @Throws(IOException::class)
+    override fun close() {
+        delegate.close()
+    }
+
+    @Throws(IOException::class)
+    private fun tryAgainIfPossible(cause: IOException?) {
+        if (cause is InterruptedIOException && cause !is SocketTimeoutException) {
+            throw cause
         }
-      }
-      delegate = new InterruptibleInputStream(connection.getInputStream());
-    } catch (InterruptedIOException e) {
-      throw e;
-    } catch (IOException e) {
-      propagate(e);
+        if (resumes >= MAX_RESUMES) {
+            propagate<IOException?>(cause)
+        }
+        resumes++
+        try {
+            delegate.close()
+        } catch (ignored: Exception) {
+            // We know this connection failed so if it reminds us we're going to ignore it.
+        }
+        suppressed.add(cause!!)
+        reconnectWhereWeLeftOff(cause)
     }
-  }
 
-  private <T extends Throwable> void propagate(T error) throws T {
-    for (Throwable e : suppressed) {
-      error.addSuppressed(e);
+    @Throws(IOException::class)
+    private fun reconnectWhereWeLeftOff(cause: IOException?) {
+        try {
+            val connection: URLConnection
+            val amountRead = toto
+            if (amountRead == 0L) {
+                connection = reconnector.connect(cause, ImmutableMap.of<String?, MutableList<String?>?>())
+            } else {
+                connection =
+                    reconnector.connect(
+                        cause,
+                        ImmutableMap.of<String?, MutableList<String?>?>(
+                            "Range",
+                            ImmutableList.of<String?>(String.format("bytes=%d-", amountRead))
+                        )
+                    )
+                if (!Strings.nullToEmpty(connection.getHeaderField("Content-Range"))
+                        .startsWith(String.format("bytes %d-", amountRead))
+                ) {
+                    throw IOException(
+                        String.format(
+                            "Tried to reconnect at offset %,d but server didn't support it", amountRead
+                        )
+                    )
+                }
+            }
+            delegate = InterruptibleInputStream(connection.getInputStream())
+        } catch (e: InterruptedIOException) {
+            throw e
+        } catch (e: IOException) {
+            propagate<IOException?>(e)
+        }
     }
-    throw error;
-  }
+
+    @Throws(T::class)
+    private fun <T : Throwable?> propagate(error: T?) {
+        for (e in suppressed) {
+            error!!.addSuppressed(e)
+        }
+        throw error
+    }
+
+    companion object {
+        private const val MAX_RESUMES = 3
+    }
 }

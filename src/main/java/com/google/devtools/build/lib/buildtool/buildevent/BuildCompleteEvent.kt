@@ -11,39 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool.buildevent
 
-package com.google.devtools.build.lib.buildtool.buildevent;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildCompletingEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildtool.BuildResult;
-import java.util.Collection;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
 /**
  * This event is fired from BuildTool#stopRequest().
- *
- * <p>This class also implements the {@link BuildCompletingEvent} of the build event protocol (BEP).
+ * 
+ * 
+ * This class also implements the [BuildCompletingEvent] of the build event protocol (BEP).
  */
-public final class BuildCompleteEvent extends BuildCompletingEvent {
-  private final BuildResult result;
+class BuildCompleteEvent @kotlin.jvm.JvmOverloads constructor(
+    result: BuildResult,
+    children: MutableCollection<BuildEventId?>? = ImmutableList.of<BuildEventId?>()
+) : BuildCompletingEvent(result.getDetailedExitCode(), result.getStopTime(), children) {
+    private val result: BuildResult
 
-  /** Construct the BuildCompleteEvent. */
-  public BuildCompleteEvent(BuildResult result, Collection<BuildEventId> children) {
-    super(result.getDetailedExitCode(), result.getStopTime(), children);
-    this.result = checkNotNull(result);
-  }
+    /** Construct the BuildCompleteEvent.  */
+    init {
+        this.result = Preconditions.checkNotNull<BuildResult>(result)
+    }
 
-  public BuildCompleteEvent(BuildResult result) {
-    this(result, ImmutableList.of());
-  }
-
-  /**
-   * @return the build summary
-   */
-  public BuildResult getResult() {
-    return result;
-  }
+    /**
+     * @return the build summary
+     */
+    fun getResult(): BuildResult {
+        return result
+    }
 }

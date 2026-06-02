@@ -43,10 +43,10 @@ public class TestSizeTest {
 
   @Test
   public void testGetDefaultShards() {
-    assertThat(TestSize.SMALL.getDefaultShards()).isEqualTo(2);
-    assertThat(TestSize.MEDIUM.getDefaultShards()).isEqualTo(10);
-    assertThat(TestSize.LARGE.getDefaultShards()).isEqualTo(20);
-    assertThat(TestSize.ENORMOUS.getDefaultShards()).isEqualTo(30);
+    assertThat(TestSize.SMALL.defaultShards).isEqualTo(2);
+    assertThat(TestSize.MEDIUM.defaultShards).isEqualTo(10);
+    assertThat(TestSize.LARGE.defaultShards).isEqualTo(20);
+    assertThat(TestSize.ENORMOUS.defaultShards).isEqualTo(30);
   }
 
   @Test

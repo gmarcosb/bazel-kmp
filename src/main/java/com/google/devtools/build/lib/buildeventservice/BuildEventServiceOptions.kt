@@ -11,180 +11,156 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventservice
 
-package com.google.devtools.build.lib.buildeventservice;
-
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.Converters.DurationConverter;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-
-/** Options used by {@link BuildEventServiceModule}. */
-@OptionsClass
-public abstract class BuildEventServiceOptions extends OptionsBase {
-
-  @Option(
-      name = "bes_backend",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+/** Options used by [BuildEventServiceModule].  */
+@com.google.devtools.common.options.OptionsClass
+abstract class BuildEventServiceOptions : com.google.devtools.common.options.OptionsBase() {
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_backend",
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Specifies the build event service (BES) backend endpoint in the form
           `[SCHEME://]HOST[:PORT]`. The default is to disable BES uploads. Supported schemes
           are `grpc` and `grpcs` (grpc with TLS enabled). If no scheme is provided, Bazel
           assumes `grpcs`.
-          """)
-  public abstract String getBesBackend();
+          
+          """.trimIndent()
+    )
+    abstract var besBackend: String?
 
-  public abstract void setBesBackend(String value);
-
-  @Option(
-      name = "bes_timeout",
-      defaultValue = "0s",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_timeout",
+        defaultValue = "0s",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Specifies how long bazel should wait for the BES/BEP upload to complete after the
           build and tests have finished. A valid timeout is a natural number followed by a
           unit: Days (d), hours (h), minutes (m), seconds (s), and milliseconds (ms). The
           default value is `0` which means that there is no timeout.
-          """)
-  public abstract Duration getBesTimeout();
+          
+          """.trimIndent()
+    )
+    abstract val besTimeout: java.time.Duration?
 
-  public abstract void setBesTimeout(Duration value);
+    abstract fun setBesTimeout(value: java.time.Duration?)
 
-  @Option(
-      name = "bes_header",
-      converter = Converters.AssignmentConverter.class,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_header",
+        converter = com.google.devtools.common.options.Converters.AssignmentConverter::class,
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Specify a header in `NAME=VALUE` form that will be included in BES requests.
           Multiple headers can be passed by specifying the flag multiple times. Multiple
           values for the same name will be converted to a comma-separated list.
-          """,
-      allowMultiple = true)
-  public abstract List<Map.Entry<String, String>> getBesHeaders();
+          
+          """.trimIndent(),
+        allowMultiple = true
+    )
+    abstract var besHeaders: MutableList<MutableMap.MutableEntry<String?, String?>?>?
 
-  public abstract void setBesHeaders(List<Map.Entry<String, String>> value);
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_lifecycle_events",
+        defaultValue = "true",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = "Specifies whether to publish BES lifecycle events. (defaults to 'true')."
+    )
+    abstract var besLifecycleEvents: Boolean
 
-  @Option(
-      name = "bes_lifecycle_events",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help = "Specifies whether to publish BES lifecycle events. (defaults to 'true').")
-  public abstract boolean getBesLifecycleEvents();
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_instance_name",
+        oldName = "project_id",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = ("Specifies the instance name under which the BES will persist uploaded BEP. Defaults "
+                + "to null.")
+    )
+    abstract var instanceName: String?
 
-  public abstract void setBesLifecycleEvents(boolean value);
-
-  @Option(
-      name = "bes_instance_name",
-      oldName = "project_id",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "Specifies the instance name under which the BES will persist uploaded BEP. Defaults "
-              + "to null.")
-  public abstract String getInstanceName();
-
-  public abstract void setInstanceName(String value);
-
-  @Option(
-      name = "bes_keywords",
-      defaultValue = "null",
-      converter = Converters.CommaSeparatedOptionListConverter.class,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      allowMultiple = true,
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_keywords",
+        defaultValue = "null",
+        converter = com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        allowMultiple = true,
+        help = """
           Specifies a list of notification keywords to be added the default set of keywords
           published to BES (`command_name={command_name}`, `protocol_name=BEP`).
           Defaults to none.
-          """)
-  public abstract List<String> getBesKeywords();
+          
+          """.trimIndent()
+    )
+    abstract var besKeywords: MutableList<String?>?
 
-  public abstract void setBesKeywords(List<String> value);
-
-  @Option(
-      name = "bes_system_keywords",
-      defaultValue = "null",
-      converter = Converters.CommaSeparatedOptionListConverter.class,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      allowMultiple = true,
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_system_keywords",
+        defaultValue = "null",
+        converter = com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        allowMultiple = true,
+        help = """
           Specifies a list of notification keywords to be included directly, without the
           `user_keyword=` prefix included for keywords supplied via `--bes_keywords`.
           Intended for Build service operators that set `--bes_lifecycle_events=false` and
           include keywords when calling `PublishLifecycleEvent`. Build service operators
           using this flag should prevent users from overriding the flag value.
-          """)
-  public abstract List<String> getBesSystemKeywords();
+          
+          """.trimIndent()
+    )
+    abstract var besSystemKeywords: MutableList<String?>?
 
-  public abstract void setBesSystemKeywords(List<String> value);
-
-  @Option(
-      name = "bes_outerr_buffer_size",
-      defaultValue = "10240",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_outerr_buffer_size",
+        defaultValue = "10240",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Specifies the maximal size of stdout or stderr to be buffered in BEP, before it is
           reported as a progress event. Individual writes are still reported in a single
           event, even if larger than the specified value up to `--bes_outerr_chunk_size`.
-          """)
-  public abstract int getBesOuterrBufferSize();
+          
+          """.trimIndent()
+    )
+    abstract var besOuterrBufferSize: Int
 
-  public abstract void setBesOuterrBufferSize(int value);
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_outerr_chunk_size",
+        defaultValue = "1048576",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = "Specifies the maximal size of stdout or stderr to be sent to BEP in a single message."
+    )
+    abstract var besOuterrChunkSize: Int
 
-  @Option(
-      name = "bes_outerr_chunk_size",
-      defaultValue = "1048576", // 2^20 = 1MB
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "Specifies the maximal size of stdout or stderr to be sent to BEP in a single message.")
-  public abstract int getBesOuterrChunkSize();
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_results_url",
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.TERMINAL_OUTPUT],
+        help = ("Specifies the base URL where a user can view the information streamed to the BES"
+                + " backend. Bazel will output the URL appended by the invocation id to the"
+                + " terminal.")
+    )
+    abstract var besResultsUrl: String?
 
-  public abstract void setBesOuterrChunkSize(int value);
-
-  @Option(
-      name = "bes_results_url",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.TERMINAL_OUTPUT},
-      help =
-          "Specifies the base URL where a user can view the information streamed to the BES"
-              + " backend. Bazel will output the URL appended by the invocation id to the"
-              + " terminal.")
-  public abstract String getBesResultsUrl();
-
-  public abstract void setBesResultsUrl(String value);
-
-  @Option(
-      name = "bes_upload_mode",
-      defaultValue = "wait_for_upload_complete",
-      converter = BesUploadModeConverter.class,
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.EAGERNESS_TO_EXIT},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_upload_mode",
+        defaultValue = "wait_for_upload_complete",
+        converter = BesUploadModeConverter::class,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.EAGERNESS_TO_EXIT],
+        help = """
           Specifies whether the Build Event Service upload should block the build completion or
           should end the invocation immediately and finish the upload in the
           background.
@@ -199,72 +175,72 @@ public abstract class BuildEventServiceOptions extends OptionsBase {
             of (transient) failures and backends may report streams as incomplete in this
             mode. There is no guarantee that `FinishInvocationAttempt` or `FinishBuild`
             lifecycle events are sent.
-          """)
-  public abstract BesUploadMode getBesUploadMode();
+          
+          """.trimIndent()
+    )
+    abstract var besUploadMode: BesUploadMode?
 
-  public abstract void setBesUploadMode(BesUploadMode value);
-
-  @Option(
-      name = "bes_proxy",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          """
+    @kotlin.jvm.JvmField
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_proxy",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = """
           Connect to the Build Event Service through a proxy. Currently this flag can only be
           used to configure a Unix domain socket (`unix:/path/to/socket`).
-          """)
-  public abstract String getBesProxy();
+          
+          """.trimIndent()
+    )
+    abstract var besProxy: String?
 
-  public abstract void setBesProxy(String value);
-
-  @Option(
-      name = "bes_check_preceding_lifecycle_events",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          """
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_check_preceding_lifecycle_events",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = """
           Sets the field `check_preceding_lifecycle_events_present` on
           `PublishBuildToolEventStreamRequest` which tells BES to check whether it previously
           received `InvocationAttemptStarted` and `BuildEnqueued` events matching the current
           tool event.
-          """)
-  public abstract boolean getBesCheckPrecedingLifecycleEvents();
+          
+          """.trimIndent()
+    )
+    abstract var besCheckPrecedingLifecycleEvents: Boolean
 
-  public abstract void setBesCheckPrecedingLifecycleEvents(boolean value);
+    @get:com.google.devtools.common.options.Option(
+        name = "bes_oom_finish_upload_timeout",
+        defaultValue = "10m",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_MONITORING],
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        help = ("Specifies how long bazel should wait for the BES/BEP upload to complete while OOMing. "
+                + "This flag ensures termination when the JVM is severely GC thrashing and cannot "
+                + "make progress on any user thread.")
+    )
+    abstract val besOomFinishUploadTimeout: java.time.Duration?
 
-  @Option(
-      name = "bes_oom_finish_upload_timeout",
-      defaultValue = "10m",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.BAZEL_MONITORING},
-      converter = DurationConverter.class,
-      help =
-          "Specifies how long bazel should wait for the BES/BEP upload to complete while OOMing. "
-              + "This flag ensures termination when the JVM is severely GC thrashing and cannot "
-              + "make progress on any user thread.")
-  public abstract Duration getBesOomFinishUploadTimeout();
+    abstract fun setBesOomFinishUploadTimeout(value: java.time.Duration?)
 
-  public abstract void setBesOomFinishUploadTimeout(Duration value);
+    /** Determines the mode that will be used to upload data to the Build Event Service.  */
+    enum class BesUploadMode {
+        /** Block at the end of the build waiting for the upload to complete  */
+        WAIT_FOR_UPLOAD_COMPLETE,
 
-  /** Determines the mode that will be used to upload data to the Build Event Service. */
-  public enum BesUploadMode {
-    /** Block at the end of the build waiting for the upload to complete */
-    WAIT_FOR_UPLOAD_COMPLETE,
-    /** Block at the beginning of the next build waiting for upload completion */
-    NOWAIT_FOR_UPLOAD_COMPLETE,
-    /**
-     * Block at the beginning of the next build waiting for the client to finish uploading the data,
-     * but possibly not blocking on the server acknowledgement.
-     */
-    FULLY_ASYNC,
-  }
+        /** Block at the beginning of the next build waiting for upload completion  */
+        NOWAIT_FOR_UPLOAD_COMPLETE,
 
-  /** Converter for {@link BesUploadMode} */
-  public static class BesUploadModeConverter extends EnumConverter<BesUploadMode> {
-    public BesUploadModeConverter() {
-      super(BesUploadMode.class, "Mode for uploading to the Build Event Service");
+        /**
+         * Block at the beginning of the next build waiting for the client to finish uploading the data,
+         * but possibly not blocking on the server acknowledgement.
+         */
+        FULLY_ASYNC,
     }
-  }
+
+    /** Converter for [BesUploadMode]  */
+    class BesUploadModeConverter : com.google.devtools.common.options.EnumConverter<BesUploadMode?>(
+        BesUploadMode::class.java,
+        "Mode for uploading to the Build Event Service"
+    )
 }

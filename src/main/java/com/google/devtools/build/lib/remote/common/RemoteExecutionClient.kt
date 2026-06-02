@@ -11,28 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.common;
+package com.google.devtools.build.lib.remote.common
 
-import build.bazel.remote.execution.v2.ExecuteRequest;
-import build.bazel.remote.execution.v2.ExecuteResponse;
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import java.io.IOException;
+import build.bazel.remote.execution.v2.ExecuteRequest
 
 /**
  * An interface for a remote execution protocol.
- *
- * <p>Implementations must be thread-safe.
+ * 
+ * 
+ * Implementations must be thread-safe.
  */
-public interface RemoteExecutionClient {
+interface RemoteExecutionClient {
+    @get:Throws(IOException::class)
+    val serverCapabilities: ServerCapabilities?
 
-  /** Returns the cache capabilities of the remote execution server */
-  ServerCapabilities getServerCapabilities() throws IOException;
+    /** Execute an action remotely using Remote Execution API.  */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely(
+        context: RemoteActionExecutionContext?, request: ExecuteRequest?, observer: OperationObserver?
+    ): ExecuteResponse?
 
-  /** Execute an action remotely using Remote Execution API. */
-  ExecuteResponse executeRemotely(
-      RemoteActionExecutionContext context, ExecuteRequest request, OperationObserver observer)
-      throws IOException, InterruptedException;
-
-  /** Close resources associated with the remote execution client. */
-  void close();
+    /** Close resources associated with the remote execution client.  */
+    fun close()
 }

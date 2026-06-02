@@ -11,36 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import java.util.Collection;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
 /**
- * {@link BuildEvent} presenting the configuration in the build event protocol that internally is
+ * [BuildEvent] presenting the configuration in the build event protocol that internally is
  * just a null pointer.
  */
-public final class NullConfiguration implements BuildEvent {
-  public static final NullConfiguration INSTANCE = new NullConfiguration();
+class NullConfiguration private constructor() : BuildEvent {
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.nullConfigurationId()
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.nullConfigurationId();
-  }
+    val childrenEvents: MutableCollection<BuildEventId>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        return GenericBuildEvent.Companion.protoChaining(this)
+            .setConfiguration(BuildEventStreamProtos.Configuration.getDefaultInstance())
+            .build()
+    }
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    return GenericBuildEvent.protoChaining(this)
-        .setConfiguration(BuildEventStreamProtos.Configuration.getDefaultInstance())
-        .build();
-  }
-
-  private NullConfiguration() {}
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: NullConfiguration = NullConfiguration()
+    }
 }

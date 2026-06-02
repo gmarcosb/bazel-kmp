@@ -11,32 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import java.io.IOException;
-import java.util.Map;
+import java.io.IOException
 
-/** Service for querying system network stats. */
-@SkybridgeInterface
-public interface SystemNetworkStatsService extends BlazeService {
+/** Service for querying system network stats.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface SystemNetworkStatsService : com.google.devtools.build.lib.runtime.BlazeService {
+    /** Returns a map from network interface name to the respective I/O counters.  */
+    @Throws(IOException::class)
+    fun getNetIoCounters(): MutableMap<String?, NetIoCounter?>?
 
-  /** Returns a map from network interface name to the respective I/O counters. */
-  Map<String, NetIoCounter> getNetIoCounters() throws IOException;
+    /**
+     * Value class for network IO counters.
+     * 
+     * @param bytesSent Number of bytes sent.
+     * @param bytesRecv Number of bytes received.
+     * @param packetsSent Number of packets sent.
+     * @param packetsRecv Number of packets received.
+     */
+    @kotlin.jvm.JvmRecord
+    data class NetIoCounter(bytesSent: Long, bytesRecv: Long, packetsSent: Long, packetsRecv: Long) {
+        val bytesSent: Long
+        val bytesRecv: Long
+        val packetsSent: Long
+        val packetsRecv: Long
 
-  /**
-   * Value class for network IO counters.
-   *
-   * @param bytesSent Number of bytes sent.
-   * @param bytesRecv Number of bytes received.
-   * @param packetsSent Number of packets sent.
-   * @param packetsRecv Number of packets received.
-   */
-  record NetIoCounter(long bytesSent, long bytesRecv, long packetsSent, long packetsRecv) {
-    public static NetIoCounter create(
-        long bytesSent, long bytesRecv, long packetsSent, long packetsRecv) {
-      return new NetIoCounter(bytesSent, bytesRecv, packetsSent, packetsRecv);
+        init {
+            this.bytesSent = bytesSent
+            this.bytesRecv = bytesRecv
+            this.packetsSent = packetsSent
+            this.packetsRecv = packetsRecv
+        }
+
+        companion object {
+            fun create(
+                bytesSent: Long, bytesRecv: Long, packetsSent: Long, packetsRecv: Long
+            ): NetIoCounter {
+                return NetIoCounter(bytesSent, bytesRecv, packetsSent, packetsRecv)
+            }
+        }
     }
-  }
 }

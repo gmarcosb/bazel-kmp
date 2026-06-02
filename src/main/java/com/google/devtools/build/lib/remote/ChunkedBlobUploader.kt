@@ -11,242 +11,245 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
-
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.remote.util.Utils.getFromFuture;
-
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.io.ByteStreams;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.remote.chunking.ChunkingConfig;
-import com.google.devtools.build.lib.remote.chunking.FastCdcChunker;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemoteCacheClient.Blob;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.EOFException;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.channels.FileChannel;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.LinkedBlockingQueue;
+import build.bazel.remote.execution.v2.Digest
 
 /**
  * Uploads blobs in chunks using Content-Defined Chunking with FastCDC 2020.
- *
- * <p>Upload flow for blobs above threshold:
- *
- * <ol>
- *   <li>Chunk file with FastCDC
- *   <li>Call findMissingDigests on chunk digests
- *   <li>Upload only missing chunks
- *   <li>Call SpliceBlob to register the blob as the concatenation of chunks
- * </ol>
+ * 
+ * 
+ * Upload flow for blobs above threshold:
+ * 
+ * 
+ *  1. Chunk file with FastCDC
+ *  1. Call findMissingDigests on chunk digests
+ *  1. Upload only missing chunks
+ *  1. Call SpliceBlob to register the blob as the concatenation of chunks
+ * 
  */
-public class ChunkedBlobUploader {
-  // Guard against pathological fanout from a single large chunked blob. This is only a per-blob
-  // cap; chunk uploads still flow through CombinedCache and the shared remote cache transport
-  // stack below it, which is what bounds active remote RPC concurrency across blobs.
-  private static final int MAX_IN_FLIGHT_CHUNK_UPLOADS = 16;
+class ChunkedBlobUploader(
+    grpcCacheClient: GrpcCacheClient,
+    combinedCache: CombinedCache,
+    config: ChunkingConfig,
+    digestUtil: DigestUtil?
+) {
+    private val grpcCacheClient: GrpcCacheClient
+    private val combinedCache: CombinedCache
+    private val chunker: FastCdcChunker
 
-  private final GrpcCacheClient grpcCacheClient;
-  private final CombinedCache combinedCache;
-  private final FastCdcChunker chunker;
-  private final long chunkingThreshold;
+    /** Returns the minimum blob size for chunked upload.  */
+    val chunkingThreshold: Long
 
-  /**
-   * Creates a new uploader with the given chunking configuration.
-   *
-   * @param grpcCacheClient client used for {@code FindMissingDigests} and {@code SpliceBlob} RPCs
-   * @param combinedCache cache used to upload individual chunks
-   * @param config chunking parameters negotiated from server capabilities
-   * @param digestUtil utility for computing chunk digests
-   */
-  public ChunkedBlobUploader(
-      GrpcCacheClient grpcCacheClient,
-      CombinedCache combinedCache,
-      ChunkingConfig config,
-      DigestUtil digestUtil) {
-    this.grpcCacheClient = grpcCacheClient;
-    this.combinedCache = combinedCache;
-    this.chunker = new FastCdcChunker(config, digestUtil);
-    this.chunkingThreshold = config.chunkingThreshold();
-  }
-
-  /** Returns the minimum blob size for chunked upload. */
-  public long getChunkingThreshold() {
-    return chunkingThreshold;
-  }
-
-  /**
-   * Uploads a blob in content-defined chunks. The file is chunked with FastCDC, missing chunks are
-   * uploaded, and {@code SpliceBlob} is called to register the blob as the concatenation of its
-   * chunks.
-   */
-  public void uploadChunked(RemoteActionExecutionContext context, Digest blobDigest, Path file)
-      throws IOException, InterruptedException {
-    List<Digest> chunkDigests;
-    try (InputStream input = file.getInputStream()) {
-      chunkDigests = chunker.chunkToDigests(input);
-    }
-    if (chunkDigests.isEmpty()) {
-      return;
+    /**
+     * Creates a new uploader with the given chunking configuration.
+     * 
+     * @param grpcCacheClient client used for `FindMissingDigests` and `SpliceBlob` RPCs
+     * @param combinedCache cache used to upload individual chunks
+     * @param config chunking parameters negotiated from server capabilities
+     * @param digestUtil utility for computing chunk digests
+     */
+    init {
+        this.grpcCacheClient = grpcCacheClient
+        this.combinedCache = combinedCache
+        this.chunker = FastCdcChunker(config, digestUtil)
+        this.chunkingThreshold = config.chunkingThreshold()
     }
 
-    ImmutableSet<Digest> missingDigests =
-        getFromFuture(grpcCacheClient.findMissingDigests(context, chunkDigests));
-    uploadMissingChunks(context, missingDigests, chunkDigests, file);
-    getFromFuture(grpcCacheClient.spliceBlob(context, blobDigest, chunkDigests));
-  }
-
-  private void uploadMissingChunks(
-      RemoteActionExecutionContext context,
-      ImmutableSet<Digest> missingDigests,
-      List<Digest> chunkDigests,
-      Path file)
-      throws IOException, InterruptedException {
-    if (missingDigests.isEmpty()) {
-      return;
-    }
-    new UploadSession(context, missingDigests, chunkDigests).run(file);
-  }
-
-  private final class UploadSession {
-    private final LinkedBlockingQueue<ListenableFuture<Void>> completedUploads =
-        new LinkedBlockingQueue<>();
-    private final Set<ListenableFuture<Void>> inFlightUploads =
-        new HashSet<>(MAX_IN_FLIGHT_CHUNK_UPLOADS);
-    private final Set<Digest> scheduledDigests = new HashSet<>();
-    private final RemoteActionExecutionContext context;
-    private final ImmutableSet<Digest> missingDigests;
-    private final List<Digest> chunkDigests;
-
-    UploadSession(
-        RemoteActionExecutionContext context,
-        ImmutableSet<Digest> missingDigests,
-        List<Digest> chunkDigests) {
-      this.context = context;
-      this.missingDigests = missingDigests;
-      this.chunkDigests = chunkDigests;
-    }
-
-    void run(Path file) throws IOException, InterruptedException {
-      try {
-        long offset = 0;
-        for (Digest chunkDigest : chunkDigests) {
-          drainCompletedUploads();
-          long chunkOffset = offset;
-          offset += chunkDigest.getSizeBytes();
-          if (!shouldScheduleUpload(chunkDigest)) {
-            continue;
-          }
-          if (inFlightUploads.size() >= MAX_IN_FLIGHT_CHUNK_UPLOADS) {
-            awaitCompletedUpload();
-          }
-          startUpload(file, chunkOffset, chunkDigest);
+    /**
+     * Uploads a blob in content-defined chunks. The file is chunked with FastCDC, missing chunks are
+     * uploaded, and `SpliceBlob` is called to register the blob as the concatenation of its
+     * chunks.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun uploadChunked(
+        context: RemoteActionExecutionContext?,
+        blobDigest: Digest?,
+        file: com.google.devtools.build.lib.vfs.Path
+    ) {
+        val chunkDigests: MutableList<Digest>?
+        file.getInputStream().use { input ->
+            chunkDigests = chunker.chunkToDigests(input)
         }
-        while (!inFlightUploads.isEmpty()) {
-          awaitCompletedUpload();
+        if (chunkDigests!!.isEmpty()) {
+            return
         }
-      } finally {
-        cancelAllUploads();
-      }
+
+        val missingDigests: com.google.common.collect.ImmutableSet<Digest?> =
+            com.google.devtools.build.lib.remote.util.Utils.getFromFuture<com.google.common.collect.ImmutableSet<Digest?>>(
+                grpcCacheClient.findMissingDigests(context, chunkDigests)
+            )
+        uploadMissingChunks(context, missingDigests, chunkDigests, file)
+        com.google.devtools.build.lib.remote.util.Utils.getFromFuture<java.lang.Void?>(
+            grpcCacheClient.spliceBlob(
+                context,
+                blobDigest,
+                chunkDigests
+            )
+        )
     }
 
-    private boolean shouldScheduleUpload(Digest chunkDigest) {
-      return missingDigests.contains(chunkDigest) && scheduledDigests.add(chunkDigest);
-    }
-
-    private void startUpload(Path file, long chunkOffset, Digest chunkDigest) {
-      ListenableFuture<Void> upload =
-          combinedCache.uploadBlob(
-              context, chunkDigest, new ChunkBlob(file, chunkOffset, chunkDigest));
-      inFlightUploads.add(upload);
-      upload.addListener(() -> completedUploads.add(upload), directExecutor());
-    }
-
-    private void drainCompletedUploads() throws IOException, InterruptedException {
-      while (true) {
-        ListenableFuture<Void> upload = completedUploads.poll();
-        if (upload == null) {
-          return;
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun uploadMissingChunks(
+        context: RemoteActionExecutionContext?,
+        missingDigests: com.google.common.collect.ImmutableSet<Digest?>,
+        chunkDigests: MutableList<Digest>,
+        file: com.google.devtools.build.lib.vfs.Path
+    ) {
+        if (missingDigests.isEmpty()) {
+            return
         }
-        finishUpload(upload);
-      }
+        UploadSession(context, missingDigests, chunkDigests).run(file)
     }
 
-    private void awaitCompletedUpload() throws IOException, InterruptedException {
-      finishUpload(completedUploads.take());
-      drainCompletedUploads();
-    }
+    private inner class UploadSession(
+        context: RemoteActionExecutionContext?,
+        missingDigests: com.google.common.collect.ImmutableSet<Digest?>,
+        chunkDigests: MutableList<Digest>
+    ) {
+        private val completedUploads: LinkedBlockingQueue<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?> =
+            LinkedBlockingQueue<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?>()
+        private val inFlightUploads: MutableSet<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>> =
+            HashSet<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>>(MAX_IN_FLIGHT_CHUNK_UPLOADS)
+        private val scheduledDigests: MutableSet<Digest?> = HashSet<Digest?>()
+        private val context: RemoteActionExecutionContext?
+        private val missingDigests: com.google.common.collect.ImmutableSet<Digest?>
+        private val chunkDigests: MutableList<Digest>
 
-    private void finishUpload(ListenableFuture<Void> upload)
-        throws IOException, InterruptedException {
-      inFlightUploads.remove(upload);
-      getFromFuture(upload);
-    }
-
-    private void cancelAllUploads() {
-      for (ListenableFuture<Void> upload : inFlightUploads) {
-        upload.cancel(/* mayInterruptIfRunning= */ true);
-      }
-    }
-  }
-
-  private static final class ChunkBlob implements Blob {
-    private final Path file;
-    private final long offset;
-    private final Digest digest;
-
-    private ChunkBlob(Path file, long offset, Digest digest) {
-      this.file = file;
-      this.offset = offset;
-      this.digest = digest;
-    }
-
-    @Override
-    public InputStream get() throws IOException {
-      InputStream input = file.getInputStream();
-      boolean success = false;
-      try {
-        seekOrSkip(input, offset);
-        InputStream limitedInput = ByteStreams.limit(input, digest.getSizeBytes());
-        success = true;
-        return limitedInput;
-      } catch (EOFException e) {
-        throw new IOException("file was concurrently modified during upload: " + file, e);
-      } finally {
-        if (!success) {
-          input.close();
+        init {
+            this.context = context
+            this.missingDigests = missingDigests
+            this.chunkDigests = chunkDigests
         }
-      }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun run(file: com.google.devtools.build.lib.vfs.Path) {
+            try {
+                var offset: Long = 0
+                for (chunkDigest in chunkDigests) {
+                    drainCompletedUploads()
+                    val chunkOffset = offset
+                    offset += chunkDigest.getSizeBytes()
+                    if (!shouldScheduleUpload(chunkDigest)) {
+                        continue
+                    }
+                    if (inFlightUploads.size() >= MAX_IN_FLIGHT_CHUNK_UPLOADS) {
+                        awaitCompletedUpload()
+                    }
+                    startUpload(file, chunkOffset, chunkDigest)
+                }
+                while (!inFlightUploads.isEmpty()) {
+                    awaitCompletedUpload()
+                }
+            } finally {
+                cancelAllUploads()
+            }
+        }
+
+        fun shouldScheduleUpload(chunkDigest: Digest?): Boolean {
+            return missingDigests.contains(chunkDigest) && scheduledDigests.add(chunkDigest)
+        }
+
+        fun startUpload(file: com.google.devtools.build.lib.vfs.Path, chunkOffset: Long, chunkDigest: Digest) {
+            val upload: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+                combinedCache.uploadBlob(
+                    context, chunkDigest, ChunkBlob(file, chunkOffset, chunkDigest)
+                )
+            inFlightUploads.add(upload)
+            upload.addListener(
+                java.lang.Runnable { completedUploads.add(upload) },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun drainCompletedUploads() {
+            while (true) {
+                val upload: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>? =
+                    completedUploads.poll()
+                if (upload == null) {
+                    return
+                }
+                finishUpload(upload)
+            }
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun awaitCompletedUpload() {
+            finishUpload(completedUploads.take())
+            drainCompletedUploads()
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun finishUpload(upload: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?) {
+            inFlightUploads.remove(upload)
+            com.google.devtools.build.lib.remote.util.Utils.getFromFuture<java.lang.Void?>(upload)
+        }
+
+        fun cancelAllUploads() {
+            for (upload in inFlightUploads) {
+                upload.cancel( /* mayInterruptIfRunning= */true)
+            }
+        }
     }
 
-    @Override
-    public String description() {
-      return "chunk %s at offset %d of file %s"
-          .formatted(DigestUtil.toString(digest), offset, file);
-    }
-  }
+    private class ChunkBlob(file: com.google.devtools.build.lib.vfs.Path, offset: Long, digest: Digest) :
+        com.google.devtools.build.lib.remote.common.RemoteCacheClient.Blob {
+        private val file: com.google.devtools.build.lib.vfs.Path
+        private val offset: Long
+        private val digest: Digest
 
-  private static void seekOrSkip(InputStream input, long offset) throws IOException {
-    if (offset == 0) {
-      return;
+        init {
+            this.file = file
+            this.offset = offset
+            this.digest = digest
+        }
+
+        @Throws(IOException::class)
+        override fun get(): java.io.InputStream {
+            val input: java.io.InputStream = file.getInputStream()
+            var success = false
+            try {
+                seekOrSkip(input, offset)
+                val limitedInput: java.io.InputStream =
+                    com.google.common.io.ByteStreams.limit(input, digest.getSizeBytes())
+                success = true
+                return limitedInput
+            } catch (e: EOFException) {
+                throw IOException("file was concurrently modified during upload: " + file, e)
+            } finally {
+                if (!success) {
+                    input.close()
+                }
+            }
+        }
+
+        override fun description(): String? {
+            return "chunk %s at offset %d of file %s"
+                .formatted(DigestUtil.toString(digest), offset, file)
+        }
     }
-    if (input instanceof FileInputStream fileInputStream) {
-      FileChannel channel = fileInputStream.getChannel();
-      if (channel.size() < offset) {
-        throw new EOFException();
-      }
-      channel.position(offset);
-      return;
+
+    companion object {
+        // Guard against pathological fanout from a single large chunked blob. This is only a per-blob
+        // cap; chunk uploads still flow through CombinedCache and the shared remote cache transport
+        // stack below it, which is what bounds active remote RPC concurrency across blobs.
+        private const val MAX_IN_FLIGHT_CHUNK_UPLOADS = 16
+
+        @Throws(IOException::class)
+        private fun seekOrSkip(input: java.io.InputStream, offset: Long) {
+            if (offset == 0L) {
+                return
+            }
+            if (input is FileInputStream) {
+                val channel: FileChannel = input.getChannel()
+                if (channel.size() < offset) {
+                    throw EOFException()
+                }
+                channel.position(offset)
+                return
+            }
+            input.skipNBytes(offset)
+        }
     }
-    input.skipNBytes(offset);
-  }
 }

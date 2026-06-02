@@ -11,101 +11,93 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler.memory
 
-package com.google.devtools.build.lib.profiler.memory;
-
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.BlazeVersionInfo;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.UUID;
-import net.starlark.java.eval.Debug;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
- * A {@link BlazeModule} that can be used to record interesting information about all allocations
+ * A [BlazeModule] that can be used to record interesting information about all allocations
  * done during every command on the current blaze server.
- *
- * <p>To enable tracking, you must pass:
- *
- * <ol>
- *   <li>--host_jvm_args=-javaagent:(path to Google's java agent jar)
- *       <ul>
- *         <li>For Bazel use <a
- *             href="https://github.com/bazelbuild/bazel/tree/master/third_party/allocation_instrumenter">java-allocation-instrumenter-3.3.4.jar</a>
- *       </ul>
- *   <li>--host_jvm_args=-DRULE_MEMORY_TRACKER=1
- * </ol>
- *
- * <p>The memory tracking information is accessible via blaze dump --rules and blaze dump
+ * 
+ * 
+ * To enable tracking, you must pass:
+ * 
+ * 
+ *  1. --host_jvm_args=-javaagent:(path to Google's java agent jar)
+ * 
+ *  * For Bazel use [java-allocation-instrumenter-3.3.4.jar](https://github.com/bazelbuild/bazel/tree/master/third_party/allocation_instrumenter)
+ * 
+ *  1. --host_jvm_args=-DRULE_MEMORY_TRACKER=1
+ * 
+ * 
+ * 
+ * The memory tracking information is accessible via blaze dump --rules and blaze dump
  * --skylark_memory=(path)
  */
-public class AllocationTrackerModule extends BlazeModule {
+class AllocationTrackerModule : BlazeModule() {
+    private var enabled = false
 
-  /** Sample allocations every N bytes for performance. */
-  private static final int SAMPLE_SIZE = 256 * 1024;
-  /**
-   * Add some variance to how often we sample, to avoid sampling the same callstack all the time due
-   * to overly regular allocation patterns.
-   */
-  private static final int VARIANCE = 100;
+    // Always AllocationTracker, but we don't refer to the type as it is supplied manually via a Java
+    // agent.
+    private var tracker: Any? = null
 
-  private boolean enabled;
-  // Always AllocationTracker, but we don't refer to the type as it is supplied manually via a Java
-  // agent.
-  private Object tracker = null;
-
-  @Override
-  public void blazeStartup(
-      OptionsParsingResult startupOptions,
-      BlazeVersionInfo versionInfo,
-      UUID instanceId,
-      FileSystem fileSystem,
-      ServerDirectories directories,
-      Clock clock) {
-    enabled = isRequested();
-    if (enabled) {
-      try {
-        Class.forName("com.google.monitoring.runtime.instrumentation.Sampler");
-      } catch (ClassNotFoundException e) {
-        enabled = false;
-        return;
-      }
-      tracker = new AllocationTracker(SAMPLE_SIZE, VARIANCE);
-      Debug.setThreadHook((AllocationTracker) tracker);
-      CurrentRuleTracker.setEnabled(true);
-      AllocationTrackerInstaller.installAllocationTracker((AllocationTracker) tracker);
+    override fun blazeStartup(
+        startupOptions: com.google.devtools.common.options.OptionsParsingResult?,
+        versionInfo: BlazeVersionInfo?,
+        instanceId: UUID?,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem?,
+        directories: ServerDirectories?,
+        clock: com.google.devtools.build.lib.clock.Clock?
+    ) {
+        enabled = isRequested()
+        if (enabled) {
+            try {
+                java.lang.Class.forName("com.google.monitoring.runtime.instrumentation.Sampler")
+            } catch (e: java.lang.ClassNotFoundException) {
+                enabled = false
+                return
+            }
+            tracker = AllocationTracker(SAMPLE_SIZE, VARIANCE)
+            net.starlark.java.eval.Debug.setThreadHook(tracker as AllocationTracker)
+            CurrentRuleTracker.setEnabled(true)
+            AllocationTrackerInstaller.installAllocationTracker(tracker as AllocationTracker?)
+        }
     }
-  }
 
-  @Override
-  public void workspaceInit(
-      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {
-    if (enabled) {
-      builder.setAllocationTracker((AllocationTracker) tracker);
+    override fun workspaceInit(
+        runtime: BlazeRuntime?, directories: BlazeDirectories?, builder: WorkspaceBuilder
+    ) {
+        if (enabled) {
+            builder.setAllocationTracker(tracker as AllocationTracker?)
+        }
     }
-  }
 
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    if (!enabled && isRequested()) {
-      env.getReporter()
-          .handle(
-              Event.error(
-                  "Failed to enable memory tracking, ensure that you set"
-                      + " --host_jvm_args=-javaagent:<path to"
-                      + " java-allocation-instrumenter-3.3.4.jar>"));
+    override fun beforeCommand(env: CommandEnvironment) {
+        if (!enabled && isRequested()) {
+            env.getReporter()
+                .handle(
+                    com.google.devtools.build.lib.events.Event.error(
+                        ("Failed to enable memory tracking, ensure that you set"
+                                + " --host_jvm_args=-javaagent:<path to"
+                                + " java-allocation-instrumenter-3.3.4.jar>")
+                    )
+                )
+        }
     }
-  }
 
-  private static boolean isRequested() {
-    String memoryTrackerProperty = System.getProperty("RULE_MEMORY_TRACKER");
-    return memoryTrackerProperty != null && memoryTrackerProperty.equals("1");
-  }
+    companion object {
+        /** Sample allocations every N bytes for performance.  */
+        private val SAMPLE_SIZE = 256 * 1024
+
+        /**
+         * Add some variance to how often we sample, to avoid sampling the same callstack all the time due
+         * to overly regular allocation patterns.
+         */
+        private const val VARIANCE = 100
+
+        private fun isRequested(): Boolean {
+            val memoryTrackerProperty: String? = java.lang.System.getProperty("RULE_MEMORY_TRACKER")
+            return memoryTrackerProperty != null && memoryTrackerProperty == "1"
+        }
+    }
 }

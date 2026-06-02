@@ -692,7 +692,7 @@ public final class SkyframeBuildView {
             .collect(ImmutableSet.toImmutableSet());
     List<DetailedExitCode> detailedExitCodes = new ArrayList<>();
     MultiThreadPoolsQuiescingExecutor executor =
-        (MultiThreadPoolsQuiescingExecutor) executors.getMergedAnalysisAndExecutionExecutor();
+        (MultiThreadPoolsQuiescingExecutor) executors.mergedAnalysisAndExecutionExecutor;
     Set<SkyKey> topLevelKeys =
         Sets.newConcurrentHashSet(Sets.union(buildDriverCTKeys, buildDriverAspectKeys));
 

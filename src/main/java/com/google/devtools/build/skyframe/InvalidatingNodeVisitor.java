@@ -144,7 +144,7 @@ public abstract class InvalidatingNodeVisitor<GraphT extends QueryableGraph> {
 
   @VisibleForTesting
   final CountDownLatch getInterruptionLatchForTestingOnly() {
-    return executor.getInterruptionLatchForTestingOnly();
+    return executor.interruptionLatchForTestingOnly;
   }
 
   /** Enqueues nodes for invalidation. Elements of {@code keys} may not exist in the graph. */

@@ -213,7 +213,7 @@ public final class SkyframeTargetPatternEvaluator implements TargetPatternPreloa
 
   /** Returns true for patterns that can be resolved from a single PackageValue. */
   private static boolean isSimple(TargetPattern targetPattern) {
-    switch (targetPattern.getType()) {
+    switch (targetPattern.type) {
       case SINGLE_TARGET:
       case TARGETS_IN_PACKAGE:
         return true;

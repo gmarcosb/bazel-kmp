@@ -11,92 +11,85 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel;
+package com.google.devtools.build.lib.bazel
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Strings;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeServerStartupOptions;
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Filesystem;
-import com.google.devtools.build.lib.server.FailureDetails.Filesystem.Code;
-import com.google.devtools.build.lib.unix.NativePosixFilesService;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.DigestHashFunction.DigestFunctionConverter;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.bazel.BazelHashFunctions;
-import com.google.devtools.build.lib.windows.WindowsFileSystem;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.OptionsParsingResult;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
 /**
- * Module to provide a {@link com.google.devtools.build.lib.vfs.FileSystem} instance that uses
- * {@code SHA256} as the default hash function, or else what's specified by {@code
- * -Dbazel.DigestFunction}.
- *
- * <p>Because of Blaze/Bazel divergence we can't make the {@link
- * com.google.devtools.build.lib.vfs.FileSystem} class use {@code SHA256} by default.
+ * Module to provide a [com.google.devtools.build.lib.vfs.FileSystem] instance that uses
+ * `SHA256` as the default hash function, or else what's specified by `-Dbazel.DigestFunction`.
+ * 
+ * 
+ * Because of Blaze/Bazel divergence we can't make the [ ] class use `SHA256` by default.
  */
-public class BazelFileSystemModule extends BlazeModule {
-  @Nullable private NativePosixFilesService nativePosixFilesService;
+class BazelFileSystemModule : BlazeModule() {
+    private var nativePosixFilesService: NativePosixFilesService? = null
 
-  static {
-    BazelHashFunctions.ensureRegistered();
-  }
-
-  @Override
-  public void globalInit(
-      OptionsParsingResult startupOptions, Iterable<BlazeService> blazeServices) {
-    for (BlazeService blazeService : blazeServices) {
-      if (blazeService instanceof NativePosixFilesService nativePosixFilesService) {
-        this.nativePosixFilesService = nativePosixFilesService;
-        break;
-      }
-    }
-    checkNotNull(nativePosixFilesService, "expected NativePosixFilesService to be available");
-  }
-
-  @Override
-  public ModuleFileSystem getFileSystem(OptionsParsingResult startupOptions)
-      throws AbruptExitException {
-    BlazeServerStartupOptions options =
-        checkNotNull(startupOptions.getOptions(BlazeServerStartupOptions.class));
-    DigestHashFunction digestHashFunction = options.getDigestHashFunction();
-    if (digestHashFunction == null) {
-      String value = System.getProperty("bazel.DigestFunction", "SHA256");
-      try {
-        digestHashFunction = new DigestFunctionConverter().convert(value);
-      } catch (OptionsParsingException e) {
-        throw new AbruptExitException(
-            DetailedExitCode.of(
-                FailureDetail.newBuilder()
-                    .setMessage(Strings.nullToEmpty(e.getMessage()))
-                    .setFilesystem(
-                        Filesystem.newBuilder()
-                            .setCode(Code.DEFAULT_DIGEST_HASH_FUNCTION_INVALID_VALUE))
-                    .build()),
-            e);
-      }
+    override fun globalInit(
+        startupOptions: com.google.devtools.common.options.OptionsParsingResult?,
+        blazeServices: Iterable<com.google.devtools.build.lib.runtime.BlazeService?>
+    ) {
+        for (blazeService in blazeServices) {
+            if (blazeService is NativePosixFilesService) {
+                this.nativePosixFilesService = blazeService
+                break
+            }
+        }
+        com.google.common.base.Preconditions.checkNotNull<NativePosixFilesService?>(
+            nativePosixFilesService,
+            "expected NativePosixFilesService to be available"
+        )
     }
 
-    FileSystem fs =
-        switch (OS.getCurrent()) {
-          case WINDOWS ->
-              new WindowsFileSystem(digestHashFunction, options.getEnableWindowsSymlinks());
-          default ->
-              new UnixFileSystem(
-                  digestHashFunction,
-                  options.getUnixDigestHashAttributeName(),
-                  nativePosixFilesService);
-        };
+    @Throws(AbruptExitException::class)
+    override fun getFileSystem(startupOptions: com.google.devtools.common.options.OptionsParsingResult): ModuleFileSystem? {
+        val options: BlazeServerStartupOptions =
+            com.google.common.base.Preconditions.checkNotNull<BlazeServerStartupOptions>(
+                startupOptions.getOptions<BlazeServerStartupOptions?>(
+                    BlazeServerStartupOptions::class.java
+                )
+            )
+        var digestHashFunction: DigestHashFunction? = options.getDigestHashFunction()
+        if (digestHashFunction == null) {
+            val value: String? = java.lang.System.getProperty("bazel.DigestFunction", "SHA256")
+            try {
+                digestHashFunction = DigestFunctionConverter().convert(value)
+            } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(com.google.common.base.Strings.nullToEmpty(e.getMessage()))
+                            .setFilesystem(
+                                Filesystem.newBuilder()
+                                    .setCode(Code.DEFAULT_DIGEST_HASH_FUNCTION_INVALID_VALUE)
+                            )
+                            .build()
+                    ),
+                    e
+                )
+            }
+        }
 
-    return ModuleFileSystem.create(fs);
-  }
+        val fs: com.google.devtools.build.lib.vfs.FileSystem =
+            when (com.google.devtools.build.lib.util.OS.getCurrent()) {
+                com.google.devtools.build.lib.util.OS.WINDOWS -> com.google.devtools.build.lib.windows.WindowsFileSystem(
+                    digestHashFunction,
+                    options.getEnableWindowsSymlinks()
+                )
+
+                else -> UnixFileSystem(
+                    digestHashFunction,
+                    options.getUnixDigestHashAttributeName(),
+                    nativePosixFilesService
+                )
+            }
+
+        return ModuleFileSystem.create(fs)
+    }
+
+    companion object {
+        init {
+            BazelHashFunctions.ensureRegistered()
+        }
+    }
 }

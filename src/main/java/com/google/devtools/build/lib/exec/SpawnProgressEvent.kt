@@ -11,36 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionProgressEvent;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.exec.SpawnRunner.ProgressStatus;
+import com.google.devtools.build.lib.actions.ActionExecutionMetadata
 
 /**
- * The {@link SpawnRunner} is making some progress.
- *
+ * The [SpawnRunner] is making some progress.
+ * 
  * @param progressId The id that uniquely determines the progress among all progress events for this
- *     spawn.
+ * spawn.
  * @param progress Human readable description of the progress.
  * @param finished Whether the progress reported about is finished already.
  */
-public record SpawnProgressEvent(String progressId, String progress, boolean finished)
-    implements ProgressStatus {
-  public SpawnProgressEvent {
-    requireNonNull(progressId, "progressId");
-    requireNonNull(progress, "progress");
-  }
+@kotlin.jvm.JvmRecord
+data class SpawnProgressEvent(val progressId: String?, val progress: String?, val finished: Boolean) : ProgressStatus {
+    override fun postTo(
+        eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler,
+        action: ActionExecutionMetadata?
+    ) {
+        eventHandler.post(ActionProgressEvent.create(action, this.progressId, this.progress, this.finished))
+    }
 
-  public static SpawnProgressEvent create(String resourceId, String progress, boolean finished) {
-    return new SpawnProgressEvent(resourceId, progress, finished);
-  }
+    init {
+        java.util.Objects.requireNonNull<String?>(progressId, "progressId")
+        java.util.Objects.requireNonNull<String?>(progress, "progress")
+    }
 
-  @Override
-  public void postTo(ExtendedEventHandler eventHandler, ActionExecutionMetadata action) {
-    eventHandler.post(ActionProgressEvent.create(action, progressId(), progress(), finished()));
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun create(resourceId: String?, progress: String?, finished: Boolean): SpawnProgressEvent {
+            return SpawnProgressEvent(resourceId, progress, finished)
+        }
+    }
 }

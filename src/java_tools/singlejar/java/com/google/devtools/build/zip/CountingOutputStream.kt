@@ -11,44 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.zip
 
-package com.google.devtools.build.zip;
+import java.io.FilterOutputStream
+import java.io.IOException
+import java.io.OutputStream
 
-import java.io.FilterOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+/** An OutputStream that counts the number of bytes written.  */
+internal class CountingOutputStream
+/**
+ * Wraps another output stream, counting the number of bytes written.
+ * 
+ * @param out the output stream to be wrapped
+ */
+    (out: OutputStream?) : FilterOutputStream(out) {
+    private var count: Long = 0
 
-/** An OutputStream that counts the number of bytes written. */
-final class CountingOutputStream extends FilterOutputStream {
+    /** Returns the number of bytes written.  */
+    fun getCount(): Long {
+        return count
+    }
 
-  private long count;
+    @Throws(IOException::class)
+    override fun write(b: Int) {
+        out.write(b)
+        count++
+    }
 
-  /**
-   * Wraps another output stream, counting the number of bytes written.
-   *
-   * @param out the output stream to be wrapped
-   */
-  public CountingOutputStream(OutputStream out) {
-    super(out);
-  }
+    @Throws(IOException::class)
+    override fun write(b: ByteArray) {
+        out.write(b)
+        count += b.size.toLong()
+    }
 
-  /** Returns the number of bytes written. */
-  public long getCount() {
-    return count;
-  }
-
-  @Override public void write(int b) throws IOException {
-    out.write(b);
-    count++;
-  }
-
-  @Override public void write(byte[] b) throws IOException {
-    out.write(b);
-    count += b.length;
-  }
-
-  @Override public void write(byte[] b, int off, int len) throws IOException {
-    out.write(b, off, len);
-    count += len;
-  }
+    @Throws(IOException::class)
+    override fun write(b: ByteArray?, off: Int, len: Int) {
+        out.write(b, off, len)
+        count += len.toLong()
+    }
 }

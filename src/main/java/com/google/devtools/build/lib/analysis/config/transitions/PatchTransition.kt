@@ -11,72 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config.transitions;
+package com.google.devtools.build.lib.analysis.config.transitions
 
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.events.EventHandler;
-import java.util.Collections;
-import java.util.Map;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
 /**
- * A configuration transition that maps a single input {@link BuildOptions} to a single output
- * {@link BuildOptions}.
- *
- * <p>Also see {@link SplitTransition}, which maps a single input {@link BuildOptions} to possibly
- * multiple {@link BuildOptions}.
- *
- * <p>The concept is simple: given the input configuration's build options, the transition does
+ * A configuration transition that maps a single input [BuildOptions] to a single output
+ * [BuildOptions].
+ * 
+ * 
+ * Also see [SplitTransition], which maps a single input [BuildOptions] to possibly
+ * multiple [BuildOptions].
+ * 
+ * 
+ * The concept is simple: given the input configuration's build options, the transition does
  * whatever it wants to them and returns the modified result.
- *
- * <p>Implementations must be stateless: the output must exclusively depend on the input build
- * options and any immutable member fields. Implementations must also override {@link Object#equals}
- * and {@link Object#hashCode} unless exclusively accessed as singletons. For example:
- *
+ * 
+ * 
+ * Implementations must be stateless: the output must exclusively depend on the input build
+ * options and any immutable member fields. Implementations must also override [Object.equals]
+ * and [Object.hashCode] unless exclusively accessed as singletons. For example:
+ * 
  * <pre>
  * public class MyTransition implements PatchTransition {
- *   public MyTransition INSTANCE = new MyTransition();
- *
- *   private MyTransition() {}
- *
- *   {@literal @}Override
- *   public BuildOptions patch(RestrictedBuildOptions options) {
- *     BuildOptions toOptions = options.clone();
- *     // Change some setting on toOptions
- *     return toOptions;
- *   }
+ * public MyTransition INSTANCE = new MyTransition();
+ * 
+ * private MyTransition() {}
+ * 
+ * @Override
+ * public BuildOptions patch(RestrictedBuildOptions options) {
+ * BuildOptions toOptions = options.clone();
+ * // Change some setting on toOptions
+ * return toOptions;
  * }
- * </pre>
- *
- * <p>For performance reasons, the input options are passed as a <i>reference</i>, not a
- * <i>copy</i>. Implementations should <i>always</i> treat these as immutable, and call {@link
- * com.google.devtools.build.lib.analysis.config.BuildOptions#clone} before making changes.
- * Unfortunately, {@link com.google.devtools.build.lib.analysis.config.BuildOptions} doesn't
+ * }
+</pre> * 
+ * 
+ * 
+ * For performance reasons, the input options are passed as a *reference*, not a
+ * *copy*. Implementations should *always* treat these as immutable, and call [ ][com.google.devtools.build.lib.analysis.config.BuildOptions.clone] before making changes.
+ * Unfortunately, [com.google.devtools.build.lib.analysis.config.BuildOptions] doesn't
  * currently enforce immutability. So care must be taken not to modify the wrong instance.
  */
-public interface PatchTransition extends ConfigurationTransition {
-  /**
-   * Applies the transition.
-   *
-   * <p>Blaze throws an {@link IllegalArgumentException} if this method reads any options fragment
-   * not declared in {@link ConfigurationTransition#requiresOptionFragments}.
-   *
-   * @param options the options representing the input configuration to this transition. <b>DO NOT
-   *     MODIFY THIS VARIABLE WITHOUT CLONING IT FIRST!</b>
-   * @param eventHandler
-   * @return the options representing the desired post-transition configuration
-   */
-  BuildOptions patch(BuildOptionsView options, EventHandler eventHandler)
-      throws InterruptedException;
+interface PatchTransition : ConfigurationTransition {
+    /**
+     * Applies the transition.
+     * 
+     * 
+     * Blaze throws an [IllegalArgumentException] if this method reads any options fragment
+     * not declared in [ConfigurationTransition.requiresOptionFragments].
+     * 
+     * @param options the options representing the input configuration to this transition. **DO NOT
+     * MODIFY THIS VARIABLE WITHOUT CLONING IT FIRST!**
+     * @param eventHandler
+     * @return the options representing the desired post-transition configuration
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun patch(
+        options: BuildOptionsView?,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler?
+    ): BuildOptions?
 
-  @Override
-  default Map<String, BuildOptions> apply(BuildOptionsView buildOptions, EventHandler eventHandler)
-      throws InterruptedException {
-    return Collections.singletonMap(PATCH_TRANSITION_KEY, patch(buildOptions, eventHandler));
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun apply(
+        buildOptions: BuildOptionsView?,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler?
+    ): MutableMap<String?, BuildOptions?> {
+        return Collections.singletonMap<String?, BuildOptions?>(
+            ConfigurationTransition.Companion.PATCH_TRANSITION_KEY,
+            patch(buildOptions, eventHandler)
+        )
+    }
 
-  @Override
-  default String reasonForOverride() {
-    return "This is a fundamental transition modeling the simple, common case 1-1 options mapping";
-  }
+    override fun reasonForOverride(): String? {
+        return "This is a fundamental transition modeling the simple, common case 1-1 options mapping"
+    }
 }

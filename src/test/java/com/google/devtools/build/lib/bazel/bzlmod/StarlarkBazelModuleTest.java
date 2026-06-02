@@ -110,25 +110,25 @@ public class StarlarkBazelModuleTest {
             repoMappingRecorder,
             /* moduleIndex= */ 0);
 
-    assertThat(moduleProxy.getName()).isEqualTo("foo");
-    assertThat(moduleProxy.getVersion()).isEqualTo("1.0");
-    assertThat(moduleProxy.getTags().getFieldNames()).containsExactly("dep", "repos", "pom");
+    assertThat(moduleProxy.name).isEqualTo("foo");
+    assertThat(moduleProxy.version).isEqualTo("1.0");
+    assertThat(moduleProxy.tags.getFieldNames()).containsExactly("dep", "repos", "pom");
 
     // We have 2 "dep" tags...
     @SuppressWarnings("unchecked")
     StarlarkList<TypeCheckedTag> depTags =
-        (StarlarkList<TypeCheckedTag>) moduleProxy.getTags().getValue("dep");
+        (StarlarkList<TypeCheckedTag>) moduleProxy.tags.getValue("dep");
     assertThat(depTags.size()).isEqualTo(2);
     assertThat(depTags.get(0).getValue("coord")).isEqualTo("junit");
     assertThat(depTags.get(1).getValue("coord")).isEqualTo("guava");
 
     // ... zero "repos" tags...
-    assertThat(moduleProxy.getTags().getValue("repos")).isEqualTo(StarlarkList.empty());
+    assertThat(moduleProxy.tags.getValue("repos")).isEqualTo(StarlarkList.empty());
 
     // ... and 1 "pom" tag.
     @SuppressWarnings("unchecked")
     StarlarkList<TypeCheckedTag> pomTags =
-        (StarlarkList<TypeCheckedTag>) moduleProxy.getTags().getValue("pom");
+        (StarlarkList<TypeCheckedTag>) moduleProxy.tags.getValue("pom");
     assertThat(pomTags.size()).isEqualTo(1);
     assertThat(pomTags.get(0).getValue("pom_xmls"))
         .isEqualTo(

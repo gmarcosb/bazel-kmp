@@ -11,173 +11,168 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.cmdline;
+package com.google.devtools.build.lib.cmdline
 
-import com.google.common.base.Predicate;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Collection;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import javax.annotation.concurrent.Immutable;
+import com.google.devtools.build.lib.cmdline.ResolvedTargets
+import java.util.LinkedHashSet
 
 /**
  * Contains the result of the target pattern evaluation. This is a specialized container class for
  * the result of target pattern resolution. There is no restriction on the element type, but it will
- * usually be {@code Target} or {@code Label}.
+ * usually be `Target` or `Label`.
  */
-@Immutable
-public final class ResolvedTargets<T> {
-  private static final ResolvedTargets<?> FAILED_RESULT =
-      new ResolvedTargets<>(ImmutableSet.of(), ImmutableSet.of(), true);
+@javax.annotation.concurrent.Immutable
+class ResolvedTargets<T> {
+    private val hasError: Boolean
+    private val targets: com.google.common.collect.ImmutableSet<T?>
+    private val filteredTargets: com.google.common.collect.ImmutableSet<T?>
 
-  private static final ResolvedTargets<?> EMPTY_RESULT =
-      new ResolvedTargets<>(ImmutableSet.of(), ImmutableSet.of(), false);
-
-  @SuppressWarnings("unchecked")
-  public static <T> ResolvedTargets<T> failed() {
-    return (ResolvedTargets<T>) FAILED_RESULT;
-  }
-
-  @SuppressWarnings("unchecked")
-  public static <T> ResolvedTargets<T> empty() {
-    return (ResolvedTargets<T>) EMPTY_RESULT;
-  }
-
-  public static <T> ResolvedTargets<T> of(T target) {
-    return new ResolvedTargets<>(ImmutableSet.<T>of(target), false);
-  }
-
-  private final boolean hasError;
-  private final ImmutableSet<T> targets;
-  private final ImmutableSet<T> filteredTargets;
-
-  public ResolvedTargets(Set<T> targets, Set<T> filteredTargets, boolean hasError) {
-    this.targets = ImmutableSet.copyOf(targets);
-    this.filteredTargets = ImmutableSet.copyOf(filteredTargets);
-    this.hasError = hasError;
-  }
-
-  public ResolvedTargets(Set<T> targets, boolean hasError) {
-    this.targets = ImmutableSet.copyOf(targets);
-    this.filteredTargets = ImmutableSet.of();
-    this.hasError = hasError;
-  }
-
-  @Override
-  public String toString() {
-    return "ResolvedTargets(" + targets + ", filtered=" + filteredTargets
-        + ", hasError=" + hasError + ")";
-  }
-
-  public boolean hasError() {
-    return hasError;
-  }
-
-  public ImmutableSet<T> getTargets() {
-    return targets;
-  }
-
-  public ImmutableSet<T> getFilteredTargets() {
-    return filteredTargets;
-  }
-
-  /**
-   * Returns a builder using concurrent sets, as long as you don't call filter.
-   */
-  public static <T> ResolvedTargets.Builder<T> concurrentBuilder() {
-    return new ResolvedTargets.Builder<>(
-        Sets.<T>newConcurrentHashSet(),
-        Sets.<T>newConcurrentHashSet());
-  }
-
-  public static <T> ResolvedTargets.Builder<T> builder() {
-    return new ResolvedTargets.Builder<>();
-  }
-
-  public static final class Builder<T> {
-    private Set<T> targets;
-    private Set<T> filteredTargets;
-    private volatile boolean hasError = false;
-
-    private Builder() {
-      this(new LinkedHashSet<>(), new LinkedHashSet<>());
+    constructor(targets: MutableSet<T?>, filteredTargets: MutableSet<T?>, hasError: Boolean) {
+        this.targets = com.google.common.collect.ImmutableSet.copyOf<T?>(targets)
+        this.filteredTargets = com.google.common.collect.ImmutableSet.copyOf<T?>(filteredTargets)
+        this.hasError = hasError
     }
 
-    private Builder(Set<T> targets, Set<T> filteredTargets) {
-      this.targets = targets;
-      this.filteredTargets = filteredTargets;
+    constructor(targets: MutableSet<T?>, hasError: Boolean) {
+        this.targets = com.google.common.collect.ImmutableSet.copyOf<T?>(targets)
+        this.filteredTargets = com.google.common.collect.ImmutableSet.of<T?>()
+        this.hasError = hasError
     }
 
-    public ResolvedTargets<T> build() {
-      return new ResolvedTargets<>(targets, filteredTargets, hasError);
+    override fun toString(): String {
+        return ("ResolvedTargets(" + targets + ", filtered=" + filteredTargets
+                + ", hasError=" + hasError + ")")
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> merge(ResolvedTargets<T> other) {
-      removeAll(other.filteredTargets);
-      addAll(other.targets);
-      if (other.hasError) {
-        hasError = true;
-      }
-      return this;
+    fun hasError(): Boolean {
+        return hasError
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> add(T target) {
-      targets.add(target);
-      filteredTargets.remove(target);
-      return this;
+    fun getTargets(): com.google.common.collect.ImmutableSet<T?> {
+        return targets
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> addAll(Collection<T> targets) {
-      this.targets.addAll(targets);
-      this.filteredTargets.removeAll(targets);
-      return this;
+    fun getFilteredTargets(): com.google.common.collect.ImmutableSet<T?> {
+        return filteredTargets
     }
 
-    public void remove(T target) {
-      targets.remove(target);
-      filteredTargets.add(target);
-    }
+    class Builder<T> private constructor(
+        private var targets: MutableSet<T?> = LinkedHashSet<T?>(),
+        private val filteredTargets: MutableSet<T?> = LinkedHashSet<T?>()
+    ) {
+        @kotlin.concurrent.Volatile
+        private var hasError = false
 
-    @CanIgnoreReturnValue
-    public Builder<T> removeAll(Collection<T> targets) {
-      this.filteredTargets.addAll(targets);
-      this.targets.removeAll(targets);
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    public Builder<T> filter(Predicate<T> predicate) {
-      Set<T> oldTargets = targets;
-      targets = new LinkedHashSet<>();
-      for (T target : oldTargets) {
-        if (predicate.apply(target)) {
-          add(target);
-        } else {
-          remove(target);
+        fun build(): ResolvedTargets<T?> {
+            return ResolvedTargets<T?>(targets, filteredTargets, hasError)
         }
-      }
-      return this;
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun merge(other: ResolvedTargets<T?>): Builder<T?> {
+            removeAll(other.filteredTargets)
+            addAll(other.targets)
+            if (other.hasError) {
+                hasError = true
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun add(target: T?): Builder<T?> {
+            targets.add(target)
+            filteredTargets.remove(target)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAll(targets: MutableCollection<T?>?): Builder<T?> {
+            this.targets.addAll(targets!!)
+            this.filteredTargets.removeAll(targets)
+            return this
+        }
+
+        fun remove(target: T?) {
+            targets.remove(target)
+            filteredTargets.add(target)
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun removeAll(targets: MutableCollection<T?>?): Builder<T?> {
+            this.filteredTargets.addAll(targets!!)
+            this.targets.removeAll(targets)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun filter(predicate: com.google.common.base.Predicate<T?>): Builder<T?> {
+            val oldTargets = targets
+            targets = LinkedHashSet<T?>()
+            for (target in oldTargets) {
+                if (predicate.apply(target)) {
+                    add(target)
+                } else {
+                    remove(target)
+                }
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setError(): Builder<T?> {
+            this.hasError = true
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun mergeError(hasError: Boolean): Builder<T?> {
+            this.hasError = this.hasError or hasError
+            return this
+        }
+
+        val isEmpty: Boolean
+            get() = targets.isEmpty()
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> setError() {
-      this.hasError = true;
-      return this;
-    }
+    companion object {
+        private val FAILED_RESULT: ResolvedTargets<*> = ResolvedTargets<Any?>(
+            com.google.common.collect.ImmutableSet.of<Any?>(),
+            com.google.common.collect.ImmutableSet.of<Any?>(),
+            true
+        )
 
-    @CanIgnoreReturnValue
-    public Builder<T> mergeError(boolean hasError) {
-      this.hasError |= hasError;
-      return this;
-    }
+        private val EMPTY_RESULT: ResolvedTargets<*> = ResolvedTargets<Any?>(
+            com.google.common.collect.ImmutableSet.of<Any?>(),
+            com.google.common.collect.ImmutableSet.of<Any?>(),
+            false
+        )
 
-    public boolean isEmpty() {
-      return targets.isEmpty();
+        @kotlin.jvm.JvmStatic
+        fun <T> failed(): ResolvedTargets<T?>? {
+            return FAILED_RESULT as ResolvedTargets<T?>?
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun <T> empty(): ResolvedTargets<T?>? {
+            return EMPTY_RESULT as ResolvedTargets<T?>?
+        }
+
+        fun <T> of(target: T?): ResolvedTargets<T?> {
+            return ResolvedTargets<T?>(com.google.common.collect.ImmutableSet.of<T?>(target), false)
+        }
+
+        /**
+         * Returns a builder using concurrent sets, as long as you don't call filter.
+         */
+        fun <T> concurrentBuilder(): Builder<T?> {
+            return com.google.devtools.build.lib.cmdline.ResolvedTargets.Builder<T?>(
+                com.google.common.collect.Sets.newConcurrentHashSet<T?>(),
+                com.google.common.collect.Sets.newConcurrentHashSet<T?>()
+            )
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun <T> builder(): Builder<T?> {
+            return com.google.devtools.build.lib.cmdline.ResolvedTargets.Builder<T?>()
+        }
     }
-  }
 }

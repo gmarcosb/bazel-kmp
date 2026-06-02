@@ -11,29 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.EventHandler;
-import net.starlark.java.eval.StarlarkValue;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * {@link StarlarkValue}s that need special handling when they are exported from an extension file.
+ * [StarlarkValue]s that need special handling when they are exported from an extension file.
  * For example, rule definitions receive their name at the end of the execution of the .bzl file.
  */
-public interface StarlarkExportable extends StarlarkValue {
+interface StarlarkExportable : net.starlark.java.eval.StarlarkValue {
+    /**
+     * Is this value already exported?
+     */
+    fun isExported(): Boolean
 
-  /**
-   * Is this value already exported?
-   */
-  boolean isExported();
-
-  /**
-   * Notify the value that it is exported from {@code extensionLabel} extension with name {@code
-   * exportedName} at {@code exportedLocation}.
-   */
-  void export(
-      EventHandler handler, Label extensionLabel, String exportedName, Location exportedLocation);
+    /**
+     * Notify the value that it is exported from `extensionLabel` extension with name `exportedName` at `exportedLocation`.
+     */
+    fun export(
+        handler: EventHandler?,
+        extensionLabel: Label?,
+        exportedName: String?,
+        exportedLocation: net.starlark.java.syntax.Location?
+    )
 }

@@ -11,50 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.common.base.Preconditions;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.packages.RuleOrMacroInstance
 
 /**
- * {@link AttributeMap} implementation that triggers an {@link IllegalStateException} if called
+ * [AttributeMap] implementation that triggers an [IllegalStateException] if called
  * on any attribute that supports configurable values, as determined by
- * {@link Attribute#isConfigurable()}.
- *
- * <p>This is particularly useful for logic that doesn't have access to configurations - it
+ * [Attribute.isConfigurable].
+ * 
+ * 
+ * This is particularly useful for logic that doesn't have access to configurations - it
  * protects against undefined behavior in response to unexpected configuration-dependent inputs.
  */
-public class NonconfigurableAttributeMapper extends AbstractAttributeMapper {
-  private NonconfigurableAttributeMapper(RuleOrMacroInstance rule) {
-    super(rule);
-  }
-
-  /**
-   * Example usage:
-   *
-   * <pre>
-   *   Label fooLabel = NonconfigurableAttributeMapper.of(rule).get("foo", Type.LABEL);
-   * </pre>
-   */
-  public static NonconfigurableAttributeMapper of(RuleOrMacroInstance rule) {
-    return new NonconfigurableAttributeMapper(rule);
-  }
-
-  @Override
-  public <T> T get(String attributeName, com.google.devtools.build.lib.packages.Type<T> type) {
-    T attr = super.get(attributeName, type);
-    Preconditions.checkState(!getAttributeDefinition(attributeName).isConfigurable(),
-        "Attribute '%s' is potentially configurable - not allowed here", attributeName);
-    return attr;
-  }
-
-  @Nullable
-  public static <T> T attributeOrNull(
-      Rule rule, String attributeName, com.google.devtools.build.lib.packages.Type<T> type) {
-    var mapper = NonconfigurableAttributeMapper.of(rule);
-    if (!mapper.has(attributeName, type)) {
-      return null;
+class NonconfigurableAttributeMapper private constructor(rule: RuleOrMacroInstance) :
+    com.google.devtools.build.lib.packages.AbstractAttributeMapper(rule) {
+    override fun <T> get(attributeName: String?, type: com.google.devtools.build.lib.packages.Type<T?>?): T? {
+        val attr: T? = super.get<T?>(attributeName, type)
+        com.google.common.base.Preconditions.checkState(
+            !getAttributeDefinition(attributeName).isConfigurable(),
+            "Attribute '%s' is potentially configurable - not allowed here", attributeName
+        )
+        return attr
     }
-    return mapper.get(attributeName, type);
-  }
+
+    companion object {
+        /**
+         * Example usage:
+         * 
+         * <pre>
+         * Label fooLabel = NonconfigurableAttributeMapper.of(rule).get("foo", Type.LABEL);
+        </pre> * 
+         */
+        fun of(rule: RuleOrMacroInstance): NonconfigurableAttributeMapper {
+            return NonconfigurableAttributeMapper(rule)
+        }
+
+        fun <T> attributeOrNull(
+            rule: com.google.devtools.build.lib.packages.Rule,
+            attributeName: String?,
+            type: com.google.devtools.build.lib.packages.Type<T?>?
+        ): T? {
+            val mapper = of(rule)
+            if (!mapper.has<T?>(attributeName, type)) {
+                return null
+            }
+            return mapper.get<T?>(attributeName, type)
+        }
+    }
 }

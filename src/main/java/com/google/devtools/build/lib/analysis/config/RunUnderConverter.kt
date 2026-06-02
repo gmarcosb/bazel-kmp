@@ -11,53 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelConverter;
-import com.google.devtools.build.lib.analysis.config.RunUnder.CommandRunUnder;
-import com.google.devtools.build.lib.analysis.config.RunUnder.LabelRunUnder;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.shell.ShellUtils;
-import com.google.devtools.build.lib.shell.ShellUtils.TokenizationException;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.ArrayList;
-import java.util.List;
+import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelConverter
 
-/** --run_under options converter. */
-public class RunUnderConverter implements Converter<RunUnder> {
-  private static final LabelConverter LABEL_CONVERTER = new LabelConverter();
-
-  @Override
-  public RunUnder convert(final String input, Object conversionContext)
-      throws OptionsParsingException {
-    final List<String> runUnderList = new ArrayList<>();
-    try {
-      ShellUtils.tokenize(runUnderList, input);
-    } catch (TokenizationException e) {
-      throw new OptionsParsingException("Not a valid command prefix " + e.getMessage());
+/** --run_under options converter.  */
+class RunUnderConverter : com.google.devtools.common.options.Converter<RunUnder?> {
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    override fun convert(input: String, conversionContext: Any?): RunUnder {
+        val runUnderList: MutableList<String> = java.util.ArrayList<String>()
+        try {
+            ShellUtils.tokenize(runUnderList, input)
+        } catch (e: TokenizationException) {
+            throw com.google.devtools.common.options.OptionsParsingException("Not a valid command prefix " + e.getMessage())
+        }
+        if (runUnderList.isEmpty()) {
+            throw com.google.devtools.common.options.OptionsParsingException("Empty command")
+        }
+        val runUnderCommand = runUnderList.get(0)
+        val runUnderSuffix: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.copyOf<String?>(runUnderList.subList(1, runUnderList.size()))
+        if (runUnderCommand.startsWith("//") || runUnderCommand.startsWith("@")) {
+            try {
+                val runUnderLabel: com.google.devtools.build.lib.cmdline.Label? =
+                    LABEL_CONVERTER.convert(runUnderCommand, conversionContext)
+                return LabelRunUnder(input, runUnderSuffix, runUnderLabel)
+            } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+                throw com.google.devtools.common.options.OptionsParsingException("Not a valid label " + e.getMessage())
+            }
+        } else {
+            return CommandRunUnder(input, runUnderSuffix, runUnderCommand)
+        }
     }
-    if (runUnderList.isEmpty()) {
-      throw new OptionsParsingException("Empty command");
-    }
-    final String runUnderCommand = runUnderList.get(0);
-    ImmutableList<String> runUnderSuffix =
-        ImmutableList.copyOf(runUnderList.subList(1, runUnderList.size()));
-    if (runUnderCommand.startsWith("//") || runUnderCommand.startsWith("@")) {
-      try {
-        final Label runUnderLabel = LABEL_CONVERTER.convert(runUnderCommand, conversionContext);
-        return new LabelRunUnder(input, runUnderSuffix, runUnderLabel);
-      } catch (OptionsParsingException e) {
-        throw new OptionsParsingException("Not a valid label " + e.getMessage());
-      }
-    } else {
-      return new CommandRunUnder(input, runUnderSuffix, runUnderCommand);
-    }
-  }
 
-  @Override
-  public String getTypeDescription() {
-    return "a prefix in front of command";
-  }
+    override fun getTypeDescription(): String {
+        return "a prefix in front of command"
+    }
+
+    companion object {
+        private val LABEL_CONVERTER: LabelConverter = LabelConverter()
+    }
 }

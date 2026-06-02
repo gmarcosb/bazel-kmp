@@ -11,46 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.errorprone.annotations.CheckReturnValue;
+import com.google.devtools.build.lib.packages.Globber
+import com.google.devtools.build.lib.packages.Globber.BadGlobException
 
-/** Static functionality shared by different implementations of the Globber interface. */
-@CheckReturnValue
-public final class GlobberUtils {
+/** Static functionality shared by different implementations of the Globber interface.  */
+@com.google.errorprone.annotations.CheckReturnValue
+object GlobberUtils {
+    @Throws(BadGlobException::class)
+    fun throwBadGlobExceptionEmptyResult(
+        pattern: String?, globberOperation: com.google.devtools.build.lib.packages.Globber.Operation
+    ) {
+        when (globberOperation) {
+            com.google.devtools.build.lib.packages.Globber.Operation.SUBPACKAGES -> throw BadGlobException(
+                ("subpackages pattern '"
+                        + pattern
+                        + "' didn't match anything, but allow_empty is set to False (the default value)")
+            )
 
-  private GlobberUtils() {}
-
-  public static void throwBadGlobExceptionEmptyResult(
-      String pattern, Globber.Operation globberOperation) throws Globber.BadGlobException {
-    switch (globberOperation) {
-      case SUBPACKAGES ->
-          throw new Globber.BadGlobException(
-              "subpackages pattern '"
-                  + pattern
-                  + "' didn't match anything, but allow_empty is set to False (the default value)");
-      default ->
-          throw new Globber.BadGlobException(
-              "glob pattern '"
-                  + pattern
-                  + "' didn't match anything, but allow_empty is set to False "
-                  + "(the default value of allow_empty can be set with "
-                  + "--incompatible_disallow_empty_glob).");
+            else -> throw BadGlobException(
+                ("glob pattern '"
+                        + pattern
+                        + "' didn't match anything, but allow_empty is set to False "
+                        + "(the default value of allow_empty can be set with "
+                        + "--incompatible_disallow_empty_glob).")
+            )
+        }
     }
-  }
 
-  public static void throwBadGlobExceptionAllExcluded(Globber.Operation globberOperation)
-      throws Globber.BadGlobException {
-    switch (globberOperation) {
-      case SUBPACKAGES ->
-          throw new Globber.BadGlobException(
-              "all subpackages in subpackages() have been excluded, but allow_empty is"
-                  + " set to False ");
-      default ->
-          throw new Globber.BadGlobException(
-              "all files in the glob have been excluded, but allow_empty is set to False "
-                  + "(the default value of allow_empty can be set with "
-                  + "--incompatible_disallow_empty_glob).");
+    @Throws(BadGlobException::class)
+    fun throwBadGlobExceptionAllExcluded(globberOperation: com.google.devtools.build.lib.packages.Globber.Operation) {
+        when (globberOperation) {
+            com.google.devtools.build.lib.packages.Globber.Operation.SUBPACKAGES -> throw BadGlobException(
+                "all subpackages in subpackages() have been excluded, but allow_empty is"
+                        + " set to False "
+            )
+
+            else -> throw BadGlobException(
+                ("all files in the glob have been excluded, but allow_empty is set to False "
+                        + "(the default value of allow_empty can be set with "
+                        + "--incompatible_disallow_empty_glob).")
+            )
+        }
     }
-  }
 }

@@ -11,115 +11,101 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import static com.google.devtools.build.lib.analysis.AspectCollection.buildAspectKey;
+import com.google.devtools.build.lib.analysis.AspectCollection.buildAspectKey
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.AspectCollection;
-import com.google.devtools.build.lib.analysis.AspectCollection.AspectDeps;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.TransitiveDependencyState;
-import com.google.devtools.build.lib.analysis.configuredtargets.MergedConfiguredTarget;
-import com.google.devtools.build.lib.analysis.configuredtargets.MergedConfiguredTarget.MergingException;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.skyframe.AspectCreationException;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import java.util.ArrayList;
-import java.util.HashMap;
-import javax.annotation.Nullable;
+/** Computes [ConfiguredAspect]s and merges them into a prerequisite.  */
+internal class ConfiguredAspectProducer
+    (
+    aspects: AspectCollection,
+    prerequisite: ConfiguredTargetAndData,
+    sink: ResultSink,
+    outputIndex: Int,
+    transitiveState: TransitiveDependencyState
+) : StateMachine, ValueOrExceptionSink<AspectCreationException?> {
+    internal interface ResultSink {
+        fun acceptConfiguredAspectMergedTarget(outputIndex: Int, mergedTarget: ConfiguredTargetAndData?)
 
-/** Computes {@link ConfiguredAspect}s and merges them into a prerequisite. */
-final class ConfiguredAspectProducer
-    implements StateMachine, StateMachine.ValueOrExceptionSink<AspectCreationException> {
-  interface ResultSink {
-    void acceptConfiguredAspectMergedTarget(int outputIndex, ConfiguredTargetAndData mergedTarget);
+        fun acceptConfiguredAspectError(error: AspectCreationException?)
 
-    void acceptConfiguredAspectError(AspectCreationException error);
-
-    void acceptConfiguredAspectError(MergingException error);
-  }
-
-  // -------------------- Input --------------------
-  private final AspectCollection aspects;
-  private final ConfiguredTargetAndData prerequisite;
-
-  // -------------------- Output --------------------
-  private final TransitiveDependencyState transitiveState;
-  private final ResultSink sink;
-  private final int outputIndex;
-
-  // -------------------- Internal State --------------------
-  private final HashMap<AspectDescriptor, AspectValue> aspectValues = new HashMap<>();
-
-  ConfiguredAspectProducer(
-      AspectCollection aspects,
-      ConfiguredTargetAndData prerequisite,
-      ResultSink sink,
-      int outputIndex,
-      TransitiveDependencyState transitiveState) {
-    this.aspects = aspects;
-    this.prerequisite = prerequisite;
-    this.sink = sink;
-    this.outputIndex = outputIndex;
-    this.transitiveState = transitiveState;
-  }
-
-  @Override
-  public StateMachine step(Tasks tasks) {
-    var baseKey = ConfiguredTargetKey.fromConfiguredTarget(prerequisite.getConfiguredTarget());
-    var memoTable = new HashMap<AspectDescriptor, AspectKey>();
-    for (AspectDeps deps : aspects.getUsedAspects()) {
-      tasks.lookUp(
-          buildAspectKey(deps, memoTable, baseKey),
-          AspectCreationException.class,
-          (ValueOrExceptionSink<AspectCreationException>) this);
-    }
-    return this::processResult;
-  }
-
-  @Override
-  public void acceptValueOrException(
-      @Nullable SkyValue untypedValue, @Nullable AspectCreationException error) {
-    if (untypedValue != null) {
-      var value = (AspectValue) untypedValue;
-      aspectValues.put(value.getAspect().getDescriptor(), value);
-      return;
-    }
-    sink.acceptConfiguredAspectError(error);
-  }
-
-  private StateMachine processResult(Tasks tasks) {
-    ImmutableSet<AspectDeps> usedAspects = aspects.getUsedAspects();
-    if (aspectValues.size() < usedAspects.size()) {
-      return DONE; // There was an error.
+        fun acceptConfiguredAspectError(error: MergingException?)
     }
 
-    var configuredAspects = new ArrayList<ConfiguredAspect>(usedAspects.size());
-    for (AspectCollection.AspectDeps depAspect : usedAspects) {
-      var value = aspectValues.get(depAspect.aspect());
-      if (value == ConfiguredAspect.NonApplicableAspect.INSTANCE) {
-        continue;
-      }
-      configuredAspects.add(value);
-      if (transitiveState.storeTransitivePackages()) {
-        transitiveState.updateTransitivePackages(
-            value.getKeyForTransitivePackageTracking(), value.getTransitivePackages());
-      }
+    // -------------------- Input --------------------
+    private val aspects: AspectCollection
+    private val prerequisite: ConfiguredTargetAndData
+
+    // -------------------- Output --------------------
+    private val transitiveState: TransitiveDependencyState
+    private val sink: ResultSink
+    private val outputIndex: Int
+
+    // -------------------- Internal State --------------------
+    private val aspectValues: HashMap<AspectDescriptor?, AspectValue> = HashMap<AspectDescriptor?, AspectValue>()
+
+    init {
+        this.aspects = aspects
+        this.prerequisite = prerequisite
+        this.sink = sink
+        this.outputIndex = outputIndex
+        this.transitiveState = transitiveState
     }
-    try {
-      sink.acceptConfiguredAspectMergedTarget(
-          outputIndex,
-          prerequisite.fromConfiguredTarget(
-              MergedConfiguredTarget.of(prerequisite.getConfiguredTarget(), configuredAspects)));
-    } catch (MergingException e) {
-      sink.acceptConfiguredAspectError(e);
+
+    override fun step(tasks: StateMachine.Tasks): StateMachine {
+        val baseKey: ConfiguredTargetKey? = ConfiguredTargetKey.fromConfiguredTarget(prerequisite.getConfiguredTarget())
+        val memoTable: HashMap<AspectDescriptor?, AspectKey?> = HashMap<AspectDescriptor?, AspectKey?>()
+        for (deps in aspects.getUsedAspects()) {
+            tasks.lookUp<E?>(
+                buildAspectKey(deps, memoTable, baseKey),
+                AspectCreationException::class.java,
+                this as ValueOrExceptionSink<AspectCreationException?>
+            )
+        }
+        return StateMachine { tasks: StateMachine.Tasks? -> this.processResult(tasks) }
     }
-    return DONE;
-  }
+
+    override fun acceptValueOrException(
+        untypedValue: SkyValue?, error: AspectCreationException?
+    ) {
+        if (untypedValue != null) {
+            val value: AspectValue = untypedValue as AspectValue
+            aspectValues.put(value.getAspect().getDescriptor(), value)
+            return
+        }
+        sink.acceptConfiguredAspectError(error)
+    }
+
+    private fun processResult(tasks: StateMachine.Tasks?): StateMachine {
+        val usedAspects: com.google.common.collect.ImmutableSet<AspectDeps> = aspects.getUsedAspects()
+        if (aspectValues.size < usedAspects.size) {
+            return StateMachine.DONE // There was an error.
+        }
+
+        val configuredAspects: java.util.ArrayList<ConfiguredAspect?> =
+            java.util.ArrayList<ConfiguredAspect?>(usedAspects.size)
+        for (depAspect in usedAspects) {
+            val value: AspectValue = aspectValues.get(depAspect.aspect())
+            if (value === ConfiguredAspect.NonApplicableAspect.INSTANCE) {
+                continue
+            }
+            configuredAspects.add(value)
+            if (transitiveState.storeTransitivePackages()) {
+                transitiveState.updateTransitivePackages(
+                    value.getKeyForTransitivePackageTracking(), value.getTransitivePackages()
+                )
+            }
+        }
+        try {
+            sink.acceptConfiguredAspectMergedTarget(
+                outputIndex,
+                prerequisite.fromConfiguredTarget(
+                    MergedConfiguredTarget.of(prerequisite.getConfiguredTarget(), configuredAspects)
+                )
+            )
+        } catch (e: MergingException) {
+            sink.acceptConfiguredAspectError(e)
+        }
+        return StateMachine.DONE
+    }
 }

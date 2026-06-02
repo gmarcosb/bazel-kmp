@@ -11,64 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.vfs.PathFragment;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-/** The file (BUILD, WORKSPACE, etc.) that defines this package, referred to as the "build file". */
-public enum BuildFileName {
-  WORKSPACE("WORKSPACE") {
-    @Override
-    public PathFragment getBuildFileFragment(PackageIdentifier packageIdentifier) {
-      return getFilenameFragment();
-    }
-  },
-  WORKSPACE_DOT_BAZEL("WORKSPACE.bazel") {
-    @Override
-    public PathFragment getBuildFileFragment(PackageIdentifier packageIdentifier) {
-      return getFilenameFragment();
-    }
-  },
-  WORKSPACE_DOT_BZLMOD("WORKSPACE.bzlmod") {
-    @Override
-    public PathFragment getBuildFileFragment(PackageIdentifier packageIdentifier) {
-      return getFilenameFragment();
-    }
-  },
-  MODULE_DOT_BAZEL("MODULE.bazel") {
-    @Override
-    public PathFragment getBuildFileFragment(PackageIdentifier packageIdentifier) {
-      return getFilenameFragment();
-    }
-  },
-  BUILD("BUILD") {
-    @Override
-    public PathFragment getBuildFileFragment(PackageIdentifier packageIdentifier) {
-      return packageIdentifier.getPackageFragment().getRelative(getFilenameFragment());
-    }
-  },
-  BUILD_DOT_BAZEL("BUILD.bazel") {
-    @Override
-    public PathFragment getBuildFileFragment(PackageIdentifier packageIdentifier) {
-      return packageIdentifier.getPackageFragment().getRelative(getFilenameFragment());
-    }
-  };
+/** The file (BUILD, WORKSPACE, etc.) that defines this package, referred to as the "build file".  */
+enum class BuildFileName(filename: String) {
+    WORKSPACE("WORKSPACE") {
+        override fun getBuildFileFragment(packageIdentifier: PackageIdentifier?): PathFragment? {
+            return getFilenameFragment()
+        }
+    },
+    WORKSPACE_DOT_BAZEL("WORKSPACE.bazel") {
+        override fun getBuildFileFragment(packageIdentifier: PackageIdentifier?): PathFragment? {
+            return getFilenameFragment()
+        }
+    },
+    WORKSPACE_DOT_BZLMOD("WORKSPACE.bzlmod") {
+        override fun getBuildFileFragment(packageIdentifier: PackageIdentifier?): PathFragment? {
+            return getFilenameFragment()
+        }
+    },
+    MODULE_DOT_BAZEL("MODULE.bazel") {
+        override fun getBuildFileFragment(packageIdentifier: PackageIdentifier?): PathFragment? {
+            return getFilenameFragment()
+        }
+    },
+    BUILD("BUILD") {
+        override fun getBuildFileFragment(packageIdentifier: PackageIdentifier): PathFragment {
+            return packageIdentifier.getPackageFragment().getRelative(getFilenameFragment())
+        }
+    },
+    BUILD_DOT_BAZEL("BUILD.bazel") {
+        override fun getBuildFileFragment(packageIdentifier: PackageIdentifier): PathFragment {
+            return packageIdentifier.getPackageFragment().getRelative(getFilenameFragment())
+        }
+    };
 
-  private final PathFragment filenameFragment;
+    private val filenameFragment: PathFragment?
 
-  BuildFileName(String filename) {
-    this.filenameFragment = PathFragment.create(filename);
-  }
+    init {
+        this.filenameFragment = PathFragment.create(filename)
+    }
 
-  public PathFragment getFilenameFragment() {
-    return filenameFragment;
-  }
+    fun getFilenameFragment(): PathFragment? {
+        return filenameFragment
+    }
 
-  /**
-   * Returns a {@link PathFragment} to the build file that defines the package.
-   *
-   * @param packageIdentifier the identifier for this package
-   */
-  public abstract PathFragment getBuildFileFragment(PackageIdentifier packageIdentifier);
+    /**
+     * Returns a [PathFragment] to the build file that defines the package.
+     * 
+     * @param packageIdentifier the identifier for this package
+     */
+    abstract fun getBuildFileFragment(packageIdentifier: PackageIdentifier?): PathFragment?
 }

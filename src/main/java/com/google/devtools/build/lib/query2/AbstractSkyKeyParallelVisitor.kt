@@ -11,36 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2;
-
-import com.google.devtools.build.lib.cmdline.ParallelVisitor;
-import com.google.devtools.build.lib.query2.ParallelVisitorUtils.ParallelQueryVisitor;
-import com.google.devtools.build.lib.query2.engine.Callback;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.Uniquifier;
-import com.google.devtools.build.skyframe.SkyKey;
+package com.google.devtools.build.lib.query2
 
 /**
- * A {@link ParallelVisitor} whose visitations occur on {@link SkyKey}s and those keys map directly
+ * A [ParallelVisitor] whose visitations occur on [SkyKey]s and those keys map directly
  * to output keys.
  */
-public abstract class AbstractSkyKeyParallelVisitor<T>
-    extends ParallelQueryVisitor<SkyKey, SkyKey, T> {
-  private final Uniquifier<SkyKey> uniquifier;
+abstract class AbstractSkyKeyParallelVisitor<T>
+protected constructor(
+    visitationUniquifier: Uniquifier<SkyKey?>,
+    callback: com.google.devtools.build.lib.query2.engine.Callback<T?>?,
+    visitBatchSize: Int,
+    processResultsBatchSize: Int,
+    visitTaskStatusCallback: VisitTaskStatusCallback?
+) : ParallelQueryVisitor<SkyKey?, SkyKey?, T?>(
+    callback,
+    visitBatchSize,
+    processResultsBatchSize,
+    visitTaskStatusCallback
+) {
+    private val uniquifier: Uniquifier<SkyKey?>
 
-  protected AbstractSkyKeyParallelVisitor(
-      Uniquifier<SkyKey> visitationUniquifier,
-      Callback<T> callback,
-      int visitBatchSize,
-      int processResultsBatchSize,
-      VisitTaskStatusCallback visitTaskStatusCallback) {
-    super(callback, visitBatchSize, processResultsBatchSize, visitTaskStatusCallback);
-    this.uniquifier = visitationUniquifier;
-  }
+    init {
+        this.uniquifier = visitationUniquifier
+    }
 
-  @Override
-  protected final Iterable<SkyKey> noteAndReturnUniqueVisitationKeys(
-      Iterable<SkyKey> prospectiveVisitationKeys) throws QueryException {
-    return uniquifier.unique(prospectiveVisitationKeys);
-  }
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class)
+    protected override fun noteAndReturnUniqueVisitationKeys(
+        prospectiveVisitationKeys: Iterable<SkyKey?>?
+    ): Iterable<SkyKey?>? {
+        return uniquifier.unique(prospectiveVisitationKeys)
+    }
 }

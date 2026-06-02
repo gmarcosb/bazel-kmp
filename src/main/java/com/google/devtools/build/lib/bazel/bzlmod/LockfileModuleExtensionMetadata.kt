@@ -11,277 +11,379 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.ryanharter.auto.value.gson.GenerateTypeAdapter;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Optional;
-import java.util.Set;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionMetadata
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionMetadata.UseAllRepos
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage
+import com.google.devtools.build.lib.bazel.bzlmod.RootModuleFileFixup
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.ryanharter.auto.value.gson.GenerateTypeAdapter
 
 /**
- * A trimmed down version of {@link ModuleExtensionMetadata} that is persisted in the lockfile.
- *
- * <p>The difference between this and {@link ModuleExtensionMetadata} is that this class does not
- * include the {@link Facts} field. Instead, the facts are stored in a dedicated top-level field in
+ * A trimmed down version of [ModuleExtensionMetadata] that is persisted in the lockfile.
+ * 
+ * 
+ * The difference between this and [ModuleExtensionMetadata] is that this class does not
+ * include the [Facts] field. Instead, the facts are stored in a dedicated top-level field in
  * the lockfile, for two reasons:
- *
- * <ul>
- *   <li>Reproducible extensions, which do not store a lockfile entry and thus no instance of this
- *       class, can have facts and should have them persisted - they may only be reproducible given
- *       these facts.
- *   <li>Lockfile entries are stored per OS/CPU if the extension declares a dependency on those, but
- *       facts are always cross-platform.
- * </ul>
+ * 
+ * 
+ *  * Reproducible extensions, which do not store a lockfile entry and thus no instance of this
+ * class, can have facts and should have them persisted - they may only be reproducible given
+ * these facts.
+ *  * Lockfile entries are stored per OS/CPU if the extension declares a dependency on those, but
+ * facts are always cross-platform.
+ * 
  */
 @AutoValue
 @GenerateTypeAdapter
-public abstract class LockfileModuleExtensionMetadata {
+abstract class LockfileModuleExtensionMetadata {
+    abstract val explicitRootModuleDirectDeps: com.google.common.collect.ImmutableSet<String?>?
 
-  @Nullable
-  abstract ImmutableSet<String> getExplicitRootModuleDirectDeps();
+    abstract val explicitRootModuleDirectDevDeps: com.google.common.collect.ImmutableSet<String?>?
 
-  @Nullable
-  abstract ImmutableSet<String> getExplicitRootModuleDirectDevDeps();
+    abstract val useAllRepos: UseAllRepos?
 
-  abstract ModuleExtensionMetadata.UseAllRepos getUseAllRepos();
+    abstract val reproducible: Boolean
 
-  abstract boolean getReproducible();
-
-  public static Optional<LockfileModuleExtensionMetadata> of(
-      ModuleExtensionMetadata moduleExtensionMetadata) {
-    if (moduleExtensionMetadata.equals(ModuleExtensionMetadata.DEFAULT)) {
-      return Optional.empty();
-    }
-    return Optional.of(
-        new AutoValue_LockfileModuleExtensionMetadata(
-            moduleExtensionMetadata.getExplicitRootModuleDirectDeps(),
-            moduleExtensionMetadata.getExplicitRootModuleDirectDevDeps(),
-            moduleExtensionMetadata.getUseAllRepos(),
-            moduleExtensionMetadata.getReproducible()));
-  }
-
-  public Optional<RootModuleFileFixup> generateFixup(
-      ModuleExtensionUsage rootUsage, Set<String> allRepos) throws EvalException {
-    var rootModuleDirectDevDeps = getRootModuleDirectDevDeps(allRepos);
-    var rootModuleDirectDeps = getRootModuleDirectDeps(allRepos);
-    if (rootModuleDirectDevDeps.isEmpty() && rootModuleDirectDeps.isEmpty()) {
-      return Optional.empty();
-    }
-    Preconditions.checkState(
-        rootModuleDirectDevDeps.isPresent() && rootModuleDirectDeps.isPresent());
-
-    if (!rootUsage.getHasNonDevUseExtension() && !rootModuleDirectDeps.get().isEmpty()) {
-      throw Starlark.errorf(
-          "root_module_direct_deps must be empty if the root module contains no "
-              + "usages with dev_dependency = False");
-    }
-    if (!rootUsage.getHasDevUseExtension() && !rootModuleDirectDevDeps.get().isEmpty()) {
-      throw Starlark.errorf(
-          "root_module_direct_dev_deps must be empty if the root module contains no "
-              + "usages with dev_dependency = True");
-    }
-
-    return generateFixup(
-        rootUsage, allRepos, rootModuleDirectDeps.get(), rootModuleDirectDevDeps.get());
-  }
-
-  private static Optional<RootModuleFileFixup> generateFixup(
-      ModuleExtensionUsage rootUsage,
-      Set<String> allRepos,
-      Set<String> expectedImports,
-      Set<String> expectedDevImports) {
-    var actualDevImports =
-        rootUsage.getProxies().stream()
-            .filter(p -> p.isDevDependency())
-            .flatMap(p -> p.getImports().values().stream())
-            .collect(toImmutableSet());
-    var actualImports =
-        rootUsage.getProxies().stream()
-            .filter(p -> !p.isDevDependency())
-            .flatMap(p -> p.getImports().values().stream())
-            .collect(toImmutableSet());
-
-    String extensionBzlFile = rootUsage.getExtensionBzlFile();
-    String extensionName = rootUsage.getExtensionName();
-
-    var importsToAdd = ImmutableSortedSet.copyOf(Sets.difference(expectedImports, actualImports));
-    var importsToRemove =
-        ImmutableSortedSet.copyOf(Sets.difference(actualImports, expectedImports));
-    var devImportsToAdd =
-        ImmutableSortedSet.copyOf(Sets.difference(expectedDevImports, actualDevImports));
-    var devImportsToRemove =
-        ImmutableSortedSet.copyOf(Sets.difference(actualDevImports, expectedDevImports));
-
-    if (importsToAdd.isEmpty()
-        && importsToRemove.isEmpty()
-        && devImportsToAdd.isEmpty()
-        && devImportsToRemove.isEmpty()) {
-      return Optional.empty();
-    }
-
-    var message =
-        String.format(
-            "The module extension %s defined in %s reported incorrect imports "
-                + "of repositories via use_repo():\n\n",
-            extensionName, extensionBzlFile);
-
-    var allActualImports = ImmutableSortedSet.copyOf(Sets.union(actualImports, actualDevImports));
-    var allExpectedImports =
-        ImmutableSortedSet.copyOf(Sets.union(expectedImports, expectedDevImports));
-
-    var invalidImports = ImmutableSortedSet.copyOf(Sets.difference(allActualImports, allRepos));
-    if (!invalidImports.isEmpty()) {
-      message +=
-          String.format(
-              "Imported, but not created by the extension (will cause the build to fail):\n"
-                  + "    %s\n\n",
-              String.join(", ", invalidImports));
-    }
-
-    var missingImports =
-        ImmutableSortedSet.copyOf(Sets.difference(allExpectedImports, allActualImports));
-    if (!missingImports.isEmpty()) {
-      message +=
-          String.format(
-              "Not imported, but reported as direct dependencies by the extension (may cause the"
-                  + " build to fail):\n"
-                  + "    %s\n\n",
-              String.join(", ", missingImports));
-    }
-
-    var nonDevImportsOfDevDeps =
-        ImmutableSortedSet.copyOf(Sets.intersection(expectedDevImports, actualImports));
-    if (!nonDevImportsOfDevDeps.isEmpty()) {
-      message +=
-          String.format(
-              "Imported as a regular dependency, but reported as a dev dependency by the "
-                  + "extension (may cause the build to fail when used by other modules):\n"
-                  + "    %s\n\n",
-              String.join(", ", nonDevImportsOfDevDeps));
-    }
-
-    var devImportsOfNonDevDeps =
-        ImmutableSortedSet.copyOf(Sets.intersection(expectedImports, actualDevImports));
-    if (!devImportsOfNonDevDeps.isEmpty()) {
-      message +=
-          String.format(
-              "Imported as a dev dependency, but reported as a regular dependency by the "
-                  + "extension (may cause the build to fail when used by other modules):\n"
-                  + "    %s\n\n",
-              String.join(", ", devImportsOfNonDevDeps));
-    }
-
-    var indirectDepImports =
-        ImmutableSortedSet.copyOf(
-            Sets.difference(Sets.intersection(allActualImports, allRepos), allExpectedImports));
-    if (!indirectDepImports.isEmpty()) {
-      message +=
-          String.format(
-              "Imported, but reported as indirect dependencies by the extension:\n    %s\n\n",
-              String.join(", ", indirectDepImports));
-    }
-
-    message += "Fix the use_repo calls by running 'bazel mod tidy'.";
-
-    var moduleFilePathToCommandsBuilder = ImmutableListMultimap.<PathFragment, String>builder();
-    // Repos to add are easy: always add them to the first proxy of the correct type.
-    if (!importsToAdd.isEmpty()) {
-      Proxy firstNonDevProxy =
-          rootUsage.getProxies().stream().filter(p -> !p.isDevDependency()).findFirst().get();
-      moduleFilePathToCommandsBuilder.put(
-          firstNonDevProxy.getContainingModuleFilePath(),
-          makeUseRepoCommand("use_repo_add", firstNonDevProxy.getProxyName(), importsToAdd));
-    }
-    if (!devImportsToAdd.isEmpty()) {
-      Proxy firstDevProxy =
-          rootUsage.getProxies().stream().filter(p -> p.isDevDependency()).findFirst().get();
-      moduleFilePathToCommandsBuilder.put(
-          firstDevProxy.getContainingModuleFilePath(),
-          makeUseRepoCommand("use_repo_add", firstDevProxy.getProxyName(), devImportsToAdd));
-    }
-    // Repos to remove are a bit trickier: remove them from the proxy that actually imported them.
-    for (Proxy proxy : rootUsage.getProxies()) {
-      var toRemove =
-          ImmutableSortedSet.copyOf(
-              Sets.intersection(
-                  proxy.getImports().values(),
-                  proxy.isDevDependency() ? devImportsToRemove : importsToRemove));
-      if (!toRemove.isEmpty()) {
-        moduleFilePathToCommandsBuilder.put(
-            proxy.getContainingModuleFilePath(),
-            makeUseRepoCommand("use_repo_remove", proxy.getProxyName(), toRemove));
-      }
-    }
-
-    return Optional.of(
-        new RootModuleFileFixup(
-            moduleFilePathToCommandsBuilder.build(),
-            rootUsage,
-            Event.warn(rootUsage.getProxies().getFirst().getLocation(), message)));
-  }
-
-  private static String makeUseRepoCommand(String cmd, String proxyName, Collection<String> repos) {
-    var commandParts = new ArrayList<String>();
-    commandParts.add(cmd);
-    commandParts.add(proxyName.isEmpty() ? "_unnamed_usage" : proxyName);
-    commandParts.addAll(repos);
-    return String.join(" ", commandParts);
-  }
-
-  private Optional<ImmutableSet<String>> getRootModuleDirectDeps(Set<String> allRepos)
-      throws EvalException {
-    return switch (getUseAllRepos()) {
-      case NO -> {
-        if (getExplicitRootModuleDirectDeps() != null) {
-          Set<String> invalidRepos = Sets.difference(getExplicitRootModuleDirectDeps(), allRepos);
-          if (!invalidRepos.isEmpty()) {
-            throw Starlark.errorf(
-                "root_module_direct_deps contained the following repositories "
-                    + "not generated by the extension: %s",
-                String.join(", ", invalidRepos));
-          }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun generateFixup(
+        rootUsage: ModuleExtensionUsage, allRepos: MutableSet<String?>
+    ): java.util.Optional<RootModuleFileFixup?> {
+        val rootModuleDirectDevDeps: java.util.Optional<com.google.common.collect.ImmutableSet<String?>?> =
+            getRootModuleDirectDevDeps(allRepos)
+        val rootModuleDirectDeps: java.util.Optional<com.google.common.collect.ImmutableSet<String?>?> =
+            getRootModuleDirectDeps(allRepos)
+        if (rootModuleDirectDevDeps.isEmpty() && rootModuleDirectDeps.isEmpty()) {
+            return java.util.Optional.empty<RootModuleFileFixup?>()
         }
-        yield Optional.ofNullable(getExplicitRootModuleDirectDeps());
-      }
-      case REGULAR -> Optional.of(ImmutableSet.copyOf(allRepos));
-      case DEV -> Optional.of(ImmutableSet.of());
-    };
-  }
+        com.google.common.base.Preconditions.checkState(
+            rootModuleDirectDevDeps.isPresent() && rootModuleDirectDeps.isPresent()
+        )
 
-  private Optional<ImmutableSet<String>> getRootModuleDirectDevDeps(Set<String> allRepos)
-      throws EvalException {
-    return switch (getUseAllRepos()) {
-      case NO -> {
-        if (getExplicitRootModuleDirectDevDeps() != null) {
-          Set<String> invalidRepos =
-              Sets.difference(getExplicitRootModuleDirectDevDeps(), allRepos);
-          if (!invalidRepos.isEmpty()) {
-            throw Starlark.errorf(
-                "root_module_direct_dev_deps contained the following "
-                    + "repositories not generated by the extension: %s",
-                String.join(", ", invalidRepos));
-          }
+        if (!rootUsage.getHasNonDevUseExtension() && !rootModuleDirectDeps.get().isEmpty()) {
+            throw net.starlark.java.eval.Starlark.errorf(
+                "root_module_direct_deps must be empty if the root module contains no "
+                        + "usages with dev_dependency = False"
+            )
         }
-        yield Optional.ofNullable(getExplicitRootModuleDirectDevDeps());
-      }
-      case REGULAR -> Optional.of(ImmutableSet.of());
-      case DEV -> Optional.of(ImmutableSet.copyOf(allRepos));
-    };
-  }
+        if (!rootUsage.getHasDevUseExtension() && !rootModuleDirectDevDeps.get().isEmpty()) {
+            throw net.starlark.java.eval.Starlark.errorf(
+                "root_module_direct_dev_deps must be empty if the root module contains no "
+                        + "usages with dev_dependency = True"
+            )
+        }
+
+        return generateFixup(
+            rootUsage, allRepos, rootModuleDirectDeps.get(), rootModuleDirectDevDeps.get()
+        )
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    private fun getRootModuleDirectDeps(allRepos: MutableSet<String?>): java.util.Optional<com.google.common.collect.ImmutableSet<String?>?> {
+        return when (this.useAllRepos) {
+            UseAllRepos.NO -> {
+                if (this.explicitRootModuleDirectDeps != null) {
+                    val invalidRepos: MutableSet<String?> = com.google.common.collect.Sets.difference<String?>(
+                        this.explicitRootModuleDirectDeps, allRepos
+                    )
+                    if (!invalidRepos.isEmpty()) {
+                        throw net.starlark.java.eval.Starlark.errorf(
+                            "root_module_direct_deps contained the following repositories "
+                                    + "not generated by the extension: %s",
+                            java.lang.String.join(", ", invalidRepos)
+                        )
+                    }
+                }
+                java.util.Optional.ofNullable<com.google.common.collect.ImmutableSet<String?>?>(this.explicitRootModuleDirectDeps)
+            }
+
+            UseAllRepos.REGULAR -> java.util.Optional.of<com.google.common.collect.ImmutableSet<String?>?>(
+                com.google.common.collect.ImmutableSet.copyOf<String?>(
+                    allRepos
+                )
+            )
+
+            UseAllRepos.DEV -> java.util.Optional.of<com.google.common.collect.ImmutableSet<String?>?>(com.google.common.collect.ImmutableSet.of<String?>())
+        }
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    private fun getRootModuleDirectDevDeps(allRepos: MutableSet<String?>): java.util.Optional<com.google.common.collect.ImmutableSet<String?>?> {
+        return when (this.useAllRepos) {
+            UseAllRepos.NO -> {
+                if (this.explicitRootModuleDirectDevDeps != null) {
+                    val invalidRepos: MutableSet<String?> =
+                        com.google.common.collect.Sets.difference<String?>(
+                            this.explicitRootModuleDirectDevDeps,
+                            allRepos
+                        )
+                    if (!invalidRepos.isEmpty()) {
+                        throw net.starlark.java.eval.Starlark.errorf(
+                            "root_module_direct_dev_deps contained the following "
+                                    + "repositories not generated by the extension: %s",
+                            java.lang.String.join(", ", invalidRepos)
+                        )
+                    }
+                }
+                java.util.Optional.ofNullable<com.google.common.collect.ImmutableSet<String?>?>(this.explicitRootModuleDirectDevDeps)
+            }
+
+            UseAllRepos.REGULAR -> java.util.Optional.of<com.google.common.collect.ImmutableSet<String?>?>(com.google.common.collect.ImmutableSet.of<String?>())
+            UseAllRepos.DEV -> java.util.Optional.of<com.google.common.collect.ImmutableSet<String?>?>(
+                com.google.common.collect.ImmutableSet.copyOf<String?>(
+                    allRepos
+                )
+            )
+        }
+    }
+
+    companion object {
+        fun of(
+            moduleExtensionMetadata: ModuleExtensionMetadata
+        ): java.util.Optional<LockfileModuleExtensionMetadata?> {
+            if (moduleExtensionMetadata == ModuleExtensionMetadata.Companion.DEFAULT) {
+                return java.util.Optional.empty<LockfileModuleExtensionMetadata?>()
+            }
+            return java.util.Optional.of<LockfileModuleExtensionMetadata?>(
+                AutoValue_LockfileModuleExtensionMetadata(
+                    moduleExtensionMetadata.getExplicitRootModuleDirectDeps(),
+                    moduleExtensionMetadata.getExplicitRootModuleDirectDevDeps(),
+                    moduleExtensionMetadata.getUseAllRepos(),
+                    moduleExtensionMetadata.getReproducible()
+                )
+            )
+        }
+
+        private fun generateFixup(
+            rootUsage: ModuleExtensionUsage,
+            allRepos: MutableSet<String?>,
+            expectedImports: MutableSet<String?>,
+            expectedDevImports: MutableSet<String?>
+        ): java.util.Optional<RootModuleFileFixup?> {
+            val actualDevImports: com.google.common.collect.ImmutableSet<String?> =
+                rootUsage.getProxies().stream()
+                    .filter(java.util.function.Predicate { p: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy? -> p.isDevDependency() })
+                    .flatMap<String?>(java.util.function.Function { p: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy? ->
+                        p.getImports().values().stream()
+                    })
+                    .collect(com.google.common.collect.ImmutableSet.toImmutableSet<String?>())
+            val actualImports: com.google.common.collect.ImmutableSet<String?> =
+                rootUsage.getProxies().stream()
+                    .filter(java.util.function.Predicate { p: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy? -> !p.isDevDependency() })
+                    .flatMap<String?>(java.util.function.Function { p: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy? ->
+                        p.getImports().values().stream()
+                    })
+                    .collect(com.google.common.collect.ImmutableSet.toImmutableSet<String?>())
+
+            val extensionBzlFile: String? = rootUsage.getExtensionBzlFile()
+            val extensionName: String? = rootUsage.getExtensionName()
+
+            val importsToAdd: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.difference<String?>(
+                        expectedImports,
+                        actualImports
+                    )
+                )
+            val importsToRemove: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.difference<String?>(
+                        actualImports,
+                        expectedImports
+                    )
+                )
+            val devImportsToAdd: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.difference<String?>(
+                        expectedDevImports,
+                        actualDevImports
+                    )
+                )
+            val devImportsToRemove: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.difference<String?>(
+                        actualDevImports,
+                        expectedDevImports
+                    )
+                )
+
+            if (importsToAdd.isEmpty()
+                && importsToRemove.isEmpty()
+                && devImportsToAdd.isEmpty()
+                && devImportsToRemove.isEmpty()
+            ) {
+                return java.util.Optional.empty<RootModuleFileFixup?>()
+            }
+
+            var message: String? =
+                java.lang.String.format(
+                    "The module extension %s defined in %s reported incorrect imports "
+                            + "of repositories via use_repo():\n\n",
+                    extensionName, extensionBzlFile
+                )
+
+            val allActualImports: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.union<String?>(
+                        actualImports,
+                        actualDevImports
+                    )
+                )
+            val allExpectedImports: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.union<String?>(
+                        expectedImports,
+                        expectedDevImports
+                    )
+                )
+
+            val invalidImports: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.difference<String?>(
+                        allActualImports,
+                        allRepos
+                    )
+                )
+            if (!invalidImports.isEmpty()) {
+                message +=
+                    java.lang.String.format(
+                        "Imported, but not created by the extension (will cause the build to fail):\n"
+                                + "    %s\n\n",
+                        java.lang.String.join(", ", invalidImports)
+                    )
+            }
+
+            val missingImports: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.difference<String?>(
+                        allExpectedImports,
+                        allActualImports
+                    )
+                )
+            if (!missingImports.isEmpty()) {
+                message +=
+                    java.lang.String.format(
+                        ("Not imported, but reported as direct dependencies by the extension (may cause the"
+                                + " build to fail):\n"
+                                + "    %s\n\n"),
+                        java.lang.String.join(", ", missingImports)
+                    )
+            }
+
+            val nonDevImportsOfDevDeps: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.intersection<String?>(
+                        expectedDevImports,
+                        actualImports
+                    )
+                )
+            if (!nonDevImportsOfDevDeps.isEmpty()) {
+                message +=
+                    java.lang.String.format(
+                        ("Imported as a regular dependency, but reported as a dev dependency by the "
+                                + "extension (may cause the build to fail when used by other modules):\n"
+                                + "    %s\n\n"),
+                        java.lang.String.join(", ", nonDevImportsOfDevDeps)
+                    )
+            }
+
+            val devImportsOfNonDevDeps: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.intersection<String?>(
+                        expectedImports,
+                        actualDevImports
+                    )
+                )
+            if (!devImportsOfNonDevDeps.isEmpty()) {
+                message +=
+                    java.lang.String.format(
+                        ("Imported as a dev dependency, but reported as a regular dependency by the "
+                                + "extension (may cause the build to fail when used by other modules):\n"
+                                + "    %s\n\n"),
+                        java.lang.String.join(", ", devImportsOfNonDevDeps)
+                    )
+            }
+
+            val indirectDepImports: com.google.common.collect.ImmutableSortedSet<String?> =
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                    com.google.common.collect.Sets.difference<String?>(
+                        com.google.common.collect.Sets.intersection<String?>(
+                            allActualImports,
+                            allRepos
+                        ), allExpectedImports
+                    )
+                )
+            if (!indirectDepImports.isEmpty()) {
+                message +=
+                    java.lang.String.format(
+                        "Imported, but reported as indirect dependencies by the extension:\n    %s\n\n",
+                        java.lang.String.join(", ", indirectDepImports)
+                    )
+            }
+
+            message += "Fix the use_repo calls by running 'bazel mod tidy'."
+
+            val moduleFilePathToCommandsBuilder: com.google.common.collect.ImmutableListMultimap.Builder<PathFragment?, String?> =
+                com.google.common.collect.ImmutableListMultimap.builder<PathFragment?, String?>()
+            // Repos to add are easy: always add them to the first proxy of the correct type.
+            if (!importsToAdd.isEmpty()) {
+                val firstNonDevProxy: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy =
+                    rootUsage.getProxies().stream()
+                        .filter(java.util.function.Predicate { p: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy -> !p.isDevDependency() })
+                        .findFirst().get()
+                moduleFilePathToCommandsBuilder.put(
+                    firstNonDevProxy.getContainingModuleFilePath(),
+                    makeUseRepoCommand("use_repo_add", firstNonDevProxy.getProxyName(), importsToAdd)
+                )
+            }
+            if (!devImportsToAdd.isEmpty()) {
+                val firstDevProxy: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy =
+                    rootUsage.getProxies().stream()
+                        .filter(java.util.function.Predicate { p: com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionUsage.Proxy -> p.isDevDependency() })
+                        .findFirst().get()
+                moduleFilePathToCommandsBuilder.put(
+                    firstDevProxy.getContainingModuleFilePath(),
+                    makeUseRepoCommand("use_repo_add", firstDevProxy.getProxyName(), devImportsToAdd)
+                )
+            }
+            // Repos to remove are a bit trickier: remove them from the proxy that actually imported them.
+            for (proxy in rootUsage.getProxies()) {
+                val toRemove: com.google.common.collect.ImmutableSortedSet<String?> =
+                    com.google.common.collect.ImmutableSortedSet.copyOf<String?>(
+                        com.google.common.collect.Sets.intersection<String?>(
+                            proxy.getImports().values(),
+                            if (proxy.isDevDependency()) devImportsToRemove else importsToRemove
+                        )
+                    )
+                if (!toRemove.isEmpty()) {
+                    moduleFilePathToCommandsBuilder.put(
+                        proxy.getContainingModuleFilePath(),
+                        makeUseRepoCommand("use_repo_remove", proxy.getProxyName(), toRemove)
+                    )
+                }
+            }
+
+            return java.util.Optional.of<RootModuleFileFixup?>(
+                RootModuleFileFixup(
+                    moduleFilePathToCommandsBuilder.build(),
+                    rootUsage,
+                    com.google.devtools.build.lib.events.Event.warn(
+                        rootUsage.getProxies().getFirst().getLocation(),
+                        message
+                    )
+                )
+            )
+        }
+
+        private fun makeUseRepoCommand(cmd: String?, proxyName: String, repos: MutableCollection<String?>?): String {
+            val commandParts: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
+            commandParts.add(cmd)
+            commandParts.add(if (proxyName.isEmpty()) "_unnamed_usage" else proxyName)
+            commandParts.addAll(repos)
+            return java.lang.String.join(" ", commandParts)
+        }
+    }
 }

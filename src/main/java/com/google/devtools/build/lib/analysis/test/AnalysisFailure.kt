@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import com.google.auto.value.AutoValue;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisFailureApi;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.starlarkbuildapi.test.AnalysisFailureApi
 
 /**
  * Encapsulates information about an analysis-phase error which would have occurred during a build.
  */
 @AutoValue
-public abstract class AnalysisFailure implements AnalysisFailureApi {
-  public static AnalysisFailure create(Label label, String message) {
-    return new AutoValue_AnalysisFailure(label, message);
-  }
+abstract class AnalysisFailure internal constructor() // Should not be extended.
+    : AnalysisFailureApi {
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("<AnalyisFailure object>")
+    }
 
-  @Override
-  public final void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<AnalyisFailure object>");
-  }
-
-  AnalysisFailure() {} // Should not be extended.
+    companion object {
+        fun create(label: com.google.devtools.build.lib.cmdline.Label?, message: String?): AnalysisFailure {
+            return AutoValue_AnalysisFailure(label, message)
+        }
+    }
 }

@@ -11,32 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import com.github.luben.zstd.ZstdInputStreamNoFinalizer
+import com.google.common.collect.ImmutableMap
+import java.io.InputStream
 
-import com.github.luben.zstd.ZstdInputStreamNoFinalizer;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import org.apache.commons.compress.compressors.FileNameUtil;
+/** Decompresses a Zstandard compressed file.  */
+class ZstFunction : CompressedFunction() {
+    @Throws(IOException::class)
+    override fun getDecompressorStream(compressedInputStream: BufferedInputStream?): InputStream {
+        return ZstdInputStreamNoFinalizer(compressedInputStream)
+    }
 
-/** Decompresses a Zstandard compressed file. */
-public class ZstFunction extends CompressedFunction {
-  public static final Decompressor INSTANCE = new ZstFunction();
-  // Apache Commons Compress does not provide a readily available mapping of compressed ->
-  // uncompressed filenames for Zst, so we make our own.
-  static final FileNameUtil fileNameUtil = new FileNameUtil(ImmutableMap.of(".zst", ""), ".zst");
+    override fun getUncompressedFileName(`in`: InputStream?, compressedFileName: String?): String? {
+        return fileNameUtil.getUncompressedFileName(compressedFileName)
+    }
 
-  @Override
-  protected InputStream getDecompressorStream(BufferedInputStream compressedInputStream)
-      throws IOException {
-    return new ZstdInputStreamNoFinalizer(compressedInputStream);
-  }
+    companion object {
+        val INSTANCE: DecompressorValue.Decompressor = ZstFunction()
 
-  @Override
-  protected String getUncompressedFileName(InputStream in, String compressedFileName) {
-    return fileNameUtil.getUncompressedFileName(compressedFileName);
-  }
+        // Apache Commons Compress does not provide a readily available mapping of compressed ->
+        // uncompressed filenames for Zst, so we make our own.
+        val fileNameUtil: FileNameUtil = FileNameUtil(ImmutableMap.of<String?, String?>(".zst", ""), ".zst")
+    }
 }

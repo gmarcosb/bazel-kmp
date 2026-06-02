@@ -11,102 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Set;
+package com.google.devtools.build.lib.events
 
 /**
- * An {@link EventHandler} that collects all events it encounters, and makes them available via the
- * {@link Iterable} interface. The collected events contain not just the original event information
+ * An [EventHandler] that collects all events it encounters, and makes them available via the
+ * [Iterable] interface. The collected events contain not just the original event information
  * but also the location context.
  */
-public final class EventCollector extends AbstractEventHandler implements Iterable<Event> {
-  private final Collection<Event> collected;
+class EventCollector @kotlin.jvm.JvmOverloads constructor(
+    mask: MutableSet<com.google.devtools.build.lib.events.EventKind?>? = com.google.devtools.build.lib.events.EventKind.Companion.ALL_EVENTS,
+    collected: MutableCollection<com.google.devtools.build.lib.events.Event?> = java.util.ArrayList<com.google.devtools.build.lib.events.Event?>()
+) : com.google.devtools.build.lib.events.AbstractEventHandler(mask),
+    Iterable<com.google.devtools.build.lib.events.Event?> {
+    private val collected: MutableCollection<com.google.devtools.build.lib.events.Event?>
 
-  /**
-   * This collector will collect all events that match the event mask.
-   */
-  public EventCollector(Set<EventKind> mask) {
-    this(mask, new ArrayList<Event>());
-  }
+    /**
+     * This collector will collect all events that match the event mask.
+     */
+    constructor(vararg mask: com.google.devtools.build.lib.events.EventKind?) : this(
+        com.google.common.collect.ImmutableSet.copyOf<com.google.devtools.build.lib.events.EventKind?>(
+            mask
+        ), java.util.ArrayList<com.google.devtools.build.lib.events.Event?>()
+    )
 
-  /**
-   * This collector will collect all events.
-   */
-  public EventCollector() {
-    this(EventKind.ALL_EVENTS, new ArrayList<Event>());
-  }
-
-  /**
-   * This collector will collect all events that match the event mask.
-   */
-  public EventCollector(EventKind... mask) {
-    this(ImmutableSet.copyOf(mask), new ArrayList<Event>());
-  }
-
-  /**
-   * This collector will save the Event instances in the provided
-   * collection.
-   */
-  public EventCollector(Set<EventKind> mask, Collection<Event> collected) {
-    super(mask);
-    this.collected = collected;
-  }
-
-  /**
-   * Implements {@link EventHandler#handle(Event)}.
-   */
-  @Override
-  public synchronized void handle(Event event) {
-    if (getEventMask().contains(event.getKind())) {
-      collected.add(event);
+    /**
+     * This collector will save the Event instances in the provided
+     * collection.
+     */
+    /**
+     * This collector will collect all events.
+     */
+    /**
+     * This collector will collect all events that match the event mask.
+     */
+    init {
+        this.collected = collected
     }
-    if (event.getStdErr() != null) {
-      handle(Event.of(EventKind.STDERR, null, event.getStdErr()));
+
+    /**
+     * Implements [EventHandler.handle].
+     */
+    @kotlin.jvm.Synchronized
+    override fun handle(event: com.google.devtools.build.lib.events.Event) {
+        if (getEventMask().contains(event.getKind())) {
+            collected.add(event)
+        }
+        if (event.getStdErr() != null) {
+            handle(
+                com.google.devtools.build.lib.events.Event.Companion.of(
+                    com.google.devtools.build.lib.events.EventKind.STDERR,
+                    null,
+                    event.getStdErr()
+                )
+            )
+        }
+        if (event.getStdOut() != null) {
+            handle(
+                com.google.devtools.build.lib.events.Event.Companion.of(
+                    com.google.devtools.build.lib.events.EventKind.STDOUT,
+                    null,
+                    event.getStdOut()
+                )
+            )
+        }
     }
-    if (event.getStdOut() != null) {
-      handle(Event.of(EventKind.STDOUT, null, event.getStdOut()));
+
+    /**
+     * Returns an iterator over the collected events. This must not be called in a scenario where
+     * there may still be concurrent modifications to the collector.
+     */
+    override fun iterator(): MutableIterator<com.google.devtools.build.lib.events.Event?>? {
+        return collected.iterator()
     }
-  }
 
-  /**
-   * Returns an iterator over the collected events. This must not be called in a scenario where
-   * there may still be concurrent modifications to the collector.
-   */
-  @Override
-  public Iterator<Event> iterator() {
-    return collected.iterator();
-  }
+    /**
+     * Returns an iterator over the collected events of the given kind. This must not be called in a
+     * scenario where there may still be concurrent modifications to the collector.
+     */
+    fun filtered(eventKind: com.google.devtools.build.lib.events.EventKind?): Iterable<com.google.devtools.build.lib.events.Event?> {
+        return com.google.common.collect.Iterables.filter<com.google.devtools.build.lib.events.Event?>(
+            collected,
+            com.google.common.base.Predicate { event: com.google.devtools.build.lib.events.Event? -> event.getKind() == eventKind })
+    }
 
-  /**
-   * Returns an iterator over the collected events of the given kind. This must not be called in a
-   * scenario where there may still be concurrent modifications to the collector.
-   */
-  public Iterable<Event> filtered(final EventKind eventKind) {
-    return Iterables.filter(collected, event -> event.getKind() == eventKind);
-  }
+    /**
+     * Returns the number of events collected.
+     */
+    @kotlin.jvm.Synchronized
+    fun count(): Int {
+        return collected.size()
+    }
 
-  /**
-   * Returns the number of events collected.
-   */
-  public synchronized int count() {
-    return collected.size();
-  }
-
-  /*
+    /*
    * Clears the collected events
    */
-  public synchronized void clear() {
-    collected.clear();
-  }
+    @kotlin.jvm.Synchronized
+    fun clear() {
+        collected.clear()
+    }
 
-  @Override
-  public synchronized String toString() {
-    return "EventCollector: " + Iterables.toString(collected);
-  }
+    @kotlin.jvm.Synchronized
+    override fun toString(): String {
+        return "EventCollector: " + com.google.common.collect.Iterables.toString(collected)
+    }
 }

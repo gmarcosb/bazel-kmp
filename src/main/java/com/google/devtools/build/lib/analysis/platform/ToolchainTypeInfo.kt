@@ -11,80 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import com.google.devtools.build.lib.packages.BuiltinProvider
+import com.google.devtools.build.lib.packages.NativeInfo
+import com.google.devtools.build.lib.starlarkbuildapi.platform.ToolchainTypeInfoApi
+import com.google.devtools.build.lib.util.HashCodes
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.NativeInfo;
-import com.google.devtools.build.lib.starlarkbuildapi.platform.ToolchainTypeInfoApi;
-import com.google.devtools.build.lib.util.HashCodes;
-import java.util.Objects;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+/** A provider that supplies information about a specific toolchain type.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class ToolchainTypeInfo private constructor(
+    typeLabel: com.google.devtools.build.lib.cmdline.Label?,
+    noneFoundError: String?
+) : NativeInfo(), ToolchainTypeInfoApi {
+    private val typeLabel: com.google.devtools.build.lib.cmdline.Label?
+    private val noneFoundError: String?
 
-/** A provider that supplies information about a specific toolchain type. */
-@Immutable
-public class ToolchainTypeInfo extends NativeInfo implements ToolchainTypeInfoApi {
-  /** Name used in Starlark for accessing this provider. */
-  public static final String STARLARK_NAME = "ToolchainTypeInfo";
-
-  /** Provider singleton constant. */
-  public static final BuiltinProvider<ToolchainTypeInfo> PROVIDER =
-      new BuiltinProvider<ToolchainTypeInfo>(STARLARK_NAME, ToolchainTypeInfo.class) {};
-
-  private final Label typeLabel;
-  @Nullable private final String noneFoundError;
-
-  public static ToolchainTypeInfo create(Label typeLabel, @Nullable String noneFoundError) {
-    return new ToolchainTypeInfo(typeLabel, noneFoundError);
-  }
-
-  @VisibleForTesting
-  public static ToolchainTypeInfo create(Label typeLabel) {
-    return new ToolchainTypeInfo(typeLabel, /* noneFoundError= */ null);
-  }
-
-  private ToolchainTypeInfo(Label typeLabel, String noneFoundError) {
-    this.typeLabel = typeLabel;
-    this.noneFoundError = noneFoundError;
-  }
-
-  @Override
-  public BuiltinProvider<ToolchainTypeInfo> getProvider() {
-    return PROVIDER;
-  }
-
-  @Override
-  public Label typeLabel() {
-    return typeLabel;
-  }
-
-  @Nullable
-  public String noneFoundError() {
-    return noneFoundError;
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append(String.format("ToolchainTypeInfo(%s)", typeLabel));
-  }
-
-  @Override
-  public int hashCode() {
-    return HashCodes.hashObjects(typeLabel, noneFoundError);
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (!(other instanceof ToolchainTypeInfo otherToolchainTypeInfo)) {
-      return false;
+    init {
+        this.typeLabel = typeLabel
+        this.noneFoundError = noneFoundError
     }
 
-    return Objects.equals(typeLabel, otherToolchainTypeInfo.typeLabel)
-        && Objects.equals(noneFoundError, otherToolchainTypeInfo.noneFoundError);
-  }
+    val provider: BuiltinProvider<ToolchainTypeInfo?>
+        get() = PROVIDER
+
+    override fun typeLabel(): com.google.devtools.build.lib.cmdline.Label? {
+        return typeLabel
+    }
+
+    fun noneFoundError(): String? {
+        return noneFoundError
+    }
+
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append(String.format("ToolchainTypeInfo(%s)", typeLabel))
+    }
+
+    override fun hashCode(): Int {
+        return HashCodes.hashObjects(typeLabel, noneFoundError)
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other !is ToolchainTypeInfo) {
+            return false
+        }
+
+        return typeLabel == other.typeLabel
+                && noneFoundError == other.noneFoundError
+    }
+
+    companion object {
+        /** Name used in Starlark for accessing this provider.  */
+        const val STARLARK_NAME: String = "ToolchainTypeInfo"
+
+        /** Provider singleton constant.  */
+        @kotlin.jvm.JvmField
+        val PROVIDER: BuiltinProvider<ToolchainTypeInfo?> =
+            object : BuiltinProvider<ToolchainTypeInfo?>(STARLARK_NAME, ToolchainTypeInfo::class.java) {}
+
+        fun create(
+            typeLabel: com.google.devtools.build.lib.cmdline.Label?,
+            noneFoundError: String?
+        ): ToolchainTypeInfo {
+            return ToolchainTypeInfo(typeLabel, noneFoundError)
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun create(typeLabel: com.google.devtools.build.lib.cmdline.Label?): ToolchainTypeInfo {
+            return ToolchainTypeInfo(typeLabel,  /* noneFoundError= */null)
+        }
+    }
 }

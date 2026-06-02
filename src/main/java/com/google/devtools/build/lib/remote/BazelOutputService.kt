@@ -11,728 +11,751 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.hash.Hashing.md5;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.DigestFunction;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.EnvironmentalExecException;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.BatchStatRequest;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.BatchStatResponse;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.CleanRequest;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.CleanResponse;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.FinalizeArtifactsRequest;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.FinalizeArtifactsResponse;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.FinalizeBuildRequest;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.FinalizeBuildResponse;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.StageArtifactsRequest;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.StageArtifactsResponse;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.StartBuildRequest;
-import com.google.devtools.build.lib.remote.BazelOutputServiceProto.StartBuildResponse;
-import com.google.devtools.build.lib.remote.BazelOutputServiceREv2Proto.FileArtifactLocator;
-import com.google.devtools.build.lib.remote.BazelOutputServiceREv2Proto.StartBuildArgs;
-import com.google.devtools.build.lib.remote.RemoteExecutionService.ActionResultMetadata.FileMetadata;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.Utils;
-import com.google.devtools.build.lib.server.FailureDetails.Execution;
-import com.google.devtools.build.lib.server.FailureDetails.Execution.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.vfs.BatchStat;
-import com.google.devtools.build.lib.vfs.FileStatusWithDigest;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.XattrProvider;
-import com.google.devtools.build.lib.vfs.XattrProvider.DelegatingXattrProvider;
-import com.google.protobuf.Any;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+/** Output service implementation for the remote build with local output service daemon.  */
+class BazelOutputService(
+    outputBase: com.google.devtools.build.lib.vfs.Path,
+    execRootSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path>,
+    outputPathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path>,
+    digestFunction: DigestFunction.Value?,
+    remoteCache: String?,
+    remoteInstanceName: String?,
+    remoteOutputServiceOutputPathPrefix: String?,
+    verboseFailures: Boolean,
+    retrier: RemoteRetrier,
+    channel: ReferenceCountedChannel,
+    lastBuildId: String?
+) : OutputService {
+    private val outputBaseId: String
+    private val execRootSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path>
+    private val outputPathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path>
+    private val digestFunction: DigestFunction.Value?
+    private val remoteCache: String?
+    private val remoteInstanceName: String?
+    private val remoteOutputServiceOutputPathPrefix: String?
+    private val verboseFailures: Boolean
+    private val retrier: RemoteRetrier
+    private val channel: ReferenceCountedChannel
+    private val lastBuildId: String?
 
-/** Output service implementation for the remote build with local output service daemon. */
-public class BazelOutputService implements OutputService {
+    private var buildId: String? = null
+    private var outputPathTarget: PathFragment? = null
 
-  private final String outputBaseId;
-  private final Supplier<Path> execRootSupplier;
-  private final Supplier<Path> outputPathSupplier;
-  private final DigestFunction.Value digestFunction;
-  private final String remoteCache;
-  private final String remoteInstanceName;
-  private final String remoteOutputServiceOutputPathPrefix;
-  private final boolean verboseFailures;
-  private final RemoteRetrier retrier;
-  private final ReferenceCountedChannel channel;
-  @Nullable private final String lastBuildId;
-
-  @Nullable private String buildId;
-  @Nullable private PathFragment outputPathTarget;
-
-  public BazelOutputService(
-      Path outputBase,
-      Supplier<Path> execRootSupplier,
-      Supplier<Path> outputPathSupplier,
-      DigestFunction.Value digestFunction,
-      String remoteCache,
-      String remoteInstanceName,
-      String remoteOutputServiceOutputPathPrefix,
-      boolean verboseFailures,
-      RemoteRetrier retrier,
-      ReferenceCountedChannel channel,
-      @Nullable String lastBuildId) {
-    this.outputBaseId = DigestUtil.hashCodeToString(md5().hashString(outputBase.toString(), UTF_8));
-    this.execRootSupplier = execRootSupplier;
-    this.outputPathSupplier = outputPathSupplier;
-    this.digestFunction = digestFunction;
-    this.remoteCache = remoteCache;
-    this.remoteInstanceName = remoteInstanceName;
-    this.remoteOutputServiceOutputPathPrefix = remoteOutputServiceOutputPathPrefix;
-    this.verboseFailures = verboseFailures;
-    this.retrier = retrier;
-    this.channel = channel;
-    this.lastBuildId = lastBuildId;
-  }
-
-  public void shutdown() {
-    channel.release();
-  }
-
-  @Override
-  public String getFileSystemName(String outputBaseFileSystemName) {
-    return "BazelOutputService";
-  }
-
-  private static void prepareOutputPath(Path outputPath, PathFragment target)
-      throws AbruptExitException {
-    // Plant a symlink at bazel-out pointing to the target returned from the remote output service.
-    try {
-      if (!outputPath.isSymbolicLink()) {
-        outputPath.deleteTree();
-      }
-      FileSystemUtils.ensureSymbolicLink(outputPath, target);
-    } catch (IOException e) {
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      String.format("Failed to plant output path symlink: %s", e.getMessage()))
-                  .setExecution(
-                      Execution.newBuilder().setCode(Code.LOCAL_OUTPUT_DIRECTORY_SYMLINK_FAILURE))
-                  .build()),
-          e);
-    }
-  }
-
-  private static PathFragment constructOutputPathTarget(
-      PathFragment outputPathPrefix, StartBuildResponse response) throws AbruptExitException {
-    var outputPathSuffix = PathFragment.create(response.getOutputPathSuffix());
-    if (outputPathPrefix.isEmpty() && !outputPathSuffix.isAbsolute()) {
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      String.format(
-                          "Expect StartBuildResponse.output_path_suffix to be an absolute path"
-                              + " (because StartBuildRequest.output_path_prefix is empty), got %s.",
-                          outputPathSuffix.isEmpty()
-                              ? "an empty string"
-                              : response.getOutputPathSuffix()))
-                  .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
-                  .build()));
-    } else if (outputPathSuffix.isAbsolute()) {
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      String.format(
-                          "Expect StartBuildResponse.output_path_suffix to be a relative path, got"
-                              + " %s.",
-                          response.getOutputPathSuffix()))
-                  .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
-                  .build()));
-    } else if (outputPathSuffix.containsUplevelReferences()) {
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      String.format(
-                          "Expect normalized StartBuildResponse.output_path_suffix to not contain"
-                              + " uplevel references, got %s.",
-                          outputPathSuffix))
-                  .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
-                  .build()));
+    init {
+        this.outputBaseId = DigestUtil.hashCodeToString(
+            com.google.common.hash.Hashing.md5()
+                .hashString(outputBase.toString(), java.nio.charset.StandardCharsets.UTF_8)
+        )
+        this.execRootSupplier = execRootSupplier
+        this.outputPathSupplier = outputPathSupplier
+        this.digestFunction = digestFunction
+        this.remoteCache = remoteCache
+        this.remoteInstanceName = remoteInstanceName
+        this.remoteOutputServiceOutputPathPrefix = remoteOutputServiceOutputPathPrefix
+        this.verboseFailures = verboseFailures
+        this.retrier = retrier
+        this.channel = channel
+        this.lastBuildId = lastBuildId
     }
 
-    var outputPathTarget = outputPathPrefix.getRelative(outputPathSuffix);
-    checkState(outputPathTarget.isAbsolute());
-    return outputPathTarget;
-  }
-
-  @Override
-  public ModifiedFileSet startBuild(
-      UUID buildId, String workspaceName, EventHandler eventHandler, boolean finalizeActions)
-      throws AbruptExitException, InterruptedException {
-    checkState(this.buildId == null, "this.buildId must be null");
-    this.buildId = buildId.toString();
-    var outputPathPrefix = PathFragment.create(remoteOutputServiceOutputPathPrefix);
-    if (!outputPathPrefix.isEmpty() && !outputPathPrefix.isAbsolute()) {
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      String.format(
-                          "--experimental_remote_output_service_path_prefix must be an absolute"
-                              + " path, got '%s'",
-                          outputPathPrefix))
-                  .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
-                  .build()));
-    }
-    var outputPath = outputPathSupplier.get();
-
-    // Notify the remote output service that the build is about to start. The remote output service
-    // will return the directory in which it wants us to let the build take place.
-    var request =
-        StartBuildRequest.newBuilder()
-            .setVersion(1)
-            .setOutputBaseId(outputBaseId)
-            .setBuildId(this.buildId)
-            .setArgs(
-                Any.pack(
-                    StartBuildArgs.newBuilder()
-                        .setRemoteCache(remoteCache)
-                        .setInstanceName(remoteInstanceName)
-                        .setDigestFunction(digestFunction)
-                        .build()))
-            .setOutputPathPrefix(outputPathPrefix.toString())
-            .putOutputPathAliases(outputPath.toString(), ".")
-            .build();
-
-    StartBuildResponse response;
-    try {
-      response = startBuild(request);
-    } catch (IOException e) {
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      String.format(
-                          "StartBuild failed: %s", Utils.grpcAwareErrorMessage(e, verboseFailures)))
-                  .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
-                  .build()));
+    fun shutdown() {
+        channel.release()
     }
 
-    checkState(outputPathTarget == null, "outputPathTarget must be null");
-    outputPathTarget = constructOutputPathTarget(outputPathPrefix, response);
-    prepareOutputPath(outputPath, outputPathTarget);
-
-    if (finalizeActions && response.hasInitialOutputPathContents()) {
-      var initialOutputPathContents = response.getInitialOutputPathContents();
-      if (!initialOutputPathContents.getBuildId().equals(lastBuildId)) {
-        return ModifiedFileSet.EVERYTHING_DELETED;
-      }
-
-      // TODO(chiwang): Handle StartBuildResponse.initial_output_path_contents
+    override fun getFileSystemName(outputBaseFileSystemName: String?): String {
+        return "BazelOutputService"
     }
 
-    return ModifiedFileSet.EVERYTHING_MODIFIED;
-  }
-
-  private StartBuildResponse startBuild(StartBuildRequest request)
-      throws IOException, InterruptedException {
-    return retrier.execute(
-        () ->
-            channel.withChannelBlocking(
-                channel -> {
-                  try (var sc = Profiler.instance().profile("BazelOutputService.StartBuild")) {
-                    return BazelOutputServiceGrpc.newBlockingStub(channel).startBuild(request);
-                  } catch (StatusRuntimeException e) {
-                    throw new IOException(e);
-                  }
-                }));
-  }
-
-  protected void stageArtifacts(List<FileMetadata> files) throws IOException, InterruptedException {
-    var outputPath = outputPathSupplier.get();
-    var request = StageArtifactsRequest.newBuilder();
-    request.setBuildId(buildId);
-    for (var file : files) {
-      request.addArtifacts(
-          StageArtifactsRequest.Artifact.newBuilder()
-              .setPath(file.path().relativeTo(outputPath).toString())
-              .setLocator(
-                  Any.pack(FileArtifactLocator.newBuilder().setDigest(file.digest()).build()))
-              .build());
-    }
-    var response = stageArtifacts(request.build());
-    if (response.getResponsesCount() != files.size()) {
-      throw new IOException(
-          String.format(
-              "StageArtifacts failed: expect %s responses from StageArtifactsResponse, got %s",
-              files.size(), response.getResponsesCount()));
-    }
-
-    for (var i = 0; i < files.size(); ++i) {
-      var fileResponse = response.getResponses(i);
-      if (fileResponse.getStatus().getCode() != Status.Code.OK.value()) {
-        throw new IOException(
-            String.format(
-                "Failed to stage %s, code: %s",
-                files.get(i).path().relativeTo(outputPath), fileResponse.getStatus()));
-      }
-    }
-  }
-
-  private StageArtifactsResponse stageArtifacts(StageArtifactsRequest request)
-      throws IOException, InterruptedException {
-    return retrier.execute(
-        () ->
-            channel.withChannelBlocking(
-                channel -> {
-                  try (var sc = Profiler.instance().profile("BazelOutputService.StageArtifacts")) {
-                    return BazelOutputServiceGrpc.newBlockingStub(channel).stageArtifacts(request);
-                  } catch (StatusRuntimeException e) {
-                    throw new IOException(e);
-                  }
-                }));
-  }
-
-  @Override
-  public void finalizeBuild(boolean buildSuccessful)
-      throws AbruptExitException, InterruptedException {
-    var request =
-        FinalizeBuildRequest.newBuilder()
-            .setBuildId(checkNotNull(buildId))
-            .setBuildSuccessful(buildSuccessful)
-            .build();
-    try {
-      var unused = finalizeBuild(request);
-    } catch (IOException e) {
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      String.format(
-                          "FinalizeBuild failed: %s",
-                          Utils.grpcAwareErrorMessage(e, verboseFailures)))
-                  .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
-                  .build()));
-    } finally {
-      this.buildId = null;
-      this.outputPathTarget = null;
-    }
-  }
-
-  private FinalizeBuildResponse finalizeBuild(FinalizeBuildRequest request)
-      throws IOException, InterruptedException {
-    return retrier.execute(
-        () ->
-            channel.withChannelBlocking(
-                channel -> {
-                  try (var sc = Profiler.instance().profile("BazelOutputService.FinalizeBuild")) {
-                    return BazelOutputServiceGrpc.newBlockingStub(channel).finalizeBuild(request);
-                  } catch (StatusRuntimeException e) {
-                    throw new IOException(e);
-                  }
-                }));
-  }
-
-  @Override
-  public void finalizeAction(Action action, OutputMetadataStore outputMetadataStore)
-      throws IOException, InterruptedException {
-    var execRoot = execRootSupplier.get();
-    var outputPath = outputPathSupplier.get();
-
-    var request = FinalizeArtifactsRequest.newBuilder();
-    request.setBuildId(buildId);
-    for (var output : action.getOutputs()) {
-      if (outputMetadataStore.artifactOmitted(output)) {
-        continue;
-      }
-
-      if (output.isTreeArtifact()) {
-        // TODO(chiwang): Use TreeArtifactLocator
-        var children =
-            outputMetadataStore.getTreeArtifactValue((SpecialArtifact) output).getChildren();
-        for (var child : children) {
-          addArtifact(outputMetadataStore, execRoot, outputPath, request, child);
+    @Throws(AbruptExitException::class, java.lang.InterruptedException::class)
+    public override fun startBuild(
+        buildId: UUID,
+        workspaceName: String?,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler?,
+        finalizeActions: Boolean
+    ): ModifiedFileSet {
+        com.google.common.base.Preconditions.checkState(this.buildId == null, "this.buildId must be null")
+        this.buildId = buildId.toString()
+        val outputPathPrefix: PathFragment = PathFragment.create(remoteOutputServiceOutputPathPrefix)
+        if (!outputPathPrefix.isEmpty() && !outputPathPrefix.isAbsolute()) {
+            throw AbruptExitException(
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage(
+                            java.lang.String.format(
+                                "--experimental_remote_output_service_path_prefix must be an absolute"
+                                        + " path, got '%s'",
+                                outputPathPrefix
+                            )
+                        )
+                        .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
+                        .build()
+                )
+            )
         }
-      } else {
-        addArtifact(outputMetadataStore, execRoot, outputPath, request, output);
-      }
-    }
+        val outputPath: com.google.devtools.build.lib.vfs.Path = outputPathSupplier.get()
 
-    var unused = finalizeArtifacts(request.build());
-  }
+        // Notify the remote output service that the build is about to start. The remote output service
+        // will return the directory in which it wants us to let the build take place.
+        val request: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            StartBuildRequest.newBuilder()
+                .setVersion(1)
+                .setOutputBaseId(outputBaseId)
+                .setBuildId(this.buildId)
+                .setArgs(
+                    Any.pack(
+                        StartBuildArgs.newBuilder()
+                            .setRemoteCache(remoteCache)
+                            .setInstanceName(remoteInstanceName)
+                            .setDigestFunction(digestFunction)
+                            .build()
+                    )
+                )
+                .setOutputPathPrefix(outputPathPrefix.toString())
+                .putOutputPathAliases(outputPath.toString(), ".")
+                .build()
 
-  private FinalizeArtifactsResponse finalizeArtifacts(FinalizeArtifactsRequest request)
-      throws IOException, InterruptedException {
-    return retrier.execute(
-        () ->
-            channel.withChannelBlocking(
-                channel -> {
-                  try (var sc =
-                      Profiler.instance().profile("BazelOutputService.FinalizeArtifacts")) {
-                    return BazelOutputServiceGrpc.newBlockingStub(channel)
-                        .finalizeArtifacts(request);
-                  } catch (StatusRuntimeException e) {
-                    throw new IOException(e);
-                  }
-                }));
-  }
-
-  private static void addArtifact(
-      OutputMetadataStore outputMetadataStore,
-      Path execRoot,
-      Path outputPath,
-      FinalizeArtifactsRequest.Builder builder,
-      Artifact output)
-      throws IOException, InterruptedException {
-    checkState(!output.isTreeArtifact());
-    var metadata = outputMetadataStore.getOutputMetadata(output);
-    if (metadata.getType().isFile()) {
-      var digest = DigestUtil.buildDigest(metadata.getDigest(), metadata.getSize());
-      var path = execRoot.getRelative(output.getExecPath()).relativeTo(outputPath).toString();
-      builder.addArtifacts(
-          FinalizeArtifactsRequest.Artifact.newBuilder()
-              .setPath(path)
-              .setLocator(Any.pack(FileArtifactLocator.newBuilder().setDigest(digest).build()))
-              .build());
-    }
-  }
-
-  private record BazelOutputServiceFile(Digest digest) implements FileStatusWithDigest {
-    @Override
-    public boolean isFile() {
-      return true;
-    }
-
-    @Override
-    public boolean isDirectory() {
-      return false;
-    }
-
-    @Override
-    public boolean isSymbolicLink() {
-      return false;
-    }
-
-    @Override
-    public boolean isSpecialFile() {
-      return false;
-    }
-
-    @Override
-    public long getSize() {
-      return digest.getSizeBytes();
-    }
-
-    @Override
-    public long getLastModifiedTime() {
-      throw new UnsupportedOperationException("Cannot get last modified time");
-    }
-
-    @Override
-    public long getLastChangeTime() {
-      throw new UnsupportedOperationException("Cannot get last change time");
-    }
-
-    @Override
-    public long getNodeId() {
-      throw new UnsupportedOperationException("Cannot get node id");
-    }
-
-    @Nullable
-    @Override
-    public byte[] getDigest() {
-      return DigestUtil.toBinaryDigest(digest);
-    }
-  }
-
-  private record BazelOutputServiceSymlink(String target) implements FileStatusWithDigest {
-    @Override
-    public boolean isFile() {
-      return false;
-    }
-
-    @Override
-    public boolean isDirectory() {
-      return false;
-    }
-
-    @Override
-    public boolean isSymbolicLink() {
-      return true;
-    }
-
-    @Override
-    public boolean isSpecialFile() {
-      return false;
-    }
-
-    @Override
-    public long getSize() {
-      throw new UnsupportedOperationException("Cannot get size");
-    }
-
-    @Override
-    public long getLastModifiedTime() {
-      throw new UnsupportedOperationException("Cannot get last modified time");
-    }
-
-    @Override
-    public long getLastChangeTime() {
-      throw new UnsupportedOperationException("Cannot get last change time");
-    }
-
-    @Override
-    public long getNodeId() {
-      throw new UnsupportedOperationException("Cannot get node id");
-    }
-
-    @Nullable
-    @Override
-    public byte[] getDigest() {
-      throw new UnsupportedOperationException("Cannot get digest");
-    }
-  }
-
-  private record BazelOutputServiceDirectory() implements FileStatusWithDigest {
-    @Override
-    public boolean isFile() {
-      return false;
-    }
-
-    @Override
-    public boolean isDirectory() {
-      return true;
-    }
-
-    @Override
-    public boolean isSymbolicLink() {
-      return false;
-    }
-
-    @Override
-    public boolean isSpecialFile() {
-      return false;
-    }
-
-    @Override
-    public long getSize() {
-      throw new UnsupportedOperationException("Cannot get size");
-    }
-
-    @Override
-    public long getLastModifiedTime() {
-      return 0;
-    }
-
-    @Override
-    public long getLastChangeTime() {
-      throw new UnsupportedOperationException("Cannot get last change time");
-    }
-
-    @Override
-    public long getNodeId() {
-      throw new UnsupportedOperationException("Cannot get node id");
-    }
-
-    @Nullable
-    @Override
-    public byte[] getDigest() {
-      throw new UnsupportedOperationException("Cannot get digest");
-    }
-  }
-
-  @Override
-  public BatchStat getBatchStatter() {
-    return paths -> {
-      var outputPath = outputPathSupplier.get().asFragment();
-      var execRoot = execRootSupplier.get();
-
-      var request = BatchStatRequest.newBuilder();
-      request.setBuildId(checkNotNull(buildId));
-
-      var unsupportedPathIndexSet = new HashSet<Integer>();
-      int index = 0;
-      for (var execPath : paths) {
-        String pathString = null;
-        var path = execRoot.getRelative(execPath).asFragment();
-        if (path.startsWith(outputPath)) {
-          pathString = path.relativeTo(outputPath).toString();
-        } else if (path.startsWith(checkNotNull(outputPathTarget))) {
-          pathString = path.relativeTo(outputPathTarget).toString();
-        }
-
-        if (pathString == null) {
-          unsupportedPathIndexSet.add(index);
-        } else {
-          request.addPaths(pathString);
-        }
-        ++index;
-      }
-
-      var response = BazelOutputService.this.batchStat(request.build());
-      if (response.getResponsesCount() != request.getPathsCount()) {
-        throw new IOException(
-            String.format(
-                "BatchStat failed: expect %s responses, got %s",
-                request.getPathsCount(), response.getResponsesCount()));
-      }
-
-      var result = new ArrayList<FileStatusWithDigest>(index);
-      for (int i = 0; i < index; ++i) {
-        if (unsupportedPathIndexSet.contains(i)) {
-          result.add(null);
-          continue;
-        }
-
-        var statResponse = response.getResponses(i);
-        if (!statResponse.hasStat()) {
-          result.add(null);
-          continue;
-        }
-
-        var stat = statResponse.getStat();
-        if (stat.hasFile() && stat.getFile().hasLocator()) {
-          var locator = stat.getFile().getLocator();
-          result.add(
-              new BazelOutputServiceFile(locator.unpack(FileArtifactLocator.class).getDigest()));
-        } else if (stat.hasSymlink()) {
-          // TODO(chiwang): The target is currently unused by the call site, instead it resolves the
-          //  symlink manually. Optimize it.
-          result.add(new BazelOutputServiceSymlink(stat.getSymlink().getTarget()));
-        } else if (stat.hasDirectory()) {
-          result.add(new BazelOutputServiceDirectory());
-        } else {
-          result.add(null);
-        }
-      }
-      return result;
-    };
-  }
-
-  @Override
-  public boolean canCreateSymlinkTree() {
-    return false;
-  }
-
-  @Override
-  public void createSymlinkTree(
-      Map<PathFragment, PathFragment> symlinks, PathFragment symlinkTreeRoot) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public void clean() throws ExecException, InterruptedException {
-    var request = CleanRequest.newBuilder().setOutputBaseId(outputBaseId).build();
-    try {
-      var unused = clean(request);
-    } catch (IOException e) {
-      throw new EnvironmentalExecException(e, Code.UNEXPECTED_EXCEPTION);
-    }
-  }
-
-  private CleanResponse clean(CleanRequest request) throws IOException, InterruptedException {
-    return retrier.execute(
-        () ->
-            channel.withChannelBlocking(
-                channel -> {
-                  try (var sc = Profiler.instance().profile("BazelOutputService.Clean")) {
-                    return BazelOutputServiceGrpc.newBlockingStub(channel).clean(request);
-                  } catch (StatusRuntimeException e) {
-                    throw new IOException(e);
-                  }
-                }));
-  }
-
-  private BatchStatResponse batchStat(BatchStatRequest request)
-      throws IOException, InterruptedException {
-    return retrier.execute(
-        () ->
-            channel.withChannelBlocking(
-                channel -> {
-                  try (var sc = Profiler.instance().profile("BazelOutputService.BatchStat")) {
-                    return BazelOutputServiceGrpc.newBlockingStub(channel).batchStat(request);
-                  } catch (StatusRuntimeException e) {
-                    throw new IOException(e);
-                  }
-                }));
-  }
-
-  @Override
-  public XattrProvider getXattrProvider(XattrProvider delegate) {
-    return new DelegatingXattrProvider(delegate) {
-      @Nullable
-      @Override
-      public byte[] getFastDigest(Path path) throws IOException {
-        var outputPath = outputPathSupplier.get();
-        var buildId = checkNotNull(BazelOutputService.this.buildId);
-        var outputPathTarget = checkNotNull(BazelOutputService.this.outputPathTarget);
-
-        String pathString = null;
-        if (path.startsWith(outputPath)) {
-          pathString = path.relativeTo(outputPath).toString();
-        } else if (path.startsWith(outputPathTarget)) {
-          pathString = path.asFragment().relativeTo(outputPathTarget).toString();
-        }
-        if (pathString == null) {
-          return super.getFastDigest(path);
-        }
-
-        var request =
-            BatchStatRequest.newBuilder().setBuildId(buildId).addPaths(pathString).build();
-        BatchStatResponse response;
+        val response: StartBuildResponse
         try {
-          response = batchStat(request);
-        } catch (InterruptedException e) {
-          throw new IOException(e);
+            response = startBuild(request)
+        } catch (e: IOException) {
+            throw AbruptExitException(
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage(
+                            java.lang.String.format(
+                                "StartBuild failed: %s",
+                                com.google.devtools.build.lib.remote.util.Utils.grpcAwareErrorMessage(
+                                    e,
+                                    verboseFailures
+                                )
+                            )
+                        )
+                        .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
+                        .build()
+                )
+            )
         }
 
-        if (response.getResponsesCount() != 1) {
-          throw new IOException(
-              String.format(
-                  "BatchStat failed: expect 1 response, got %s", response.getResponsesCount()));
+        com.google.common.base.Preconditions.checkState(outputPathTarget == null, "outputPathTarget must be null")
+        outputPathTarget = constructOutputPathTarget(outputPathPrefix, response)
+        prepareOutputPath(outputPath, outputPathTarget)
+
+        if (finalizeActions && response.hasInitialOutputPathContents()) {
+            val initialOutputPathContents: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                response.getInitialOutputPathContents()
+            if (!initialOutputPathContents.getBuildId().equals(lastBuildId)) {
+                return ModifiedFileSet.EVERYTHING_DELETED
+            }
+
+            // TODO(chiwang): Handle StartBuildResponse.initial_output_path_contents
         }
 
-        var statResponse = response.getResponses(0);
-        if (!statResponse.hasStat()) {
-          throw new FileNotFoundException(path.getPathString());
+        return ModifiedFileSet.EVERYTHING_MODIFIED
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun startBuild(request: StartBuildRequest?): StartBuildResponse {
+        return retrier.execute<StartBuildResponse, java.lang.RuntimeException?>(
+            RetryableCallable {
+                channel.withChannelBlocking<Any?>(
+                    com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                        try {
+                            com.google.devtools.build.lib.profiler.Profiler.instance()
+                                .profile("BazelOutputService.StartBuild").use { sc ->
+                                    return@withChannelBlocking BazelOutputServiceGrpc.newBlockingStub(channel)
+                                        .startBuild(request)
+                                }
+                        } catch (e: StatusRuntimeException) {
+                            throw IOException(e)
+                        }
+                    })
+            })
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun stageArtifacts(files: MutableList<FileMetadata>) {
+        val outputPath: com.google.devtools.build.lib.vfs.Path? = outputPathSupplier.get()
+        val request: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            StageArtifactsRequest.newBuilder()
+        request.setBuildId(buildId)
+        for (file in files) {
+            request.addArtifacts(
+                StageArtifactsRequest.Artifact.newBuilder()
+                    .setPath(file.path().relativeTo(outputPath).toString())
+                    .setLocator(
+                        Any.pack(FileArtifactLocator.newBuilder().setDigest(file.digest()).build())
+                    )
+                    .build()
+            )
+        }
+        val response: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            stageArtifacts(request.build())
+        if (response.getResponsesCount() !== files.size()) {
+            throw IOException(
+                java.lang.String.format(
+                    "StageArtifacts failed: expect %s responses from StageArtifactsResponse, got %s",
+                    files.size(), response.getResponsesCount()
+                )
+            )
         }
 
-        var stat = statResponse.getStat();
-        if (stat.hasFile()) {
-          var file = stat.getFile();
-          if (file.hasLocator()) {
-            var locator = file.getLocator().unpack(FileArtifactLocator.class);
-            return DigestUtil.toBinaryDigest(locator.getDigest());
-          }
+        for (i in files.indices) {
+            val fileResponse: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                response.getResponses(i)
+            if (fileResponse.getStatus().getCode() !== io.grpc.Status.Code.OK.value()) {
+                throw IOException(
+                    java.lang.String.format(
+                        "Failed to stage %s, code: %s",
+                        files.get(i).path().relativeTo(outputPath), fileResponse.getStatus()
+                    )
+                )
+            }
+        }
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun stageArtifacts(request: StageArtifactsRequest?): StageArtifactsResponse? {
+        return retrier.execute<StageArtifactsResponse?, java.lang.RuntimeException?>(
+            RetryableCallable {
+                channel.withChannelBlocking<Any?>(
+                    com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                        try {
+                            com.google.devtools.build.lib.profiler.Profiler.instance()
+                                .profile("BazelOutputService.StageArtifacts").use { sc ->
+                                    return@withChannelBlocking BazelOutputServiceGrpc.newBlockingStub(channel)
+                                        .stageArtifacts(request)
+                                }
+                        } catch (e: StatusRuntimeException) {
+                            throw IOException(e)
+                        }
+                    })
+            })
+    }
+
+    @Throws(AbruptExitException::class, java.lang.InterruptedException::class)
+    override fun finalizeBuild(buildSuccessful: Boolean) {
+        val request: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            FinalizeBuildRequest.newBuilder()
+                .setBuildId(com.google.common.base.Preconditions.checkNotNull<T?>(buildId))
+                .setBuildSuccessful(buildSuccessful)
+                .build()
+        try {
+            val unused: FinalizeBuildResponse? = finalizeBuild(request)
+        } catch (e: IOException) {
+            throw AbruptExitException(
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage(
+                            java.lang.String.format(
+                                "FinalizeBuild failed: %s",
+                                com.google.devtools.build.lib.remote.util.Utils.grpcAwareErrorMessage(
+                                    e,
+                                    verboseFailures
+                                )
+                            )
+                        )
+                        .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
+                        .build()
+                )
+            )
+        } finally {
+            this.buildId = null
+            this.outputPathTarget = null
+        }
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun finalizeBuild(request: FinalizeBuildRequest?): FinalizeBuildResponse? {
+        return retrier.execute<FinalizeBuildResponse?, java.lang.RuntimeException?>(
+            RetryableCallable {
+                channel.withChannelBlocking<Any?>(
+                    com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                        try {
+                            com.google.devtools.build.lib.profiler.Profiler.instance()
+                                .profile("BazelOutputService.FinalizeBuild").use { sc ->
+                                    return@withChannelBlocking BazelOutputServiceGrpc.newBlockingStub(channel)
+                                        .finalizeBuild(request)
+                                }
+                        } catch (e: StatusRuntimeException) {
+                            throw IOException(e)
+                        }
+                    })
+            })
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun finalizeAction(action: Action, outputMetadataStore: OutputMetadataStore) {
+        val execRoot: com.google.devtools.build.lib.vfs.Path = execRootSupplier.get()
+        val outputPath: com.google.devtools.build.lib.vfs.Path? = outputPathSupplier.get()
+
+        val request: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            FinalizeArtifactsRequest.newBuilder()
+        request.setBuildId(buildId)
+        for (output in action.getOutputs()) {
+            if (outputMetadataStore.artifactOmitted(output)) {
+                continue
+            }
+
+            if (output.isTreeArtifact()) {
+                // TODO(chiwang): Use TreeArtifactLocator
+                val children: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    outputMetadataStore.getTreeArtifactValue(output as SpecialArtifact).getChildren()
+                for (child in children) {
+                    addArtifact(outputMetadataStore, execRoot, outputPath, request, child)
+                }
+            } else {
+                addArtifact(outputMetadataStore, execRoot, outputPath, request, output)
+            }
         }
 
-        return null;
-      }
-    };
-  }
+        val unused: FinalizeArtifactsResponse? = finalizeArtifacts(request.build())
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun finalizeArtifacts(request: FinalizeArtifactsRequest?): FinalizeArtifactsResponse? {
+        return retrier.execute<FinalizeArtifactsResponse?, java.lang.RuntimeException?>(
+            RetryableCallable {
+                channel.withChannelBlocking<Any?>(
+                    com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                        try {
+                            com.google.devtools.build.lib.profiler.Profiler.instance()
+                                .profile("BazelOutputService.FinalizeArtifacts").use { sc ->
+                                    return@withChannelBlocking BazelOutputServiceGrpc.newBlockingStub(channel)
+                                        .finalizeArtifacts(request)
+                                }
+                        } catch (e: StatusRuntimeException) {
+                            throw IOException(e)
+                        }
+                    })
+            })
+    }
+
+    private class BazelOutputServiceFile(digest: Digest?) : FileStatusWithDigest {
+        val isFile: Boolean
+            get() = true
+
+        val isDirectory: Boolean
+            get() = false
+
+        val isSymbolicLink: Boolean
+            get() = false
+
+        val isSpecialFile: Boolean
+            get() = false
+
+        val size: Long
+            get() = digest.getSizeBytes()
+
+        val lastModifiedTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get last modified time")
+            }
+
+        val lastChangeTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get last change time")
+            }
+
+        val nodeId: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get node id")
+            }
+
+        override fun getDigest(): ByteArray? {
+            return DigestUtil.toBinaryDigest(digest)
+        }
+
+        val digest: Digest?
+
+        init {
+            this.digest = digest
+        }
+    }
+
+    @kotlin.jvm.JvmRecord
+    private data class BazelOutputServiceSymlink(val target: String?) : FileStatusWithDigest {
+        val isFile: Boolean
+            get() = false
+
+        val isDirectory: Boolean
+            get() = false
+
+        val isSymbolicLink: Boolean
+            get() = true
+
+        val isSpecialFile: Boolean
+            get() = false
+
+        val size: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get size")
+            }
+
+        val lastModifiedTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get last modified time")
+            }
+
+        val lastChangeTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get last change time")
+            }
+
+        val nodeId: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get node id")
+            }
+
+        val digest: ByteArray?
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get digest")
+            }
+    }
+
+    private class BazelOutputServiceDirectory : FileStatusWithDigest {
+        val isFile: Boolean
+            get() = false
+
+        val isDirectory: Boolean
+            get() = true
+
+        val isSymbolicLink: Boolean
+            get() = false
+
+        val isSpecialFile: Boolean
+            get() = false
+
+        val size: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get size")
+            }
+
+        val lastModifiedTime: Long
+            get() = 0
+
+        val lastChangeTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get last change time")
+            }
+
+        val nodeId: Long
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get node id")
+            }
+
+        val digest: ByteArray?
+            get() {
+                throw java.lang.UnsupportedOperationException("Cannot get digest")
+            }
+    }
+
+    val batchStatter: BatchStat?
+        get() = BatchStat { paths: Iterable<PathFragment?>? ->
+            val outputPath: PathFragment = outputPathSupplier.get().asFragment()
+            val execRoot: com.google.devtools.build.lib.vfs.Path = execRootSupplier.get()
+
+            val request: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                BatchStatRequest.newBuilder()
+            request.setBuildId(com.google.common.base.Preconditions.checkNotNull<T?>(buildId))
+
+            val unsupportedPathIndexSet: HashSet<Int?> = HashSet<Int?>()
+            var index = 0
+            for (execPath in paths!!) {
+                var pathString: String? = null
+                val path: PathFragment = execRoot.getRelative(execPath).asFragment()
+                if (path.startsWith(outputPath)) {
+                    pathString = path.relativeTo(outputPath).toString()
+                } else if (path.startsWith(
+                        com.google.common.base.Preconditions.checkNotNull<PathFragment?>(
+                            outputPathTarget
+                        )
+                    )
+                ) {
+                    pathString = path.relativeTo(outputPathTarget).toString()
+                }
+
+                if (pathString == null) {
+                    unsupportedPathIndexSet.add(index)
+                } else {
+                    request.addPaths(pathString)
+                }
+                ++index
+            }
+
+            val response: BatchStatResponse = this@BazelOutputService.batchStat(request.build())
+            if (response.getResponsesCount() !== request.getPathsCount()) {
+                throw IOException(
+                    java.lang.String.format(
+                        "BatchStat failed: expect %s responses, got %s",
+                        request.getPathsCount(), response.getResponsesCount()
+                    )
+                )
+            }
+
+            val result: java.util.ArrayList<FileStatusWithDigest?> = java.util.ArrayList<FileStatusWithDigest?>(index)
+            for (i in 0..<index) {
+                if (unsupportedPathIndexSet.contains(i)) {
+                    result.add(null)
+                    continue
+                }
+
+                val statResponse: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    response.getResponses(i)
+                if (!statResponse.hasStat()) {
+                    result.add(null)
+                    continue
+                }
+
+                val stat: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    statResponse.getStat()
+                if (stat.hasFile() && stat.getFile().hasLocator()) {
+                    val locator: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                        stat.getFile().getLocator()
+                    result.add(
+                        BazelOutputServiceFile(locator.unpack(FileArtifactLocator::class.java).getDigest())
+                    )
+                } else if (stat.hasSymlink()) {
+                    // TODO(chiwang): The target is currently unused by the call site, instead it resolves the
+                    //  symlink manually. Optimize it.
+                    result.add(BazelOutputServiceSymlink(stat.getSymlink().getTarget()))
+                } else if (stat.hasDirectory()) {
+                    result.add(BazelOutputServiceDirectory())
+                } else {
+                    result.add(null)
+                }
+            }
+            result
+        }
+
+    override fun canCreateSymlinkTree(): Boolean {
+        return false
+    }
+
+    override fun createSymlinkTree(
+        symlinks: MutableMap<PathFragment?, PathFragment?>?, symlinkTreeRoot: PathFragment?
+    ) {
+        throw java.lang.UnsupportedOperationException()
+    }
+
+    @Throws(ExecException::class, java.lang.InterruptedException::class)
+    override fun clean() {
+        val request: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CleanRequest.newBuilder().setOutputBaseId(outputBaseId).build()
+        try {
+            val unused: CleanResponse? = clean(request)
+        } catch (e: IOException) {
+            throw EnvironmentalExecException(e, Code.UNEXPECTED_EXCEPTION)
+        }
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun clean(request: CleanRequest?): CleanResponse? {
+        return retrier.execute<CleanResponse?, java.lang.RuntimeException?>(
+            RetryableCallable {
+                channel.withChannelBlocking<Any?>(
+                    com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                        try {
+                            com.google.devtools.build.lib.profiler.Profiler.instance()
+                                .profile("BazelOutputService.Clean").use { sc ->
+                                    return@withChannelBlocking BazelOutputServiceGrpc.newBlockingStub(channel)
+                                        .clean(request)
+                                }
+                        } catch (e: StatusRuntimeException) {
+                            throw IOException(e)
+                        }
+                    })
+            })
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun batchStat(request: BatchStatRequest?): BatchStatResponse {
+        return retrier.execute<BatchStatResponse, java.lang.RuntimeException?>(
+            RetryableCallable {
+                channel.withChannelBlocking<Any?>(
+                    com.google.devtools.build.lib.remote.ReferenceCountedChannel.IOFunction { channel: io.grpc.Channel? ->
+                        try {
+                            com.google.devtools.build.lib.profiler.Profiler.instance()
+                                .profile("BazelOutputService.BatchStat").use { sc ->
+                                    return@withChannelBlocking BazelOutputServiceGrpc.newBlockingStub(channel)
+                                        .batchStat(request)
+                                }
+                        } catch (e: StatusRuntimeException) {
+                            throw IOException(e)
+                        }
+                    })
+            })
+    }
+
+    override fun getXattrProvider(delegate: XattrProvider?): XattrProvider {
+        return object : DelegatingXattrProvider(delegate) {
+            @Throws(IOException::class)
+            override fun getFastDigest(path: com.google.devtools.build.lib.vfs.Path): ByteArray? {
+                val outputPath: com.google.devtools.build.lib.vfs.Path = outputPathSupplier.get()
+                val buildId: String =
+                    com.google.common.base.Preconditions.checkNotNull<String>(this@BazelOutputService.buildId)
+                val outputPathTarget: PathFragment =
+                    com.google.common.base.Preconditions.checkNotNull<PathFragment>(this@BazelOutputService.outputPathTarget)
+
+                var pathString: String? = null
+                if (path.startsWith(outputPath)) {
+                    pathString = path.relativeTo(outputPath).toString()
+                } else if (path.startsWith(outputPathTarget)) {
+                    pathString = path.asFragment().relativeTo(outputPathTarget).toString()
+                }
+                if (pathString == null) {
+                    return super.getFastDigest(path)
+                }
+
+                val request: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    BatchStatRequest.newBuilder().setBuildId(buildId).addPaths(pathString).build()
+                val response: BatchStatResponse
+                try {
+                    response = batchStat(request)
+                } catch (e: java.lang.InterruptedException) {
+                    throw IOException(e)
+                }
+
+                if (response.getResponsesCount() !== 1) {
+                    throw IOException(
+                        java.lang.String.format(
+                            "BatchStat failed: expect 1 response, got %s", response.getResponsesCount()
+                        )
+                    )
+                }
+
+                val statResponse: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    response.getResponses(0)
+                if (!statResponse.hasStat()) {
+                    throw FileNotFoundException(path.getPathString())
+                }
+
+                val stat: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    statResponse.getStat()
+                if (stat.hasFile()) {
+                    val file: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                        stat.getFile()
+                    if (file.hasLocator()) {
+                        val locator: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                            file.getLocator().unpack(FileArtifactLocator::class.java)
+                        return DigestUtil.toBinaryDigest(locator.getDigest())
+                    }
+                }
+
+                return null
+            }
+        }
+    }
+
+    companion object {
+        @Throws(AbruptExitException::class)
+        private fun prepareOutputPath(outputPath: com.google.devtools.build.lib.vfs.Path, target: PathFragment?) {
+            // Plant a symlink at bazel-out pointing to the target returned from the remote output service.
+            try {
+                if (!outputPath.isSymbolicLink()) {
+                    outputPath.deleteTree()
+                }
+                com.google.devtools.build.lib.vfs.FileSystemUtils.ensureSymbolicLink(outputPath, target)
+            } catch (e: IOException) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                java.lang.String.format("Failed to plant output path symlink: %s", e.getMessage())
+                            )
+                            .setExecution(
+                                Execution.newBuilder().setCode(Code.LOCAL_OUTPUT_DIRECTORY_SYMLINK_FAILURE)
+                            )
+                            .build()
+                    ),
+                    e
+                )
+            }
+        }
+
+        @Throws(AbruptExitException::class)
+        private fun constructOutputPathTarget(
+            outputPathPrefix: PathFragment, response: StartBuildResponse
+        ): PathFragment {
+            val outputPathSuffix: PathFragment = PathFragment.create(response.getOutputPathSuffix())
+            if (outputPathPrefix.isEmpty() && !outputPathSuffix.isAbsolute()) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                java.lang.String.format(
+                                    "Expect StartBuildResponse.output_path_suffix to be an absolute path"
+                                            + " (because StartBuildRequest.output_path_prefix is empty), got %s.",
+                                    if (outputPathSuffix.isEmpty())
+                                        "an empty string"
+                                    else
+                                        response.getOutputPathSuffix()
+                                )
+                            )
+                            .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
+                            .build()
+                    )
+                )
+            } else if (outputPathSuffix.isAbsolute()) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                java.lang.String.format(
+                                    "Expect StartBuildResponse.output_path_suffix to be a relative path, got"
+                                            + " %s.",
+                                    response.getOutputPathSuffix()
+                                )
+                            )
+                            .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
+                            .build()
+                    )
+                )
+            } else if (outputPathSuffix.containsUplevelReferences()) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                java.lang.String.format(
+                                    "Expect normalized StartBuildResponse.output_path_suffix to not contain"
+                                            + " uplevel references, got %s.",
+                                    outputPathSuffix
+                                )
+                            )
+                            .setExecution(Execution.newBuilder().setCode(Code.EXECUTION_UNKNOWN))
+                            .build()
+                    )
+                )
+            }
+
+            val outputPathTarget: PathFragment = outputPathPrefix.getRelative(outputPathSuffix)
+            com.google.common.base.Preconditions.checkState(outputPathTarget.isAbsolute())
+            return outputPathTarget
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        private fun addArtifact(
+            outputMetadataStore: OutputMetadataStore,
+            execRoot: com.google.devtools.build.lib.vfs.Path,
+            outputPath: com.google.devtools.build.lib.vfs.Path?,
+            builder: FinalizeArtifactsRequest.Builder,
+            output: Artifact
+        ) {
+            com.google.common.base.Preconditions.checkState(!output.isTreeArtifact())
+            val metadata: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                outputMetadataStore.getOutputMetadata(output)
+            if (metadata.getType().isFile()) {
+                val digest: Digest? = DigestUtil.buildDigest(metadata.getDigest(), metadata.getSize())
+                val path: String? = execRoot.getRelative(output.getExecPath()).relativeTo(outputPath).toString()
+                builder.addArtifacts(
+                    FinalizeArtifactsRequest.Artifact.newBuilder()
+                        .setPath(path)
+                        .setLocator(Any.pack(FileArtifactLocator.newBuilder().setDigest(digest).build()))
+                        .build()
+                )
+            }
+        }
+    }
 }

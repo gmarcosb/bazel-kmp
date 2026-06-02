@@ -11,111 +11,102 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.DeclaredExecGroup;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.LinkedHashMap;
-import java.util.SequencedMap;
+import com.google.devtools.build.lib.analysis.platform.PlatformInfo
 
 /**
  * A wrapper class for a map of exec_group names to their relevant ToolchainContext.
- *
+ * 
  * @param <T> any class that extends ToolchainContext. This generic allows ToolchainCollection to be
- *     used, e.g., both before and after toolchain resolution.
+ * used, e.g., both before and after toolchain resolution.
  * @param contextMap A map of execution group names to toolchain contexts.
- */
+</T> */
 @AutoCodec
-public record ToolchainCollection<T extends ToolchainContext>(ImmutableMap<String, T> contextMap) {
-  public ToolchainCollection {
-    requireNonNull(contextMap, "contextMap");
-  }
+class ToolchainCollection<T : ToolchainContext?>(contextMap: com.google.common.collect.ImmutableMap<String?, T?>?) {
+    val defaultToolchainContext: T?
+        get() = this.contextMap.get(DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME)
 
-  public T getDefaultToolchainContext() {
-    return contextMap().get(DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME);
-  }
-
-  public boolean hasToolchainContext(String execGroup) {
-    return contextMap().containsKey(execGroup);
-  }
-
-  public T getToolchainContext(String execGroup) {
-    return contextMap().get(execGroup);
-  }
-
-  public ImmutableSet<Label> getResolvedToolchains() {
-    return contextMap().values().stream()
-        .flatMap(c -> c.resolvedToolchainLabels().stream())
-        .collect(toImmutableSet());
-  }
-
-  public ImmutableSet<String> getExecGroupNames() {
-    return contextMap().keySet();
-  }
-
-  /**
-   * This is safe because all toolchain context in a toolchain collection should have the same
-   * target platform
-   */
-  public PlatformInfo getTargetPlatform() {
-    return getDefaultToolchainContext().targetPlatform();
-  }
-
-  @SuppressWarnings("unchecked")
-  public ToolchainCollection<ToolchainContext> asToolchainContexts() {
-    return (ToolchainCollection<ToolchainContext>) this;
-  }
-
-  /** Returns a new builder for {@link ToolchainCollection} instances. */
-  public static <T extends ToolchainContext> Builder<T> builder() {
-    return new Builder<T>();
-  }
-
-  public static <T extends ToolchainContext> Builder<T> builderWithExpectedSize(int expectedSize) {
-    return new Builder<T>(expectedSize);
-  }
-
-  /** Builder for ToolchainCollection. */
-  public static final class Builder<T extends ToolchainContext> {
-    // This is not immutable so that we can check for duplicate keys easily.
-    private final SequencedMap<String, T> toolchainContexts;
-
-    private Builder() {
-      this.toolchainContexts = new LinkedHashMap<>();
+    fun hasToolchainContext(execGroup: String?): Boolean {
+        return this.contextMap.containsKey(execGroup)
     }
 
-    private Builder(int expectedSize) {
-      this.toolchainContexts = newLinkedHashMapWithExpectedSize(expectedSize);
+    fun getToolchainContext(execGroup: String?): T? {
+        return this.contextMap.get(execGroup)
     }
 
-    public ToolchainCollection<T> build() {
-      Preconditions.checkArgument(
-          toolchainContexts.containsKey(DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME));
-      return new ToolchainCollection<T>(ImmutableMap.copyOf(toolchainContexts));
+    val resolvedToolchains: com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.cmdline.Label?>
+        get() = this.contextMap.values.stream()
+            .flatMap<com.google.devtools.build.lib.cmdline.Label?> { c: T? -> c.resolvedToolchainLabels().stream() }
+            .collect(com.google.common.collect.ImmutableSet.toImmutableSet<com.google.devtools.build.lib.cmdline.Label?>())
+
+    val execGroupNames: com.google.common.collect.ImmutableSet<String?>
+        get() = this.contextMap.keys
+
+    val targetPlatform: PlatformInfo?
+        /**
+         * This is safe because all toolchain context in a toolchain collection should have the same
+         * target platform
+         */
+        get() = this.defaultToolchainContext.targetPlatform()
+
+    fun asToolchainContexts(): ToolchainCollection<ToolchainContext?> {
+        return this as ToolchainCollection<ToolchainContext?>
     }
 
-    public void addContext(String execGroup, T context) {
-      Preconditions.checkArgument(
-          !toolchainContexts.containsKey(execGroup),
-          "Duplicate add of '%s' exec group to toolchain collection.",
-          execGroup);
-      toolchainContexts.put(execGroup, context);
+    /** Builder for ToolchainCollection.  */
+    class Builder<T : ToolchainContext?> {
+        // This is not immutable so that we can check for duplicate keys easily.
+        private val toolchainContexts: SequencedMap<String?, T?>
+
+        private constructor() {
+            this.toolchainContexts = LinkedHashMap<String?, T?>()
+        }
+
+        private constructor(expectedSize: Int) {
+            this.toolchainContexts =
+                com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize<String?, T?>(expectedSize)
+        }
+
+        fun build(): ToolchainCollection<T?> {
+            com.google.common.base.Preconditions.checkArgument(
+                toolchainContexts.containsKey(DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME)
+            )
+            return ToolchainCollection<T?>(com.google.common.collect.ImmutableMap.copyOf<String?, T?>(toolchainContexts))
+        }
+
+        fun addContext(execGroup: String?, context: T?) {
+            com.google.common.base.Preconditions.checkArgument(
+                !toolchainContexts.containsKey(execGroup),
+                "Duplicate add of '%s' exec group to toolchain collection.",
+                execGroup
+            )
+            toolchainContexts.put(execGroup, context)
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addDefaultContext(context: T?): Builder<T?> {
+            addContext(DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME, context)
+            return this
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> addDefaultContext(T context) {
-      addContext(DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME, context);
-      return this;
+    val contextMap: com.google.common.collect.ImmutableMap<String?, T?>?
+
+    init {
+        this.contextMap = contextMap
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, T?>?>(contextMap, "contextMap")
     }
-  }
+
+    companion object {
+        /** Returns a new builder for [ToolchainCollection] instances.  */
+        @kotlin.jvm.JvmStatic
+        fun <T : ToolchainContext?> builder(): Builder<T?> {
+            return com.google.devtools.build.lib.analysis.ToolchainCollection.Builder<T?>()
+        }
+
+        fun <T : ToolchainContext?> builderWithExpectedSize(expectedSize: Int): Builder<T?> {
+            return com.google.devtools.build.lib.analysis.ToolchainCollection.Builder<T?>(expectedSize)
+        }
+    }
 }

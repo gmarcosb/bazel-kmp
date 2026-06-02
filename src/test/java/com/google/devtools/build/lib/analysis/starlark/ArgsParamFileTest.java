@@ -115,7 +115,7 @@ public class ArgsParamFileTest extends BuildViewTestCase {
             ShellEscaper.escapeString("'f'"),
             "pos2")
         .inOrder();
-    assertThat(args.getParamFileInfo().flagsOnly()).isFalse();
+    assertThat(args.paramFileInfo.flagsOnly()).isFalse();
   }
 
   @Test
@@ -125,7 +125,7 @@ public class ArgsParamFileTest extends BuildViewTestCase {
         .containsExactly(
             "--a", "b,c", "--nod", "pos1", "--foo", "bar1", "bar2", "bar3", "--e", "'f'", "pos2")
         .inOrder();
-    assertThat(args.getParamFileInfo().flagsOnly()).isFalse();
+    assertThat(args.paramFileInfo.flagsOnly()).isFalse();
   }
 
   @Test
@@ -134,7 +134,7 @@ public class ArgsParamFileTest extends BuildViewTestCase {
     assertThat(toParamFile(args))
         .containsExactly("--a=b,c", "--nod", "pos1", "--foo=bar1 bar2 bar3", "--e='f'", "pos2")
         .inOrder();
-    assertThat(args.getParamFileInfo().flagsOnly()).isTrue();
+    assertThat(args.paramFileInfo.flagsOnly()).isTrue();
   }
 
   /**
@@ -147,7 +147,7 @@ public class ArgsParamFileTest extends BuildViewTestCase {
       ParameterFile.writeParameterFile(
           outputStream,
           args.build(() -> RepositoryMapping.EMPTY).arguments(),
-          args.getParameterFileType());
+              args.parameterFileType);
       bytes = outputStream.toByteArray();
     }
     try (ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);

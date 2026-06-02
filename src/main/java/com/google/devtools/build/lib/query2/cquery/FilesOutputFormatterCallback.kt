@@ -11,69 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.cquery;
+package com.google.devtools.build.lib.query2.cquery
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper;
-import com.google.devtools.build.lib.analysis.configuredtargets.InputFileConfiguredTarget;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.TargetAccessor;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import java.io.IOException;
-import java.io.OutputStream;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * Cquery output formatter that prints the set of output files advertised by the matched targets.
  */
-public class FilesOutputFormatterCallback extends CqueryThreadsafeCallback {
+class FilesOutputFormatterCallback internal constructor(
+    eventHandler: ExtendedEventHandler?,
+    options: CqueryOptions?,
+    out: java.io.OutputStream?,
+    skyframeExecutor: SkyframeExecutor?,
+    accessor: TargetAccessor<CqueryNode?>?,
+    topLevelArtifactContext: TopLevelArtifactContext?
+) : CqueryThreadsafeCallback(eventHandler, options, out, skyframeExecutor, accessor,  /* uniquifyResults= */true) {
+    private val topLevelArtifactContext: TopLevelArtifactContext?
 
-  private final TopLevelArtifactContext topLevelArtifactContext;
-
-  FilesOutputFormatterCallback(
-      ExtendedEventHandler eventHandler,
-      CqueryOptions options,
-      OutputStream out,
-      SkyframeExecutor skyframeExecutor,
-      TargetAccessor<CqueryNode> accessor,
-      TopLevelArtifactContext topLevelArtifactContext) {
-    // Different targets may provide the same artifact, so we deduplicate the collection of all
-    // results at the end.
-    super(eventHandler, options, out, skyframeExecutor, accessor, /* uniquifyResults= */ true);
-    this.topLevelArtifactContext = topLevelArtifactContext;
-  }
-
-  @Override
-  public String getName() {
-    return "files";
-  }
-
-  @Override
-  public void processOutput(Iterable<CqueryNode> partialResult)
-      throws IOException, InterruptedException {
-    for (CqueryNode target : partialResult) {
-      if (!(target instanceof ConfiguredTarget cf)
-          || (!TopLevelArtifactHelper.shouldConsiderForDisplay(target)
-              && !(target instanceof InputFileConfiguredTarget))) {
-        continue;
-      }
-
-      for (var configuredObject :
-          Iterables.concat(ImmutableList.of(cf), accessor.getTopLevelAspects(cf))) {
-        TopLevelArtifactHelper.getAllArtifactsToBuild(configuredObject, topLevelArtifactContext)
-            .getImportantArtifacts()
-            .toList()
-            .stream()
-            .filter(
-                artifact ->
-                    TopLevelArtifactHelper.shouldDisplay(artifact) || artifact.isSourceArtifact())
-            .map(Artifact::getExecPathString)
-            .forEach(this::addResult);
-      }
+    init {
+        // Different targets may provide the same artifact, so we deduplicate the collection of all
+        // results at the end.
+        this.topLevelArtifactContext = topLevelArtifactContext
     }
-  }
+
+    val name: String
+        get() = "files"
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun processOutput(partialResult: Iterable<CqueryNode?>) {
+        for (target in partialResult) {
+            if (target !is ConfiguredTarget || (!TopLevelArtifactHelper.shouldConsiderForDisplay(target)
+                        && target !is InputFileConfiguredTarget)
+            ) {
+                continue
+            }
+
+            for (configuredObject in com.google.common.collect.Iterables.concat<ConfiguredAspect?>(
+                com.google.common.collect.ImmutableList.of<ConfiguredAspect?>(
+                    target
+                ), accessor.getTopLevelAspects(target)
+            )) {
+                TopLevelArtifactHelper.getAllArtifactsToBuild(configuredObject, topLevelArtifactContext)
+                    .getImportantArtifacts()
+                    .toList()
+                    .stream()
+                    .filter(
+                        { artifact -> TopLevelArtifactHelper.shouldDisplay(artifact) || artifact.isSourceArtifact() })
+                    .map(Artifact::getExecPathString)
+                    .forEach({ string: String? -> this.addResult(string) })
+            }
+        }
+    }
 }

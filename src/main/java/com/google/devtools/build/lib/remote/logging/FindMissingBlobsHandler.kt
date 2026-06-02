@@ -11,35 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
-
-import build.bazel.remote.execution.v2.FindMissingBlobsRequest;
-import build.bazel.remote.execution.v2.FindMissingBlobsResponse;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.FindMissingBlobsDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
+import build.bazel.remote.execution.v2.FindMissingBlobsRequest
 
 /**
- * LoggingHandler for {@link
- * google.devtools.remoteexecution.v1test.ContentAddressableStorage.FindMissingBlobs} gRPC call.
+ * LoggingHandler for [ ] gRPC call.
  */
-public class FindMissingBlobsHandler
-    implements LoggingHandler<FindMissingBlobsRequest, FindMissingBlobsResponse> {
+class FindMissingBlobsHandler
 
-  private final FindMissingBlobsDetails.Builder builder = FindMissingBlobsDetails.newBuilder();
+    : LoggingHandler<FindMissingBlobsRequest?, FindMissingBlobsResponse?> {
+    private val builder: FindMissingBlobsDetails.Builder = FindMissingBlobsDetails.newBuilder()
 
-  @Override
-  public void handleReq(FindMissingBlobsRequest message) {
-    builder.setRequest(message);
-  }
+    override fun handleReq(message: FindMissingBlobsRequest?) {
+        builder.setRequest(message)
+    }
 
-  @Override
-  public void handleResp(FindMissingBlobsResponse message) {
-    builder.setResponse(message);
-  }
+    override fun handleResp(message: FindMissingBlobsResponse?) {
+        builder.setResponse(message)
+    }
 
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder().setFindMissingBlobs(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder().setFindMissingBlobs(builder).build()
+    }
 }

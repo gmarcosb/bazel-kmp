@@ -11,96 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelConverter;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.analysis.starlark.annotations.StarlarkConfigurationField;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.starlarkbuildapi.test.CoverageConfigurationApi;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsClass;
-import javax.annotation.Nullable;
-
-/** The coverage configuration fragment. */
-@Immutable
-@RequiresOptions(options = {CoreOptions.class, CoverageConfiguration.CoverageOptions.class})
-public class CoverageConfiguration extends Fragment implements CoverageConfigurationApi {
-
-  /** Command-line options. */
-  @OptionsClass
-  public abstract static class CoverageOptions extends FragmentOptions {
-
-    @Option(
-        name = "coverage_output_generator",
-        converter = LabelConverter.class,
-        defaultValue = "@bazel_tools//tools/test:lcov_merger",
-        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-        effectTags = {
-          OptionEffectTag.CHANGES_INPUTS,
-          OptionEffectTag.AFFECTS_OUTPUTS,
-          OptionEffectTag.LOADING_AND_ANALYSIS
-        },
-        help =
-            """
+/** The coverage configuration fragment.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+@RequiresOptions(options = [CoreOptions::class, CoverageOptions::class])
+class CoverageConfiguration(buildOptions: BuildOptions) : Fragment(), CoverageConfigurationApi {
+    /** Command-line options.  */
+    @com.google.devtools.common.options.OptionsClass
+    abstract class CoverageOptions : FragmentOptions() {
+        @get:com.google.devtools.common.options.Option(
+            name = "coverage_output_generator",
+            converter = LabelConverter::class,
+            defaultValue = "@bazel_tools//tools/test:lcov_merger",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.TOOLCHAIN,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS, com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+            ],
+            help = """
             Location of the binary that is used to postprocess raw coverage reports. This must
             be a binary target. Defaults to `@bazel_tools//tools/test:lcov_merger`.
-            """)
-    public abstract Label getCoverageOutputGenerator();
+            
+            """.trimIndent()
+        )
+        abstract val coverageOutputGenerator: com.google.devtools.build.lib.cmdline.Label?
 
-    @Option(
-        name = "coverage_report_generator",
-        converter = LabelConverter.class,
-        defaultValue = "@bazel_tools//tools/test:coverage_report_generator",
-        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-        effectTags = {
-          OptionEffectTag.CHANGES_INPUTS,
-          OptionEffectTag.AFFECTS_OUTPUTS,
-          OptionEffectTag.LOADING_AND_ANALYSIS
-        },
-        help =
-            """
+        @get:com.google.devtools.common.options.Option(
+            name = "coverage_report_generator",
+            converter = LabelConverter::class,
+            defaultValue = "@bazel_tools//tools/test:coverage_report_generator",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.TOOLCHAIN,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS, com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+            ],
+            help = """
             Location of the binary that is used to generate coverage reports. This must
             be a binary target. Defaults to `@bazel_tools//tools/test:coverage_report_generator`.
-            """)
-    public abstract Label getCoverageReportGenerator();
-  }
-
-  private final CoverageOptions coverageOptions;
-
-  public CoverageConfiguration(BuildOptions buildOptions) {
-    if (!buildOptions.get(CoreOptions.class).getCollectCodeCoverage()) {
-      this.coverageOptions = null;
-      return;
+            
+            """.trimIndent()
+        )
+        abstract val coverageReportGenerator: com.google.devtools.build.lib.cmdline.Label?
     }
-    this.coverageOptions = buildOptions.get(CoverageOptions.class);
-  }
 
-  @Override
-  @StarlarkConfigurationField(
-      name = "output_generator",
-      doc = "Label for the coverage output generator.")
-  @Nullable
-  public Label outputGenerator() {
-    if (coverageOptions == null) {
-      return null;
-    }
-    return coverageOptions.getCoverageOutputGenerator();
-  }
+    private val coverageOptions: CoverageOptions?
 
-  @Nullable
-  public Label reportGenerator() {
-    if (coverageOptions == null) {
-      return null;
+    init {
+        if (!buildOptions.get(CoreOptions::class.java).getCollectCodeCoverage()) {
+            this.coverageOptions = null
+            return
+        }
+        this.coverageOptions = buildOptions.get(CoverageOptions::class.java)
     }
-    return coverageOptions.getCoverageReportGenerator();
-  }
+
+    @StarlarkConfigurationField(name = "output_generator", doc = "Label for the coverage output generator.")
+    override fun outputGenerator(): com.google.devtools.build.lib.cmdline.Label? {
+        if (coverageOptions == null) {
+            return null
+        }
+        return coverageOptions.coverageOutputGenerator
+    }
+
+    fun reportGenerator(): com.google.devtools.build.lib.cmdline.Label? {
+        if (coverageOptions == null) {
+            return null
+        }
+        return coverageOptions.coverageReportGenerator
+    }
 }

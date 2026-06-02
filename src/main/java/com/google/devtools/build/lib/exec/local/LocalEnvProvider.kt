@@ -11,46 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec.local;
+package com.google.devtools.build.lib.exec.local
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.exec.BinTools;
-import com.google.devtools.build.lib.util.OS;
-import java.io.IOException;
-import java.util.Map;
+import com.google.devtools.build.lib.exec.BinTools
+import com.google.devtools.build.lib.exec.local.PosixLocalEnvProvider
+import com.google.devtools.build.lib.exec.local.WindowsLocalEnvProvider
+import com.google.devtools.build.lib.exec.local.XcodeLocalEnvProvider
+import java.io.IOException
 
 /**
  * Allows just-in-time rewriting of the environment used for local actions. Do not use! This class
  * probably should not exist, but is currently necessary for our local MacOS support.
  */
-public interface LocalEnvProvider {
-  LocalEnvProvider NOOP = (env, binTools, fallbackTmpDir) -> ImmutableMap.copyOf(env);
+interface LocalEnvProvider {
+    /**
+     * Rewrites a `Spawn`'s the environment if necessary.
+     * 
+     * @param env the Spawn's environment to rewrite
+     * @param binTools used to find built-in tool paths
+     * @param fallbackTmpDir an absolute path to a temp directory that the Spawn could use. The
+     * particular implementation of [LocalEnvProvider] may choose to use some other path,
+     * typically the "TMPDIR" environment variable in the Bazel client's environment, but if
+     * that's unavailable, the implementation may decide to use this `fallbackTmpDir`.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun rewriteLocalEnv(
+        env: MutableMap<String?, String?>?, binTools: BinTools?, fallbackTmpDir: String?
+    ): com.google.common.collect.ImmutableMap<String?, String?>?
 
-  /**
-   * Creates a local environment provider for the current OS.
-   *
-   * @param clientEnv the environment variables as supplied by the Bazel client
-   * @return the local environment provider
-   */
-  static LocalEnvProvider forCurrentOs(Map<String, String> clientEnv) {
-    return switch (OS.getCurrent()) {
-      case DARWIN -> new XcodeLocalEnvProvider(clientEnv);
-      case WINDOWS -> new WindowsLocalEnvProvider(clientEnv);
-      default -> new PosixLocalEnvProvider(clientEnv);
-    };
-  }
+    companion object {
+        /**
+         * Creates a local environment provider for the current OS.
+         * 
+         * @param clientEnv the environment variables as supplied by the Bazel client
+         * @return the local environment provider
+         */
+        fun forCurrentOs(clientEnv: MutableMap<String?, String?>?): LocalEnvProvider {
+            return when (com.google.devtools.build.lib.util.OS.getCurrent()) {
+                com.google.devtools.build.lib.util.OS.DARWIN -> XcodeLocalEnvProvider(clientEnv)
+                com.google.devtools.build.lib.util.OS.WINDOWS -> WindowsLocalEnvProvider(clientEnv)
+                else -> PosixLocalEnvProvider(clientEnv)
+            }
+        }
 
-  /**
-   * Rewrites a {@code Spawn}'s the environment if necessary.
-   *
-   * @param env the Spawn's environment to rewrite
-   * @param binTools used to find built-in tool paths
-   * @param fallbackTmpDir an absolute path to a temp directory that the Spawn could use. The
-   *     particular implementation of {@link LocalEnvProvider} may choose to use some other path,
-   *     typically the "TMPDIR" environment variable in the Bazel client's environment, but if
-   *     that's unavailable, the implementation may decide to use this {@code fallbackTmpDir}.
-   */
-  ImmutableMap<String, String> rewriteLocalEnv(
-      Map<String, String> env, BinTools binTools, String fallbackTmpDir)
-      throws IOException, InterruptedException;
+        @kotlin.jvm.JvmField
+        val NOOP: LocalEnvProvider =
+            LocalEnvProvider { env: MutableMap<String?, String?>?, binTools: BinTools?, fallbackTmpDir: String? ->
+                com.google.common.collect.ImmutableMap.copyOf<String?, String?>(env)
+            }
+    }
 }

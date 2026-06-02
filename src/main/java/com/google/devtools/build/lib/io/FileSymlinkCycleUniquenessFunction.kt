@@ -11,73 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.io;
+package com.google.devtools.build.lib.io
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.lib.io.AbstractFileChainUniquenessFunction
+import com.google.devtools.build.lib.io.FileSymlinkCycleUniquenessFunction
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.lib.vfs.RootedPath
+import com.google.devtools.build.skyframe.AbstractSkyKey.WithCachedHashCode
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
 
 /**
- * A {@link com.google.devtools.build.skyframe.SkyFunction} that has the side effect of reporting a
+ * A [com.google.devtools.build.skyframe.SkyFunction] that has the side effect of reporting a
  * file symlink cycle. This is achieved by forcing the same key for two logically equivalent cycles
- * (e.g. {@code ['a' -> 'b' -> 'c' -> 'a']} and {@code ['b' -> 'c' -> 'a' -> 'b']}), and letting
+ * (e.g. `['a' -> 'b' -> 'c' -> 'a']` and `['b' -> 'c' -> 'a' -> 'b']`), and letting
  * Skyframe do its magic.
  */
-public class FileSymlinkCycleUniquenessFunction extends AbstractFileChainUniquenessFunction {
-  public static final SkyFunctionName NAME =
-      SkyFunctionName.createHermetic("FILE_SYMLINK_CYCLE_UNIQUENESS");
+class FileSymlinkCycleUniquenessFunction : AbstractFileChainUniquenessFunction() {
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(arg: com.google.common.collect.ImmutableList<RootedPath?>?) :
+        WithCachedHashCode<com.google.common.collect.ImmutableList<RootedPath?>?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return NAME
+        }
 
-  public static SkyKey key(ImmutableList<RootedPath> cycle) {
-    return Key.create(AbstractFileChainUniquenessFunction.canonicalize(cycle));
-  }
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.io.FileSymlinkCycleUniquenessFunction.Key.Companion.interner
 
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends AbstractSkyKey.WithCachedHashCode<ImmutableList<RootedPath>> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
 
-    private Key(ImmutableList<RootedPath> arg) {
-      super(arg);
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Instantiator
+            fun create(arg: com.google.common.collect.ImmutableList<RootedPath?>?): Key {
+                return com.google.devtools.build.lib.io.FileSymlinkCycleUniquenessFunction.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.io.FileSymlinkCycleUniquenessFunction.Key(arg)
+                )
+            }
+        }
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Instantiator
-    static Key create(ImmutableList<RootedPath> arg) {
-      return interner.intern(new Key(arg));
+    override fun elementToString(elt: RootedPath): String? {
+        return elt.asPath().toString()
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return NAME;
+    val conciseDescription: String
+        get() = "circular symlinks"
+
+    val headerMessage: String
+        get() = "[start of symlink cycle]"
+
+    val footerMessage: String
+        get() = "[end of symlink cycle]"
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val NAME: SkyFunctionName = SkyFunctionName.createHermetic("FILE_SYMLINK_CYCLE_UNIQUENESS")
+
+        fun key(cycle: com.google.common.collect.ImmutableList<RootedPath?>): SkyKey {
+            return com.google.devtools.build.lib.io.FileSymlinkCycleUniquenessFunction.Key.Companion.create(
+                AbstractFileChainUniquenessFunction.Companion.canonicalize(cycle)
+            )
+        }
     }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  @Override
-  protected String elementToString(RootedPath elt) {
-    return elt.asPath().toString();
-  }
-
-  @Override
-  protected String getConciseDescription() {
-    return "circular symlinks";
-  }
-
-  @Override
-  protected String getHeaderMessage() {
-    return "[start of symlink cycle]";
-  }
-
-  @Override
-  protected String getFooterMessage() {
-    return "[end of symlink cycle]";
-  }
 }

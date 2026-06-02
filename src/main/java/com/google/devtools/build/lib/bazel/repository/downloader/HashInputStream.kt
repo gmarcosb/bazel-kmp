@@ -11,84 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
-
-import com.google.common.hash.HashCode;
-import com.google.common.hash.Hasher;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
-import java.io.IOException;
-import java.io.InputStream;
-import javax.annotation.Nullable;
-import javax.annotation.WillCloseWhenClosed;
+import com.google.common.hash.HashCode
+import com.google.common.hash.Hasher
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import java.io.IOException
+import java.io.InputStream
+import java.lang.String
+import javax.annotation.WillCloseWhenClosed
+import kotlin.ByteArray
+import kotlin.Int
 
 /**
  * Input stream that guarantees its contents matches a hash code.
- *
- * <p>The actual checksum is computed gradually as the input is read. If it doesn't match, then an
- * {@link IOException} will be thrown when {@link #close()} is called, or when any read method is
+ * 
+ * 
+ * The actual checksum is computed gradually as the input is read. If it doesn't match, then an
+ * [IOException] will be thrown when [.close] is called, or when any read method is
  * called that detects the end of stream. This error will be thrown multiple times if these methods
  * are called again for some reason.
- *
- * <p>This class is not thread safe, but it is safe to message pass this object between threads.
+ * 
+ * 
+ * This class is not thread safe, but it is safe to message pass this object between threads.
  */
-@ThreadCompatible
-final class HashInputStream extends InputStream {
+@ThreadSafety.ThreadCompatible
+internal class HashInputStream(
+    @param:WillCloseWhenClosed private val delegate: InputStream,
+    private val checksum: Checksum
+) : InputStream() {
+    private val hasher: Hasher
 
-  private final InputStream delegate;
-  private final Hasher hasher;
-  private final Checksum checksum;
-  @Nullable private volatile HashCode actual;
+    @kotlin.concurrent.Volatile
+    private var actual: HashCode? = null
 
-  HashInputStream(@WillCloseWhenClosed InputStream delegate, Checksum checksum) {
-    this.delegate = delegate;
-    this.hasher = checksum.getKeyType().newHasher();
-    this.checksum = checksum;
-  }
-
-  @Override
-  public int read() throws IOException {
-    int result = delegate.read();
-    if (result == -1) {
-      check();
-    } else {
-      hasher.putByte((byte) result);
+    init {
+        this.hasher = checksum.getKeyType().newHasher()
     }
-    return result;
-  }
 
-  @Override
-  public int read(byte[] buffer, int offset, int length) throws IOException {
-    int amount = delegate.read(buffer, offset, length);
-    if (amount == -1) {
-      check();
-    } else {
-      hasher.putBytes(buffer, offset, amount);
+    @Throws(IOException::class)
+    override fun read(): Int {
+        val result = delegate.read()
+        if (result == -1) {
+            check()
+        } else {
+            hasher.putByte(result.toByte())
+        }
+        return result
     }
-    return amount;
-  }
 
-  @Override
-  public int available() throws IOException {
-    return delegate.available();
-  }
-
-  @Override
-  public void close() throws IOException {
-    delegate.close();
-    check();
-  }
-
-  private void check() throws IOException {
-    if (actual == null) {
-      actual = hasher.hash();
+    @Throws(IOException::class)
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val amount = delegate.read(buffer, offset, length)
+        if (amount == -1) {
+            check()
+        } else {
+            hasher.putBytes(buffer, offset, amount)
+        }
+        return amount
     }
-    if (!checksum.getHashCode().equals(actual)) {
-      throw new UnrecoverableHttpException(
-          String.format(
-              "Checksum was %s but wanted %s",
-              checksum.emitOtherHashInSameFormat(actual),
-              checksum.emitOtherHashInSameFormat(checksum.getHashCode())));
+
+    @Throws(IOException::class)
+    override fun available(): Int {
+        return delegate.available()
     }
-  }
+
+    @Throws(IOException::class)
+    override fun close() {
+        delegate.close()
+        check()
+    }
+
+    @Throws(IOException::class)
+    private fun check() {
+        if (actual == null) {
+            actual = hasher.hash()
+        }
+        if (checksum.getHashCode() != actual) {
+            throw UnrecoverableHttpException(
+                String.format(
+                    "Checksum was %s but wanted %s",
+                    checksum.emitOtherHashInSameFormat(actual),
+                    checksum.emitOtherHashInSameFormat(checksum.getHashCode())
+                )
+            )
+        }
+    }
 }

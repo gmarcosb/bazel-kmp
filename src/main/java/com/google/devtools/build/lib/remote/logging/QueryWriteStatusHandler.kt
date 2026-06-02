@@ -11,31 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
+import com.google.bytestream.ByteStreamProto.QueryWriteStatusRequest
 
-import com.google.bytestream.ByteStreamProto.QueryWriteStatusRequest;
-import com.google.bytestream.ByteStreamProto.QueryWriteStatusResponse;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.QueryWriteStatusDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
+/** LoggingHandler for [google.bytestream.QueryWriteStatus] gRPC call.  */
+class QueryWriteStatusHandler
 
-/** LoggingHandler for {@link google.bytestream.QueryWriteStatus} gRPC call. */
-public class QueryWriteStatusHandler
-    implements LoggingHandler<QueryWriteStatusRequest, QueryWriteStatusResponse> {
-  private final QueryWriteStatusDetails.Builder builder = QueryWriteStatusDetails.newBuilder();
+    : LoggingHandler<QueryWriteStatusRequest?, QueryWriteStatusResponse?> {
+    private val builder: QueryWriteStatusDetails.Builder = QueryWriteStatusDetails.newBuilder()
 
-  @Override
-  public void handleReq(QueryWriteStatusRequest message) {
-    builder.setRequest(message);
-  }
+    override fun handleReq(message: QueryWriteStatusRequest?) {
+        builder.setRequest(message)
+    }
 
-  @Override
-  public void handleResp(QueryWriteStatusResponse message) {
-    builder.setResponse(message);
-  }
+    override fun handleResp(message: QueryWriteStatusResponse?) {
+        builder.setResponse(message)
+    }
 
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder().setQueryWriteStatus(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder().setQueryWriteStatus(builder).build()
+    }
 }

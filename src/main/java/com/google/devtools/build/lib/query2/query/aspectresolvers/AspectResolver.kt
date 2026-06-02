@@ -11,67 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.query.aspectresolvers;
+package com.google.devtools.build.lib.query2.query.aspectresolvers
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.DependencyFilter;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.PackageProvider;
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableMultimap
+import com.google.devtools.build.lib.cmdline.Label
 
-/** Utility class that determines additional dependencies of a target from its aspects. */
-public interface AspectResolver {
+/** Utility class that determines additional dependencies of a target from its aspects.  */
+interface AspectResolver {
+    /**
+     * How to resolve aspect dependencies in 'blaze query'.
+     */
+    enum class Mode {
+        // Do not report aspect dependencies
+        OFF {
+            override fun createResolver(
+                provider: PackageProvider?, eventHandler: ExtendedEventHandler?
+            ): AspectResolver {
+                return NullAspectResolver()
+            }
+        },
 
-  /**
-   * How to resolve aspect dependencies in 'blaze query'.
-   */
-  enum Mode {
-    // Do not report aspect dependencies
-    OFF {
-      @Override
-      public AspectResolver createResolver(
-          PackageProvider provider, ExtendedEventHandler eventHandler) {
-        return new NullAspectResolver();
-      }
-    },
+        // Do not load dependent packages; report deps assuming all aspects defined on a rule are
+        // triggered
+        CONSERVATIVE {
+            override fun createResolver(
+                provider: PackageProvider?, eventHandler: ExtendedEventHandler?
+            ): AspectResolver {
+                return ConservativeAspectResolver()
+            }
+        },
 
-    // Do not load dependent packages; report deps assuming all aspects defined on a rule are
-    // triggered
-    CONSERVATIVE {
-      @Override
-      public AspectResolver createResolver(
-          PackageProvider provider, ExtendedEventHandler eventHandler) {
-        return new ConservativeAspectResolver();
-      }
-    },
+        // Load direct dependencies and report aspects that can be triggered based on their types.
+        PRECISE {
+            override fun createResolver(
+                provider: PackageProvider?, eventHandler: ExtendedEventHandler?
+            ): AspectResolver {
+                return PreciseAspectResolver(provider, eventHandler)
+            }
+        };
 
-    // Load direct dependencies and report aspects that can be triggered based on their types.
-    PRECISE {
-      @Override
-      public AspectResolver createResolver(
-          PackageProvider provider, ExtendedEventHandler eventHandler) {
-        return new PreciseAspectResolver(provider, eventHandler);
-      }
-    };
+        abstract fun createResolver(
+            provider: PackageProvider?, eventHandler: ExtendedEventHandler?
+        ): AspectResolver?
+    }
 
-    public abstract AspectResolver createResolver(
-        PackageProvider provider, ExtendedEventHandler eventHandler);
-  }
+    /**
+     * Compute additional dependencies of target from aspects. This method may load the direct deps of
+     * target to determine their types. Returns map of attributes and corresponding label values.
+     */
+    @Throws(InterruptedException::class)
+    fun computeAspectDependencies(
+        target: Target?, dependencyFilter: DependencyFilter?
+    ): ImmutableMap<Aspect?, ImmutableMultimap<Attribute?, Label?>?>?
 
-  /**
-   * Compute additional dependencies of target from aspects. This method may load the direct deps of
-   * target to determine their types. Returns map of attributes and corresponding label values.
-   */
-  ImmutableMap<Aspect, ImmutableMultimap<Attribute, Label>> computeAspectDependencies(
-      Target target, DependencyFilter dependencyFilter) throws InterruptedException;
-
-  /**
-   * Compute the labels of the BUILD Starlark files on which the results of the other two methods
-   * depend for a target in the given BUILD file's package.
-   */
-  Iterable<Label> computeBuildFileDependencies(Target buildFile) throws InterruptedException;
+    /**
+     * Compute the labels of the BUILD Starlark files on which the results of the other two methods
+     * depend for a target in the given BUILD file's package.
+     */
+    @Throws(InterruptedException::class)
+    fun computeBuildFileDependencies(buildFile: Target?): Iterable<Label?>?
 }

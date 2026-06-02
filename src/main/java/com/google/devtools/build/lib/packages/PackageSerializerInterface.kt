@@ -11,28 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
  * Abstraction layer for Package serialization.
- *
- * <p>Provides a layer of indirection for breaking circular dependencies.
+ * 
+ * 
+ * Provides a layer of indirection for breaking circular dependencies.
  */
-public interface PackageSerializerInterface {
+interface PackageSerializerInterface {
+    /** Serializes a package.  */
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    fun serialize(
+        context: SerializationContext?,
+        pkg: com.google.devtools.build.lib.packages.Package?,
+        codedOut: CodedOutputStream?
+    )
 
-  /** Serializes a package. */
-  void serialize(SerializationContext context, Package pkg, CodedOutputStream codedOut)
-      throws SerializationException, IOException;
-
-  /** Deserializes a package. */
-  Package deserialize(DeserializationContext context, CodedInputStream codedIn)
-      throws IOException, SerializationException;
+    /** Deserializes a package.  */
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun deserialize(
+        context: DeserializationContext?,
+        codedIn: CodedInputStream?
+    ): com.google.devtools.build.lib.packages.Package?
 }

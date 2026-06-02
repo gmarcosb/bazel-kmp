@@ -11,99 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.platform.PlatformNativeDepsService
+import java.util.function.IntConsumer
 
-import com.google.devtools.build.lib.jni.JniLoader;
-import java.util.function.IntConsumer;
+/** Implementation of [PlatformNativeDepsService].  */
+class PlatformNativeDepsServiceImpl : PlatformNativeDepsService {
+    override fun pushDisableSleep(): Int {
+        return pushDisableSleepNative()
+    }
 
-/** Implementation of {@link PlatformNativeDepsService}. */
-public class PlatformNativeDepsServiceImpl implements PlatformNativeDepsService {
-  static {
-    JniLoader.loadJni();
-  }
+    private external fun pushDisableSleepNative(): Int
 
-  @Override
-  public int pushDisableSleep() {
-    return pushDisableSleepNative();
-  }
+    override fun popDisableSleep(): Int {
+        return popDisableSleepNative()
+    }
 
-  private native int pushDisableSleepNative();
+    private external fun popDisableSleepNative(): Int
 
-  @Override
-  public int popDisableSleep() {
-    return popDisableSleepNative();
-  }
+    override fun registerCPUSpeedJni(callback: IntConsumer?) {
+        registerCPUSpeedNative(callback)
+    }
 
-  private native int popDisableSleepNative();
+    private external fun registerCPUSpeedNative(callback: IntConsumer?)
 
-  @Override
-  public void registerCPUSpeedJni(IntConsumer callback) {
-    registerCPUSpeedNative(callback);
-  }
+    override fun cpuSpeed(): Int {
+        return cpuSpeedNative()
+    }
 
-  private native void registerCPUSpeedNative(IntConsumer callback);
+    private external fun cpuSpeedNative(): Int
 
-  @Override
-  public int cpuSpeed() {
-    return cpuSpeedNative();
-  }
+    override fun registerDiskSpaceJni(callback: IntConsumer?) {
+        registerDiskSpaceNative(callback)
+    }
 
-  private native int cpuSpeedNative();
+    private external fun registerDiskSpaceNative(callback: IntConsumer?)
 
-  @Override
-  public void registerDiskSpaceJni(IntConsumer callback) {
-    registerDiskSpaceNative(callback);
-  }
+    override fun registerLoadAdvisoryJni(callback: IntConsumer?) {
+        registerLoadAdvisoryNative(callback)
+    }
 
-  private native void registerDiskSpaceNative(IntConsumer callback);
+    private external fun registerLoadAdvisoryNative(callback: IntConsumer?)
 
-  @Override
-  public void registerLoadAdvisoryJni(IntConsumer callback) {
-    registerLoadAdvisoryNative(callback);
-  }
+    override fun systemLoadAdvisory(): Int {
+        return systemLoadAdvisoryNative()
+    }
 
-  private native void registerLoadAdvisoryNative(IntConsumer callback);
+    private external fun systemLoadAdvisoryNative(): Int
 
-  @Override
-  public int systemLoadAdvisory() {
-    return systemLoadAdvisoryNative();
-  }
+    override fun registerMemoryPressureJni(callback: IntConsumer?) {
+        registerMemoryPressureNative(callback)
+    }
 
-  private native int systemLoadAdvisoryNative();
+    private external fun registerMemoryPressureNative(callback: IntConsumer?)
 
-  @Override
-  public void registerMemoryPressureJni(IntConsumer callback) {
-    registerMemoryPressureNative(callback);
-  }
+    override fun systemMemoryPressure(): Int {
+        return systemMemoryPressureNative()
+    }
 
-  private native void registerMemoryPressureNative(IntConsumer callback);
+    private external fun systemMemoryPressureNative(): Int
 
-  @Override
-  public int systemMemoryPressure() {
-    return systemMemoryPressureNative();
-  }
+    override fun registerSuspensionJni(callback: IntConsumer?) {
+        registerSuspensionNative(callback)
+    }
 
-  private native int systemMemoryPressureNative();
+    private external fun registerSuspensionNative(callback: IntConsumer?)
 
-  @Override
-  public void registerSuspensionJni(IntConsumer callback) {
-    registerSuspensionNative(callback);
-  }
+    override fun registerThermalJni(callback: IntConsumer?) {
+        registerThermalNative(callback)
+    }
 
-  private native void registerSuspensionNative(IntConsumer callback);
+    private external fun registerThermalNative(callback: IntConsumer?)
 
-  @Override
-  public void registerThermalJni(IntConsumer callback) {
-    registerThermalNative(callback);
-  }
+    override fun thermalLoad(): Int {
+        return thermalLoadNative()
+    }
 
-  private native void registerThermalNative(IntConsumer callback);
+    private external fun thermalLoadNative(): Int
 
-  @Override
-  public int thermalLoad() {
-    return thermalLoadNative();
-  }
-
-  private native int thermalLoadNative();
+    companion object {
+        init {
+            com.google.devtools.build.lib.jni.JniLoader.loadJni()
+        }
+    }
 }

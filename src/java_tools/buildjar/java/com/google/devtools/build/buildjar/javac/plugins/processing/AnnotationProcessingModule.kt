@@ -11,101 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac.plugins.processing
 
-package com.google.devtools.build.buildjar.javac.plugins.processing;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.buildjar.javac.plugins.BlazeJavaCompilerPlugin
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.buildjar.javac.plugins.BlazeJavaCompilerPlugin;
-import com.google.devtools.build.buildjar.proto.JavaCompilation.CompilationUnit;
-import com.google.devtools.build.buildjar.proto.JavaCompilation.Manifest;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+/** A module for information about the compilation's annotation processing.  */
+class AnnotationProcessingModule private constructor(
+    private val sourceGenDir: Path?,
+    private val manifestProto: Path?
+) {
+    /** A builder for [AnnotationProcessingModule]s.  */
+    class Builder private constructor() {
+        private var sourceGenDir: Path? = null
+        private var manifestProto: Path? = null
 
-/** A module for information about the compilation's annotation processing. */
-public class AnnotationProcessingModule {
+        fun build(): AnnotationProcessingModule {
+            return AnnotationProcessingModule(sourceGenDir, manifestProto)
+        }
 
-  /** A builder for {@link AnnotationProcessingModule}s. */
-  public static class Builder {
-    private Path sourceGenDir;
-    private Path manifestProto;
+        fun setSourceGenDir(sourceGenDir: Path?) {
+            this.sourceGenDir = sourceGenDir
+        }
 
-    private Builder() {}
-
-    public AnnotationProcessingModule build() {
-      return new AnnotationProcessingModule(sourceGenDir, manifestProto);
+        fun setManifestProtoPath(manifestProto: Path) {
+            this.manifestProto = manifestProto.toAbsolutePath()
+        }
     }
 
-    public void setSourceGenDir(Path sourceGenDir) {
-      this.sourceGenDir = sourceGenDir;
+    private val enabled: Boolean
+
+    fun isGenerated(path: Path): Boolean {
+        return path.startsWith(sourceGenDir)
     }
 
-    public void setManifestProtoPath(Path manifestProto) {
-      this.manifestProto = manifestProto.toAbsolutePath();
-    }
-  }
-
-  private final boolean enabled;
-  private final Path sourceGenDir;
-  private final Path manifestProto;
-
-  public boolean isGenerated(Path path) {
-    return path.startsWith(sourceGenDir);
-  }
-
-  public Path stripSourceRoot(Path path) {
-    return path.startsWith(sourceGenDir) ? sourceGenDir.relativize(path) : path;
-  }
-
-  private AnnotationProcessingModule(Path sourceGenDir, Path manifestProto) {
-    this.sourceGenDir = sourceGenDir;
-    this.manifestProto = manifestProto;
-    this.enabled = sourceGenDir != null && manifestProto != null;
-  }
-
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  public void registerPlugin(ImmutableList.Builder<BlazeJavaCompilerPlugin> builder) {
-    if (enabled) {
-      builder.add(new AnnotationProcessingPlugin(this));
-    }
-  }
-
-  private final Map<String, CompilationUnit> units = new HashMap<>();
-
-  public void recordUnit(CompilationUnit unit) {
-    units.put(unit.getPath(), unit);
-  }
-
-  private Manifest buildManifestProto() {
-    Manifest.Builder builder = Manifest.newBuilder();
-
-    List<String> keys = new ArrayList<>(units.keySet());
-    Collections.sort(keys);
-    for (String key : keys) {
-      CompilationUnit unit = units.get(key);
-      builder.addCompilationUnit(unit);
+    fun stripSourceRoot(path: Path): Path? {
+        return if (path.startsWith(sourceGenDir)) sourceGenDir!!.relativize(path) else path
     }
 
-    return builder.build();
-  }
+    fun registerPlugin(builder: ImmutableList.Builder<BlazeJavaCompilerPlugin?>) {
+        if (enabled) {
+            builder.add(AnnotationProcessingPlugin(this))
+        }
+    }
 
-  public void emitManifestProto() throws IOException {
-    if (!enabled) {
-      return;
+    private val units: MutableMap<String?, CompilationUnit?> = HashMap<String?, CompilationUnit?>()
+
+    init {
+        this.enabled = sourceGenDir != null && manifestProto != null
     }
-    try (OutputStream out = Files.newOutputStream(manifestProto)) {
-      buildManifestProto().writeTo(out);
-    } catch (IOException ex) {
-      throw new IOException("Cannot write manifest to " + manifestProto, ex);
+
+    fun recordUnit(unit: CompilationUnit) {
+        units.put(unit.getPath(), unit)
     }
-  }
+
+    private fun buildManifestProto(): Manifest {
+        val builder: Manifest.Builder = Manifest.newBuilder()
+
+        val keys: MutableList<String?> = ArrayList<String?>(units.keys)
+        Collections.sort<String?>(keys)
+        for (key in keys) {
+            val unit: CompilationUnit? = units.get(key)
+            builder.addCompilationUnit(unit)
+        }
+
+        return builder.build()
+    }
+
+    @Throws(IOException::class)
+    fun emitManifestProto() {
+        if (!enabled) {
+            return
+        }
+        try {
+            Files.newOutputStream(manifestProto).use { out ->
+                buildManifestProto().writeTo(out)
+            }
+        } catch (ex: IOException) {
+            throw IOException("Cannot write manifest to " + manifestProto, ex)
+        }
+    }
+
+    companion object {
+        fun builder(): Builder {
+            return AnnotationProcessingModule.Builder()
+        }
+    }
 }

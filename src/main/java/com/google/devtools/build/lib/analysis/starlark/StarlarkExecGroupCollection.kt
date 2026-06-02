@@ -11,151 +11,134 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.starlark;
-
-import static com.google.devtools.build.lib.packages.DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME;
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.ResolvedToolchainContext;
-import com.google.devtools.build.lib.analysis.ResolvedToolchainsDataInterface;
-import com.google.devtools.build.lib.analysis.ToolchainCollection;
-import com.google.devtools.build.lib.starlarkbuildapi.platform.ExecGroupCollectionApi;
-import com.google.devtools.build.lib.starlarkbuildapi.platform.ToolchainContextApi;
-import java.util.List;
-import java.util.stream.Collectors;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkIndexable;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.syntax.Identifier;
+package com.google.devtools.build.lib.analysis.starlark
 
 /**
- * A {@link StarlarkIndexable} collection of resolved toolchain contexts that can be exposed to
+ * A [StarlarkIndexable] collection of resolved toolchain contexts that can be exposed to
  * starlark.
  */
 @AutoValue
-public abstract class StarlarkExecGroupCollection implements ExecGroupCollectionApi {
+abstract class StarlarkExecGroupCollection : ExecGroupCollectionApi {
+    protected abstract fun toolchainCollection(): ToolchainCollection<out ResolvedToolchainsDataInterface<*>?>?
 
-  /**
-   * Empty collection of exec groups to be used when exec groups are not valid in the current
-   * context.
-   */
-  public static final ExecGroupCollectionApi EXEC_GROUP_COLLECTION_NOT_VALID =
-      new ExecGroupCollectionApi() {
-        @Override
-        public boolean containsKey(StarlarkSemantics semantics, Object key) {
-          return false;
+    @get:com.google.common.annotations.VisibleForTesting
+    val toolchainCollectionForTesting: com.google.common.collect.ImmutableMap<String?, out ResolvedToolchainsDataInterface<*>?>?
+        get() = toolchainCollection().contextMap
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun containsKey(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any): Boolean {
+        val group = castGroupName(semantics, key)
+        return DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME != group && toolchainCollection().getExecGroupNames()
+            .contains(group)
+    }
+
+    /**
+     * This creates a new [StarlarkExecGroupContext] object every time this is called. This
+     * seems better than pre-creating and storing all [StarlarkExecGroupContext]s since they're
+     * just thin wrappers around [ResolvedToolchainContext] objects.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun getIndex(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any): StarlarkExecGroupContext {
+        val execGroup = castGroupName(semantics, key)
+        if (!containsKey(semantics, key)) {
+            throw net.starlark.java.eval.Starlark.errorf(
+                "In %s, unrecognized exec group '%s' requested. Available exec groups: [%s]",
+                toolchainCollection().getDefaultToolchainContext().targetDescription(),
+                execGroup,
+                java.lang.String.join(", ", this.scrubbedExecGroups)
+            )
         }
 
-        @Override
-        public Object getIndex(StarlarkSemantics semantics, Object key) throws EvalException {
-          throw Starlark.errorf("exec_groups are not valid in this context");
+        val toolchainContext: ResolvedToolchainsDataInterface<*>? = toolchainCollection().getToolchainContext(execGroup)
+        if (toolchainContext == null) {
+            return StarlarkExecGroupContext(StarlarkToolchainContext.Companion.TOOLCHAINS_NOT_VALID)
         }
-      };
 
-  /**
-   * Returns a new {@link StarlarkExecGroupCollection} backed by the given {@code
-   * toolchainCollection}.
-   */
-  public static StarlarkExecGroupCollection create(
-      ToolchainCollection<? extends ResolvedToolchainsDataInterface<?>> toolchainCollection) {
-    return new AutoValue_StarlarkExecGroupCollection(toolchainCollection);
-  }
-
-  protected abstract ToolchainCollection<? extends ResolvedToolchainsDataInterface<?>>
-      toolchainCollection();
-
-  @VisibleForTesting
-  public ImmutableMap<String, ? extends ResolvedToolchainsDataInterface<?>>
-      getToolchainCollectionForTesting() {
-    return toolchainCollection().contextMap();
-  }
-
-  public static boolean isValidGroupName(String execGroupName) {
-    return !execGroupName.equals(DEFAULT_EXEC_GROUP_NAME) && Identifier.isValid(execGroupName);
-  }
-
-  @Override
-  public boolean containsKey(StarlarkSemantics semantics, Object key) throws EvalException {
-    String group = castGroupName(semantics, key);
-    return !DEFAULT_EXEC_GROUP_NAME.equals(group)
-        && toolchainCollection().getExecGroupNames().contains(group);
-  }
-
-  /**
-   * This creates a new {@link StarlarkExecGroupContext} object every time this is called. This
-   * seems better than pre-creating and storing all {@link StarlarkExecGroupContext}s since they're
-   * just thin wrappers around {@link ResolvedToolchainContext} objects.
-   */
-  @Override
-  public StarlarkExecGroupContext getIndex(StarlarkSemantics semantics, Object key)
-      throws EvalException {
-    String execGroup = castGroupName(semantics, key);
-    if (!containsKey(semantics, key)) {
-      throw Starlark.errorf(
-          "In %s, unrecognized exec group '%s' requested. Available exec groups: [%s]",
-          toolchainCollection().getDefaultToolchainContext().targetDescription(),
-          execGroup,
-          String.join(", ", getScrubbedExecGroups()));
+        val starlarkToolchainContext: ToolchainContextApi =
+            StarlarkToolchainContext.Companion.create( /* targetDescription= */
+                toolchainContext.targetDescription(),  /* resolveToolchainDataFunc= */
+                toolchainContext::forToolchainType,  /* resolvedToolchainTypeLabels= */
+                toolchainContext
+                    .requestedToolchainTypeLabels()
+                    .keySet()
+            )
+        return StarlarkExecGroupContext(starlarkToolchainContext)
     }
 
-    var toolchainContext = toolchainCollection().getToolchainContext(execGroup);
-    if (toolchainContext == null) {
-      return new StarlarkExecGroupContext(StarlarkToolchainContext.TOOLCHAINS_NOT_VALID);
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer
+            .append("<ctx.exec_groups: ")
+            .append(java.lang.String.join(", ", this.scrubbedExecGroups))
+            .append(">")
     }
 
-    ToolchainContextApi starlarkToolchainContext =
-        StarlarkToolchainContext.create(
-            /* targetDescription= */ toolchainContext.targetDescription(),
-            /* resolveToolchainDataFunc= */ toolchainContext::forToolchainType,
-            /* resolvedToolchainTypeLabels= */ toolchainContext
-                .requestedToolchainTypeLabels()
-                .keySet());
-    return new StarlarkExecGroupContext(starlarkToolchainContext);
-  }
+    private val scrubbedExecGroups: MutableList<String?>
+        get() = toolchainCollection().getExecGroupNames().stream()
+            .filter { group: String? -> DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME != group }
+            .sorted()
+            .collect(Collectors.toList())
 
-  private static String castGroupName(StarlarkSemantics semantics, Object key)
-      throws EvalException {
-    if (!(key instanceof String)) {
-      throw Starlark.errorf(
-          "exec groups only support indexing by exec group name, got %s of type %s instead",
-          Starlark.repr(key, semantics), Starlark.type(key));
-    }
-    return (String) key;
-  }
+    /**
+     * The starlark object that is returned by ctx.exec_groups[<name>]. Gives information about that
+     * exec group.
+    </name> */
+    class StarlarkExecGroupContext(toolchains: ToolchainContextApi?) : ExecGroupContextApi {
+        override fun repr(
+            printer: net.starlark.java.eval.Printer,
+            semantics: net.starlark.java.eval.StarlarkSemantics?
+        ) {
+            printer.append("<exec_group_context>")
+        }
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer
-        .append("<ctx.exec_groups: ")
-        .append(String.join(", ", getScrubbedExecGroups()))
-        .append(">");
-  }
+        val toolchains: ToolchainContextApi?
 
-  private List<String> getScrubbedExecGroups() {
-    return toolchainCollection().getExecGroupNames().stream()
-        .filter(group -> !DEFAULT_EXEC_GROUP_NAME.equals(group))
-        .sorted()
-        .collect(Collectors.toList());
-  }
-
-  /**
-   * The starlark object that is returned by ctx.exec_groups[<name>]. Gives information about that
-   * exec group.
-   */
-  public record StarlarkExecGroupContext(ToolchainContextApi toolchains)
-      implements ExecGroupContextApi {
-    public StarlarkExecGroupContext {
-      requireNonNull(toolchains, "toolchains");
+        init {
+            this.toolchains = toolchains
+            java.util.Objects.requireNonNull<ToolchainContextApi?>(toolchains, "toolchains")
+        }
     }
 
-    @Override
-    public void repr(Printer printer, StarlarkSemantics semantics) {
-      printer.append("<exec_group_context>");
+    companion object {
+        /**
+         * Empty collection of exec groups to be used when exec groups are not valid in the current
+         * context.
+         */
+        val EXEC_GROUP_COLLECTION_NOT_VALID: ExecGroupCollectionApi = object : ExecGroupCollectionApi {
+            override fun containsKey(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any?): Boolean {
+                return false
+            }
+
+            @Throws(net.starlark.java.eval.EvalException::class)
+            override fun getIndex(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any?): Any? {
+                throw net.starlark.java.eval.Starlark.errorf("exec_groups are not valid in this context")
+            }
+        }
+
+        /**
+         * Returns a new [StarlarkExecGroupCollection] backed by the given `toolchainCollection`.
+         */
+        fun create(
+            toolchainCollection: ToolchainCollection<out ResolvedToolchainsDataInterface<*>?>?
+        ): StarlarkExecGroupCollection {
+            return AutoValue_StarlarkExecGroupCollection(toolchainCollection)
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun isValidGroupName(execGroupName: String): Boolean {
+            return execGroupName != DeclaredExecGroup.DEFAULT_EXEC_GROUP_NAME && net.starlark.java.syntax.Identifier.isValid(
+                execGroupName
+            )
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun castGroupName(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any): String {
+            if (key !is String) {
+                throw net.starlark.java.eval.Starlark.errorf(
+                    "exec groups only support indexing by exec group name, got %s of type %s instead",
+                    net.starlark.java.eval.Starlark.repr(key, semantics), net.starlark.java.eval.Starlark.type(key)
+                )
+            }
+            return key
+        }
     }
-  }
 }

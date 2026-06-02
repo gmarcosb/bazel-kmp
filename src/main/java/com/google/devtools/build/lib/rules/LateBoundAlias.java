@@ -114,7 +114,7 @@ public final class LateBoundAlias implements RuleConfiguredTargetFactory {
     @Override
     public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
       Attribute attribute = makeAttribute(environment).build();
-      Preconditions.checkArgument(attribute.getName().equals(ATTRIBUTE_NAME));
+      Preconditions.checkArgument(attribute.name.equals(ATTRIBUTE_NAME));
       Preconditions.checkArgument(attribute.getType().equals(LABEL));
 
       return builder

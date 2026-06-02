@@ -11,24 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-/** Identifies one of the two stores in a remote or disk cache. */
-public enum Store {
-  /** Action cache. */
-  AC("ac"),
+/** Identifies one of the two stores in a remote or disk cache.  */
+enum class Store(name: String) {
+    /** Action cache.  */
+    AC("ac"),
 
-  /** Content-addressed storage. */
-  CAS("cas");
+    /** Content-addressed storage.  */
+    CAS("cas");
 
-  private final String name;
+    private val name: String?
 
-  private Store(String name) {
-    this.name = name;
-  }
+    init {
+        this.name = name
+    }
 
-  @Override
-  public String toString() {
-    return name;
-  }
+    override fun toString(): String {
+        return name!!
+    }
 }

@@ -11,128 +11,131 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import com.google.common.collect.Iterables;
-import com.google.common.primitives.Ints;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue
 
 /**
- * A sharding visitor which uses a {@link AbstractQueueVisitor}. It shards pending-visit items and
+ * A sharding visitor which uses a [AbstractQueueVisitor]. It shards pending-visit items and
  * aims at reaching maximum parallelism by ensuring all threads are utilized unless number of
  * pending items are fewer than number of threads.
  */
-public abstract class AbstractShardedVisitor<T> {
+abstract class AbstractShardedVisitor<T>(
+    executor: com.google.devtools.build.lib.concurrent.AbstractQueueVisitor,
+    numThreads: Int
+) {
+    private val executor: com.google.devtools.build.lib.concurrent.AbstractQueueVisitor
+    private val remainingItemsToVisit: LinkedBlockingQueue<T?>
+    private val numThreads: Int
 
-  protected static final int DEFAULT_THREAD_COUNT = Runtime.getRuntime().availableProcessors();
-
-  private static final int DEFAULT_MAX_BATCH_SIZE = 8192;
-
-  /**
-   * Default {@link ErrorClassifier} used by the visitor returned by {@link
-   * #AbstractShardedVisitor(String)}.
-   */
-  public static final ErrorClassifier ERROR_CLASSIFIER =
-      new ErrorClassifier() {
-        @Override
-        protected ErrorClassification classifyException(Exception e) {
-          return e instanceof RuntimeException
-              ? ErrorClassification.CRITICAL_AND_LOG
-              : ErrorClassification.NOT_CRITICAL;
-        }
-      };
-
-  private final AbstractQueueVisitor executor;
-  private final LinkedBlockingQueue<T> remainingItemsToVisit;
-  private final int numThreads;
-
-  /**
-   * Creates a visitor that uses a {@link ForkJoinQuiescingExecutor} backed by a {@link
-   * ForkJoinPool} using {@code DEFAULT_THREAD_COUNT} threads.
-   */
-  protected AbstractShardedVisitor(String name) {
-    this(
-        ForkJoinQuiescingExecutor.newBuilder()
-            .withOwnershipOf(NamedForkJoinPool.newNamedPool(name, DEFAULT_THREAD_COUNT))
-            .setErrorClassifier(ERROR_CLASSIFIER)
+    /**
+     * Creates a visitor that uses a [ForkJoinQuiescingExecutor] backed by a [ ] using `DEFAULT_THREAD_COUNT` threads.
+     */
+    protected constructor(name: String?) : this(
+        com.google.devtools.build.lib.concurrent.ForkJoinQuiescingExecutor.Companion.newBuilder()
+            .withOwnershipOf(
+                com.google.devtools.build.lib.concurrent.NamedForkJoinPool.Companion.newNamedPool(
+                    name,
+                    com.google.devtools.build.lib.concurrent.AbstractShardedVisitor.Companion.DEFAULT_THREAD_COUNT
+                )
+            )
+            .setErrorClassifier(com.google.devtools.build.lib.concurrent.AbstractShardedVisitor.Companion.ERROR_CLASSIFIER)
             .build(),
-        DEFAULT_THREAD_COUNT);
-  }
+        com.google.devtools.build.lib.concurrent.AbstractShardedVisitor.Companion.DEFAULT_THREAD_COUNT
+    )
 
-  /**
-   * Creates a visitor using an {@link AbstractQueueVisitor}, using up {@code numThreads} threads.
-   */
-  public AbstractShardedVisitor(AbstractQueueVisitor executor, int numThreads) {
-    this.executor = executor;
-    this.numThreads = numThreads;
-    this.remainingItemsToVisit = new LinkedBlockingQueue<>();
-  }
-
-  /**
-   * Starts parallel visitations of items. Waits until queue is drained and there are no more items
-   * to visit.
-   */
-  public void scheduleVisitationsAndAwaitQuiescence(Collection<T> itemsToVisit)
-      throws InterruptedException {
-    remainingItemsToVisit.addAll(itemsToVisit);
-    shardAndScheduleRemainingItems();
-    executor.awaitQuiescence(/*interruptWorkers=*/ true);
-  }
-
-  /** Ensures no item is still pending visitation. */
-  public void checkComplete() {
-    if (remainingItemsToVisit.isEmpty()) {
-      return;
+    /**
+     * Creates a visitor using an [AbstractQueueVisitor], using up `numThreads` threads.
+     */
+    init {
+        this.executor = executor
+        this.numThreads = numThreads
+        this.remainingItemsToVisit = LinkedBlockingQueue<T?>()
     }
-    int numUnvisitedItems = remainingItemsToVisit.size();
-    ArrayList<T> unvisitedItems = new ArrayList<>(10);
-    remainingItemsToVisit.drainTo(unvisitedItems, 10);
-    throw new IllegalStateException(
-        String.format(
-            "There are %s item(s) enqueued for visiting but not visited before quiescence "
-                + "(sample: %s)",
-            numUnvisitedItems, Iterables.limit(unvisitedItems, 10)));
-  }
 
-  /** Gets max batch size in each shard. */
-  protected int getMaxBatchSize() {
-    return DEFAULT_MAX_BATCH_SIZE;
-  }
+    /**
+     * Starts parallel visitations of items. Waits until queue is drained and there are no more items
+     * to visit.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun scheduleVisitationsAndAwaitQuiescence(itemsToVisit: MutableCollection<T?>?) {
+        remainingItemsToVisit.addAll(itemsToVisit)
+        shardAndScheduleRemainingItems()
+        executor.awaitQuiescence( /*interruptWorkers=*/true)
+    }
 
-  /** Shards the work of {@link #visit}ing {@code remainingItemsToVisit} across the free threads. */
-  private void shardAndScheduleRemainingItems() {
-    // Note that LinkedBlockingQueue#size() is a constant time operation.
-    int numTasksExcludingThis = Ints.checkedCast(executor.getTaskCount()) - 1;
-    int freeThreads = Math.max(numThreads - numTasksExcludingThis, 1);
+    /** Ensures no item is still pending visitation.  */
+    fun checkComplete() {
+        if (remainingItemsToVisit.isEmpty()) {
+            return
+        }
+        val numUnvisitedItems: Int = remainingItemsToVisit.size()
+        val unvisitedItems: java.util.ArrayList<T?> = java.util.ArrayList<T?>(10)
+        remainingItemsToVisit.drainTo(unvisitedItems, 10)
+        throw java.lang.IllegalStateException(
+            java.lang.String.format(
+                "There are %s item(s) enqueued for visiting but not visited before quiescence "
+                        + "(sample: %s)",
+                numUnvisitedItems, com.google.common.collect.Iterables.limit<T?>(unvisitedItems, 10)
+            )
+        )
+    }
 
-    int itemsPerThread = (remainingItemsToVisit.size() / freeThreads) + 1;
-    int batchSize = Math.min(itemsPerThread, getMaxBatchSize());
+    protected val maxBatchSize: Int
+        /** Gets max batch size in each shard.  */
+        get() = com.google.devtools.build.lib.concurrent.AbstractShardedVisitor.Companion.DEFAULT_MAX_BATCH_SIZE
 
-    for (int i = 0; i < freeThreads; i++) {
-      ArrayList<T> items = new ArrayList<>(batchSize);
-      remainingItemsToVisit.drainTo(items, batchSize);
-      // We may be done because someone else stole our items or because freeThreads was greater than
-      // remainingItemsToVisit.size() and we've finished dealing out the remaining items.
-      if (items.isEmpty()) {
-        break;
-      }
-      executor.execute(
-          () -> {
-            try {
-              remainingItemsToVisit.addAll(visit(items));
-              shardAndScheduleRemainingItems();
-            } catch (InterruptedException e) {
-              // The work thread may get interrupted only when the main thread is interrupted. Stop
-              // doing further work.
-              Thread.currentThread().interrupt();
+    /** Shards the work of [.visit]ing `remainingItemsToVisit` across the free threads.  */
+    private fun shardAndScheduleRemainingItems() {
+        // Note that LinkedBlockingQueue#size() is a constant time operation.
+        val numTasksExcludingThis: Int = com.google.common.primitives.Ints.checkedCast(executor.getTaskCount()) - 1
+        val freeThreads: Int = java.lang.Math.max(numThreads - numTasksExcludingThis, 1)
+
+        val itemsPerThread: Int = (remainingItemsToVisit.size() / freeThreads) + 1
+        val batchSize: Int = java.lang.Math.min(itemsPerThread, this.maxBatchSize)
+
+        for (i in 0..<freeThreads) {
+            val items: java.util.ArrayList<T?> = java.util.ArrayList<T?>(batchSize)
+            remainingItemsToVisit.drainTo(items, batchSize)
+            // We may be done because someone else stole our items or because freeThreads was greater than
+            // remainingItemsToVisit.size() and we've finished dealing out the remaining items.
+            if (items.isEmpty()) {
+                break
             }
-          });
+            executor.execute(
+                java.lang.Runnable {
+                    try {
+                        remainingItemsToVisit.addAll(visit(items))
+                        shardAndScheduleRemainingItems()
+                    } catch (e: java.lang.InterruptedException) {
+                        // The work thread may get interrupted only when the main thread is interrupted. Stop
+                        // doing further work.
+                        java.lang.Thread.currentThread().interrupt()
+                    }
+                })
+        }
     }
-  }
 
-  /** Visits {@code itemsToVisit} and returns the next batch of items to visit. */
-  protected abstract Collection<T> visit(Collection<T> itemsToVisit) throws InterruptedException;
+    /** Visits `itemsToVisit` and returns the next batch of items to visit.  */
+    @Throws(java.lang.InterruptedException::class)
+    protected abstract fun visit(itemsToVisit: MutableCollection<T?>?): MutableCollection<T?>?
+
+    companion object {
+        protected val DEFAULT_THREAD_COUNT: Int = java.lang.Runtime.getRuntime().availableProcessors()
+
+        private const val DEFAULT_MAX_BATCH_SIZE = 8192
+
+        /**
+         * Default [ErrorClassifier] used by the visitor returned by [ ][.AbstractShardedVisitor].
+         */
+        val ERROR_CLASSIFIER: com.google.devtools.build.lib.concurrent.ErrorClassifier =
+            object : com.google.devtools.build.lib.concurrent.ErrorClassifier() {
+                override fun classifyException(e: java.lang.Exception?): com.google.devtools.build.lib.concurrent.ErrorClassifier.ErrorClassification {
+                    return if (e is java.lang.RuntimeException)
+                        com.google.devtools.build.lib.concurrent.ErrorClassifier.ErrorClassification.CRITICAL_AND_LOG
+                    else
+                        com.google.devtools.build.lib.concurrent.ErrorClassifier.ErrorClassification.NOT_CRITICAL
+                }
+            }
+    }
 }

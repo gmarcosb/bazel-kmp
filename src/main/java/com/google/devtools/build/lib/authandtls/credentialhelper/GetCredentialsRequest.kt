@@ -11,97 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-package com.google.devtools.build.lib.authandtls.credentialhelper;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
-import com.google.errorprone.annotations.Immutable;
-import com.google.gson.JsonSyntaxException;
-import com.google.gson.TypeAdapter;
-import com.google.gson.annotations.JsonAdapter;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.JsonToken;
-import com.google.gson.stream.JsonWriter;
-import java.io.IOException;
-import java.net.URI;
-import java.util.Locale;
+import com.google.auto.value.AutoBuilder
+import com.google.auto.value.AutoValue.CopyAnnotations
+import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsRequest
+import com.google.gson.JsonSyntaxException
+import com.google.gson.TypeAdapter
+import com.google.gson.annotations.JsonAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonWriter
+import java.io.IOException
+import java.util.Locale
 
 /**
- * Request for the {@code get} command of the <a
- * href="https://github.com/bazelbuild/proposals/blob/main/designs/2022-06-07-bazel-credential-helpers.md#proposal">Credential
- * Helper Protocol</a>.
- *
- * @param uri Returns the {@link URI} this request is for.
+ * Request for the `get` command of the [Credential
+ * Helper Protocol](https://github.com/bazelbuild/proposals/blob/main/designs/2022-06-07-bazel-credential-helpers.md#proposal).
+ * 
+ * @param uri Returns the [URI] this request is for.
  */
-@AutoValue.CopyAnnotations
-@Immutable
-@JsonAdapter(GetCredentialsRequest.GsonTypeAdapter.class)
-public record GetCredentialsRequest(URI uri) {
-  public GetCredentialsRequest {
-    requireNonNull(uri, "uri");
-  }
+@CopyAnnotations
+@com.google.errorprone.annotations.Immutable
+@JsonAdapter(com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsRequest.GsonTypeAdapter::class)
+class GetCredentialsRequest(uri: java.net.URI?) {
+    /** Builder for [GetCredentialsRequest].  */
+    @AutoBuilder
+    abstract class Builder {
+        /** Sets the [URI] this request is for.  */
+        abstract fun setUri(uri: java.net.URI?): Builder?
 
-  /** Returns a new builder for {@link GetCredentialsRequest}. */
-  public static Builder newBuilder() {
-    return new AutoBuilder_GetCredentialsRequest_Builder();
-  }
-
-  /** Builder for {@link GetCredentialsRequest}. */
-  @AutoBuilder
-  public abstract static class Builder {
-    /** Sets the {@link URI} this request is for. */
-    public abstract Builder setUri(URI uri);
-
-    /** Returns the newly constructed {@link GetCredentialsRequest}. */
-    public abstract GetCredentialsRequest build();
-  }
-
-  /** GSON adapter for GetCredentialsRequest. */
-  public static final class GsonTypeAdapter extends TypeAdapter<GetCredentialsRequest> {
-    @Override
-    public void write(JsonWriter writer, GetCredentialsRequest value) throws IOException {
-      Preconditions.checkNotNull(writer);
-      Preconditions.checkNotNull(value);
-
-      writer.beginObject();
-      writer.name("uri").value(value.uri().toString());
-      writer.endObject();
+        /** Returns the newly constructed [GetCredentialsRequest].  */
+        abstract fun build(): GetCredentialsRequest?
     }
 
-    @Override
-    public GetCredentialsRequest read(JsonReader reader) throws IOException {
-      Preconditions.checkNotNull(reader);
+    /** GSON adapter for GetCredentialsRequest.  */
+    class GsonTypeAdapter : TypeAdapter<GetCredentialsRequest?>() {
+        @Throws(IOException::class)
+        override fun write(writer: JsonWriter?, value: GetCredentialsRequest?) {
+            com.google.common.base.Preconditions.checkNotNull<JsonWriter?>(writer)
+            com.google.common.base.Preconditions.checkNotNull<GetCredentialsRequest?>(value)
 
-      Builder request = newBuilder();
-
-      if (reader.peek() != JsonToken.BEGIN_OBJECT) {
-        throw new JsonSyntaxException(
-            String.format(Locale.US, "Expected object, got %s", reader.peek()));
-      }
-      reader.beginObject();
-      while (reader.hasNext()) {
-        String name = reader.nextName();
-        switch (name) {
-          case "uri" -> {
-            if (reader.peek() != JsonToken.STRING) {
-              throw new JsonSyntaxException(
-                  String.format(
-                      Locale.US, "Expected value of 'url' to be a string, got %s", reader.peek()));
-            }
-            request.setUri(URI.create(reader.nextString()));
-          }
-          default ->
-              // We intentionally ignore unknown keys to achieve forward compatibility with requests
-              // coming from newer tools.
-              reader.skipValue();
+            writer.beginObject()
+            writer.name("uri").value(value!!.uri.toString())
+            writer.endObject()
         }
-      }
-      reader.endObject();
-      return request.build();
+
+        @Throws(IOException::class)
+        override fun read(reader: JsonReader?): GetCredentialsRequest? {
+            com.google.common.base.Preconditions.checkNotNull<JsonReader?>(reader)
+
+            val request = newBuilder()
+
+            if (reader.peek() != com.google.gson.stream.JsonToken.BEGIN_OBJECT) {
+                throw JsonSyntaxException(
+                    java.lang.String.format(Locale.US, "Expected object, got %s", reader.peek())
+                )
+            }
+            reader.beginObject()
+            while (reader.hasNext()) {
+                val name: String = reader.nextName()
+                when (name) {
+                    "uri" -> {
+                        if (reader.peek() != com.google.gson.stream.JsonToken.STRING) {
+                            throw JsonSyntaxException(
+                                java.lang.String.format(
+                                    Locale.US, "Expected value of 'url' to be a string, got %s", reader.peek()
+                                )
+                            )
+                        }
+                        request.setUri(java.net.URI.create(reader.nextString()))
+                    }
+
+                    else ->  // We intentionally ignore unknown keys to achieve forward compatibility with requests
+                        // coming from newer tools.
+                        reader.skipValue()
+                }
+            }
+            reader.endObject()
+            return request.build()
+        }
     }
-  }
+
+    val uri: java.net.URI?
+
+    init {
+        this.uri = uri
+        java.util.Objects.requireNonNull<java.net.URI?>(uri, "uri")
+    }
+
+    companion object {
+        /** Returns a new builder for [GetCredentialsRequest].  */
+        fun newBuilder(): Builder {
+            return AutoBuilder_GetCredentialsRequest_Builder()
+        }
+    }
 }

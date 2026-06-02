@@ -11,28 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.testbed
 
-package com.google.testing.junit.runner.testbed;
+import org.junit.Assert
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static org.junit.Assert.fail;
+/** A JUnit4-style test meant to be invoked by junit4_testbridge_tests.sh.  */
+@RunWith(JUnit4::class)
+class JUnit4TestbridgeOomExercises {
+    @Test
+    fun testPass() {
+    }
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    fun testFailAssertion() {
+        Assert.fail()
+    }
 
-/** A JUnit4-style test meant to be invoked by junit4_testbridge_tests.sh. */
-@RunWith(JUnit4.class)
-public class JUnit4TestbridgeOomExercises {
-  @Test
-  public void testPass() {}
-
-  @Test
-  public void testFailAssertion() {
-    fail();
-  }
-
-  @Test
-  public void testFailWithOom() {
-    throw new OutOfMemoryError("testing");
-  }
+    @Test
+    fun testFailWithOom() {
+        throw OutOfMemoryError("testing")
+    }
 }

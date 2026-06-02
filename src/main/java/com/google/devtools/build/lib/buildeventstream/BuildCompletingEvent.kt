@@ -11,83 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream
 
-package com.google.devtools.build.lib.buildeventstream;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.protobuf.util.Timestamps;
-import java.util.Collection;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId
 
 /**
  * Class all events completing a build inherit from.
- *
- * <p>This class is abstract as for each particular event a specialized class should be used.
+ * 
+ * 
+ * This class is abstract as for each particular event a specialized class should be used.
  * However, subclasses do not have to implement anything.
  */
-public abstract class BuildCompletingEvent implements BuildEvent {
-  @Nullable private final DetailedExitCode detailedExitCode;
-  private final ExitCode exitCode;
-  private final long finishTimeMillis;
+abstract class BuildCompletingEvent : BuildEvent {
+    private val detailedExitCode: DetailedExitCode?
+    private val exitCode: ExitCode
+    private val finishTimeMillis: Long
 
-  private final Collection<BuildEventId> children;
+    private val children: MutableCollection<BuildEventId?>?
 
-  public BuildCompletingEvent(
-      ExitCode exitCode, long finishTimeMillis, Collection<BuildEventId> children) {
-    this.detailedExitCode = null;
-    this.exitCode = exitCode;
-    this.finishTimeMillis = finishTimeMillis;
-    this.children = children;
-  }
-
-  public BuildCompletingEvent(
-      DetailedExitCode detailedExitCode, long finishTimeMillis, Collection<BuildEventId> children) {
-    this.detailedExitCode = detailedExitCode;
-    this.exitCode = detailedExitCode.getExitCode();
-    this.finishTimeMillis = finishTimeMillis;
-    this.children = children;
-  }
-
-  public BuildCompletingEvent(ExitCode exitCode, long finishTimeMillis) {
-    this(exitCode, finishTimeMillis, ImmutableList.of());
-  }
-
-  public ExitCode getExitCode() {
-    return exitCode;
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.buildFinished();
-  }
-
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return children;
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.BuildFinished.ExitCode protoExitCode =
-        BuildEventStreamProtos.BuildFinished.ExitCode.newBuilder()
-            .setName(exitCode.name())
-            .setCode(exitCode.getNumericExitCode())
-            .build();
-
-    BuildEventStreamProtos.BuildFinished.Builder finished =
-        BuildEventStreamProtos.BuildFinished.newBuilder()
-            .setOverallSuccess(ExitCode.SUCCESS.equals(exitCode))
-            .setExitCode(protoExitCode)
-            .setFinishTime(Timestamps.fromMillis(finishTimeMillis))
-            .setFinishTimeMillis(finishTimeMillis);
-
-    if (detailedExitCode != null && detailedExitCode.getFailureDetail() != null) {
-      finished.setFailureDetail(detailedExitCode.getFailureDetail());
+    @kotlin.jvm.JvmOverloads
+    constructor(
+        exitCode: ExitCode,
+        finishTimeMillis: Long,
+        children: MutableCollection<BuildEventId?>? = com.google.common.collect.ImmutableList.of<BuildEventId?>()
+    ) {
+        this.detailedExitCode = null
+        this.exitCode = exitCode
+        this.finishTimeMillis = finishTimeMillis
+        this.children = children
     }
 
-    return GenericBuildEvent.protoChaining(this).setFinished(finished.build()).build();
-  }
+    constructor(
+        detailedExitCode: DetailedExitCode,
+        finishTimeMillis: Long,
+        children: MutableCollection<BuildEventId?>?
+    ) {
+        this.detailedExitCode = detailedExitCode
+        this.exitCode = detailedExitCode.getExitCode()
+        this.finishTimeMillis = finishTimeMillis
+        this.children = children
+    }
+
+    fun getExitCode(): ExitCode {
+        return exitCode
+    }
+
+    val eventId: BuildEventId?
+        get() = BuildEventIdUtil.buildFinished()
+
+    val childrenEvents: MutableCollection<BuildEventId>?
+        get() = children
+
+    override fun asStreamProto(converters: BuildEventContext?): BuildEvent {
+        val protoExitCode: ExitCode? =
+            BuildEventStreamProtos.BuildFinished.ExitCode.newBuilder()
+                .setName(exitCode.name())
+                .setCode(exitCode.getNumericExitCode())
+                .build()
+
+        val finished: BuildEventStreamProtos.BuildFinished.Builder =
+            BuildEventStreamProtos.BuildFinished.newBuilder()
+                .setOverallSuccess(ExitCode.SUCCESS == exitCode)
+                .setExitCode(protoExitCode)
+                .setFinishTime(Timestamps.fromMillis(finishTimeMillis))
+                .setFinishTimeMillis(finishTimeMillis)
+
+        if (detailedExitCode != null && detailedExitCode.getFailureDetail() != null) {
+            finished.setFailureDetail(detailedExitCode.getFailureDetail())
+        }
+
+        return GenericBuildEvent.Companion.protoChaining(this).setFinished(finished.build()).build()
+    }
 }

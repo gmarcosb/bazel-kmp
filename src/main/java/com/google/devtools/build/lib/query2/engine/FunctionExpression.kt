@@ -11,71 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.base.Functions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Argument;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ArgumentType;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import java.util.Collection;
-import java.util.List;
+import com.google.common.base.Functions
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.profiler.Profiler
 
 /**
  * A query expression for user-defined query functions.
  */
-public class FunctionExpression extends QueryExpression {
-  QueryFunction function;
-  List<Argument> args;
+class FunctionExpression(function: QueryFunction, args: MutableList<QueryEnvironment.Argument?>) : QueryExpression() {
+    var function: QueryFunction
+    var args: MutableList<QueryEnvironment.Argument>
 
-  public FunctionExpression(QueryFunction function, List<Argument> args) {
-    this.function = function;
-    this.args = ImmutableList.copyOf(args);
-  }
-
-  public QueryFunction getFunction() {
-    return function;
-  }
-
-  public List<Argument> getArgs() {
-    return args;
-  }
-
-  @Override
-  public <T> QueryTaskFuture<Void> eval(
-      QueryEnvironment<T> env, QueryExpressionContext<T> context, Callback<T> callback) {
-    QueryTaskFuture<Void> result;
-    try (SilentCloseable closeable =
-        Profiler.instance().profile("function.eval/" + function.getName())) {
-      result = function.eval(env, context, this, args, callback);
+    init {
+        this.function = function
+        this.args = ImmutableList.copyOf<QueryEnvironment.Argument?>(args)
     }
-    return result;
-  }
 
-  @Override
-  public void collectTargetPatterns(Collection<String> literals) {
-    for (Argument arg : args) {
-      if (arg.getType() == ArgumentType.EXPRESSION) {
-        arg.getExpression().collectTargetPatterns(literals);
-      }
+    fun getFunction(): QueryFunction {
+        return function
     }
-  }
 
-  @Override
-  public <T, C> T accept(QueryExpressionVisitor<T, C> visitor, C context) {
-    return visitor.visit(this, context);
-  }
+    override fun <T> eval(
+        env: QueryEnvironment<T?>?, context: QueryExpressionContext<T?>?, callback: Callback<T?>?
+    ): QueryTaskFuture<Void?>? {
+        val result: QueryTaskFuture<Void?>?
+        Profiler.instance().profile("function.eval/" + function.getName()).use { closeable ->
+            result = function.eval<T?>(env, context, this, args, callback)
+        }
+        return result
+    }
 
-  @Override
-  public String toString() {
-    return function.getName()
-        + "("
-        + args.stream().map(Functions.toStringFunction()).collect(joining(", "))
-        + ")";
-  }
+    override fun collectTargetPatterns(literals: MutableCollection<String?>?) {
+        for (arg in args) {
+            if (arg.getType() == QueryEnvironment.ArgumentType.EXPRESSION) {
+                arg.getExpression().collectTargetPatterns(literals)
+            }
+        }
+    }
+
+    override fun <T, C> accept(visitor: QueryExpressionVisitor<T?, C?>, context: C?): T? {
+        return visitor.visit(this, context)
+    }
+
+    override fun toString(): String {
+        return (function.getName()
+                + "("
+                + args.stream().map<String?>(Functions.toStringFunction()).collect(Collectors.joining(", "))
+                + ")")
+    }
 }

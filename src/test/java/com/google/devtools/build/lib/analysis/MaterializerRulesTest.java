@@ -1808,7 +1808,7 @@ materializer_rule_with_doc(
     update("//:materializer_rule_with_doc");
     ConfiguredTargetAndData target = getConfiguredTargetAndData("//:materializer_rule_with_doc");
     assertThat(
-            ((Rule) target.getTargetForTesting()).getRuleClassObject().getStarlarkDocumentation())
+            ((Rule) target.getTargetForTesting()).getRuleClassObject().starlarkDocumentation)
         .isEqualTo("This is a doc string");
   }
 
@@ -2558,8 +2558,8 @@ my_test(
 
     update("//:my_test");
     ConfiguredTarget target = getConfiguredTarget("//:my_test");
-    AnalysisTestResultInfo info = target.get(AnalysisTestResultInfo.STARLARK_CONSTRUCTOR);
-    assertThat(info.getSuccess()).isTrue();
+    AnalysisTestResultInfo info = target.get(AnalysisTestResultInfo.provider);
+    assertThat(info.success).isTrue();
   }
 
   /**
@@ -2717,8 +2717,8 @@ my_test(
 
     update("//:my_test");
     ConfiguredTarget target = getConfiguredTarget("//:my_test");
-    AnalysisTestResultInfo info = target.get(AnalysisTestResultInfo.STARLARK_CONSTRUCTOR);
-    assertThat(info.getSuccess()).isTrue();
+    AnalysisTestResultInfo info = target.get(AnalysisTestResultInfo.provider);
+    assertThat(info.success).isTrue();
   }
 
   /**

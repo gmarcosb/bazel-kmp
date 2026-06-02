@@ -11,35 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.circuitbreaker;
+package com.google.devtools.build.lib.remote.circuitbreaker
 
-import com.google.devtools.build.lib.remote.Retrier;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import java.util.concurrent.Executors;
+import com.google.devtools.build.lib.remote.Retrier
+import com.google.devtools.build.lib.remote.options.RemoteOptions
+import com.google.devtools.build.lib.remote.options.RemoteOptions.CircuitBreakerStrategy
+import java.util.concurrent.Executors
 
-/** Factory for {@link Retrier.CircuitBreaker} */
-public class CircuitBreakerFactory {
-  public static final int DEFAULT_MIN_CALL_COUNT_TO_COMPUTE_FAILURE_RATE = 100;
-  public static final int DEFAULT_MIN_FAIL_COUNT_TO_COMPUTE_FAILURE_RATE = 12;
+/** Factory for [Retrier.CircuitBreaker]  */
+object CircuitBreakerFactory {
+    const val DEFAULT_MIN_CALL_COUNT_TO_COMPUTE_FAILURE_RATE: Int = 100
+    const val DEFAULT_MIN_FAIL_COUNT_TO_COMPUTE_FAILURE_RATE: Int = 12
 
-  private CircuitBreakerFactory() {}
-
-  /**
-   * Creates the instance of the {@link Retrier.CircuitBreaker} as per the strategy defined in
-   * {@link RemoteOptions}. In case of undefined strategy defaults to {@link
-   * Retrier.ALLOW_ALL_CALLS} implementation.
-   *
-   * @param remoteOptions The configuration for the CircuitBreaker implementation.
-   * @return an instance of CircuitBreaker.
-   */
-  public static Retrier.CircuitBreaker createCircuitBreaker(final RemoteOptions remoteOptions) {
-    if (remoteOptions.getCircuitBreakerStrategy() == RemoteOptions.CircuitBreakerStrategy.FAILURE) {
-      int slidingWindowMillis = (int) remoteOptions.getRemoteFailureWindowInterval().toMillis();
-      return new FailureCircuitBreaker(
-          remoteOptions.getRemoteFailureRateThreshold(),
-          slidingWindowMillis,
-          slidingWindowMillis > 0 ? Executors.newSingleThreadScheduledExecutor() : null);
+    /**
+     * Creates the instance of the [Retrier.CircuitBreaker] as per the strategy defined in
+     * [RemoteOptions]. In case of undefined strategy defaults to [ ] implementation.
+     * 
+     * @param remoteOptions The configuration for the CircuitBreaker implementation.
+     * @return an instance of CircuitBreaker.
+     */
+    fun createCircuitBreaker(remoteOptions: RemoteOptions): Retrier.CircuitBreaker {
+        if (remoteOptions.getCircuitBreakerStrategy() == CircuitBreakerStrategy.FAILURE) {
+            val slidingWindowMillis = remoteOptions.getRemoteFailureWindowInterval().toMillis().toInt()
+            return FailureCircuitBreaker(
+                remoteOptions.getRemoteFailureRateThreshold(),
+                slidingWindowMillis,
+                if (slidingWindowMillis > 0) Executors.newSingleThreadScheduledExecutor() else null
+            )
+        }
+        return Retrier.Companion.ALLOW_ALL_CALLS
     }
-    return Retrier.ALLOW_ALL_CALLS;
-  }
 }

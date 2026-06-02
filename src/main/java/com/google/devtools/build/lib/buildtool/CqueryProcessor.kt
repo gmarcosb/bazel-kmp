@@ -11,70 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment.TopLevelConfigurations;
-import com.google.devtools.build.lib.query2.common.CommonQueryOptions;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.query2.cquery.ConfiguredTargetQueryEnvironment;
-import com.google.devtools.build.lib.query2.cquery.CqueryOptions;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.analysis.ConfiguredAspect
 
-/** Performs {@code cquery} processing. */
-public final class CqueryProcessor extends PostAnalysisQueryProcessor<CqueryNode> {
+/** Performs `cquery` processing.  */
+class CqueryProcessor(
+    queryExpression: QueryExpression?,
+    mainRepoTargetParser: com.google.devtools.build.lib.cmdline.TargetPattern.Parser?
+) : PostAnalysisQueryProcessor<CqueryNode?>(queryExpression, mainRepoTargetParser) {
+    override fun getQueryOptions(env: CommandEnvironment): CommonQueryOptions? {
+        return env.getOptions().getOptions<CqueryOptions?>(CqueryOptions::class.java)
+    }
 
-  public CqueryProcessor(
-      QueryExpression queryExpression, TargetPattern.Parser mainRepoTargetParser) {
-    super(queryExpression, mainRepoTargetParser);
-  }
-
-  @Override
-  protected CommonQueryOptions getQueryOptions(CommandEnvironment env) {
-    return env.getOptions().getOptions(CqueryOptions.class);
-  }
-
-  @Override
-  protected ConfiguredTargetQueryEnvironment getQueryEnvironment(
-      BuildRequest request,
-      CommandEnvironment env,
-      TopLevelConfigurations configurations,
-      ImmutableMap<String, BuildConfigurationValue> transitiveConfigurations,
-      ImmutableMap<AspectKeyCreator.AspectKey, ConfiguredAspect> topLevelAspects,
-      WalkableGraph walkableGraph) {
-    ImmutableList<QueryFunction> extraFunctions =
-        new ImmutableList.Builder<QueryFunction>()
-            .addAll(ConfiguredTargetQueryEnvironment.CQUERY_FUNCTIONS)
-            .addAll(env.getRuntime().getQueryFunctions())
-            .build();
-    CqueryOptions cqueryOptions = request.getOptions(CqueryOptions.class);
-    StarlarkSemantics starlarkSemantics =
-        env.getSkyframeExecutor()
-            .getEffectiveStarlarkSemantics(env.getOptions().getOptions(BuildLanguageOptions.class));
-    return new ConfiguredTargetQueryEnvironment(
-        request.getKeepGoing(),
-        env.getReporter(),
-        extraFunctions,
-        configurations,
-        transitiveConfigurations,
-        topLevelAspects,
-        mainRepoTargetParser,
-        env.getPackageManager().getPackagePath(),
-        () -> walkableGraph,
-        cqueryOptions,
-        request.getTopLevelArtifactContext(),
-        request
-            .getOptions(CqueryOptions.class)
-            .getLabelPrinter(starlarkSemantics, mainRepoTargetParser.getRepoMapping()));
-  }
+    override fun getQueryEnvironment(
+        request: BuildRequest,
+        env: CommandEnvironment,
+        configurations: TopLevelConfigurations?,
+        transitiveConfigurations: com.google.common.collect.ImmutableMap<String?, BuildConfigurationValue?>?,
+        topLevelAspects: com.google.common.collect.ImmutableMap<AspectKey?, ConfiguredAspect?>?,
+        walkableGraph: WalkableGraph?
+    ): ConfiguredTargetQueryEnvironment {
+        val extraFunctions: com.google.common.collect.ImmutableList<QueryFunction?> =
+            com.google.common.collect.ImmutableList.Builder<QueryFunction?>()
+                .addAll(ConfiguredTargetQueryEnvironment.CQUERY_FUNCTIONS)
+                .addAll(env.getRuntime().getQueryFunctions())
+                .build()
+        val cqueryOptions: CqueryOptions? = request.getOptions<CqueryOptions?>(CqueryOptions::class.java)
+        val starlarkSemantics: net.starlark.java.eval.StarlarkSemantics? =
+            env.getSkyframeExecutor()
+                .getEffectiveStarlarkSemantics(
+                    env.getOptions().getOptions<BuildLanguageOptions?>(BuildLanguageOptions::class.java)
+                )
+        return ConfiguredTargetQueryEnvironment(
+            request.getKeepGoing(),
+            env.getReporter(),
+            extraFunctions,
+            configurations,
+            transitiveConfigurations,
+            topLevelAspects,
+            mainRepoTargetParser,
+            env.getPackageManager().getPackagePath(),
+            java.util.function.Supplier { walkableGraph },
+            cqueryOptions,
+            request.getTopLevelArtifactContext(),
+            request
+                .getOptions<CqueryOptions?>(CqueryOptions::class.java)
+                .getLabelPrinter(starlarkSemantics, mainRepoTargetParser.getRepoMapping())
+        )
+    }
 }

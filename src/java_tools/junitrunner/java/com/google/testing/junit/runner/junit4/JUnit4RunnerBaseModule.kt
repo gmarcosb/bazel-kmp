@@ -11,38 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.junit4
 
-package com.google.testing.junit.runner.junit4;
-
-import com.google.testing.junit.runner.internal.junit4.MemoizingRequest;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
-import org.junit.internal.TextListener;
-import org.junit.runner.Request;
+import com.google.testing.junit.runner.internal.junit4.MemoizingRequest
+import org.junit.internal.TextListener
+import org.junit.runner.Request
+import java.io.OutputStream
+import java.io.PrintStream
+import java.io.UnsupportedEncodingException
+import java.nio.charset.StandardCharsets
 
 /**
- * Utility class for creating a {@link JUnit4Runner}. This contains the common bindings used when
+ * Utility class for creating a [JUnit4Runner]. This contains the common bindings used when
  * either the runner runs actual tests or when we do integration tests of the runner itself.
  * This is a legacy Dagger module.
  */
-public abstract class JUnit4RunnerBaseModule {
-
-  static TextListener provideTextListener(PrintStream testRunnerOut) {
-    return new TextListener(asUtf8PrintStream(testRunnerOut));
-  }
-
-  private static PrintStream asUtf8PrintStream(OutputStream stream) {
-    try {
-      return new PrintStream(stream, /* autoFlush= */ false, StandardCharsets.UTF_8.toString());
-    } catch (UnsupportedEncodingException e) {
-      throw new IllegalStateException("UTF-8 must be supported as per the java language spec", e);
+object JUnit4RunnerBaseModule {
+    fun provideTextListener(testRunnerOut: PrintStream): TextListener {
+        return TextListener(asUtf8PrintStream(testRunnerOut))
     }
-  }
 
-  static Request provideRequest(Class<?> suiteClass) {
-    /*
+    private fun asUtf8PrintStream(stream: OutputStream): PrintStream {
+        try {
+            return PrintStream(stream,  /* autoFlush= */false, StandardCharsets.UTF_8.toString())
+        } catch (e: UnsupportedEncodingException) {
+            throw IllegalStateException("UTF-8 must be supported as per the java language spec", e)
+        }
+    }
+
+    fun provideRequest(suiteClass: Class<*>?): Request {
+        /*
      * JUnit4Runner requests the Runner twice, once to build the model (before
      * filtering) and once to run the tests (after filtering). Constructing the
      * Runner can be expensive, so Memoize the Runner.
@@ -51,9 +49,7 @@ public abstract class JUnit4RunnerBaseModule {
      * but users of Bazel might use an earlier version of JUnit, so to be safe
      * we keep the memoization here.
      */
-    Request request = Request.aClass(suiteClass);
-    return new MemoizingRequest(request);
-  }
-
-  private JUnit4RunnerBaseModule() {} // no instances
+        val request = Request.aClass(suiteClass)
+        return MemoizingRequest(request)
+    }
 }

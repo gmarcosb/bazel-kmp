@@ -11,64 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.repository.downloader;
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
-import java.io.IOException;
-import java.io.InputStream;
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import java.io.IOException
+import java.io.InputStream
 
 /**
  * Input stream that guarantees its contents match a size.
- *
- * <p>This class is not thread safe, but it is safe to message pass this object between threads.
+ * 
+ * 
+ * This class is not thread safe, but it is safe to message pass this object between threads.
  */
-@ThreadCompatible
-public class CheckContentLengthInputStream extends InputStream {
-  private final InputStream delegate;
-  private final long expectedSize;
-  private long actualSize;
+@ThreadSafety.ThreadCompatible
+class CheckContentLengthInputStream(private val delegate: InputStream, private val expectedSize: Long) : InputStream() {
+    private var actualSize: Long = 0
 
-  public CheckContentLengthInputStream(InputStream delegate, long expectedSize) {
-    this.delegate = delegate;
-    this.expectedSize = expectedSize;
-  }
-
-  @Override
-  public int read() throws IOException {
-    int result = delegate.read();
-    if (result == -1) {
-      checkContentLength();
-    } else {
-      actualSize += 1;
+    @Throws(IOException::class)
+    override fun read(): Int {
+        val result = delegate.read()
+        if (result == -1) {
+            checkContentLength()
+        } else {
+            actualSize += 1
+        }
+        return result
     }
-    return result;
-  }
 
-  @Override
-  public int read(byte[] buffer, int offset, int length) throws IOException {
-    int amount = delegate.read(buffer, offset, length);
-    if (amount == -1) {
-      checkContentLength();
-    } else {
-      actualSize += amount;
+    @Throws(IOException::class)
+    override fun read(buffer: ByteArray?, offset: Int, length: Int): Int {
+        val amount = delegate.read(buffer, offset, length)
+        if (amount == -1) {
+            checkContentLength()
+        } else {
+            actualSize += amount.toLong()
+        }
+        return amount
     }
-    return amount;
-  }
 
-  @Override
-  public int available() throws IOException {
-    return delegate.available();
-  }
-
-  @Override
-  public void close() throws IOException {
-    delegate.close();
-    checkContentLength();
-  }
-
-  private void checkContentLength() throws IOException {
-    if (actualSize != expectedSize) {
-      throw new ContentLengthMismatchException(actualSize, expectedSize);
+    @Throws(IOException::class)
+    override fun available(): Int {
+        return delegate.available()
     }
-  }
+
+    @Throws(IOException::class)
+    override fun close() {
+        delegate.close()
+        checkContentLength()
+    }
+
+    @Throws(IOException::class)
+    private fun checkContentLength() {
+        if (actualSize != expectedSize) {
+            throw ContentLengthMismatchException(actualSize, expectedSize)
+        }
+    }
 }

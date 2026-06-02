@@ -11,220 +11,242 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.authandtls;
+package com.google.devtools.build.lib.authandtls
 
-import static com.google.common.base.Predicates.not;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.authandtls.Netrc.Credential;
-import java.io.BufferedReader;
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Queue;
+import com.google.devtools.build.lib.authandtls.Netrc
+import com.google.devtools.build.lib.authandtls.NetrcParser
+import java.io.BufferedReader
+import java.io.IOException
+import java.util.ArrayDeque
+import java.util.HashMap
 
 /**
  * A parser used to parse .netrc content.
- *
- * @see <a href="https://man.cx/netrc(4)">netrc − file for ftp remote login data</a>
- * @see <a
- *     href="https://github.com/bazelbuild/bazel/blob/master/tools/build_defs/repo/utils.bzl#L203-L204">Starlark
- *     netrc parser</a>
+ * 
+ * @see [](https://man.cx/netrc
+@see <a
+href=)//github.com/bazelbuild/bazel/blob/master/tools/build_defs/repo/utils.bzl.L203-L204">Starlark
+ * netrc parser
  */
-public class NetrcParser {
-  private static final String MACHINE = "machine";
-  private static final String MACDEF = "macdef";
-  private static final String DEFAULT = "default";
-  private static final String LOGIN = "login";
-  private static final String PASSWORD = "password";
-  private static final String ACCOUNT = "account";
+object NetrcParser {
+    private const val MACHINE = "machine"
+    private const val MACDEF = "macdef"
+    private const val DEFAULT = "default"
+    private const val LOGIN = "login"
+    private const val PASSWORD = "password"
+    private const val ACCOUNT = "account"
 
-  interface Token {}
-
-  record ItemToken(String item) implements Token {
-    ItemToken {
-      requireNonNull(item, "item");
-    }
-
-    public static ItemToken create(String item) {
-      return new ItemToken(item);
-    }
-
-  }
-
-  record NewlineToken() implements Token {
-    public static NewlineToken create() {
-      return new NewlineToken();
-    }
-  }
-
-  record CommentToken() implements Token {
-    public static CommentToken create() {
-      return new CommentToken();
-    }
-  }
-
-  private static class TokenStream implements Closeable {
-    private final BufferedReader bufferedReader;
-    private final Queue<Token> tokens = new ArrayDeque<>();
-
-    TokenStream(InputStream inputStream) throws IOException {
-      bufferedReader = new BufferedReader(new InputStreamReader(inputStream, ISO_8859_1));
-      processLine();
-    }
-
-    @Override
-    public void close() throws IOException {
-      bufferedReader.close();
-    }
-
-    private void processLine() throws IOException {
-      String line = bufferedReader.readLine();
-      if (line == null) {
-        return;
-      }
-
-      // Comments start with #
-      if (line.startsWith("#")) {
-        tokens.add(CommentToken.create());
-      } else {
-        Arrays.stream(line.split("\\s+"))
-            .filter(not(Strings::isNullOrEmpty))
-            .map(ItemToken::create)
-            .forEach(tokens::add);
-      }
-
-      tokens.add(NewlineToken.create());
-    }
-
-    public boolean hasNext() {
-      return !tokens.isEmpty();
-    }
-
-    public Token next() throws IOException {
-      Token token = tokens.poll();
-      if (tokens.isEmpty()) {
-        processLine();
-      }
-      return token;
-    }
-
-    public Token peek() {
-      return tokens.peek();
-    }
-  }
-
-  private NetrcParser() {}
-
-  public static Netrc parseAndClose(InputStream inputStream) throws IOException {
-    try (TokenStream tokenStream = new TokenStream(inputStream)) {
-      return parse(tokenStream);
-    }
-  }
-
-  private static Netrc parse(TokenStream tokenStream) throws IOException {
-    Credential defaultCredential = null;
-    Map<String, Credential> credentialMap = new HashMap<>();
-
-    boolean done = false;
-    while (!done && tokenStream.hasNext()) {
-      Token token = tokenStream.next();
-      if (token instanceof ItemToken itemToken) {
-        String item = itemToken.item();
-        switch (item) {
-          case MACHINE -> {
-            String machine = nextItem(tokenStream);
-            Credential credential = parseCredentialForMachine(tokenStream, machine);
-            credentialMap.put(machine, credential);
-          }
-          case MACDEF -> skipMacdef(tokenStream);
-          case DEFAULT -> {
-            defaultCredential = parseCredentialForMachine(tokenStream, DEFAULT);
-            // There can be only one default token, and it must be after all machine tokens.
-            done = true;
-          }
-          default ->
-              throw new IOException(
-                  String.format(
-                      "Unexpected token: %s (expecting %s, %s or %s)",
-                      item, MACHINE, MACDEF, DEFAULT));
+    @Throws(IOException::class)
+    fun parseAndClose(inputStream: java.io.InputStream): Netrc {
+        TokenStream(inputStream).use { tokenStream ->
+            return parse(tokenStream)
         }
-      }
     }
 
-    return Netrc.create(defaultCredential, ImmutableMap.copyOf(credentialMap));
-  }
+    @Throws(IOException::class)
+    private fun parse(tokenStream: TokenStream): Netrc {
+        var defaultCredential: com.google.devtools.build.lib.authandtls.Netrc.Credential? = null
+        val credentialMap: MutableMap<String?, com.google.devtools.build.lib.authandtls.Netrc.Credential?> =
+            HashMap<String?, com.google.devtools.build.lib.authandtls.Netrc.Credential?>()
 
-  private static String nextItem(TokenStream tokenStream) throws IOException {
-    while (tokenStream.hasNext()) {
-      Token token = tokenStream.next();
-      if (token instanceof ItemToken itemToken) {
-        return itemToken.item();
-      }
-    }
+        var done = false
+        while (!done && tokenStream.hasNext()) {
+            val token = tokenStream.next()
+            if (token is ItemToken) {
+                val item = token.item
+                when (item) {
+                    MACHINE -> {
+                        val machine = nextItem(tokenStream)
+                        val credential: com.google.devtools.build.lib.authandtls.Netrc.Credential? =
+                            parseCredentialForMachine(tokenStream, machine)
+                        credentialMap.put(machine, credential)
+                    }
 
-    throw new IOException("Unexpected EOF");
-  }
+                    MACDEF -> skipMacdef(tokenStream)
+                    DEFAULT -> {
+                        defaultCredential = parseCredentialForMachine(tokenStream, DEFAULT)
+                        // There can be only one default token, and it must be after all machine tokens.
+                        done = true
+                    }
 
-  /** Parse credentials for a given machine from token stream. */
-  private static Credential parseCredentialForMachine(TokenStream tokenStream, String machine)
-      throws IOException {
-    Credential.Builder builder = Credential.builder(machine);
-
-    boolean done = false;
-    while (!done && tokenStream.hasNext()) {
-      // Peek rather than taking next token since we probably won't process it
-      Token token = tokenStream.peek();
-      if (token instanceof ItemToken(String item)) {
-        switch (item) {
-          case LOGIN -> {
-            tokenStream.next();
-            builder.setLogin(nextItem(tokenStream));
-          }
-          case PASSWORD -> {
-            tokenStream.next();
-            builder.setPassword(nextItem(tokenStream));
-          }
-          case ACCOUNT -> {
-            tokenStream.next();
-            builder.setAccount(nextItem(tokenStream));
-          }
-          case MACHINE, MACDEF, DEFAULT -> done = true;
-          default ->
-              throw new IOException(
-                  String.format(
-                      "Unexpected item: %s (expecting %s, %s, %s, %s, %s or %s)",
-                      item, LOGIN, PASSWORD, ACCOUNT, MACHINE, MACDEF, DEFAULT));
+                    else -> throw IOException(
+                        String.format(
+                            "Unexpected token: %s (expecting %s, %s or %s)",
+                            item, MACHINE, MACDEF, DEFAULT
+                        )
+                    )
+                }
+            }
         }
-      } else {
-        tokenStream.next();
-      }
+
+        return Netrc.Companion.create(
+            defaultCredential,
+            com.google.common.collect.ImmutableMap.copyOf<String?, com.google.devtools.build.lib.authandtls.Netrc.Credential?>(
+                credentialMap
+            )
+        )
     }
 
-    return builder.build();
-  }
+    @Throws(IOException::class)
+    private fun nextItem(tokenStream: TokenStream): String {
+        while (tokenStream.hasNext()) {
+            val token = tokenStream.next()
+            if (token is ItemToken) {
+                return token.item
+            }
+        }
 
-  /** Skip macdef section since we don't need that data currently. */
-  private static void skipMacdef(TokenStream tokenStream) throws IOException {
-    int numNewlines = 0;
-    while (tokenStream.hasNext()) {
-      Token token = tokenStream.next();
-      if (token instanceof NewlineToken) {
-        ++numNewlines;
-      } else {
-        numNewlines = 0;
-      }
-      if (numNewlines >= 2) {
-        break;
-      }
+        throw IOException("Unexpected EOF")
     }
-  }
+
+    /** Parse credentials for a given machine from token stream.  */
+    @Throws(IOException::class)
+    private fun parseCredentialForMachine(
+        tokenStream: TokenStream,
+        machine: String?
+    ): com.google.devtools.build.lib.authandtls.Netrc.Credential? {
+        val builder: com.google.devtools.build.lib.authandtls.Netrc.Credential.Builder =
+            com.google.devtools.build.lib.authandtls.Netrc.Credential.Companion.builder(machine)
+
+        var done = false
+        while (!done && tokenStream.hasNext()) {
+            // Peek rather than taking next token since we probably won't process it
+            val token = tokenStream.peek()
+            if (token is) {
+                when (item) {
+                    LOGIN -> {
+                        tokenStream.next()
+                        builder.setLogin(nextItem(tokenStream))
+                    }
+
+                    PASSWORD -> {
+                        tokenStream.next()
+                        builder.setPassword(nextItem(tokenStream))
+                    }
+
+                    ACCOUNT -> {
+                        tokenStream.next()
+                        builder.setAccount(nextItem(tokenStream))
+                    }
+
+                    MACHINE, MACDEF, DEFAULT -> done = true
+                    else -> throw IOException(
+                        java.lang.String.format(
+                            "Unexpected item: %s (expecting %s, %s, %s, %s, %s or %s)",
+                            item, LOGIN, PASSWORD, ACCOUNT, MACHINE, MACDEF, DEFAULT
+                        )
+                    )
+                }
+            } else {
+                tokenStream.next()
+            }
+        }
+
+        return builder.build()
+    }
+
+    /** Skip macdef section since we don't need that data currently.  */
+    @Throws(IOException::class)
+    private fun skipMacdef(tokenStream: TokenStream) {
+        var numNewlines = 0
+        while (tokenStream.hasNext()) {
+            val token = tokenStream.next()
+            if (token is NewlineToken) {
+                ++numNewlines
+            } else {
+                numNewlines = 0
+            }
+            if (numNewlines >= 2) {
+                break
+            }
+        }
+    }
+
+    internal interface Token
+
+    @kotlin.jvm.JvmRecord
+    internal data class ItemToken(val item: String) : Token {
+        init {
+            java.util.Objects.requireNonNull<String?>(item, "item")
+        }
+
+        companion object {
+            fun create(item: String): ItemToken {
+                return ItemToken(item)
+            }
+        }
+    }
+
+    internal class NewlineToken : Token {
+        companion object {
+            fun create(): NewlineToken {
+                return NewlineToken()
+            }
+        }
+    }
+
+    internal class CommentToken : Token {
+        companion object {
+            fun create(): CommentToken {
+                return CommentToken()
+            }
+        }
+    }
+
+    private class TokenStream(inputStream: java.io.InputStream) : java.io.Closeable {
+        private val bufferedReader: BufferedReader
+        private val tokens: java.util.Queue<Token?> = ArrayDeque<Token?>()
+
+        init {
+            bufferedReader =
+                BufferedReader(java.io.InputStreamReader(inputStream, java.nio.charset.StandardCharsets.ISO_8859_1))
+            processLine()
+        }
+
+        @Throws(IOException::class)
+        override fun close() {
+            bufferedReader.close()
+        }
+
+        @Throws(IOException::class)
+        fun processLine() {
+            val line: String? = bufferedReader.readLine()
+            if (line == null) {
+                return
+            }
+
+            // Comments start with #
+            if (line.startsWith("#")) {
+                tokens.add(com.google.devtools.build.lib.authandtls.NetrcParser.CommentToken.Companion.create())
+            } else {
+                java.util.Arrays.stream<String?>(line.split("\\s+"))
+                    .filter(com.google.common.base.Predicates.not<String?>(com.google.common.base.Predicate { string: String? ->
+                        com.google.common.base.Strings.isNullOrEmpty(
+                            string
+                        )
+                    }))
+                    .map<ItemToken?>(java.util.function.Function { item: String? -> ItemToken.Companion.create(item!!) })
+                    .forEach(java.util.function.Consumer { e: ItemToken? -> tokens.add(e) })
+            }
+
+            tokens.add(NewlineToken.Companion.create())
+        }
+
+        fun hasNext(): Boolean {
+            return !tokens.isEmpty()
+        }
+
+        @Throws(IOException::class)
+        fun next(): Token? {
+            val token: Token? = tokens.poll()
+            if (tokens.isEmpty()) {
+                processLine()
+            }
+            return token
+        }
+
+        fun peek(): Token? {
+            return tokens.peek()
+        }
+    }
 }

@@ -11,35 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.logging
 
-package com.google.devtools.build.lib.remote.logging;
-
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.GetActionResultRequest;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.GetActionResultDetails;
-import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.RpcCallDetails;
+import build.bazel.remote.execution.v2.ActionResult
 
 /**
- * LoggingHandler for {@link google.devtools.remoteexecution.v1test.ActionCache.GetActionResult}
+ * LoggingHandler for [google.devtools.remoteexecution.v1test.ActionCache.GetActionResult]
  * gRPC call.
  */
-public class GetActionResultHandler
-    implements LoggingHandler<GetActionResultRequest, ActionResult> {
+class GetActionResultHandler
 
-  private final GetActionResultDetails.Builder builder = GetActionResultDetails.newBuilder();
+    : LoggingHandler<GetActionResultRequest?, ActionResult?> {
+    private val builder: GetActionResultDetails.Builder = GetActionResultDetails.newBuilder()
 
-  @Override
-  public void handleReq(GetActionResultRequest message) {
-    builder.setRequest(message);
-  }
+    override fun handleReq(message: GetActionResultRequest?) {
+        builder.setRequest(message)
+    }
 
-  @Override
-  public void handleResp(ActionResult message) {
-    builder.setResponse(message);
-  }
+    override fun handleResp(message: ActionResult?) {
+        builder.setResponse(message)
+    }
 
-  @Override
-  public RpcCallDetails getDetails() {
-    return RpcCallDetails.newBuilder().setGetActionResult(builder).build();
-  }
+    override fun getDetails(): RpcCallDetails {
+        return RpcCallDetails.newBuilder().setGetActionResult(builder).build()
+    }
 }

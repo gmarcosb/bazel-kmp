@@ -1591,7 +1591,7 @@ public abstract class AbstractQueryTest<T> {
   }
 
   private static <T> DotOutputVisitor<T> createVisitor(PrintWriter writer) {
-    return new DotOutputVisitor<T>(writer, "\n", (Node<T> node) -> node.getLabel().toString());
+    return new DotOutputVisitor<T>(writer, "\n", (Node<T> node) -> node.label.toString());
   }
 
   @Test

@@ -11,27 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static java.util.Objects.requireNonNull;
+import com.google.devtools.build.lib.actions.ActionExecutionMetadata
 
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.CachingActionEvent;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.exec.SpawnRunner.ProgressStatus;
+/** Notifies that [SpawnRunner] is looking for a cache hit.  */
+@kotlin.jvm.JvmRecord
+data class SpawnCheckingCacheEvent(val name: String?) : ProgressStatus {
+    override fun postTo(
+        eventHandler: com.google.devtools.build.lib.events.ExtendedEventHandler,
+        action: ActionExecutionMetadata?
+    ) {
+        eventHandler.post(CachingActionEvent.create(action, this.name))
+    }
 
-/** Notifies that {@link SpawnRunner} is looking for a cache hit. */
-public record SpawnCheckingCacheEvent(String name) implements ProgressStatus {
-  public SpawnCheckingCacheEvent {
-    requireNonNull(name, "name");
-  }
+    init {
+        java.util.Objects.requireNonNull<String?>(name, "name")
+    }
 
-  public static SpawnCheckingCacheEvent create(String name) {
-    return new SpawnCheckingCacheEvent(name);
-  }
-
-  @Override
-  public void postTo(ExtendedEventHandler eventHandler, ActionExecutionMetadata action) {
-    eventHandler.post(CachingActionEvent.create(action, name()));
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun create(name: String?): SpawnCheckingCacheEvent {
+            return SpawnCheckingCacheEvent(name)
+        }
+    }
 }

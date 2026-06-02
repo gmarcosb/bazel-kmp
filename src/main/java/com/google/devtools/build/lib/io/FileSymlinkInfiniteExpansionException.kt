@@ -11,52 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.io;
+package com.google.devtools.build.lib.io
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.vfs.RootedPath;
+import com.google.devtools.build.lib.io.FileSymlinkException
+import com.google.devtools.build.lib.vfs.RootedPath
 
-/** Exception indicating that a symlink has an unbounded expansion on resolution. */
-@VisibleForSerialization
-public class FileSymlinkInfiniteExpansionException extends FileSymlinkException {
-  private final ImmutableList<RootedPath> pathToChain;
-  private final ImmutableList<RootedPath> chain;
+/** Exception indicating that a symlink has an unbounded expansion on resolution.  */
+@com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+class FileSymlinkInfiniteExpansionException(
+    pathToChain: com.google.common.collect.ImmutableList<RootedPath?>?,
+    chain: com.google.common.collect.ImmutableList<RootedPath?>
+) : FileSymlinkException("Infinite symlink expansion") {
+    private val pathToChain: com.google.common.collect.ImmutableList<RootedPath?>?
+    private val chain: com.google.common.collect.ImmutableList<RootedPath?>
 
-  public FileSymlinkInfiniteExpansionException(
-      ImmutableList<RootedPath> pathToChain, ImmutableList<RootedPath> chain) {
-    // The infinite expansion has already been reported by
-    // FileSymlinkInfiniteExpansionUniquenessValue, but we still want to have a readable
-    // #getMessage.
-    super("Infinite symlink expansion");
-    this.pathToChain = pathToChain;
-    this.chain = chain;
-  }
+    init {
+        // The infinite expansion has already been reported by
+        // FileSymlinkInfiniteExpansionUniquenessValue, but we still want to have a readable
+        // #getMessage.
+        this.pathToChain = pathToChain
+        this.chain = chain
+    }
 
-  /**
-   * The symlink path to the symlink that is the root cause of the infinite expansion. For example,
-   * suppose 'a' -> 'b' -> 'c' -> 'd' -> 'c/nope'. The path to the chain is 'a', 'b'.
-   */
-  @VisibleForSerialization
-  public ImmutableList<RootedPath> getPathToChain() {
-    return pathToChain;
-  }
+    /**
+     * The symlink path to the symlink that is the root cause of the infinite expansion. For example,
+     * suppose 'a' -> 'b' -> 'c' -> 'd' -> 'c/nope'. The path to the chain is 'a', 'b'.
+     */
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    fun getPathToChain(): com.google.common.collect.ImmutableList<RootedPath?>? {
+        return pathToChain
+    }
 
-  /**
-   * The symlink chain that is the root cause of the infinite expansion. For example, suppose 'a' ->
-   * 'b' -> 'c' -> 'd' -> 'c/nope'. The chain is 'c', 'd', 'c/nope'.
-   */
-  @VisibleForSerialization
-  public ImmutableList<RootedPath> getChain() {
-    return chain;
-  }
+    /**
+     * The symlink chain that is the root cause of the infinite expansion. For example, suppose 'a' ->
+     * 'b' -> 'c' -> 'd' -> 'c/nope'. The chain is 'c', 'd', 'c/nope'.
+     */
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    fun getChain(): com.google.common.collect.ImmutableList<RootedPath?> {
+        return chain
+    }
 
-  @Override
-  public String getUserFriendlyMessage() {
-    return "Infinite symlink expansion: "
-        + Joiner.on("- > ").join(Iterables.transform(chain, RootedPath::asPath));
-  }
+    override fun getUserFriendlyMessage(): String {
+        return ("Infinite symlink expansion: "
+                + com.google.common.base.Joiner.on("- > ").join(
+            com.google.common.collect.Iterables.transform<RootedPath?, com.google.devtools.build.lib.vfs.Path?>(
+                chain,
+                com.google.common.base.Function { obj: RootedPath? -> obj.asPath() })
+        ))
+    }
 }
 

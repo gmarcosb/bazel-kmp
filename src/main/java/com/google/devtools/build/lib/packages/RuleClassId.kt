@@ -11,12 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
  * Identifier for a RuleClass object including both the common ruleClass name and a unique
@@ -24,13 +21,21 @@ import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
  * name.
  */
 @AutoCodec
-public record RuleClassId(String name, String key) {
-  public RuleClassId {
-    requireNonNull(name, "name");
-    requireNonNull(key, "key");
-  }
+@kotlin.jvm.JvmRecord
+data class RuleClassId(name: String?, key: String?) {
+    val name: String?
+    val key: String?
 
-  public static RuleClassId create(String name, String key) {
-    return new RuleClassId(name, key);
-  }
+    init {
+        this.key = key
+        this.name = name
+        java.util.Objects.requireNonNull<String?>(name, "name")
+        java.util.Objects.requireNonNull<String?>(key, "key")
+    }
+
+    companion object {
+        fun create(name: String?, key: String?): RuleClassId {
+            return RuleClassId(name, key)
+        }
+    }
 }

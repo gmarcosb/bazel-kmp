@@ -11,52 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.devtools.build.lib.unsafe.UnsafeProvider.unsafe;
+import com.google.devtools.build.lib.unsafe.UnsafeProvider
 
-import com.google.common.annotations.VisibleForTesting;
+/** This class encapsulates creating padded addresses for 8-byte values.  */
+internal object PaddedAddresses {
+    /**
+     * The target alignment bytes.
+     * 
+     * 
+     * On x86, the cache line size is 64-bytes, but spatial prefetching may fetch two lines at a
+     * time so interference is observable over a range of 128-bytes.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    const val ALIGNMENT: Long = 128
 
-import sun.misc.Unsafe;
+    /** The amount of padding needed between 8-byte objects to avoid interference.  */
+    private val PADDING_WIDTH: Long = com.google.devtools.build.lib.concurrent.PaddedAddresses.ALIGNMENT - 8
 
-/** This class encapsulates creating padded addresses for 8-byte values. */
-@SuppressWarnings("SunApi") // TODO: b/359688989 - clean this up
-final class PaddedAddresses {
-  /**
-   * The target alignment bytes.
-   *
-   * <p>On x86, the cache line size is 64-bytes, but spatial prefetching may fetch two lines at a
-   * time so interference is observable over a range of 128-bytes.
-   */
-  @VisibleForTesting static final long ALIGNMENT = 128;
+    /**
+     * Creates a base address for the specified number of entries.
+     * 
+     * 
+     * The caller must call [Unsafe.freeMemory] on the returned address. Use of [ ] could be helpful.
+     * 
+     * @param count allocates a buffer large enough to accommodate this many aligned blocks.
+     */
+    // TODO: b/386384684 - remove Unsafe usage
+    @kotlin.jvm.JvmStatic
+    fun createPaddedBaseAddress(count: Int): Long {
+        return UnsafeProvider.unsafe()
+            .allocateMemory(count * com.google.devtools.build.lib.concurrent.PaddedAddresses.ALIGNMENT + com.google.devtools.build.lib.concurrent.PaddedAddresses.PADDING_WIDTH)
+    }
 
-  /** The amount of padding needed between 8-byte objects to avoid interference. */
-  private static final long PADDING_WIDTH = ALIGNMENT - 8;
-
-  private PaddedAddresses() {}
-
-  /**
-   * Creates a base address for the specified number of entries.
-   *
-   * <p>The caller must call {@link Unsafe#freeMemory} on the returned address. Use of {@link
-   * AddressFreer} could be helpful.
-   *
-   * @param count allocates a buffer large enough to accommodate this many aligned blocks.
-   */
-  // TODO: b/386384684 - remove Unsafe usage
-  static long createPaddedBaseAddress(int count) {
-    return unsafe().allocateMemory(count * ALIGNMENT + PADDING_WIDTH);
-  }
-
-  /**
-   * Obtains an {@link #ALIGNMENT} aligned address from an 8-byte aligned base address and offset.
-   *
-   * @param baseAddress an address obtained from {@link #createPaddedBaseAddress}.
-   * @param offset an offset less than the {@code count} parameter provided when creating the
-   *     address.
-   */
-  static long getAlignedAddress(long baseAddress, int offset) {
-    long cacheLineAddress = (baseAddress + PADDING_WIDTH) & ~(ALIGNMENT - 1);
-    return cacheLineAddress + offset * ALIGNMENT;
-  }
+    /**
+     * Obtains an [.ALIGNMENT] aligned address from an 8-byte aligned base address and offset.
+     * 
+     * @param baseAddress an address obtained from [.createPaddedBaseAddress].
+     * @param offset an offset less than the `count` parameter provided when creating the
+     * address.
+     */
+    @kotlin.jvm.JvmStatic
+    fun getAlignedAddress(baseAddress: Long, offset: Int): Long {
+        val cacheLineAddress: Long =
+            (baseAddress + com.google.devtools.build.lib.concurrent.PaddedAddresses.PADDING_WIDTH) and (com.google.devtools.build.lib.concurrent.PaddedAddresses.ALIGNMENT - 1).inv()
+        return cacheLineAddress + offset * com.google.devtools.build.lib.concurrent.PaddedAddresses.ALIGNMENT
+    }
 }

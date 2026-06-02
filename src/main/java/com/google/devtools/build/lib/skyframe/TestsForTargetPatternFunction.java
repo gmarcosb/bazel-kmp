@@ -113,7 +113,7 @@ final class TestsForTargetPatternFunction implements SkyFunction {
         continue;
       }
       try {
-        builder.add(pkg.getTarget(label.getName()));
+        builder.add(pkg.getTarget(label.name));
         if (pkg.containsErrors()) {
           builder.setError();
         }

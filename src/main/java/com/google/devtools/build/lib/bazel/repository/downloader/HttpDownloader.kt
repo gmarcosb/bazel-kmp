@@ -11,182 +11,190 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
-
-import com.google.auth.Credentials;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.FetchId;
-import com.google.devtools.build.lib.buildeventstream.FetchEvent;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.clock.JavaClock;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.util.JavaSleeper;
-import com.google.devtools.build.lib.util.Sleeper;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.io.OutputStream;
-import java.net.SocketTimeoutException;
-import java.net.URI;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.Semaphore;
+import com.google.auth.Credentials
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.Iterables
+import com.google.common.io.ByteStreams
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.FetchId
+import com.google.devtools.build.lib.buildeventstream.FetchEvent
+import com.google.devtools.build.lib.clock.Clock
+import com.google.devtools.build.lib.clock.JavaClock
+import com.google.devtools.build.lib.events.Event
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import com.google.devtools.build.lib.util.Sleeper
+import com.google.devtools.build.lib.vfs.Path
+import java.io.ByteArrayOutputStream
+import java.net.URI
+import java.time.Duration
+import java.util.Optional
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
 /**
- * HTTP implementation of {@link Downloader}.
- *
- * <p>This class uses {@link HttpConnectorMultiplexer} to connect to HTTP mirrors and then reads the
+ * HTTP implementation of [Downloader].
+ * 
+ * 
+ * This class uses [HttpConnectorMultiplexer] to connect to HTTP mirrors and then reads the
  * file to disk.
- *
- * <p>This class is (outside of tests) a singleton instance, living in `BazelRepositoryModule`.
+ * 
+ * 
+ * This class is (outside of tests) a singleton instance, living in `BazelRepositoryModule`.
  */
-public class HttpDownloader implements Downloader {
-  private static final Clock CLOCK = new JavaClock();
-  private static final Sleeper SLEEPER = new JavaSleeper();
-  private static final Locale LOCALE = Locale.getDefault();
+class HttpDownloader @kotlin.jvm.JvmOverloads constructor(
+    private val maxAttempts: Int = 0,
+    private val maxRetryTimeout: Duration? = Duration.ZERO,
+    maxParallelDownloads: Int = 8,
+    timeoutScaling: Float = 1.0f
+) : Downloader {
+    private val semaphore: Semaphore
+    private val timeoutScaling: Float
 
-  private final Semaphore semaphore;
-  private final float timeoutScaling;
-  private final int maxAttempts;
-  private final Duration maxRetryTimeout;
+    init {
+        semaphore = Semaphore(maxParallelDownloads, true)
+        this.timeoutScaling = timeoutScaling
+    }
 
-  public HttpDownloader(
-      int maxAttempts, Duration maxRetryTimeout, int maxParallelDownloads, float timeoutScaling) {
-    this.maxAttempts = maxAttempts;
-    this.maxRetryTimeout = maxRetryTimeout;
-    semaphore = new Semaphore(maxParallelDownloads, true);
-    this.timeoutScaling = timeoutScaling;
-  }
+    @Throws(IOException::class, InterruptedException::class)
+    override fun download(
+        urls: MutableList<URI>,
+        headers: MutableMap<String?, MutableList<String?>?>?,
+        credentials: Credentials?,
+        checksum: Optional<Checksum?>?,
+        canonicalId: String?,
+        destination: Path,
+        eventHandler: ExtendedEventHandler,
+        clientEnv: MutableMap<String?, String?>?,
+        type: Optional<String?>?,
+        context: String?
+    ) {
+        val multiplexer = setUpConnectorMultiplexer(eventHandler, clientEnv)
 
-  public HttpDownloader() {
-    this(0, Duration.ZERO, 8, 1.0f);
-  }
+        // Iterate over urls and download the file falling back to the next url if previous failed,
+        // while reporting progress to the CLI.
+        var success = false
 
-  @Override
-  public void download(
-      List<URI> urls,
-      Map<String, List<String>> headers,
-      Credentials credentials,
-      Optional<Checksum> checksum,
-      String canonicalId,
-      Path destination,
-      ExtendedEventHandler eventHandler,
-      Map<String, String> clientEnv,
-      Optional<String> type,
-      String context)
-      throws IOException, InterruptedException {
-    HttpConnectorMultiplexer multiplexer = setUpConnectorMultiplexer(eventHandler, clientEnv);
+        var ioExceptions: MutableList<IOException> = ImmutableList.of<IOException?>()
 
-    // Iterate over urls and download the file falling back to the next url if previous failed,
-    // while reporting progress to the CLI.
-    boolean success = false;
+        for (url in urls) {
+            semaphore.acquire()
 
-    List<IOException> ioExceptions = ImmutableList.of();
+            try {
+                multiplexer.connect(url, checksum, headers, credentials, type).use { payload ->
+                    destination.getOutputStream().use { out ->
+                        try {
+                            ByteStreams.copy(payload, out)
+                        } catch (e: SocketTimeoutException) {
+                            // SocketTimeoutExceptions are InterruptedIOExceptions; however they do not signify
+                            // an external interruption, but simply a failed download due to some server timing
+                            // out. So rethrow them as ordinary IOExceptions.
+                            throw IOException(e)
+                        }
+                        success = true
+                        break
+                    }
+                }
+            } catch (e: InterruptedIOException) {
+                throw InterruptedException(e.getMessage())
+            } catch (e: IOException) {
+                if (ioExceptions.isEmpty()) {
+                    ioExceptions = ArrayList<IOException>(1)
+                }
+                ioExceptions.add(e)
+                eventHandler.handle(
+                    Event.warn("Download from " + url + " failed: " + e.getClass() + " " + e.getMessage())
+                )
+                continue
+            } finally {
+                semaphore.release()
+                eventHandler.post(FetchEvent(url.toString(), FetchId.Downloader.HTTP, success))
+            }
+        }
 
-    for (URI url : urls) {
-      semaphore.acquire();
+        if (!success) {
+            val exception: IOException =
+                IOException(
+                    ("Error downloading "
+                            + urls
+                            + " to "
+                            + destination
+                            + (if (ioExceptions.isEmpty())
+                        ""
+                    else
+                        ": " + Iterables.getLast<IOException?>(ioExceptions).getMessage()))
+                )
 
-      try (HttpStream payload = multiplexer.connect(url, checksum, headers, credentials, type);
-          OutputStream out = destination.getOutputStream()) {
+            for (cause in ioExceptions) {
+                exception.addSuppressed(cause)
+            }
+
+            throw exception
+        }
+    }
+
+    /** Downloads the contents of one URL and reads it into a byte array.  */
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadAndReadOneUrl(
+        url: URI?,
+        credentials: Credentials?,
+        checksum: Optional<Checksum?>?,
+        eventHandler: ExtendedEventHandler?,
+        clientEnv: MutableMap<String?, String?>?
+    ): ByteArray? {
+        val multiplexer = setUpConnectorMultiplexer(eventHandler, clientEnv)
+
+        val out = ByteArrayOutputStream()
+        semaphore.acquire()
         try {
-          ByteStreams.copy(payload, out);
-        } catch (SocketTimeoutException e) {
-          // SocketTimeoutExceptions are InterruptedIOExceptions; however they do not signify
-          // an external interruption, but simply a failed download due to some server timing
-          // out. So rethrow them as ordinary IOExceptions.
-          throw new IOException(e);
+            multiplexer.connect(
+                url,
+                checksum,
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                credentials,
+                Optional.empty<String?>()
+            ).use { payload ->
+                ByteStreams.copy(payload, out)
+            }
+        } catch (e: SocketTimeoutException) {
+            // SocketTimeoutExceptions are InterruptedIOExceptions; however they do not signify
+            // an external interruption, but simply a failed download due to some server timing
+            // out. So rethrow them as ordinary IOExceptions.
+            throw IOException(e)
+        } catch (e: InterruptedIOException) {
+            throw InterruptedException(e.getMessage())
+        } finally {
+            semaphore.release()
+            // TODO(wyv): Do we need to report any event here?
         }
-        success = true;
-        break;
-      } catch (InterruptedIOException e) {
-        throw new InterruptedException(e.getMessage());
-      } catch (IOException e) {
-        if (ioExceptions.isEmpty()) {
-          ioExceptions = new ArrayList<>(1);
-        }
-        ioExceptions.add(e);
-        eventHandler.handle(
-            Event.warn("Download from " + url + " failed: " + e.getClass() + " " + e.getMessage()));
-        continue;
-      } finally {
-        semaphore.release();
-        eventHandler.post(new FetchEvent(url.toString(), FetchId.Downloader.HTTP, success));
-      }
+        return out.toByteArray()
     }
 
-    if (!success) {
-      final IOException exception =
-          new IOException(
-              "Error downloading "
-                  + urls
-                  + " to "
-                  + destination
-                  + (ioExceptions.isEmpty()
-                      ? ""
-                      : ": " + Iterables.getLast(ioExceptions).getMessage()));
-
-      for (IOException cause : ioExceptions) {
-        exception.addSuppressed(cause);
-      }
-
-      throw exception;
+    private fun setUpConnectorMultiplexer(
+        eventHandler: ExtendedEventHandler?, clientEnv: MutableMap<String?, String?>?
+    ): HttpConnectorMultiplexer {
+        val proxyHelper = ProxyHelper(clientEnv)
+        val connector =
+            HttpConnector(
+                LOCALE,
+                eventHandler,
+                proxyHelper,
+                SLEEPER,
+                timeoutScaling,
+                maxAttempts,
+                maxRetryTimeout
+            )
+        val progressInputStreamFactory =
+            ProgressInputStream.Factory(LOCALE, CLOCK, eventHandler)
+        val httpStreamFactory = HttpStream.Factory(progressInputStreamFactory)
+        return HttpConnectorMultiplexer(eventHandler, connector, httpStreamFactory)
     }
-  }
 
-  /** Downloads the contents of one URL and reads it into a byte array. */
-  public byte[] downloadAndReadOneUrl(
-      URI url,
-      Credentials credentials,
-      Optional<Checksum> checksum,
-      ExtendedEventHandler eventHandler,
-      Map<String, String> clientEnv)
-      throws IOException, InterruptedException {
-    HttpConnectorMultiplexer multiplexer = setUpConnectorMultiplexer(eventHandler, clientEnv);
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    semaphore.acquire();
-    try (HttpStream payload =
-        multiplexer.connect(url, checksum, ImmutableMap.of(), credentials, Optional.empty())) {
-      ByteStreams.copy(payload, out);
-    } catch (SocketTimeoutException e) {
-      // SocketTimeoutExceptions are InterruptedIOExceptions; however they do not signify
-      // an external interruption, but simply a failed download due to some server timing
-      // out. So rethrow them as ordinary IOExceptions.
-      throw new IOException(e);
-    } catch (InterruptedIOException e) {
-      throw new InterruptedException(e.getMessage());
-    } finally {
-      semaphore.release();
-      // TODO(wyv): Do we need to report any event here?
+    companion object {
+        private val CLOCK: Clock = JavaClock()
+        private val SLEEPER: Sleeper = JavaSleeper()
+        private val LOCALE: Locale? = Locale.getDefault()
     }
-    return out.toByteArray();
-  }
-
-  private HttpConnectorMultiplexer setUpConnectorMultiplexer(
-      ExtendedEventHandler eventHandler, Map<String, String> clientEnv) {
-    ProxyHelper proxyHelper = new ProxyHelper(clientEnv);
-    HttpConnector connector =
-        new HttpConnector(
-            LOCALE,
-            eventHandler,
-            proxyHelper,
-            SLEEPER,
-            timeoutScaling,
-            maxAttempts,
-            maxRetryTimeout);
-    ProgressInputStream.Factory progressInputStreamFactory =
-        new ProgressInputStream.Factory(LOCALE, CLOCK, eventHandler);
-    HttpStream.Factory httpStreamFactory = new HttpStream.Factory(progressInputStreamFactory);
-    return new HttpConnectorMultiplexer(eventHandler, connector, httpStreamFactory);
-  }
 }

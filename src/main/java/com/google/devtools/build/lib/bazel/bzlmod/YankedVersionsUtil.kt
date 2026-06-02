@@ -11,108 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.bzlmod;
+package com.google.devtools.build.lib.bazel.bzlmod
 
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import java.util.List;
-import java.util.Optional;
+import com.google.devtools.build.lib.server.FailureDetails
 
-/** Utility class to parse and evaluate yanked version specifications and exceptions. */
-public final class YankedVersionsUtil {
+/** Utility class to parse and evaluate yanked version specifications and exceptions.  */
+object YankedVersionsUtil {
+    @kotlin.jvm.JvmField
+    val ALLOWED_YANKED_VERSIONS: Precomputed<MutableList<String?>?> =
+        Precomputed<MutableList<String?>?>("allowed_yanked_versions")
+    const val BZLMOD_ALLOWED_YANKED_VERSIONS_ENV: String = "BZLMOD_ALLOW_YANKED_VERSIONS"
 
-  public static final PrecomputedValue.Precomputed<List<String>> ALLOWED_YANKED_VERSIONS =
-      new PrecomputedValue.Precomputed<>("allowed_yanked_versions");
-  public static final String BZLMOD_ALLOWED_YANKED_VERSIONS_ENV = "BZLMOD_ALLOW_YANKED_VERSIONS";
-
-  /**
-   * Parse a set of allowed yanked version from command line flag (--allowed_yanked_versions) and
-   * environment variable (ALLOWED_YANKED_VERSIONS). If `all` is specified, return Optional.empty();
-   * otherwise returns the set of parsed modulel key.
-   */
-  static Optional<ImmutableSet<ModuleKey>> parseAllowedYankedVersions(
-      String allowedYankedVersionsFromEnv, List<String> allowedYankedVersionsFromFlag)
-      throws ExternalDepsException {
-    ImmutableSet.Builder<ModuleKey> allowedYankedVersionBuilder = new ImmutableSet.Builder<>();
-    if (allowedYankedVersionsFromEnv != null) {
-      if (parseModuleKeysFromString(
-          allowedYankedVersionsFromEnv,
-          allowedYankedVersionBuilder,
-          String.format(
-              "environment variable %s=%s",
-              BZLMOD_ALLOWED_YANKED_VERSIONS_ENV, allowedYankedVersionsFromEnv))) {
-        return Optional.empty();
-      }
+    /**
+     * Parse a set of allowed yanked version from command line flag (--allowed_yanked_versions) and
+     * environment variable (ALLOWED_YANKED_VERSIONS). If `all` is specified, return Optional.empty();
+     * otherwise returns the set of parsed modulel key.
+     */
+    @Throws(ExternalDepsException::class)
+    fun parseAllowedYankedVersions(
+        allowedYankedVersionsFromEnv: String?, allowedYankedVersionsFromFlag: MutableList<String>
+    ): java.util.Optional<com.google.common.collect.ImmutableSet<ModuleKey?>?> {
+        val allowedYankedVersionBuilder: com.google.common.collect.ImmutableSet.Builder<ModuleKey?> =
+            com.google.common.collect.ImmutableSet.Builder<ModuleKey?>()
+        if (allowedYankedVersionsFromEnv != null) {
+            if (parseModuleKeysFromString(
+                    allowedYankedVersionsFromEnv,
+                    allowedYankedVersionBuilder,
+                    java.lang.String.format(
+                        "environment variable %s=%s",
+                        BZLMOD_ALLOWED_YANKED_VERSIONS_ENV, allowedYankedVersionsFromEnv
+                    )
+                )
+            ) {
+                return java.util.Optional.empty<com.google.common.collect.ImmutableSet<ModuleKey?>?>()
+            }
+        }
+        for (allowedYankedVersions in allowedYankedVersionsFromFlag) {
+            if (parseModuleKeysFromString(
+                    allowedYankedVersions,
+                    allowedYankedVersionBuilder,
+                    java.lang.String.format("command line flag --allow_yanked_versions=%s", allowedYankedVersions)
+                )
+            ) {
+                return java.util.Optional.empty<com.google.common.collect.ImmutableSet<ModuleKey?>?>()
+            }
+        }
+        return java.util.Optional.of<com.google.common.collect.ImmutableSet<ModuleKey?>?>(allowedYankedVersionBuilder.build())
     }
-    for (String allowedYankedVersions : allowedYankedVersionsFromFlag) {
-      if (parseModuleKeysFromString(
-          allowedYankedVersions,
-          allowedYankedVersionBuilder,
-          String.format("command line flag --allow_yanked_versions=%s", allowedYankedVersions))) {
-        return Optional.empty();
-      }
+
+    /**
+     * Parse of a comma-separated list of module version(s) of the form '<module name>@<version>' or
+     * 'all' from the string. Returns true if 'all' is present, otherwise returns false.
+    </version></module> */
+    @Throws(ExternalDepsException::class)
+    private fun parseModuleKeysFromString(
+        input: String,
+        allowedYankedVersionBuilder: com.google.common.collect.ImmutableSet.Builder<ModuleKey?>,
+        context: String?
+    ): Boolean {
+        val moduleStrs: com.google.common.collect.ImmutableList<String> =
+            com.google.common.collect.ImmutableList.copyOf<String?>(
+                com.google.common.base.Splitter.on(',').split(input)
+            )
+
+        for (moduleStr in moduleStrs) {
+            if (moduleStr == "all") {
+                return true
+            }
+
+            if (moduleStr.isEmpty()) {
+                continue
+            }
+
+            val pieces: Array<String?> = moduleStr.split("@", 2)
+
+            if (pieces.length != 2) {
+                throw withMessage(
+                    FailureDetails.ExternalDeps.Code.VERSION_RESOLUTION_ERROR,
+                    "Parsing %s failed, module versions must be of the form '<module name>@<version>'",
+                    context
+                )
+            }
+
+            if (!RepositoryName.VALID_MODULE_NAME.matcher(pieces[0]).matches()) {
+                throw ExternalDepsException.Companion.withMessage(
+                    FailureDetails.ExternalDeps.Code.VERSION_RESOLUTION_ERROR,
+                    ("Parsing %s failed, invalid module name '%s': valid names must 1) only contain"
+                            + " lowercase letters (a-z), digits (0-9), dots (.), hyphens (-), and"
+                            + " underscores (_); 2) begin with a lowercase letter; 3) end with a lowercase"
+                            + " letter or digit."),
+                    context,
+                    pieces[0]
+                )
+            }
+
+            val version: com.google.devtools.build.lib.bazel.bzlmod.Version?
+            try {
+                version = com.google.devtools.build.lib.bazel.bzlmod.Version.Companion.parse(pieces[1])
+            } catch (e: com.google.devtools.build.lib.bazel.bzlmod.Version.ParseException) {
+                throw ExternalDepsException.Companion.withCauseAndMessage(
+                    FailureDetails.ExternalDeps.Code.VERSION_RESOLUTION_ERROR,
+                    e,
+                    "Parsing %s failed, invalid version specified for module: %s",
+                    context,
+                    pieces[1]
+                )
+            }
+
+            allowedYankedVersionBuilder.add(ModuleKey(pieces[0], version))
+        }
+        return false
     }
-    return Optional.of(allowedYankedVersionBuilder.build());
-  }
-
-  /**
-   * Parse of a comma-separated list of module version(s) of the form '<module name>@<version>' or
-   * 'all' from the string. Returns true if 'all' is present, otherwise returns false.
-   */
-  private static boolean parseModuleKeysFromString(
-      String input, ImmutableSet.Builder<ModuleKey> allowedYankedVersionBuilder, String context)
-      throws ExternalDepsException {
-    ImmutableList<String> moduleStrs = ImmutableList.copyOf(Splitter.on(',').split(input));
-
-    for (String moduleStr : moduleStrs) {
-      if (moduleStr.equals("all")) {
-        return true;
-      }
-
-      if (moduleStr.isEmpty()) {
-        continue;
-      }
-
-      String[] pieces = moduleStr.split("@", 2);
-
-      if (pieces.length != 2) {
-        throw ExternalDepsException.withMessage(
-            FailureDetails.ExternalDeps.Code.VERSION_RESOLUTION_ERROR,
-            "Parsing %s failed, module versions must be of the form '<module name>@<version>'",
-            context);
-      }
-
-      if (!RepositoryName.VALID_MODULE_NAME.matcher(pieces[0]).matches()) {
-        throw ExternalDepsException.withMessage(
-            FailureDetails.ExternalDeps.Code.VERSION_RESOLUTION_ERROR,
-            "Parsing %s failed, invalid module name '%s': valid names must 1) only contain"
-                + " lowercase letters (a-z), digits (0-9), dots (.), hyphens (-), and"
-                + " underscores (_); 2) begin with a lowercase letter; 3) end with a lowercase"
-                + " letter or digit.",
-            context,
-            pieces[0]);
-      }
-
-      Version version;
-      try {
-        version = Version.parse(pieces[1]);
-      } catch (Version.ParseException e) {
-        throw ExternalDepsException.withCauseAndMessage(
-            FailureDetails.ExternalDeps.Code.VERSION_RESOLUTION_ERROR,
-            e,
-            "Parsing %s failed, invalid version specified for module: %s",
-            context,
-            pieces[1]);
-      }
-
-      allowedYankedVersionBuilder.add(new ModuleKey(pieces[0], version));
-    }
-    return false;
-  }
-
-  private YankedVersionsUtil() {}
 }

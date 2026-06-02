@@ -11,80 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
-
-import java.util.List;
-import java.util.function.Predicate;
+package com.google.devtools.build.lib.profiler
 
 /**
  * A stat recorder that is able to look at the kind of object added and delegate to the appropriate
- * {@link StatRecorder} based on a predicate.
- *
- * <p> Note that the predicates are evaluated in order and delegated only to the first one. That
+ * [StatRecorder] based on a predicate.
+ * 
+ * 
+ *  Note that the predicates are evaluated in order and delegated only to the first one. That
  * means that the most specific and cheapest predicates should be passed first.
  */
-public class PredicateBasedStatRecorder implements StatRecorder {
+class PredicateBasedStatRecorder(stats: MutableList<RecorderAndPredicate>) :
+    com.google.devtools.build.lib.profiler.StatRecorder {
+    private val predicates: Array<java.util.function.Predicate<in String?>?>
+    private val recorders: Array<com.google.devtools.build.lib.profiler.StatRecorder>
 
-  private final Predicate<? super String>[] predicates;
-  private final StatRecorder[] recorders;
-
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  public PredicateBasedStatRecorder(List<RecorderAndPredicate> stats) {
-    predicates = (Predicate<? super String>[]) new Predicate[stats.size()]; // unchecked, rawtypes
-    recorders = new StatRecorder[stats.size()];
-    for (int i = 0; i < stats.size(); i++) {
-      RecorderAndPredicate stat = stats.get(i);
-      predicates[i] = stat.predicate;
-      recorders[i] = stat.recorder;
+    init {
+        predicates =
+            arrayOfNulls<java.util.function.Predicate<*>>(stats.size()) as Array<java.util.function.Predicate<in String?>?> // unchecked, rawtypes
+        recorders = arrayOfNulls<com.google.devtools.build.lib.profiler.StatRecorder>(stats.size())
+        for (i in stats.indices) {
+            val stat = stats.get(i)
+            predicates[i] = stat.predicate
+            recorders[i] = stat.recorder
+        }
     }
-  }
 
-  @Override
-  public void addStat(int duration, Object obj) {
-    String description = obj.toString();
-    for (int i = 0; i < predicates.length; i++) {
-      if (predicates[i].test(description)) {
-        recorders[i].addStat(duration, obj);
-        return;
-      }
+    override fun addStat(duration: Int, obj: Any) {
+        val description: String? = obj.toString()
+        for (i in predicates.indices) {
+            if (predicates[i].test(description)) {
+                recorders[i].addStat(duration, obj)
+                return
+            }
+        }
     }
-  }
 
-  @Override
-  public boolean isEmpty() {
-    for (StatRecorder recorder : recorders) {
-      if (!recorder.isEmpty()) {
-        return false;
-      }
+    override fun isEmpty(): Boolean {
+        for (recorder in recorders) {
+            if (!recorder.isEmpty()) {
+                return false
+            }
+        }
+        return true
     }
-    return true;
-  }
 
-  @Override
-  public String toString() {
-    StringBuilder sb = new StringBuilder();
-    for (StatRecorder recorder : recorders) {
-      if (recorder.isEmpty()) {
-        continue;
-      }
-      sb.append(recorder);
-      sb.append("\n");
+    override fun toString(): String {
+        val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+        for (recorder in recorders) {
+            if (recorder.isEmpty()) {
+                continue
+            }
+            sb.append(recorder)
+            sb.append("\n")
+        }
+        return sb.toString()
     }
-    return sb.toString();
-  }
 
-  /**
-   * A Wrapper of a {@code StatRecorder} and a {@code Predicate}. Objects that matches the predicate
-   * will be delegated to the StatRecorder.
-   */
-  public static final class RecorderAndPredicate {
+    /**
+     * A Wrapper of a `StatRecorder` and a `Predicate`. Objects that matches the predicate
+     * will be delegated to the StatRecorder.
+     */
+    class RecorderAndPredicate(
+        recorder: com.google.devtools.build.lib.profiler.StatRecorder?,
+        predicate: java.util.function.Predicate<in String?>?
+    ) {
+        private val recorder: com.google.devtools.build.lib.profiler.StatRecorder?
+        private val predicate: java.util.function.Predicate<in String?>?
 
-    private final StatRecorder recorder;
-    private final Predicate<? super String> predicate;
-
-    public RecorderAndPredicate(StatRecorder recorder, Predicate<? super String> predicate) {
-      this.recorder = recorder;
-      this.predicate = predicate;
+        init {
+            this.recorder = recorder
+            this.predicate = predicate
+        }
     }
-  }
 }
