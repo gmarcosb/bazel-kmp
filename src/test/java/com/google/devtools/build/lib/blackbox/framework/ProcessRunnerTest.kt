@@ -11,197 +11,204 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.framework
 
-package com.google.devtools.build.lib.blackbox.framework;
+import com.google.common.collect.Lists
+import com.google.common.truth.Truth
+import com.google.common.util.concurrent.MoreExecutors
+import com.google.devtools.build.lib.util.OS
+import org.junit.AfterClass
+import org.junit.Before
+import org.junit.BeforeClass
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.*
+import java.util.stream.Collectors
 
-import static com.google.common.truth.Truth.assertThat;
+/** Test of [ProcessRunner]  */
+@RunWith(JUnit4::class)
+class ProcessRunnerTest {
+    private var directory: Path? = null
+    private var path: Path? = null
 
-import com.google.common.collect.Lists;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.devtools.build.lib.util.OS;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
-import javax.annotation.Nullable;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Test of {@link ProcessRunner} */
-@RunWith(JUnit4.class)
-public final class ProcessRunnerTest {
-  private static ExecutorService executorService;
-  private Path directory;
-  private Path path;
-
-  @BeforeClass
-  public static void setUpExecutor() {
-    // we need only two threads to schedule reading from output and error streams
-    executorService =
-        MoreExecutors.getExitingExecutorService(
-            (ThreadPoolExecutor) Executors.newFixedThreadPool(2), 1, TimeUnit.SECONDS);
-  }
-
-  @Before
-  public void setUp() throws Exception {
-    directory = Files.createTempDirectory(getClass().getSimpleName());
-    path = Files.createTempFile(directory, "script", isWindows() ? ".bat" : "");
-    assertThat(Files.exists(path)).isTrue();
-    assertThat(path.toFile().setExecutable(true)).isTrue();
-    path.toFile().deleteOnExit();
-    directory.toFile().deleteOnExit();
-  }
-
-  @AfterClass
-  public static void tearDownExecutor() {
-    MoreExecutors.shutdownAndAwaitTermination(executorService, 5, TimeUnit.SECONDS);
-  }
-
-  @Test
-  public void testSuccess() throws Exception {
-    Files.write(path, createScriptText(/* exit code */ 0, /* output */ "Hello!", /* error */ null));
-
-    ProcessParameters parameters = createBuilder().build();
-    ProcessResult result = new ProcessRunner(parameters, executorService).runSynchronously();
-
-    assertThat(result.exitCode()).isEqualTo(0);
-    assertThat(result.outString()).isEqualTo("Hello!");
-    assertThat(result.errString()).isEmpty();
-  }
-
-  @Test
-  public void testFailureWithCode() throws Exception {
-    Files.write(
-        path, createScriptText(/* exit code */ 124, /* output */ null, /* error */ "Failure"));
-
-    ProcessParameters parameters =
-        createBuilder().setExpectedExitCode(124).setExpectedEmptyError(false).build();
-    ProcessResult result = new ProcessRunner(parameters, executorService).runSynchronously();
-
-    assertThat(result.exitCode()).isEqualTo(124);
-    assertThat(result.outString()).isEmpty();
-    assertThat(result.errString()).isEqualTo("Failure");
-  }
-
-  @Test
-  public void testFailure() throws Exception {
-    Files.write(
-        path, createScriptText(/* exit code */ 124, /* output */ null, /* error */ "Failure"));
-
-    ProcessParameters parameters =
-        createBuilder().setExpectedToFail(true).setExpectedEmptyError(false).build();
-    ProcessResult result = new ProcessRunner(parameters, executorService).runSynchronously();
-
-    assertThat(result.exitCode()).isEqualTo(124);
-    assertThat(result.outString()).isEmpty();
-    assertThat(result.errString()).isEqualTo("Failure");
-  }
-
-  @Test
-  public void testTimeout() throws Exception {
-    // Windows script to sleep 5 seconds, so that we can test timeout.
-    // This script finds PowerShell using %systemroot% variable, which we assume is always
-    // defined. It passes some standard parameters like input and output formats,
-    // important part is the Command parameter, which actually calls Sleep from PowerShell.
-    String windowsScript =
-        "%systemroot%\\system32\\cmd.exe /C \"start /I /B powershell"
-            + " -Version 3.0 -NoLogo -Sta -NoProfile -InputFormat Text -OutputFormat Text"
-            + " -NonInteractive -Command \"\"&PowerShell Sleep 5\"";
-    Files.write(path, Collections.singleton(isWindows() ? windowsScript : "read smthg"));
-
-    ProcessParameters parameters =
-        createBuilder()
-            .setExpectedExitCode(-1)
-            .setExpectedEmptyError(false)
-            .setTimeoutMillis(100)
-            .build();
-    try {
-      new ProcessRunner(parameters, executorService).runSynchronously();
-      assertThat(false).isTrue();
-    } catch (TimeoutException e) {
-      // ignore
+    @Before
+    @Throws(Exception::class)
+    fun setUp() {
+        directory = Files.createTempDirectory(javaClass.getSimpleName())
+        path = Files.createTempFile(directory, "script", if (isWindows) ".bat" else "")
+        Truth.assertThat(Files.exists(path)).isTrue()
+        Truth.assertThat(path!!.toFile().setExecutable(true)).isTrue()
+        path!!.toFile().deleteOnExit()
+        directory!!.toFile().deleteOnExit()
     }
-  }
 
-  @Test
-  public void testRedirect() throws Exception {
-    Files.write(
-        path,
-        createScriptText(
-            /* exit code */ 12,
-            /* output */ Lists.newArrayList("Info", "Multi", "line"),
-            /* error */ Collections.singletonList("Failure")));
+    @Test
+    @Throws(Exception::class)
+    fun testSuccess() {
+        Files.write(path, createScriptText( /* exit code */0,  /* output */"Hello!",  /* error */null))
 
-    Path out = directory.resolve("out.txt");
-    Path err = directory.resolve("err.txt");
+        val parameters = createBuilder()!!.build()
+        val result = ProcessRunner(parameters, executorService).runSynchronously()
 
-    try {
-      ProcessParameters parameters =
-          createBuilder()
-              .setExpectedExitCode(12)
-              .setExpectedEmptyError(false)
-              .setRedirectOutput(out)
-              .setRedirectError(err)
-              .build();
-      ProcessResult result = new ProcessRunner(parameters, executorService).runSynchronously();
-
-      assertThat(result.exitCode()).isEqualTo(12);
-      assertThat(result.outString()).isEqualTo("Info\nMulti\nline");
-      assertThat(result.errString()).isEqualTo("Failure");
-    } finally {
-      Files.delete(out);
-      Files.delete(err);
+        Truth.assertThat(result.exitCode()).isEqualTo(0)
+        Truth.assertThat(result.outString()).isEqualTo("Hello!")
+        Truth.assertThat(result.errString()).isEmpty()
     }
-  }
 
-  private ProcessParameters.Builder createBuilder() {
-    return ProcessParameters.builder()
-        .setWorkingDirectory(directory.toFile())
-        .setName(path.toAbsolutePath().toString());
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFailureWithCode() {
+        Files.write(
+            path, createScriptText( /* exit code */124,  /* output */null,  /* error */"Failure")
+        )
 
-  private static List<String> createScriptText(
-      final int exitCode, @Nullable final String output, @Nullable final String error) {
-    return createScriptText(
-        exitCode,
-        output != null ? Collections.singletonList(output) : null,
-        error != null ? Collections.singletonList(error) : null);
-  }
+        val parameters =
+            createBuilder()!!.setExpectedExitCode(124).setExpectedEmptyError(false).build()
+        val result = ProcessRunner(parameters, executorService).runSynchronously()
 
-  private static List<String> createScriptText(
-      final int exitCode, @Nullable final List<String> output, @Nullable final List<String> error) {
-    List<String> text = Lists.newArrayList();
-    if (isWindows()) {
-      text.add("@echo off");
+        Truth.assertThat(result.exitCode()).isEqualTo(124)
+        Truth.assertThat(result.outString()).isEmpty()
+        Truth.assertThat(result.errString()).isEqualTo("Failure")
     }
-    text.addAll(echoStrings(output, ""));
-    text.addAll(echoStrings(error, isWindows() ? ">&2" : " 1>&2"));
-    text.add((isWindows() ? "exit /b " : "exit ") + exitCode);
-    return text;
-  }
 
-  private static List<String> echoStrings(@Nullable List<String> input, String redirect) {
-    if (input == null) {
-      return Collections.emptyList();
+    @Test
+    @Throws(Exception::class)
+    fun testFailure() {
+        Files.write(
+            path, createScriptText( /* exit code */124,  /* output */null,  /* error */"Failure")
+        )
+
+        val parameters =
+            createBuilder()!!.setExpectedToFail(true).setExpectedEmptyError(false).build()
+        val result = ProcessRunner(parameters, executorService).runSynchronously()
+
+        Truth.assertThat(result.exitCode()).isEqualTo(124)
+        Truth.assertThat(result.outString()).isEmpty()
+        Truth.assertThat(result.errString()).isEqualTo("Failure")
     }
-    String quote = isWindows() ? "" : "\"";
-    return input
-        .stream()
-        .map(s -> String.format("echo %s%s%s%s", quote, s, quote, redirect))
-        .collect(Collectors.toList());
-  }
 
-  private static boolean isWindows() {
-    return OS.WINDOWS.equals(OS.getCurrent());
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testTimeout() {
+        // Windows script to sleep 5 seconds, so that we can test timeout.
+        // This script finds PowerShell using %systemroot% variable, which we assume is always
+        // defined. It passes some standard parameters like input and output formats,
+        // important part is the Command parameter, which actually calls Sleep from PowerShell.
+        val windowsScript =
+            ("%systemroot%\\system32\\cmd.exe /C \"start /I /B powershell"
+                    + " -Version 3.0 -NoLogo -Sta -NoProfile -InputFormat Text -OutputFormat Text"
+                    + " -NonInteractive -Command \"\"&PowerShell Sleep 5\"")
+        Files.write(path, mutableSetOf<String?>(if (isWindows) windowsScript else "read smthg"))
+
+        val parameters =
+            createBuilder()!!
+                .setExpectedExitCode(-1)
+                .setExpectedEmptyError(false)
+                .setTimeoutMillis(100)
+                .build()
+        try {
+            ProcessRunner(parameters, executorService).runSynchronously()
+            Truth.assertThat(false).isTrue()
+        } catch (e: TimeoutException) {
+            // ignore
+        }
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testRedirect() {
+        Files.write(
+            path,
+            createScriptText( /* exit code */
+                12,  /* output */
+                Lists.newArrayList<String?>("Info", "Multi", "line"),  /* error */
+                mutableListOf<String?>("Failure")
+            )
+        )
+
+        val out = directory!!.resolve("out.txt")
+        val err = directory!!.resolve("err.txt")
+
+        try {
+            val parameters =
+                createBuilder()!!
+                    .setExpectedExitCode(12)
+                    .setExpectedEmptyError(false)
+                    .setRedirectOutput(out)
+                    .setRedirectError(err)
+                    .build()
+            val result = ProcessRunner(parameters, executorService).runSynchronously()
+
+            Truth.assertThat(result.exitCode()).isEqualTo(12)
+            Truth.assertThat(result.outString()).isEqualTo("Info\nMulti\nline")
+            Truth.assertThat(result.errString()).isEqualTo("Failure")
+        } finally {
+            Files.delete(out)
+            Files.delete(err)
+        }
+    }
+
+    private fun createBuilder(): ProcessParameters.Builder? {
+        return ProcessParameters.Companion.builder()
+            .setWorkingDirectory(directory!!.toFile())
+            .setName(path!!.toAbsolutePath().toString())
+    }
+
+    companion object {
+        private var executorService: ExecutorService? = null
+
+        @BeforeClass
+        fun setUpExecutor() {
+            // we need only two threads to schedule reading from output and error streams
+            executorService =
+                MoreExecutors.getExitingExecutorService(
+                    Executors.newFixedThreadPool(2) as ThreadPoolExecutor, 1, TimeUnit.SECONDS
+                )
+        }
+
+        @AfterClass
+        fun tearDownExecutor() {
+            MoreExecutors.shutdownAndAwaitTermination(executorService, 5, TimeUnit.SECONDS)
+        }
+
+        private fun createScriptText(
+            exitCode: Int, output: String?, error: String?
+        ): MutableList<String?> {
+            return Companion.createScriptText(
+                exitCode,
+                if (output != null) mutableListOf<String?>(output) else null,
+                if (error != null) mutableListOf<String?>(error) else null
+            )
+        }
+
+        private fun createScriptText(
+            exitCode: Int, output: MutableList<String?>?, error: MutableList<String?>?
+        ): MutableList<String?> {
+            val text: MutableList<String?> = Lists.newArrayList<String?>()
+            if (isWindows) {
+                text.add("@echo off")
+            }
+            text.addAll(echoStrings(output, ""))
+            text.addAll(echoStrings(error, if (isWindows) ">&2" else " 1>&2"))
+            text.add((if (isWindows) "exit /b " else "exit ") + exitCode)
+            return text
+        }
+
+        private fun echoStrings(input: MutableList<String?>?, redirect: String?): MutableList<String?> {
+            if (input == null) {
+                return mutableListOf<String?>()
+            }
+            val quote = if (isWindows) "" else "\""
+            return input
+                .stream()
+                .map<String?> { s: String? -> String.format("echo %s%s%s%s", quote, s, quote, redirect) }
+                .collect(Collectors.toList())
+        }
+
+        private val isWindows: Boolean
+            get() = OS.WINDOWS == OS.getCurrent()
+    }
 }

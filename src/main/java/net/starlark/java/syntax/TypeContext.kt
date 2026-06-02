@@ -11,53 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package net.starlark.java.syntax;
-
-import javax.annotation.Nullable;
+package net.starlark.java.syntax
 
 /**
  * A context for obtaining more detailed information about Starlark types.
- *
- * <p>This is used to inject type information from the {@code eval/} package into the {@code
- * syntax/} package, e.g. the method APIs of {@link StarlarkList}.
+ * 
+ * 
+ * This is used to inject type information from the `eval/` package into the `syntax/` package, e.g. the method APIs of [StarlarkList].
  */
-public interface TypeContext {
+interface TypeContext {
+    /** Returns the type of the given field of a `str` type, or null if no such field exists.  */
+    fun getStrFieldType(name: String?): StarlarkType?
 
-  /** Returns the type of the given field of a {@code str} type, or null if no such field exists. */
-  @Nullable
-  StarlarkType getStrFieldType(String name);
+    /**
+     * Returns the type of the given field of a `list[T]` type, or null if no such field exists.
+     */
+    fun getListFieldType(name: String?): StarlarkType?
 
-  /**
-   * Returns the type of the given field of a {@code list[T]} type, or null if no such field exists.
-   */
-  @Nullable
-  StarlarkType getListFieldType(String name);
+    /**
+     * Returns the type of the given field of a `dict[K, V]` type, or null if no such field
+     * exists.
+     */
+    fun getDictFieldType(name: String?): StarlarkType?
 
-  /**
-   * Returns the type of the given field of a {@code dict[K, V]} type, or null if no such field
-   * exists.
-   */
-  @Nullable
-  StarlarkType getDictFieldType(String name);
+    /**
+     * Returns the type of the given field of a `set[T]` type, or null if no such field exists.
+     */
+    fun getSetFieldType(name: String?): StarlarkType?
 
-  /**
-   * Returns the type of the given field of a {@code set[T]} type, or null if no such field exists.
-   */
-  @Nullable
-  StarlarkType getSetFieldType(String name);
+    /**
+     * Returns the value type of a [Resolver.Scope.PREDECLARED] symbol, or null if there is no
+     * such symbol.
+     */
+    fun getPredeclaredSymbolType(name: String?): StarlarkType?
 
-  /**
-   * Returns the value type of a {@link Resolver.Scope#PREDECLARED} symbol, or null if there is no
-   * such symbol.
-   */
-  @Nullable
-  StarlarkType getPredeclaredSymbolType(String name);
-
-  /**
-   * Returns the value type of a {@link Resolver.Scope#UNIVERSAL} symbol, or null if there is no
-   * such symbol.
-   */
-  @Nullable
-  StarlarkType getUniversalSymbolType(String name);
+    /**
+     * Returns the value type of a [Resolver.Scope.UNIVERSAL] symbol, or null if there is no
+     * such symbol.
+     */
+    fun getUniversalSymbolType(name: String?): StarlarkType?
 }

@@ -11,104 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [BazelLockFileModule].  */
+@RunWith(JUnit4::class)
+class BazelLockFileModuleTest {
+    private var extensionId: ModuleExtensionId? = null
+    private var nonReproducibleResult: LockFileModuleExtension? = null
+    private var reproducibleResult: LockFileModuleExtension? = null
+    private var evalFactors: ModuleExtensionEvalFactors? = null
+    private var otherEvalFactors: ModuleExtensionEvalFactors? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.Optional;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Starlark;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        extensionId =
+            ModuleExtensionId.create(
+                Label.parseCanonicalUnchecked("//:ext.bzl"), "ext", java.util.Optional.empty<T?>()
+            )
+        nonReproducibleResult =
+            LockFileModuleExtension.builder()
+                .setBzlTransitiveDigest(byteArrayOf(1, 2, 3))
+                .setUsagesDigest(byteArrayOf(4, 5, 6))
+                .setRecordedInputs(com.google.common.collect.ImmutableList.of<E?>())
+                .setGeneratedRepoSpecs(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .build()
+        reproducibleResult =
+            LockFileModuleExtension.builder()
+                .setBzlTransitiveDigest(byteArrayOf(1, 2, 3))
+                .setUsagesDigest(byteArrayOf(4, 5, 6))
+                .setRecordedInputs(com.google.common.collect.ImmutableList.of<E?>())
+                .setGeneratedRepoSpecs(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .setModuleExtensionMetadata(
+                    LockfileModuleExtensionMetadata.of(
+                        ModuleExtensionMetadata.create(
+                            Starlark.NONE,
+                            Starlark.NONE,  /* reproducible= */
+                            true,  /* factsObj= */
+                            Dict.empty<K?, V?>()
+                        )
+                    )
+                )
+                .build()
+        evalFactors = ModuleExtensionEvalFactors.create("linux", "x86_64")
+        otherEvalFactors = ModuleExtensionEvalFactors.create("linux", "aarch64")
+    }
 
-/** Tests for {@link BazelLockFileModule}. */
-@RunWith(JUnit4.class)
-public class BazelLockFileModuleTest {
+    @org.junit.Test
+    fun combineModuleExtensionsReproducibleFactorAdded() {
+        val oldExtensionInfos: com.google.common.collect.ImmutableMap<Any?, com.google.common.collect.ImmutableMap<Any?, Any?>?> =
+            com.google.common.collect.ImmutableMap.of<Any?, com.google.common.collect.ImmutableMap<Any?, Any?>?>(
+                extensionId,
+                com.google.common.collect.ImmutableMap.of<Any?, Any?>(evalFactors, nonReproducibleResult)
+            )
+        val newExtensionInfos: com.google.common.collect.ImmutableMap<Any?, Any?> =
+            com.google.common.collect.ImmutableMap.of<Any?, Any?>(
+                extensionId,
+                WithFactors(otherEvalFactors, reproducibleResult)
+            )
 
-  private ModuleExtensionId extensionId;
-  private LockFileModuleExtension nonReproducibleResult;
-  private LockFileModuleExtension reproducibleResult;
-  private ModuleExtensionEvalFactors evalFactors;
-  private ModuleExtensionEvalFactors otherEvalFactors;
-
-  @Before
-  public void setUp() throws Exception {
-    extensionId =
-        ModuleExtensionId.create(
-            Label.parseCanonicalUnchecked("//:ext.bzl"), "ext", Optional.empty());
-    nonReproducibleResult =
-        LockFileModuleExtension.builder()
-            .setBzlTransitiveDigest(new byte[] {1, 2, 3})
-            .setUsagesDigest(new byte[] {4, 5, 6})
-            .setRecordedInputs(ImmutableList.of())
-            .setGeneratedRepoSpecs(ImmutableMap.of())
-            .build();
-    reproducibleResult =
-        LockFileModuleExtension.builder()
-            .setBzlTransitiveDigest(new byte[] {1, 2, 3})
-            .setUsagesDigest(new byte[] {4, 5, 6})
-            .setRecordedInputs(ImmutableList.of())
-            .setGeneratedRepoSpecs(ImmutableMap.of())
-            .setModuleExtensionMetadata(
-                LockfileModuleExtensionMetadata.of(
-                    ModuleExtensionMetadata.create(
-                        Starlark.NONE,
-                        Starlark.NONE,
-                        /* reproducible= */ true,
-                        /* factsObj= */ Dict.empty())))
-            .build();
-    evalFactors = ModuleExtensionEvalFactors.create("linux", "x86_64");
-    otherEvalFactors = ModuleExtensionEvalFactors.create("linux", "aarch64");
-  }
-
-  @Test
-  public void combineModuleExtensionsReproducibleFactorAdded() {
-    var oldExtensionInfos =
-        ImmutableMap.of(extensionId, ImmutableMap.of(evalFactors, nonReproducibleResult));
-    var newExtensionInfos =
-        ImmutableMap.of(
-            extensionId,
-            new LockFileModuleExtension.WithFactors(otherEvalFactors, reproducibleResult));
-
-    assertThat(
+        assertThat(
             BazelLockFileModule.combineModuleExtensions(
-                oldExtensionInfos, newExtensionInfos, id -> true, /* reproducible= */ false))
-        .isEqualTo(oldExtensionInfos);
-  }
+                oldExtensionInfos, newExtensionInfos, { id -> true },  /* reproducible= */false
+            )
+        )
+            .isEqualTo(oldExtensionInfos)
+    }
 
-  @Test
-  public void combineModuleExtensionsFactorBecomesReproducible() {
-    var oldExtensionInfos =
-        ImmutableMap.of(extensionId, ImmutableMap.of(evalFactors, nonReproducibleResult));
-    var newExtensionInfos =
-        ImmutableMap.of(
-            extensionId, new LockFileModuleExtension.WithFactors(evalFactors, reproducibleResult));
+    @org.junit.Test
+    fun combineModuleExtensionsFactorBecomesReproducible() {
+        val oldExtensionInfos: com.google.common.collect.ImmutableMap<Any?, com.google.common.collect.ImmutableMap<Any?, Any?>?> =
+            com.google.common.collect.ImmutableMap.of<Any?, com.google.common.collect.ImmutableMap<Any?, Any?>?>(
+                extensionId,
+                com.google.common.collect.ImmutableMap.of<Any?, Any?>(evalFactors, nonReproducibleResult)
+            )
+        val newExtensionInfos: com.google.common.collect.ImmutableMap<Any?, Any?> =
+            com.google.common.collect.ImmutableMap.of<Any?, Any?>(
+                extensionId, WithFactors(evalFactors, reproducibleResult)
+            )
 
-    assertThat(
+        assertThat(
             BazelLockFileModule.combineModuleExtensions(
-                oldExtensionInfos, newExtensionInfos, id -> true, /* reproducible= */ false))
-        .isEmpty();
-  }
+                oldExtensionInfos, newExtensionInfos, { id -> true },  /* reproducible= */false
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void combineModuleExtensionsFactorBecomesNonReproducible() {
-    var oldExtensionInfos =
-        ImmutableMap.of(extensionId, ImmutableMap.of(evalFactors, reproducibleResult));
-    var newExtensionInfos =
-        ImmutableMap.of(
-            extensionId,
-            new LockFileModuleExtension.WithFactors(evalFactors, nonReproducibleResult));
+    @org.junit.Test
+    fun combineModuleExtensionsFactorBecomesNonReproducible() {
+        val oldExtensionInfos: com.google.common.collect.ImmutableMap<Any?, com.google.common.collect.ImmutableMap<Any?, Any?>?> =
+            com.google.common.collect.ImmutableMap.of<Any?, com.google.common.collect.ImmutableMap<Any?, Any?>?>(
+                extensionId,
+                com.google.common.collect.ImmutableMap.of<Any?, Any?>(evalFactors, reproducibleResult)
+            )
+        val newExtensionInfos: com.google.common.collect.ImmutableMap<Any?, Any?> =
+            com.google.common.collect.ImmutableMap.of<Any?, Any?>(
+                extensionId,
+                WithFactors(evalFactors, nonReproducibleResult)
+            )
 
-    assertThat(
+        assertThat(
             BazelLockFileModule.combineModuleExtensions(
-                oldExtensionInfos, newExtensionInfos, id -> true, /* reproducible= */ false))
-        .isEqualTo(
-            ImmutableMap.of(extensionId, ImmutableMap.of(evalFactors, nonReproducibleResult)));
-  }
+                oldExtensionInfos, newExtensionInfos, { id -> true },  /* reproducible= */false
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<Any?, com.google.common.collect.ImmutableMap<Any?, Any?>?>(
+                    extensionId,
+                    com.google.common.collect.ImmutableMap.of<Any?, Any?>(evalFactors, nonReproducibleResult)
+                )
+            )
+    }
 }

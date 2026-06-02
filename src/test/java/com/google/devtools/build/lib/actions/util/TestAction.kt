@@ -11,183 +11,167 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions.util;
+package com.google.devtools.build.lib.actions.util
 
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.util.CrashFailureDetails;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import java.io.IOException;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Executors;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
+import com.google.common.base.Predicate
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSet
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.actions.AbstractAction
+import java.util.concurrent.Callable
 
 /**
  * A dummy action for testing.  Its execution runs the specified
  * Runnable or Callable, which is defined by the test case,
  * and touches all the output files.
  */
-public class TestAction extends AbstractAction {
+open class TestAction(effect: Callable<Void?>, inputs: NestedSet<Artifact?>, outputs: ImmutableSet<Artifact?>?) :
+    AbstractAction(ActionsTestUtil.Companion.NULL_ACTION_OWNER, mandatoryArtifacts(inputs), outputs) {
+    protected val effect: Callable<Void?>
+    private val mandatoryInputs: NestedSet<Artifact?>?
+    private val optionalInputs: ImmutableList<Artifact?>
+    private var inputsDiscovered = false
 
-  @SerializationConstant public static final Runnable NO_EFFECT = () -> {};
+    /** Use this constructor if the effect can't throw exceptions.  */
+    constructor(
+        effect: Runnable,
+        inputs: NestedSet<Artifact?>,
+        outputs: ImmutableSet<Artifact?>?
+    ) : this(Executors.callable<Void?>(effect, null), inputs, outputs)
 
-  private static boolean isOptional(Artifact artifact) {
-    return artifact.getExecPath().getBaseName().endsWith(".optional");
-  }
-
-  private static NestedSet<Artifact> mandatoryArtifacts(NestedSet<Artifact> inputs) {
-    return NestedSetBuilder.wrap(
-        Order.STABLE_ORDER, Iterables.filter(inputs.toList(), a -> !isOptional(a)));
-  }
-
-  private static ImmutableList<Artifact> optionalArtifacts(NestedSet<Artifact> inputs) {
-    return ImmutableList.copyOf(Iterables.filter(inputs.toList(), a -> isOptional(a)));
-  }
-
-  protected final Callable<Void> effect;
-  private final NestedSet<Artifact> mandatoryInputs;
-  private final ImmutableList<Artifact> optionalInputs;
-  private boolean inputsDiscovered = false;
-
-  /** Use this constructor if the effect can't throw exceptions. */
-  public TestAction(Runnable effect, NestedSet<Artifact> inputs, ImmutableSet<Artifact> outputs) {
-    this(Executors.callable(effect, null), inputs, outputs);
-  }
-
-  /**
-   * Use this constructor if the effect can throw exceptions. Any checked exception thrown will be
-   * repackaged as an ActionExecutionException.
-   */
-  public TestAction(
-      Callable<Void> effect, NestedSet<Artifact> inputs, ImmutableSet<Artifact> outputs) {
-    super(NULL_ACTION_OWNER, mandatoryArtifacts(inputs), outputs);
-    this.mandatoryInputs = getInputs();
-    this.optionalInputs = optionalArtifacts(inputs);
-    this.effect = effect;
-  }
-
-  @Override
-  public NestedSet<Artifact> getMandatoryInputs() {
-    return mandatoryInputs;
-  }
-
-  @Override
-  public boolean discoversInputs() {
-    return !optionalInputs.isEmpty();
-  }
-
-  @Override
-  protected boolean inputsDiscovered() {
-    return inputsDiscovered;
-  }
-
-  @Override
-  protected void setInputsDiscovered(boolean inputsDiscovered) {
-    this.inputsDiscovered = inputsDiscovered;
-  }
-
-  @Override
-  public NestedSet<Artifact> getOriginalInputs() {
-    return mandatoryInputs;
-  }
-
-  @Override
-  public NestedSet<Artifact> getAllowedDerivedInputs() {
-    return NestedSetBuilder.<Artifact>wrap(Order.STABLE_ORDER, optionalInputs);
-  }
-
-  @Override
-  public NestedSet<Artifact> discoverInputs(ActionExecutionContext actionExecutionContext) {
-    Preconditions.checkState(discoversInputs(), this);
-    NestedSet<Artifact> discoveredInputs =
-        NestedSetBuilder.wrap(
-            Order.STABLE_ORDER, Iterables.filter(optionalInputs, i -> i.getPath().exists()));
-    updateInputs(
-        NestedSetBuilder.<Artifact>stableOrder()
-            .addTransitive(mandatoryInputs)
-            .addTransitive(discoveredInputs)
-            .build());
-    return discoveredInputs;
-  }
-
-  @Override
-  public ActionResult execute(ActionExecutionContext actionExecutionContext)
-      throws ActionExecutionException, InterruptedException {
-    for (Artifact artifact : getInputs().toList()) {
-      // Do not check *.optional artifacts - artifacts with such extension are
-      // used by tests to specify artifacts that may or may not be missing.
-      // This is used, e.g., to test Blaze behavior when action has missing
-      // input artifacts but still is successfully executed.
-      if (!artifact.getPath().exists()) {
-        throw new IllegalStateException("action's input file does not exist: "
-            + artifact.getPath());
-      }
+    /**
+     * Use this constructor if the effect can throw exceptions. Any checked exception thrown will be
+     * repackaged as an ActionExecutionException.
+     */
+    init {
+        this.mandatoryInputs = getInputs()
+        this.optionalInputs = optionalArtifacts(inputs)
+        this.effect = effect
     }
 
-    try {
-      effect.call();
-    } catch (RuntimeException | Error | ActionExecutionException | InterruptedException e) {
-      throw e;
-    } catch (Exception e) {
-      DetailedExitCode code = CrashFailureDetails.detailedExitCodeForThrowable(e);
-      throw new ActionExecutionException(
-          "TestAction failed due to exception: " + e.getMessage(), e, this, false, code);
+    public override fun getMandatoryInputs(): NestedSet<Artifact?>? {
+        return mandatoryInputs
     }
 
-    try {
-      for (Artifact artifact : getOutputs()) {
-        FileSystemUtils.touchFile(artifact.getPath());
-      }
-    } catch (IOException e) {
-      throw new AssertionError(e);
+    public override fun discoversInputs(): Boolean {
+        return !optionalInputs.isEmpty()
     }
 
-    return ActionResult.EMPTY;
-  }
-
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    fp.addPaths(Artifact.asSortedPathFragments(getOutputs()));
-    fp.addPaths(Artifact.asSortedPathFragments(getMandatoryInputs().toList()));
-  }
-
-  @Override
-  public String getMnemonic() {
-    return "Test";
-  }
-
-  /** No-op action that has exactly one output. */
-  @AutoCodec
-  public static class DummyAction extends TestAction {
-    @AutoCodec.Instantiator
-    public DummyAction(NestedSet<Artifact> inputs, Artifact primaryOutput) {
-      super(NO_EFFECT, inputs, ImmutableSet.of(primaryOutput));
+    protected override fun inputsDiscovered(): Boolean {
+        return inputsDiscovered
     }
 
-    public DummyAction(Artifact input, Artifact output) {
-      this(NestedSetBuilder.create(Order.STABLE_ORDER, input), output);
+    protected override fun setInputsDiscovered(inputsDiscovered: Boolean) {
+        this.inputsDiscovered = inputsDiscovered
     }
 
-  }
+    public override fun getOriginalInputs(): NestedSet<Artifact?>? {
+        return mandatoryInputs
+    }
+
+    public override fun getAllowedDerivedInputs(): NestedSet<Artifact?> {
+        return NestedSetBuilder.< Artifact > wrap < Artifact ? > (Order.STABLE_ORDER, optionalInputs)
+    }
+
+    public override fun discoverInputs(actionExecutionContext: ActionExecutionContext?): NestedSet<Artifact?>? {
+        Preconditions.checkState(discoversInputs(), this)
+        val discoveredInputs: NestedSet<Artifact?>? =
+            NestedSetBuilder.wrap(
+                Order.STABLE_ORDER, Iterables.filter<T?>(optionalInputs, Predicate { i: T? -> i.getPath().exists() })
+            )
+        updateInputs(
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .addTransitive(mandatoryInputs)
+                .addTransitive(discoveredInputs)
+                .build()
+        )
+        return discoveredInputs
+    }
+
+    @Throws(ActionExecutionException::class, InterruptedException::class)
+    public override fun execute(actionExecutionContext: ActionExecutionContext?): ActionResult {
+        for (artifact in getInputs().toList()) {
+            // Do not check *.optional artifacts - artifacts with such extension are
+            // used by tests to specify artifacts that may or may not be missing.
+            // This is used, e.g., to test Blaze behavior when action has missing
+            // input artifacts but still is successfully executed.
+            check(artifact.getPath().exists()) {
+                ("action's input file does not exist: "
+                        + artifact.getPath())
+            }
+        }
+
+        try {
+            effect.call()
+        } catch (e: RuntimeException) {
+            throw e
+        } catch (e: Error) {
+            throw e
+        } catch (e: ActionExecutionException) {
+            throw e
+        } catch (e: InterruptedException) {
+            throw e
+        } catch (e: Exception) {
+            val code: DetailedExitCode? = CrashFailureDetails.detailedExitCodeForThrowable(e)
+            throw ActionExecutionException(
+                "TestAction failed due to exception: " + e.getMessage(), e, this, false, code
+            )
+        }
+
+        try {
+            for (artifact in getOutputs()) {
+                FileSystemUtils.touchFile(artifact.getPath())
+            }
+        } catch (e: IOException) {
+            throw AssertionError(e)
+        }
+
+        return ActionResult.EMPTY
+    }
+
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint
+    ) {
+        fp.addPaths(Artifact.asSortedPathFragments(getOutputs()))
+        fp.addPaths(Artifact.asSortedPathFragments(getMandatoryInputs().toList()))
+    }
+
+    public override fun getMnemonic(): String {
+        return "Test"
+    }
+
+    /** No-op action that has exactly one output.  */
+    @AutoCodec
+    open class DummyAction @AutoCodec.Instantiator constructor(inputs: NestedSet<Artifact?>, primaryOutput: Artifact) :
+        TestAction(
+            NO_EFFECT, inputs, ImmutableSet.of<Artifact?>(primaryOutput)
+        ) {
+        constructor(input: Artifact?, output: Artifact?) : this(
+            NestedSetBuilder.create(Order.STABLE_ORDER, input),
+            output
+        )
+    }
+
+    companion object {
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val NO_EFFECT: Runnable = Runnable {}
+
+        private fun isOptional(artifact: Artifact): Boolean {
+            return artifact.getExecPath().getBaseName().endsWith(".optional")
+        }
+
+        private fun mandatoryArtifacts(inputs: NestedSet<Artifact?>): NestedSet<Artifact?> {
+            return NestedSetBuilder.wrap(
+                Order.STABLE_ORDER, Iterables.filter<T?>(inputs.toList(), Predicate { a: T? -> !isOptional(a) })
+            )
+        }
+
+        private fun optionalArtifacts(inputs: NestedSet<Artifact?>): ImmutableList<Artifact?> {
+            return ImmutableList.copyOf<E?>(Iterables.filter<T?>(inputs.toList(), Predicate { a: T? -> isOptional(a) }))
+        }
+    }
 }

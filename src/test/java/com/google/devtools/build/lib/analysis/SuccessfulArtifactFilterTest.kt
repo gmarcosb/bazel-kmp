@@ -11,247 +11,237 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SourceArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.util.LabelArtifactOwner;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.ArtifactsInOutputGroup;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.ArtifactsToBuild;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.SuccessfulArtifactFilter;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit test for [SuccessfulArtifactFilter].  */
+@RunWith(JUnit4::class)
+class SuccessfulArtifactFilterTest {
+    private val scratch: Scratch = Scratch()
 
-/** Unit test for {@link SuccessfulArtifactFilter}. */
-@RunWith(JUnit4.class)
-public class SuccessfulArtifactFilterTest {
-  private final Scratch scratch = new Scratch();
+    private var root: ArtifactRoot? = null
+    private var ctx: TopLevelArtifactContext? = null
+    private var groupProvider: OutputGroupInfo? = null
 
-  private ArtifactRoot root;
-  private TopLevelArtifactContext ctx;
-  private OutputGroupInfo groupProvider;
-
-  @Before
-  public void setUp() throws IOException {
-    Path sourceDir = scratch.dir("/source");
-    root = ArtifactRoot.asSourceRoot(Root.fromPath(sourceDir));
-  }
-
-  @SafeVarargs
-  private void initializeOutputGroupInfo(Pair<String, NestedSet<Artifact>>... groups) {
-    TreeMap<String, NestedSetBuilder<Artifact>> outputGroups = new TreeMap<>();
-    for (var pair : groups) {
-      outputGroups.put(pair.first, NestedSetBuilder.fromNestedSet(pair.second));
+    @Before
+    @Throws(IOException::class)
+    fun setUp() {
+        val sourceDir: Path = scratch.dir("/source")
+        root = ArtifactRoot.asSourceRoot(Root.fromPath(sourceDir))
     }
-    groupProvider = OutputGroupInfo.fromBuilders(outputGroups);
-    ctx = new TopLevelArtifactContext(false, false, ImmutableSortedSet.copyOf(groupProvider));
-  }
 
-  @Test
-  public void allOutputGroupsFiltered() {
-    SourceArtifact group1FailedArtifact = newArtifact("g1_failed_output");
-    SourceArtifact group2FailedArtifact = newArtifact("g2_failed_output");
-    SourceArtifact group3FailedArtifact = newArtifact("g3_failed_output");
-    SourceArtifact group1BuiltArtifact = newArtifact("g1_output");
-    SourceArtifact group2BuiltArtifact = newArtifact("g2_output");
-    SourceArtifact group3BuiltArtifact1 = newArtifact("g3_output1");
-    SourceArtifact group3BuiltArtifact2 = newArtifact("g3_output2");
-    ImmutableSet<Artifact> successfulArtifacts =
-        ImmutableSet.of(
-            group1BuiltArtifact, group2BuiltArtifact, group3BuiltArtifact1, group3BuiltArtifact2);
-    // Arrange each output group with a different nested set structure.
-    NestedSet<Artifact> group1Artifacts =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1BuiltArtifact))
-            .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1FailedArtifact))
-            .build();
-    NestedSet<Artifact> group2Artifacts =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .add(group2BuiltArtifact)
-            .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group2FailedArtifact))
-            .build();
-    NestedSet<Artifact> group3Artifacts1 =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .add(group3BuiltArtifact1)
-            .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group3FailedArtifact))
-            .build();
-    NestedSet<Artifact> group3Artifacts2 =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .add(group3FailedArtifact)
-            .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group3BuiltArtifact2))
-            .build();
-    NestedSet<Artifact> group3Artifacts =
-        NestedSetBuilder.fromNestedSets(ImmutableList.of(group3Artifacts1, group3Artifacts2))
-            .build();
-
-    initializeOutputGroupInfo(
-        Pair.of("g1", group1Artifacts),
-        Pair.of("g2", group2Artifacts),
-        Pair.of("g3", group3Artifacts));
-
-    ArtifactsToBuild allArtifactsToBuild =
-        TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx);
-    ImmutableMap<String, ArtifactsInOutputGroup> outputGroups =
-        allArtifactsToBuild.getAllArtifactsByOutputGroup();
-
-    SuccessfulArtifactFilter filter = new SuccessfulArtifactFilter(successfulArtifacts);
-    ImmutableMap<String, ArtifactsInOutputGroup> filteredOutputGroups =
-        filter.filterArtifactsInOutputGroup(outputGroups);
-    assertThat(filteredOutputGroups.get("g1").isIncomplete()).isTrue();
-    assertThat(filteredOutputGroups.get("g2").isIncomplete()).isTrue();
-    assertThat(filteredOutputGroups.get("g3").isIncomplete()).isTrue();
-    Map<String, ImmutableSet<Artifact>> groupArtifacts =
-        extractArtifactsByOutputGroup(filteredOutputGroups);
-    assertThat(groupArtifacts.get("g1")).containsExactly(group1BuiltArtifact);
-    assertThat(groupArtifacts.get("g2")).containsExactly(group2BuiltArtifact);
-    assertThat(groupArtifacts.get("g3"))
-        .containsExactly(group3BuiltArtifact1, group3BuiltArtifact2);
-  }
-
-  @Test
-  public void emptyOutputGroupsNotReturned() {
-    SourceArtifact group1FailedArtifact = newArtifact("g1_failed_output");
-    SourceArtifact group2FailedArtifact = newArtifact("g2_failed_output");
-    SourceArtifact group1BuiltArtifact = newArtifact("g1_output");
-    ImmutableSet<Artifact> successfulArtifacts = ImmutableSet.of(group1BuiltArtifact);
-    NestedSet<Artifact> group1Artifacts =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1BuiltArtifact))
-            .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1FailedArtifact))
-            .build();
-    NestedSet<Artifact> group2Artifacts =
-        NestedSetBuilder.<Artifact>stableOrder().add(group2FailedArtifact).build();
-
-    initializeOutputGroupInfo(Pair.of("g1", group1Artifacts), Pair.of("g2", group2Artifacts));
-
-    ArtifactsToBuild allArtifactsToBuild =
-        TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx);
-    ImmutableMap<String, ArtifactsInOutputGroup> outputGroups =
-        allArtifactsToBuild.getAllArtifactsByOutputGroup();
-
-    SuccessfulArtifactFilter filter = new SuccessfulArtifactFilter(successfulArtifacts);
-    ImmutableMap<String, ArtifactsInOutputGroup> filteredOutputGroups =
-        filter.filterArtifactsInOutputGroup(outputGroups);
-    assertThat(filteredOutputGroups.get("g1").isIncomplete()).isTrue();
-    assertThat(filteredOutputGroups).containsKey("g1");
-    assertThat(filteredOutputGroups).doesNotContainKey("g2");
-  }
-
-  @Test
-  public void unfilteredNestedSetsReused() {
-    SourceArtifact group1BuiltArtifact = newArtifact("output1");
-    SourceArtifact group1BuiltArtifact2 = newArtifact("output2");
-    SourceArtifact group1BuiltArtifact3 = newArtifact("output3");
-    ImmutableSet<Artifact> successfulArtifacts =
-        ImmutableSet.of(group1BuiltArtifact, group1BuiltArtifact2, group1BuiltArtifact3);
-    NestedSet<Artifact> successfulArtifactSet =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .add(group1BuiltArtifact)
-            .addTransitive(
-                NestedSetBuilder.create(
-                    Order.STABLE_ORDER, group1BuiltArtifact2, group1BuiltArtifact3))
-            .build();
-    NestedSet<Artifact> setContainingSuccessfulSet1 =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .add(group1BuiltArtifact)
-            .addTransitive(successfulArtifactSet)
-            .build();
-    NestedSet<Artifact> setContainingSuccessfulSet2 =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .add(group1BuiltArtifact)
-            .addTransitive(successfulArtifactSet)
-            .build();
-    NestedSet<Artifact> outputGroup =
-        NestedSetBuilder.<Artifact>stableOrder()
-            .addTransitive(setContainingSuccessfulSet1)
-            .addTransitive(setContainingSuccessfulSet2)
-            .build();
-
-    initializeOutputGroupInfo(Pair.of("out", outputGroup));
-
-    ArtifactsToBuild allArtifactsToBuild =
-        TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx);
-    ImmutableMap<String, ArtifactsInOutputGroup> outputGroups =
-        allArtifactsToBuild.getAllArtifactsByOutputGroup();
-
-    SuccessfulArtifactFilter filter = new SuccessfulArtifactFilter(successfulArtifacts);
-    ArtifactsInOutputGroup unfilteredArtifactsInOutputGroup = outputGroups.get("out");
-    ArtifactsInOutputGroup filteredArtifactsInOutputGroup =
-        filter.filterArtifactsInOutputGroup(outputGroups).get("out");
-    assertThat(filteredArtifactsInOutputGroup.isIncomplete()).isFalse();
-    assertThat(filteredArtifactsInOutputGroup).isSameInstanceAs(unfilteredArtifactsInOutputGroup);
-  }
-
-  @Test(timeout = 10_000)
-  public void deeplyNestedSetFilteredQuickly() {
-    SourceArtifact failedArtifact = newArtifact("failed_output");
-    SourceArtifact builtArtifact = newArtifact("output");
-    ImmutableSet<Artifact> successfulArtifacts = ImmutableSet.of(builtArtifact);
-    // Arrange each output group with a different nested set structure.
-    NestedSet<Artifact> baseSet =
-        NestedSetBuilder.<Artifact>stableOrder().add(builtArtifact).add(failedArtifact).build();
-    List<NestedSet<Artifact>> sets = new ArrayList<>();
-    sets.add(baseSet);
-    // Create a NestedSet DAG with ((500 * 499) / 2) nodes, but with only 500 unique nodes. It
-    // should be feasible to filter this NestedSet using memoization in a small test and we should
-    // timeout if we aren't using memoization.
-    for (int i = 0; i < 500; i++) {
-      NestedSetBuilder<Artifact> builder = NestedSetBuilder.stableOrder();
-      builder.add(builtArtifact).add(failedArtifact);
-      for (NestedSet<Artifact> set : sets) {
-        builder.addTransitive(set);
-      }
-      sets.add(builder.build());
+    @java.lang.SafeVarargs
+    private fun initializeOutputGroupInfo(vararg groups: Pair<String?, NestedSet<Artifact?>?>) {
+        val outputGroups: TreeMap<String?, NestedSetBuilder<Artifact?>?> =
+            TreeMap<String?, NestedSetBuilder<Artifact?>?>()
+        for (pair in groups) {
+            outputGroups.put(pair.first, NestedSetBuilder.fromNestedSet(pair.second))
+        }
+        groupProvider = OutputGroupInfo.fromBuilders(outputGroups)
+        ctx = TopLevelArtifactContext(false, false, com.google.common.collect.ImmutableSortedSet.copyOf(groupProvider))
     }
-    NestedSet<Artifact> maxSet = Iterables.getLast(sets);
 
-    initializeOutputGroupInfo(Pair.of("group", maxSet));
+    @org.junit.Test
+    fun allOutputGroupsFiltered() {
+        val group1FailedArtifact: SourceArtifact = newArtifact("g1_failed_output")
+        val group2FailedArtifact: SourceArtifact = newArtifact("g2_failed_output")
+        val group3FailedArtifact: SourceArtifact = newArtifact("g3_failed_output")
+        val group1BuiltArtifact: SourceArtifact = newArtifact("g1_output")
+        val group2BuiltArtifact: SourceArtifact = newArtifact("g2_output")
+        val group3BuiltArtifact1: SourceArtifact = newArtifact("g3_output1")
+        val group3BuiltArtifact2: SourceArtifact = newArtifact("g3_output2")
+        val successfulArtifacts: com.google.common.collect.ImmutableSet<Artifact?> =
+            com.google.common.collect.ImmutableSet.of<Artifact?>(
+                group1BuiltArtifact, group2BuiltArtifact, group3BuiltArtifact1, group3BuiltArtifact2
+            )
+        // Arrange each output group with a different nested set structure.
+        val group1Artifacts: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1BuiltArtifact))
+                .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1FailedArtifact))
+                .build()
+        val group2Artifacts: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .add(group2BuiltArtifact)
+                .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group2FailedArtifact))
+                .build()
+        val group3Artifacts1: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .add(group3BuiltArtifact1)
+                .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group3FailedArtifact))
+                .build()
+        val group3Artifacts2: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .add(group3FailedArtifact)
+                .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group3BuiltArtifact2))
+                .build()
+        val group3Artifacts: NestedSet<Artifact?>? =
+            NestedSetBuilder.fromNestedSets(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    group3Artifacts1,
+                    group3Artifacts2
+                )
+            )
+                .build()
 
-    ArtifactsToBuild allArtifactsToBuild =
-        TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx);
-    ImmutableMap<String, ArtifactsInOutputGroup> outputGroups =
-        allArtifactsToBuild.getAllArtifactsByOutputGroup();
+        initializeOutputGroupInfo(
+            Pair.of("g1", group1Artifacts),
+            Pair.of("g2", group2Artifacts),
+            Pair.of("g3", group3Artifacts)
+        )
 
-    SuccessfulArtifactFilter filter = new SuccessfulArtifactFilter(successfulArtifacts);
-    Map<String, ImmutableSet<Artifact>> groupArtifacts =
-        extractArtifactsByOutputGroup(filter.filterArtifactsInOutputGroup(outputGroups));
-    assertThat(groupArtifacts.get("group")).containsExactlyElementsIn(successfulArtifacts);
-  }
+        val allArtifactsToBuild: ArtifactsToBuild =
+            TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx)
+        val outputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>? =
+            allArtifactsToBuild.getAllArtifactsByOutputGroup()
 
-  private SourceArtifact newArtifact(String name) {
-    return new SourceArtifact(root, PathFragment.create(name), LabelArtifactOwner.NULL_OWNER);
-  }
-
-  private static Map<String, ImmutableSet<Artifact>> extractArtifactsByOutputGroup(
-      ImmutableMap<String, ArtifactsInOutputGroup> outputGroups) {
-    Map<String, ImmutableSet<Artifact>> groupToDeclaredArtifacts = new HashMap<>();
-    for (Map.Entry<String, ArtifactsInOutputGroup> entry : outputGroups.entrySet()) {
-      groupToDeclaredArtifacts.put(entry.getKey(), entry.getValue().getArtifacts().toSet());
+        val filter: SuccessfulArtifactFilter = SuccessfulArtifactFilter(successfulArtifacts)
+        val filteredOutputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?> =
+            filter.filterArtifactsInOutputGroup(outputGroups)
+        assertThat(filteredOutputGroups.get("g1").isIncomplete()).isTrue()
+        assertThat(filteredOutputGroups.get("g2").isIncomplete()).isTrue()
+        assertThat(filteredOutputGroups.get("g3").isIncomplete()).isTrue()
+        val groupArtifacts: MutableMap<String?, com.google.common.collect.ImmutableSet<Artifact?>?> =
+            extractArtifactsByOutputGroup(filteredOutputGroups)
+        Truth.assertThat(groupArtifacts.get("g1")).containsExactly(group1BuiltArtifact)
+        Truth.assertThat(groupArtifacts.get("g2")).containsExactly(group2BuiltArtifact)
+        Truth.assertThat(groupArtifacts.get("g3"))
+            .containsExactly(group3BuiltArtifact1, group3BuiltArtifact2)
     }
-    return groupToDeclaredArtifacts;
-  }
+
+    @org.junit.Test
+    fun emptyOutputGroupsNotReturned() {
+        val group1FailedArtifact: SourceArtifact = newArtifact("g1_failed_output")
+        val group2FailedArtifact: SourceArtifact = newArtifact("g2_failed_output")
+        val group1BuiltArtifact: SourceArtifact = newArtifact("g1_output")
+        val successfulArtifacts: com.google.common.collect.ImmutableSet<Artifact?> =
+            com.google.common.collect.ImmutableSet.of<Artifact?>(group1BuiltArtifact)
+        val group1Artifacts: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1BuiltArtifact))
+                .addTransitive(NestedSetBuilder.create(Order.STABLE_ORDER, group1FailedArtifact))
+                .build()
+        val group2Artifacts: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ().add(group2FailedArtifact).build()
+
+        initializeOutputGroupInfo(Pair.of("g1", group1Artifacts), Pair.of("g2", group2Artifacts))
+
+        val allArtifactsToBuild: ArtifactsToBuild =
+            TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx)
+        val outputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>? =
+            allArtifactsToBuild.getAllArtifactsByOutputGroup()
+
+        val filter: SuccessfulArtifactFilter = SuccessfulArtifactFilter(successfulArtifacts)
+        val filteredOutputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?> =
+            filter.filterArtifactsInOutputGroup(outputGroups)
+        assertThat(filteredOutputGroups.get("g1").isIncomplete()).isTrue()
+        Truth.assertThat(filteredOutputGroups).containsKey("g1")
+        Truth.assertThat(filteredOutputGroups).doesNotContainKey("g2")
+    }
+
+    @org.junit.Test
+    fun unfilteredNestedSetsReused() {
+        val group1BuiltArtifact: SourceArtifact = newArtifact("output1")
+        val group1BuiltArtifact2: SourceArtifact = newArtifact("output2")
+        val group1BuiltArtifact3: SourceArtifact = newArtifact("output3")
+        val successfulArtifacts: com.google.common.collect.ImmutableSet<Artifact?> =
+            com.google.common.collect.ImmutableSet.of<Artifact?>(
+                group1BuiltArtifact,
+                group1BuiltArtifact2,
+                group1BuiltArtifact3
+            )
+        val successfulArtifactSet: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .add(group1BuiltArtifact)
+                .addTransitive(
+                    NestedSetBuilder.create(
+                        Order.STABLE_ORDER, group1BuiltArtifact2, group1BuiltArtifact3
+                    )
+                )
+                .build()
+        val setContainingSuccessfulSet1: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .add(group1BuiltArtifact)
+                .addTransitive(successfulArtifactSet)
+                .build()
+        val setContainingSuccessfulSet2: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .add(group1BuiltArtifact)
+                .addTransitive(successfulArtifactSet)
+                .build()
+        val outputGroup: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ()
+                .addTransitive(setContainingSuccessfulSet1)
+                .addTransitive(setContainingSuccessfulSet2)
+                .build()
+
+        initializeOutputGroupInfo(Pair.of("out", outputGroup))
+
+        val allArtifactsToBuild: ArtifactsToBuild =
+            TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx)
+        val outputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?> =
+            allArtifactsToBuild.getAllArtifactsByOutputGroup()
+
+        val filter: SuccessfulArtifactFilter = SuccessfulArtifactFilter(successfulArtifacts)
+        val unfilteredArtifactsInOutputGroup: ArtifactsInOutputGroup? = outputGroups.get("out")
+        val filteredArtifactsInOutputGroup: ArtifactsInOutputGroup =
+            filter.filterArtifactsInOutputGroup(outputGroups).get("out")
+        assertThat(filteredArtifactsInOutputGroup.isIncomplete()).isFalse()
+        assertThat(filteredArtifactsInOutputGroup).isSameInstanceAs(unfilteredArtifactsInOutputGroup)
+    }
+
+    @org.junit.Test(timeout = 10000)
+    fun deeplyNestedSetFilteredQuickly() {
+        val failedArtifact: SourceArtifact = newArtifact("failed_output")
+        val builtArtifact: SourceArtifact = newArtifact("output")
+        val successfulArtifacts: com.google.common.collect.ImmutableSet<Artifact?> =
+            com.google.common.collect.ImmutableSet.of<Artifact?>(builtArtifact)
+        // Arrange each output group with a different nested set structure.
+        val baseSet: NestedSet<Artifact?>? =
+            NestedSetBuilder.< Artifact > stableOrder < Artifact ? > ().add(builtArtifact).add(failedArtifact).build()
+        val sets: MutableList<NestedSet<Artifact?>?> = java.util.ArrayList<NestedSet<Artifact?>?>()
+        sets.add(baseSet)
+        // Create a NestedSet DAG with ((500 * 499) / 2) nodes, but with only 500 unique nodes. It
+        // should be feasible to filter this NestedSet using memoization in a small test and we should
+        // timeout if we aren't using memoization.
+        for (i in 0..499) {
+            val builder: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+            builder.add(builtArtifact).add(failedArtifact)
+            for (set in sets) {
+                builder.addTransitive(set)
+            }
+            sets.add(builder.build())
+        }
+        val maxSet: NestedSet<Artifact?>? = com.google.common.collect.Iterables.getLast<NestedSet<Artifact?>?>(sets)
+
+        initializeOutputGroupInfo(Pair.of("group", maxSet))
+
+        val allArtifactsToBuild: ArtifactsToBuild =
+            TopLevelArtifactHelper.getAllArtifactsToBuild(groupProvider, null, ctx)
+        val outputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>? =
+            allArtifactsToBuild.getAllArtifactsByOutputGroup()
+
+        val filter: SuccessfulArtifactFilter = SuccessfulArtifactFilter(successfulArtifacts)
+        val groupArtifacts: MutableMap<String?, com.google.common.collect.ImmutableSet<Artifact?>?> =
+            extractArtifactsByOutputGroup(filter.filterArtifactsInOutputGroup(outputGroups))
+        Truth.assertThat(groupArtifacts.get("group")).containsExactlyElementsIn(successfulArtifacts)
+    }
+
+    private fun newArtifact(name: String?): SourceArtifact {
+        return SourceArtifact(root, PathFragment.create(name), LabelArtifactOwner.NULL_OWNER)
+    }
+
+    companion object {
+        private fun extractArtifactsByOutputGroup(
+            outputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>
+        ): MutableMap<String?, com.google.common.collect.ImmutableSet<Artifact?>?> {
+            val groupToDeclaredArtifacts: MutableMap<String?, com.google.common.collect.ImmutableSet<Artifact?>?> =
+                HashMap<String?, com.google.common.collect.ImmutableSet<Artifact?>?>()
+            for (entry in outputGroups.entries) {
+                groupToDeclaredArtifacts.put(entry.key, entry.value.getArtifacts().toSet())
+            }
+            return groupToDeclaredArtifacts
+        }
+    }
 }

@@ -11,11 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen;
+package com.google.devtools.build.docgen
 
-import com.google.devtools.build.lib.testutil.ClasspathSuite;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.testutil.ClasspathSuite
+import org.junit.runner.RunWith
 
-/** Test suite for Starlark documentation generation. */
-@RunWith(ClasspathSuite.class)
-public class DocumentationTests {}
+/** Test suite for Starlark documentation generation.  */
+@RunWith(ClasspathSuite::class)
+class DocumentationTests 

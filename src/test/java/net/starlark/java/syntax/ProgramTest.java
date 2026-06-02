@@ -39,11 +39,11 @@ public final class ProgramTest {
             FOO = 1
             BAR, BAZ = (2, 3)  #: Applies to LHS list
             """);
-    assertThat(program.getDocCommentsMap().keySet()).containsExactly("FOO", "BAR", "BAZ").inOrder();
-    assertThat(program.getDocCommentsMap().get("FOO").getText())
+    assertThat(program.docCommentsMap.keySet()).containsExactly("FOO", "BAR", "BAZ").inOrder();
+    assertThat(program.docCommentsMap.get("FOO").getText())
         .isEqualTo("Doc comment for A\nmultiline");
-    assertThat(program.getDocCommentsMap().get("BAR").getText()).isEqualTo("Applies to LHS list");
-    assertThat(program.getDocCommentsMap().get("BAZ").getText()).isEqualTo("Applies to LHS list");
+    assertThat(program.docCommentsMap.get("BAR").getText()).isEqualTo("Applies to LHS list");
+    assertThat(program.docCommentsMap.get("BAZ").getText()).isEqualTo("Applies to LHS list");
   }
 
   @Test
@@ -65,9 +65,9 @@ public final class ProgramTest {
             """);
 
     assertThat(program.getDocCommentsMap().keySet()).containsExactly("B");
-    assertThat(program.getDocCommentsMap().get("B").getText())
+    assertThat(program.docCommentsMap.get("B").getText())
         .isEqualTo("Trailing doc comment for B overrides preceding doc comment block");
-    assertThat(program.getUnusedDocCommentLines().stream().map(Comment::getDocCommentText))
+    assertThat(program.unusedDocCommentLines.stream().map(Comment::getDocCommentText))
         .containsExactly(
             "Unused - separated by a non-doc comment line",
             "Unused - overridden by trailing doc comment",

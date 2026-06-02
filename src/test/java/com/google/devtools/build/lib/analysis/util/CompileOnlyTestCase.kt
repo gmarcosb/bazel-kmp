@@ -11,23 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.util;
+package com.google.devtools.build.lib.analysis.util
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * Common code for unit tests that validate --compile_only behavior.
  */
-public abstract class CompileOnlyTestCase extends BuildViewTestCase {
-
-  protected static Artifact getArtifactByExecPathSuffix(ConfiguredTarget target, String path) {
-    for (Artifact artifact : getOutputGroup(target, OutputGroupInfo.FILES_TO_COMPILE).toList()) {
-      if (artifact.getExecPathString().endsWith(path)) {
-        return artifact;
-      }
+abstract class CompileOnlyTestCase : BuildViewTestCase() {
+    companion object {
+        protected fun getArtifactByExecPathSuffix(target: ConfiguredTarget?, path: String?): Artifact? {
+            for (artifact in BuildViewTestCase.Companion.getOutputGroup(target, OutputGroupInfo.FILES_TO_COMPILE)
+                .toList()) {
+                if (artifact.getExecPathString().endsWith(path)) {
+                    return artifact
+                }
+            }
+            return null
+        }
     }
-    return null;
-  }
 }

@@ -11,147 +11,153 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
+import com.google.common.base.Ascii
+import com.google.common.collect.ImmutableList
+import java.io.IOException
+import java.io.InputStream
+import kotlin.collections.HashMap
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
-import com.google.common.base.Ascii;
-import com.google.common.collect.ImmutableList;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-/** Utility class for parsing HTTP messages. */
-final class HttpParser {
-
-  /** Exhausts request line and headers of HTTP request. */
-  static void readHttpRequest(InputStream stream) throws IOException {
-    readHttpRequest(stream, new HashMap<>());
-  }
-
-  /**
-   * Parses request line and headers of HTTP request.
-   *
-   * <p>This parser is correct and extremely lax. This implementation is Θ(n) and the stream should
-   * be buffered. All decoding is ISO-8859-1. A 1mB upper bound on memory is enforced.
-   *
-   * @throws IOException if reading failed or premature end of stream encountered
-   * @throws HttpParserError if 400 error should be sent to client and connection must be closed
-   */
-  static void readHttpRequest(InputStream stream, Map<String, List<String>> output)
-      throws IOException {
-    StringBuilder builder = new StringBuilder(256);
-    State state = State.METHOD;
-    String key = "";
-    int toto = 0;
-    while (true) {
-      int c = stream.read();
-      if (c == -1) {
-        throw new IOException();  // RFC7230 § 3.4
-      }
-      if (++toto == 1024 * 1024) {
-        throw new HttpParserError();  // RFC7230 § 3.2.5
-      }
-      switch (state) {
-        case METHOD:
-          if (c == ' ') {
-            if (builder.length() == 0) {
-              throw new HttpParserError();
+/** Utility class for parsing HTTP messages.  */
+internal object HttpParser {
+    /**
+     * Parses request line and headers of HTTP request.
+     * 
+     * 
+     * This parser is correct and extremely lax. This implementation is Θ(n) and the stream should
+     * be buffered. All decoding is ISO-8859-1. A 1mB upper bound on memory is enforced.
+     * 
+     * @throws IOException if reading failed or premature end of stream encountered
+     * @throws HttpParserError if 400 error should be sent to client and connection must be closed
+     */
+    /** Exhausts request line and headers of HTTP request.  */
+    @kotlin.jvm.JvmOverloads
+    @Throws(IOException::class)
+    fun readHttpRequest(
+        stream: InputStream,
+        output: MutableMap<String?, MutableList<String?>?> = HashMap<String?, MutableList<String?>?>()
+    ) {
+        val builder = StringBuilder(256)
+        var state = State.METHOD
+        var key = ""
+        var toto = 0
+        while (true) {
+            val c = stream.read()
+            if (c == -1) {
+                throw IOException() // RFC7230 § 3.4
             }
-            output.put("x-method", ImmutableList.of(builder.toString()));
-            builder.setLength(0);
-            state = State.URI;
-          } else if (c == '\r' || c == '\n') {
-            break;  // RFC7230 § 3.5
-          } else {
-            builder.append(Ascii.toUpperCase((char) c));
-          }
-          break;
-        case URI:
-          if (c == ' ') {
-            if (builder.length() == 0) {
-              throw new HttpParserError();
+            if (++toto == 1024 * 1024) {
+                throw HttpParserError() // RFC7230 § 3.2.5
             }
-            output.put("x-request-uri", ImmutableList.of(builder.toString()));
-            builder.setLength(0);
-            state = State.VERSION;
-          } else {
-            builder.append((char) c);
-          }
-          break;
-        case VERSION:
-          if (c == '\r' || c == '\n') {
-            output.put("x-version", ImmutableList.of(builder.toString()));
-            builder.setLength(0);
-            state = c == '\r' ? State.CR1 : State.LF1;
-          } else {
-            builder.append(Ascii.toUpperCase((char) c));
-          }
-          break;
-        case CR1:
-          if (c == '\n') {
-            state = State.LF1;
-            break;
-          }
-          throw new HttpParserError();
-        case LF1:
-          if (c == '\r') {
-            state = State.LF2;
-            break;
-          } else if (c == '\n') {
-            return;
-          } else if (c == ' ' || c == '\t') {
-            throw new HttpParserError("Line folding unacceptable");  // RFC7230 § 3.2.4
-          }
-          state = State.HKEY;
-          // fall through
-        case HKEY:
-          if (c == ':') {
-            key = builder.toString();
-            builder.setLength(0);
-            state = State.HSEP;
-          } else {
-            builder.append(Ascii.toLowerCase((char) c));
-          }
-          break;
-        case HSEP:
-          if (c == ' ' || c == '\t') {
-            break;
-          }
-          state = State.HVAL;
-          // fall through
-        case HVAL:
-          if (c == '\r' || c == '\n') {
-            output.put(key, ImmutableList.of(builder.toString()));
-            builder.setLength(0);
-            state = c == '\r' ? State.CR1 : State.LF1;
-          } else {
-            builder.append((char) c);
-          }
-          break;
-        case LF2:
-          if (c == '\n') {
-            return;
-          }
-          throw new HttpParserError();
-        default:
-          throw new AssertionError();
-      }
+            when (state) {
+                State.METHOD -> if (c == ' '.code) {
+                    if (builder.length == 0) {
+                        throw HttpParserError()
+                    }
+                    output.put("x-method", ImmutableList.of<String?>(builder.toString()))
+                    builder.setLength(0)
+                    state = State.URI
+                } else if (c == '\r'.code || c == '\n'.code) {
+                    break // RFC7230 § 3.5
+                } else {
+                    builder.append(Ascii.toUpperCase(c.toChar()))
+                }
+
+                State.URI -> if (c == ' '.code) {
+                    if (builder.length == 0) {
+                        throw HttpParserError()
+                    }
+                    output.put("x-request-uri", ImmutableList.of<String?>(builder.toString()))
+                    builder.setLength(0)
+                    state = State.VERSION
+                } else {
+                    builder.append(c.toChar())
+                }
+
+                State.VERSION -> if (c == '\r'.code || c == '\n'.code) {
+                    output.put("x-version", ImmutableList.of<String?>(builder.toString()))
+                    builder.setLength(0)
+                    state = if (c == '\r'.code) State.CR1 else State.LF1
+                } else {
+                    builder.append(Ascii.toUpperCase(c.toChar()))
+                }
+
+                State.CR1 -> {
+                    if (c == '\n'.code) {
+                        state = State.LF1
+                        break
+                    }
+                    throw HttpParserError()
+                }
+
+                State.LF1 -> {
+                    if (c == '\r'.code) {
+                        state = State.LF2
+                        break
+                    } else if (c == '\n'.code) {
+                        return
+                    } else if (c == ' '.code || c == '\t'.code) {
+                        throw HttpParserError("Line folding unacceptable") // RFC7230 § 3.2.4
+                    }
+                    state = State.HKEY
+                    if (c == ':'.code) {
+                        key = builder.toString()
+                        builder.setLength(0)
+                        state = State.HSEP
+                    } else {
+                        builder.append(Ascii.toLowerCase(c.toChar()))
+                    }
+                }
+
+                State.HKEY -> if (c == ':'.code) {
+                    key = builder.toString()
+                    builder.setLength(0)
+                    state = State.HSEP
+                } else {
+                    builder.append(Ascii.toLowerCase(c.toChar()))
+                }
+
+                State.HSEP -> {
+                    if (c == ' '.code || c == '\t'.code) {
+                        break
+                    }
+                    state = State.HVAL
+                    if (c == '\r'.code || c == '\n'.code) {
+                        output.put(key, ImmutableList.of<String?>(builder.toString()))
+                        builder.setLength(0)
+                        state = if (c == '\r'.code) State.CR1 else State.LF1
+                    } else {
+                        builder.append(c.toChar())
+                    }
+                }
+
+                State.HVAL -> if (c == '\r'.code || c == '\n'.code) {
+                    output.put(key, ImmutableList.of<String?>(builder.toString()))
+                    builder.setLength(0)
+                    state = if (c == '\r'.code) State.CR1 else State.LF1
+                } else {
+                    builder.append(c.toChar())
+                }
+
+                State.LF2 -> {
+                    if (c == '\n'.code) {
+                        return
+                    }
+                    throw HttpParserError()
+                }
+
+                else -> throw AssertionError()
+            }
+        }
     }
-  }
 
-  static final class HttpParserError extends IOException {
-    HttpParserError() {
-      this("Malformed Request");
+    internal class HttpParserError @kotlin.jvm.JvmOverloads constructor(messageForClient: String? = "Malformed Request") :
+        IOException(messageForClient)
+
+    private enum class State {
+        METHOD, URI, VERSION, HKEY, HSEP, HVAL, CR1, LF1, LF2
     }
-
-    HttpParserError(String messageForClient) {
-      super(messageForClient);
-    }
-  }
-
-  private enum State { METHOD, URI, VERSION, HKEY, HSEP, HVAL, CR1, LF1, LF2 }
-
-  private HttpParser() {}
 }

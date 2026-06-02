@@ -11,42 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-/** Base class for all statements nodes in the AST. */
-public abstract class Statement extends Node {
+/** Base class for all statements nodes in the AST.  */
+abstract class Statement internal constructor(locs: FileLocations?, kind: Kind?) : Node(locs) {
+    /**
+     * Kind of the statement. This is similar to using instanceof, except that it's more efficient and
+     * can be used in a switch/case.
+     */
+    enum class Kind {
+        ASSIGNMENT,
+        EXPRESSION,
+        FLOW,
+        FOR,
+        DEF,
+        IF,
+        LOAD,
+        RETURN,
+        TYPE_ALIAS,
+        VAR,
+    }
 
-  /**
-   * Kind of the statement. This is similar to using instanceof, except that it's more efficient and
-   * can be used in a switch/case.
-   */
-  public enum Kind {
-    ASSIGNMENT,
-    EXPRESSION,
-    FLOW,
-    FOR,
-    DEF,
-    IF,
-    LOAD,
-    RETURN,
-    TYPE_ALIAS,
-    VAR,
-  }
+    // Materialize kind as a field so its accessor can be non-virtual.
+    private val kind: Kind?
 
-  // Materialize kind as a field so its accessor can be non-virtual.
-  private final Kind kind;
+    init {
+        this.kind = kind
+    }
 
-  Statement(FileLocations locs, Kind kind) {
-    super(locs);
-    this.kind = kind;
-  }
-
-  /**
-   * Kind of the statement. This is similar to using instanceof, except that it's more efficient and
-   * can be used in a switch/case.
-   */
-  // Final to avoid cost of virtual call (see #12967).
-  public final Kind kind() {
-    return kind;
-  }
+    /**
+     * Kind of the statement. This is similar to using instanceof, except that it's more efficient and
+     * can be used in a switch/case.
+     */
+    // Final to avoid cost of virtual call (see #12967).
+    fun kind(): Kind? {
+        return kind
+    }
 }

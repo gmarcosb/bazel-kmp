@@ -11,96 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
 
-/** Syntax node for a 'def' statement, which defines a function. */
-public final class DefStatement extends Statement {
+/** Syntax node for a 'def' statement, which defines a function.  */
+class DefStatement internal constructor(
+    locs: FileLocations?,
+    defOffset: Int,
+    identifier: Identifier,
+    typeParameters: ImmutableList<Identifier?>?,
+    parameters: ImmutableList<Parameter?>?,
+    returnType: Expression?,
+    body: ImmutableList<Statement?>?
+) : Statement(locs, Kind.DEF) {
+    private val defOffset: Int
+    @kotlin.jvm.JvmField
+    val identifier: Identifier
+    val typeParameters: ImmutableList<Identifier?>? // No type params => empty list
+    @kotlin.jvm.JvmField
+    val body: ImmutableList<Statement?> // non-empty if well formed
+    @kotlin.jvm.JvmField
+    val parameters: ImmutableList<Parameter?>
+    val returnType: Expression? // No return type => null
 
-  private final int defOffset;
-  private final Identifier identifier;
-  private final ImmutableList<Identifier> typeParameters; // No type params => empty list
-  private final ImmutableList<Statement> body; // non-empty if well formed
-  private final ImmutableList<Parameter> parameters;
-  @Nullable private final Expression returnType; // No return type => null
+    /** Returns information about the resolved function. Set by the resolver.  */
+    // set by resolver
+    var resolvedFunction: Resolver.Function? = null
 
-  // set by resolver
-  @Nullable private Resolver.Function resolved;
+    init {
+        this.defOffset = defOffset
+        this.identifier = identifier
+        this.typeParameters = typeParameters
+        this.parameters = Preconditions.checkNotNull<ImmutableList<Parameter?>>(parameters)
+        this.returnType = returnType
+        this.body = Preconditions.checkNotNull<ImmutableList<Statement?>>(body)
+    }
 
-  DefStatement(
-      FileLocations locs,
-      int defOffset,
-      Identifier identifier,
-      ImmutableList<Identifier> typeParameters,
-      ImmutableList<Parameter> parameters,
-      @Nullable Expression returnType,
-      ImmutableList<Statement> body) {
-    super(locs, Kind.DEF);
-    this.defOffset = defOffset;
-    this.identifier = identifier;
-    this.typeParameters = typeParameters;
-    this.parameters = Preconditions.checkNotNull(parameters);
-    this.returnType = returnType;
-    this.body = Preconditions.checkNotNull(body);
-  }
+    override fun toString(): String {
+        // "def f(...): \n"
+        val buf = StringBuilder()
+        NodePrinter(buf).printDefSignature(this)
+        buf.append(" ...\n")
+        return buf.toString()
+    }
 
-  @Override
-  public String toString() {
-    // "def f(...): \n"
-    StringBuilder buf = new StringBuilder();
-    new NodePrinter(buf).printDefSignature(this);
-    buf.append(" ...\n");
-    return buf.toString();
-  }
+    override fun getStartOffset(): Int {
+        return defOffset
+    }
 
-  public Identifier getIdentifier() {
-    return identifier;
-  }
+    override fun getEndOffset(): Int {
+        return if (body.isEmpty())
+            identifier.getEndOffset() // wrong, but tree is ill formed
+        else
+            body.get(body.size - 1)!!.getEndOffset()
+    }
 
-  public ImmutableList<Statement> getBody() {
-    return body;
-  }
-
-  public ImmutableList<Identifier> getTypeParameters() {
-    return typeParameters;
-  }
-
-  public ImmutableList<Parameter> getParameters() {
-    return parameters;
-  }
-
-  @Nullable
-  public Expression getReturnType() {
-    return returnType;
-  }
-
-  void setResolvedFunction(Resolver.Function resolved) {
-    this.resolved = resolved;
-  }
-
-  /** Returns information about the resolved function. Set by the resolver. */
-  @Nullable
-  public Resolver.Function getResolvedFunction() {
-    return resolved;
-  }
-
-  @Override
-  public int getStartOffset() {
-    return defOffset;
-  }
-
-  @Override
-  public int getEndOffset() {
-    return body.isEmpty()
-        ? identifier.getEndOffset() // wrong, but tree is ill formed
-        : body.get(body.size() - 1).getEndOffset();
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

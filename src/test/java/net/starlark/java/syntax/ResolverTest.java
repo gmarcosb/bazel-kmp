@@ -832,11 +832,11 @@ public class ResolverTest {
       @Override
       public void visit(Identifier id) {
         // Replace ...x__... with ...xᴸ₀...
-        Resolver.Binding binding = id.getBinding();
+        Resolver.Binding binding = id.binding;
         String suffix = "";
         if (binding != null) {
-          suffix += "ᴸᴳᶜᶠᴾᵁ".charAt(binding.getScope().ordinal()); // follow order of enum
-          suffix += "₀₁₂₃₄₅₆₇₈₉".charAt(binding.getIndex()); // 10 is plenty
+          suffix += "ᴸᴳᶜᶠᴾᵁ".charAt(binding.scope.ordinal()); // follow order of enum
+          suffix += "₀₁₂₃₄₅₆₇₈₉".charAt(binding.index); // 10 is plenty
         } else {
           suffix = "  ";
         }

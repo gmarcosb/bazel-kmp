@@ -11,41 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.junit
 
-package com.google.devtools.build.lib.blackbox.junit;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.blackbox.junit.TimeoutTestWatcherBaseTest
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * Test for {@link TimeoutTestWatcher}. Tests both that the timeout was intercepted, and the
+ * Test for [TimeoutTestWatcher]. Tests both that the timeout was intercepted, and the
  * assertion from the test was not blocked.
  */
-@RunWith(JUnit4.class)
-public class TimeoutTestWatcherTest extends TimeoutTestWatcherBaseTest {
-  @After
-  public void tearDown() {
-    if ("testTimeoutCaught".equals(testWatcher.getName())) {
-      assertThat(timeoutCaught).isTrue();
+@RunWith(JUnit4::class)
+class TimeoutTestWatcherTest : TimeoutTestWatcherBaseTest() {
+    @org.junit.After
+    fun tearDown() {
+        if ("testTimeoutCaught" == testWatcher.getName()) {
+            Truth.assertThat(timeoutCaught).isTrue()
+        }
     }
-  }
 
-  /** Test that timeout handler is called */
-  @Test
-  public void testTimeoutCaught() throws Exception {
-    for (int i = 0; i < 10; i++) {
-      Thread.sleep(500);
+    /** Test that timeout handler is called  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTimeoutCaught() {
+        for (i in 0..9) {
+            java.lang.Thread.sleep(500)
+        }
     }
-  }
 
-  /** Test that normal test failures are not blocked */
-  @Test(expected = AssertionError.class)
-  public void testFailure() {
-    Assert.fail();
-  }
+    /** Test that normal test failures are not blocked  */
+    @org.junit.Test(expected = java.lang.AssertionError::class)
+    fun testFailure() {
+        org.junit.Assert.fail()
+    }
 }

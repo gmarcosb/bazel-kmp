@@ -11,31 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-@RunWith(TestParameterInjector.class)
-public final class TransitiveInfoProviderMapImplCodecTest {
+@RunWith(TestParameterInjector::class)
+class TransitiveInfoProviderMapImplCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serialization(@TestParameter useSharedValues: Boolean) {
+        val tester: SerializationTester =
+            SerializationTester(
+                TransitiveInfoProviderMapImpl.create(com.google.common.collect.ImmutableMap.of<K?, V?>()),
+                TransitiveInfoProviderMapImpl.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "key",
+                        1,
+                        "key2",
+                        2
+                    )
+                )
+            )
 
-  @Test
-  public void serialization(@TestParameter boolean useSharedValues) throws Exception {
-    var tester =
-        new SerializationTester(
-            TransitiveInfoProviderMapImpl.create(ImmutableMap.of()),
-            TransitiveInfoProviderMapImpl.create(ImmutableMap.of("key", 1, "key2", 2)));
+        if (useSharedValues) {
+            tester
+                .addCodec(TransitiveInfoProviderMapImpl.valueSharingCodec())
+                .makeMemoizingAndAllowFutureBlocking(true)
+        }
 
-    if (useSharedValues) {
-      tester
-          .addCodec(TransitiveInfoProviderMapImpl.valueSharingCodec())
-          .makeMemoizingAndAllowFutureBlocking(true);
+        tester.runTests()
     }
-
-    tester.runTests();
-  }
 }

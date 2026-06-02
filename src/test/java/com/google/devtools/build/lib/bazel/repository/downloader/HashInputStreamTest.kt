@@ -11,55 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
+import com.google.common.io.CharStreams
+import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache.KeyType
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.ExpectedException
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+/** Unit tests for [HashInputStream].  */
+@RunWith(JUnit4::class)
+class HashInputStreamTest {
+    @Rule
+    val thrown: ExpectedException = ExpectedException.none()
 
-import com.google.common.io.CharStreams;
-import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache.KeyType;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Unit tests for {@link HashInputStream}. */
-@RunWith(JUnit4.class)
-@SuppressWarnings("resource")
-public class HashInputStreamTest {
-
-  @Rule
-  public final ExpectedException thrown = ExpectedException.none();
-
-  @Test
-  public void validChecksum_readsOk() throws Exception {
-    try (InputStreamReader reader =
-        new InputStreamReader(
-            new HashInputStream(
-                new ByteArrayInputStream("hello".getBytes(UTF_8)),
-                Checksum.fromString(KeyType.SHA1, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d")),
-            UTF_8)) {
-      assertThat(CharStreams.toString(reader)).isEqualTo("hello");
+    @Test
+    @Throws(Exception::class)
+    fun validChecksum_readsOk() {
+        InputStreamReader(
+            HashInputStream(
+                ByteArrayInputStream("hello".toByteArray(StandardCharsets.UTF_8)),
+                Checksum.fromString(KeyType.SHA1, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d")
+            ),
+            StandardCharsets.UTF_8
+        ).use { reader ->
+            Truth.assertThat(CharStreams.toString(reader)).isEqualTo("hello")
+        }
     }
-  }
 
-  @Test
-  public void badChecksum_throwsIOException() throws Exception {
-    thrown.expect(IOException.class);
-    thrown.expectMessage("Checksum");
-    try (InputStreamReader reader =
-        new InputStreamReader(
-            new HashInputStream(
-                new ByteArrayInputStream("hello".getBytes(UTF_8)),
-                Checksum.fromString(KeyType.SHA1, "0000000000000000000000000000000000000000")),
-            UTF_8)) {
-      assertThat(CharStreams.toString(reader))
-          .isNull(); // Only here to make @CheckReturnValue happy.
+    @Test
+    @Throws(Exception::class)
+    fun badChecksum_throwsIOException() {
+        thrown.expect(IOException::class.java)
+        thrown.expectMessage("Checksum")
+        InputStreamReader(
+            HashInputStream(
+                ByteArrayInputStream("hello".toByteArray(StandardCharsets.UTF_8)),
+                Checksum.fromString(KeyType.SHA1, "0000000000000000000000000000000000000000")
+            ),
+            StandardCharsets.UTF_8
+        ).use { reader ->
+            Truth.assertThat(CharStreams.toString(reader))
+                .isNull() // Only here to make @CheckReturnValue happy.
+        }
     }
-  }
 }

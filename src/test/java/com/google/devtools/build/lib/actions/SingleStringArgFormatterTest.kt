@@ -11,50 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.SingleStringArgFormatter.format;
-import static com.google.devtools.build.lib.actions.SingleStringArgFormatter.formattedLength;
-import static com.google.devtools.build.lib.actions.SingleStringArgFormatter.isValid;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.SingleStringArgFormatter.format
 
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests for [SingleStringArgFormatter]  */
+@RunWith(TestParameterInjector::class)
+class SingleStringArgFormatterTest {
+    @org.junit.Test
+    fun invalid(
+        @TestParameter(
+            "hello", "hello %%s", "hello %s %s", "%s hello %s", "hello %", "hello %f", "hello %s %f", "hello %s %"
+        ) format: String?
+    ) {
+        assertThat(isValid(format)).isFalse()
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { format(format, "world") })
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { formattedLength(format) })
+    }
 
-/** Tests for {@link SingleStringArgFormatter} */
-@RunWith(TestParameterInjector.class)
-public final class SingleStringArgFormatterTest {
-
-  @Test
-  public void invalid(
-      @TestParameter({
-            "hello",
-            "hello %%s",
-            "hello %s %s",
-            "%s hello %s",
-            "hello %",
-            "hello %f",
-            "hello %s %f",
-            "hello %s %"
-          })
-          String format) {
-    assertThat(isValid(format)).isFalse();
-    assertThrows(IllegalArgumentException.class, () -> format(format, "world"));
-    assertThrows(IllegalArgumentException.class, () -> formattedLength(format));
-  }
-
-  @Test
-  @TestParameters("{format: 'hello %s', expected: 'hello world'}")
-  @TestParameters("{format: '%s hello', expected: 'world hello'}")
-  @TestParameters("{format: 'hello %s, hello', expected: 'hello world, hello'}")
-  @TestParameters("{format: 'hello %%s %s', expected: 'hello %s world'}")
-  public void valid(String format, String expected) {
-    assertThat(isValid(format)).isTrue();
-    assertThat(format(format, "world")).isEqualTo(expected);
-    assertThat(formattedLength(format)).isEqualTo(expected.length() - "world".length());
-  }
+    @org.junit.Test
+    @TestParameters("{format: 'hello %s', expected: 'hello world'}")
+    @TestParameters("{format: '%s hello', expected: 'world hello'}")
+    @TestParameters("{format: 'hello %s, hello', expected: 'hello world, hello'}")
+    @TestParameters("{format: 'hello %%s %s', expected: 'hello %s world'}")
+    fun valid(format: String?, expected: String) {
+        assertThat(isValid(format)).isTrue()
+        assertThat(format(format, "world")).isEqualTo(expected)
+        assertThat(formattedLength(format)).isEqualTo(expected.length() - "world".length())
+    }
 }

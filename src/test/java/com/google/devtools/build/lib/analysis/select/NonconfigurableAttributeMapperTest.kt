@@ -11,37 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.select;
+package com.google.devtools.build.lib.analysis.select
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.packages.AbstractAttributeMapper;
-import com.google.devtools.build.lib.packages.NonconfigurableAttributeMapper;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Type;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.packages.AbstractAttributeMapper
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
 
 /**
- * Unit tests for {@link NonconfigurableAttributeMapper}.
+ * Unit tests for [NonconfigurableAttributeMapper].
  */
-@RunWith(JUnit4.class)
-public class NonconfigurableAttributeMapperTest extends AbstractAttributeMapperTest {
+@RunWith(JUnit4::class)
+class NonconfigurableAttributeMapperTest : AbstractAttributeMapperTest() {
+    override fun createMapper(rule: Rule?): AbstractAttributeMapper {
+        return NonconfigurableAttributeMapper.of(rule)
+    }
 
-  @Override
-  protected AbstractAttributeMapper createMapper(Rule rule) {
-    return NonconfigurableAttributeMapper.of(rule);
-  }
-
-  @Test
-  public void testGetNonconfigurableAttribute() throws Exception {
-    Rule rule =
-        scratchRule(
-            "x",
-            "myrule",
-            """
+    @Test
+    @Throws(Exception::class)
+    fun testGetNonconfigurableAttribute() {
+        val rule: Rule? =
+            scratchRule(
+                "x",
+                "myrule",
+                """
             load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
             cc_binary(
                 name = "myrule",
@@ -49,43 +42,43 @@ public class NonconfigurableAttributeMapperTest extends AbstractAttributeMapperT
                 linkstatic = 1,
                 deprecation = "this rule is deprecated!",
             )
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(NonconfigurableAttributeMapper.of(rule).get("deprecation", Type.STRING))
-        .isEqualTo("this rule is deprecated!");
-  }
+        assertThat(NonconfigurableAttributeMapper.of(rule).get("deprecation", Type.STRING))
+            .isEqualTo("this rule is deprecated!")
+    }
 
-  @Test
-  public void testGetConfigurableAttribute() {
-    IllegalStateException e =
-        assertThrows(
-            "Expected NonconfigurableAttributeMapper to fail on a configurable attribute type",
-            IllegalStateException.class,
-            () -> NonconfigurableAttributeMapper.of(rule).get("linkstatic", Type.BOOLEAN));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("Attribute 'linkstatic' is potentially configurable - not allowed here");
-  }
+    @Test
+    fun testGetConfigurableAttribute() {
+        val e =
+            Assert.assertThrows<IllegalStateException?>(
+                "Expected NonconfigurableAttributeMapper to fail on a configurable attribute type",
+                IllegalStateException::class.java,
+                ThrowingRunnable { NonconfigurableAttributeMapper.of(rule).get("linkstatic", Type.BOOLEAN) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("Attribute 'linkstatic' is potentially configurable - not allowed here")
+    }
 
-  @Test
-  public void testGet_nonexistentAttribute() {
-    IllegalArgumentException e =
-        assertThrows(
-            "Expected NonconfigurableAttributeMapper to fail on nonexistent attribute name",
-            IllegalArgumentException.class,
-            () -> NonconfigurableAttributeMapper.of(rule).get("nonexistent-attr", Type.STRING));
-    assertThat(e).hasMessageThat().contains("No such attribute nonexistent-attr in cc_binary");
-  }
+    @Test
+    fun testGet_nonexistentAttribute() {
+        val e =
+            Assert.assertThrows<IllegalArgumentException?>(
+                "Expected NonconfigurableAttributeMapper to fail on nonexistent attribute name",
+                IllegalArgumentException::class.java,
+                ThrowingRunnable { NonconfigurableAttributeMapper.of(rule).get("nonexistent-attr", Type.STRING) })
+        Truth.assertThat(e).hasMessageThat().contains("No such attribute nonexistent-attr in cc_binary")
+    }
 
-  @Override
-  @Test
-  public void testAttributeTypeChecking() {
-    // Don't test: fails due to srcs being nonconfigurable
-  }
+    @Test
+    override fun testAttributeTypeChecking() {
+        // Don't test: fails due to srcs being nonconfigurable
+    }
 
-  @Override
-  @Test
-  public void testVisitation() {
-    // Don't test: fails due to srcs being nonconfigurable
-  }
+    @Test
+    override fun testVisitation() {
+        // Don't test: fails due to srcs being nonconfigurable
+    }
 }

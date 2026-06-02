@@ -11,455 +11,501 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.analysis.config.BuildOptions.MapBackedChecksumCache;
-import com.google.devtools.build.lib.analysis.config.BuildOptions.OptionsChecksumCache;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.protobuf.ByteString;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.analysis.config.BuildOptions.MapBackedChecksumCache
 
 /**
- * A test for {@link BuildOptions}.
- *
- * <p>Currently this tests native options and Starlark options completely separately since these two
+ * A test for [BuildOptions].
+ * 
+ * 
+ * Currently this tests native options and Starlark options completely separately since these two
  * types of options do not interact. In the future when we begin to migrate native options to
  * Starlark options, the format of this test class will need to accommodate that overlap.
  */
-@RunWith(TestParameterInjector.class)
-public final class BuildOptionsTest {
+@RunWith(TestParameterInjector::class)
+class BuildOptionsTest {
+    /** Extra options for this test.  */
+    @OptionsClass
+    abstract class DummyTestOptions : FragmentOptions() {
+        @Option(
+            name = "str_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defVal"
+        )
+        abstract fun getStrOption(): String?
 
-  /** Extra options for this test. */
-  @OptionsClass
-  public abstract static class DummyTestOptions extends FragmentOptions {
-    public DummyTestOptions() {}
+        @Option(
+            name = "another_str_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defVal"
+        )
+        abstract fun getAnotherStrOption(): String?
 
-    @Option(
-        name = "str_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defVal")
-    public abstract String getStrOption();
+        @Option(
+            name = "bool_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "false"
+        )
+        abstract fun getBoolOption(): Boolean
 
-    @Option(
-        name = "another_str_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defVal")
-    public abstract String getAnotherStrOption();
+        @Option(
+            name = "list_option",
+            converter = CommaSeparatedOptionListConverter::class,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract fun getListOption(): MutableList<String?>?
 
-    @Option(
-        name = "bool_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "false")
-    public abstract boolean getBoolOption();
+        @Option(
+            name = "null_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract fun getNullOption(): String?
 
-    @Option(
-        name = "list_option",
-        converter = CommaSeparatedOptionListConverter.class,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract List<String> getListOption();
+        @Option(
+            name = "accumulating_option",
+            allowMultiple = true,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract fun getAccumulatingOption(): MutableList<String?>?
 
-    @Option(
-        name = "null_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract String getNullOption();
+        @Option(
+            name = "dummy_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "internal_default",
+            implicitRequirements = ["--implicit_option=set_implicitly"]
+        )
+        abstract fun getDummyOption(): String?
 
-    @Option(
-        name = "accumulating_option",
-        allowMultiple = true,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract List<String> getAccumulatingOption();
+        @Option(
+            name = "implicit_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "implicit_default"
+        )
+        abstract fun getImplicitOption(): String?
+    }
 
-    @Option(
-        name = "dummy_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "internal_default",
-        implicitRequirements = {"--implicit_option=set_implicitly"})
-    public abstract String getDummyOption();
+    /** Extra options for this test.  */
+    @OptionsClass
+    abstract class SecondDummyTestOptions : FragmentOptions() {
+        @Option(
+            name = "second_str_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defVal"
+        )
+        abstract fun getStrOption(): String?
+    }
 
-    @Option(
-        name = "implicit_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "implicit_default")
-    public abstract String getImplicitOption();
-  }
+    @org.junit.Test
+    fun optionSetCaching() {
+        val a: BuildOptions =
+            BuildOptions.of(
+                BUILD_CONFIG_OPTIONS,
+                OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+            )
+        val b: BuildOptions =
+            BuildOptions.of(
+                BUILD_CONFIG_OPTIONS,
+                OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+            )
+        // The cache keys of the OptionSets must be equal even if these are
+        // different objects, if they were created with the same options (no options in this case).
+        assertThat(b.toString()).isEqualTo(a.toString())
+        assertThat(b.checksum()).isEqualTo(a.checksum())
+        assertThat(a).isEqualTo(b)
+    }
 
-  /** Extra options for this test. */
-  @OptionsClass
-  public abstract static class SecondDummyTestOptions extends FragmentOptions {
-    @Option(
-        name = "second_str_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defVal")
-    public abstract String getStrOption();
-  }
-
-  private static final ImmutableList<Class<? extends FragmentOptions>> BUILD_CONFIG_OPTIONS =
-      ImmutableList.of(DummyTestOptions.class);
-
-  @Test
-  public void optionSetCaching() {
-    BuildOptions a =
-        BuildOptions.of(
-            BUILD_CONFIG_OPTIONS,
-            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build());
-    BuildOptions b =
-        BuildOptions.of(
-            BUILD_CONFIG_OPTIONS,
-            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build());
-    // The cache keys of the OptionSets must be equal even if these are
-    // different objects, if they were created with the same options (no options in this case).
-    assertThat(b.toString()).isEqualTo(a.toString());
-    assertThat(b.checksum()).isEqualTo(a.checksum());
-    assertThat(a).isEqualTo(b);
-  }
-
-  @Test
-  public void optionsEquality() throws Exception {
-    String[] options1 = new String[] {"--str_option=foo"};
-    String[] options2 = new String[] {"--str_option=bar"};
-    // Distinct instances with the same values are equal:
-    assertThat(BuildOptions.of(BUILD_CONFIG_OPTIONS, options1))
-        .isEqualTo(BuildOptions.of(BUILD_CONFIG_OPTIONS, options1));
-    // Same fragments, different values aren't equal:
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun optionsEquality() {
+        val options1: Array<String?> = arrayOf<String>("--str_option=foo")
+        val options2: Array<String?> = arrayOf<String>("--str_option=bar")
+        // Distinct instances with the same values are equal:
+        assertThat(BuildOptions.of(BUILD_CONFIG_OPTIONS, options1))
+            .isEqualTo(BuildOptions.of(BUILD_CONFIG_OPTIONS, options1))
+        // Same fragments, different values aren't equal:
+        assertThat(
             BuildOptions.of(BUILD_CONFIG_OPTIONS, options1)
-                .equals(BuildOptions.of(BUILD_CONFIG_OPTIONS, options2)))
-        .isFalse();
-    // Same values, different fragments aren't equal:
-    assertThat(
+                .equals(BuildOptions.of(BUILD_CONFIG_OPTIONS, options2))
+        )
+            .isFalse()
+        // Same values, different fragments aren't equal:
+        assertThat(
             BuildOptions.of(BUILD_CONFIG_OPTIONS, options1)
                 .equals(
                     BuildOptions.of(
-                        ImmutableList.of(DummyTestOptions.class, SecondDummyTestOptions.class),
-                        options1)))
-        .isFalse();
-  }
-
-  @Test
-  public void serialization(@TestParameter boolean useSharedValues) throws Exception {
-    var tester =
-        new SerializationTester(
-            BuildOptions.of(makeOptionsClassBuilder().build(), "--str_option=foo"),
-            BuildOptions.of(makeOptionsClassBuilder().build(), "--str_option=bar"),
-            BuildOptions.of(makeOptionsClassBuilder().add(SecondDummyTestOptions.class).build()),
-            BuildOptions.of(
-                makeOptionsClassBuilder().add(SecondDummyTestOptions.class).build(),
-                "--str_option=foo",
-                "--second_str_option=baz",
-                "--another_str_option=bar"),
-            BuildOptions.builder()
-                .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "hello")
-                .build());
-
-    if (useSharedValues) {
-      tester.makeMemoizingAndAllowFutureBlocking(true);
-      tester.addCodec(BuildOptions.valueSharingCodec());
-    } else {
-      tester.addDependency(OptionsChecksumCache.class, new MapBackedChecksumCache());
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            com.google.devtools.build.lib.analysis.config.BuildOptionsTest.DummyTestOptions::class.java,
+                            SecondDummyTestOptions::class.java
+                        ),
+                        options1
+                    )
+                )
+        )
+            .isFalse()
     }
 
-    tester.runTests();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serialization(@TestParameter useSharedValues: Boolean) {
+        val tester: SerializationTester =
+            SerializationTester(
+                BuildOptions.of(makeOptionsClassBuilder().build(), "--str_option=foo"),
+                BuildOptions.of(makeOptionsClassBuilder().build(), "--str_option=bar"),
+                BuildOptions.of(makeOptionsClassBuilder().add(SecondDummyTestOptions::class.java).build()),
+                BuildOptions.of(
+                    makeOptionsClassBuilder().add(SecondDummyTestOptions::class.java).build(),
+                    "--str_option=foo",
+                    "--second_str_option=baz",
+                    "--another_str_option=bar"
+                ),
+                BuildOptions.builder()
+                    .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "hello")
+                    .build()
+            )
 
-  private static ImmutableList.Builder<Class<? extends FragmentOptions>> makeOptionsClassBuilder() {
-    return ImmutableList.<Class<? extends FragmentOptions>>builder().addAll(BUILD_CONFIG_OPTIONS);
-  }
+        if (useSharedValues) {
+            tester.makeMemoizingAndAllowFutureBlocking(true)
+            tester.addCodec(BuildOptions.valueSharingCodec())
+        } else {
+            tester.addDependency(OptionsChecksumCache::class.java, MapBackedChecksumCache())
+        }
 
-  @Test
-  public void serialize_primeFails_throws() throws Exception {
-    OptionsChecksumCache failToPrimeCache =
-        new OptionsChecksumCache() {
-          @Override
-          public BuildOptions getOptions(String checksum) {
-            throw new UnsupportedOperationException();
-          }
+        tester.runTests()
+    }
 
-          @Override
-          public boolean prime(BuildOptions options) {
-            return false;
-          }
-        };
-    BuildOptions options = BuildOptions.of(BUILD_CONFIG_OPTIONS);
-    ObjectCodecs codecs =
-        new ObjectCodecs(
-            ImmutableClassToInstanceMap.of(OptionsChecksumCache.class, failToPrimeCache));
-    assertThrows(SerializationException.class, () -> codecs.serialize(options));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serialize_primeFails_throws() {
+        val failToPrimeCache: OptionsChecksumCache =
+            object : OptionsChecksumCache() {
+                public override fun getOptions(checksum: String?): BuildOptions? {
+                    throw java.lang.UnsupportedOperationException()
+                }
 
-  @Test
-  public void deserialize_unprimedCache_throws() throws Exception {
-    BuildOptions options = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+                public override fun prime(options: BuildOptions?): Boolean {
+                    return false
+                }
+            }
+        val options: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS)
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                    OptionsChecksumCache::class.java,
+                    failToPrimeCache
+                )
+            )
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java,
+            org.junit.function.ThrowingRunnable { codecs.serialize(options) })
+    }
 
-    ObjectCodecs codecs =
-        new ObjectCodecs(
-            ImmutableClassToInstanceMap.of(
-                OptionsChecksumCache.class, new MapBackedChecksumCache()));
-    ByteString bytes = codecs.serialize(options);
-    assertThat(bytes).isNotNull();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun deserialize_unprimedCache_throws() {
+        val options: BuildOptions = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-    // Different checksum cache than the one used for serialization, and it has not been primed.
-    ObjectCodecs notPrimed =
-        new ObjectCodecs(
-            ImmutableClassToInstanceMap.of(
-                OptionsChecksumCache.class, new MapBackedChecksumCache()));
-    Exception e = assertThrows(SerializationException.class, () -> notPrimed.deserialize(bytes));
-    assertThat(e).hasMessageThat().contains(options.checksum());
-  }
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                    OptionsChecksumCache::class.java, MapBackedChecksumCache()
+                )
+            )
+        val bytes: ByteString? = codecs.serialize(options)
+        Truth.assertThat(bytes).isNotNull()
 
-  @Test
-  public void deserialize_primedCache_returnsPrimedInstance() throws Exception {
-    BuildOptions options = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+        // Different checksum cache than the one used for serialization, and it has not been primed.
+        val notPrimed: ObjectCodecs =
+            ObjectCodecs(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                    OptionsChecksumCache::class.java, MapBackedChecksumCache()
+                )
+            )
+        val e: java.lang.Exception? = org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java,
+            org.junit.function.ThrowingRunnable { notPrimed.deserialize(bytes) })
+        Truth.assertThat(e).hasMessageThat().contains(options.checksum())
+    }
 
-    ObjectCodecs codecs =
-        new ObjectCodecs(
-            ImmutableClassToInstanceMap.of(
-                OptionsChecksumCache.class, new MapBackedChecksumCache()));
-    ByteString bytes = codecs.serialize(options);
-    assertThat(bytes).isNotNull();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun deserialize_primedCache_returnsPrimedInstance() {
+        val options: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-    // Different checksum cache than the one used for serialization, but it has been primed.
-    OptionsChecksumCache checksumCache = new MapBackedChecksumCache();
-    assertThat(checksumCache.prime(options)).isTrue();
-    ObjectCodecs primed =
-        new ObjectCodecs(ImmutableClassToInstanceMap.of(OptionsChecksumCache.class, checksumCache));
-    assertThat(primed.deserialize(bytes)).isSameInstanceAs(options);
-  }
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                    OptionsChecksumCache::class.java, MapBackedChecksumCache()
+                )
+            )
+        val bytes: ByteString? = codecs.serialize(options)
+        Truth.assertThat(bytes).isNotNull()
 
-  @Test
-  public void testMultiValueOptionImmutability() {
-    BuildOptions options =
-        BuildOptions.of(
-            BUILD_CONFIG_OPTIONS,
-            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build());
-    DummyTestOptions dummyTestOptions = options.get(DummyTestOptions.class);
-    assertThrows(
-        UnsupportedOperationException.class,
-        () -> dummyTestOptions.getAccumulatingOption().add("foo"));
-  }
+        // Different checksum cache than the one used for serialization, but it has been primed.
+        val checksumCache: OptionsChecksumCache = MapBackedChecksumCache()
+        assertThat(checksumCache.prime(options)).isTrue()
+        val primed: ObjectCodecs =
+            ObjectCodecs(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                    OptionsChecksumCache::class.java,
+                    checksumCache
+                )
+            )
+        assertThat(primed.deserialize(bytes)).isSameInstanceAs(options)
+    }
 
-  @Test
-  public void parsingResultMatch() throws Exception {
-    BuildOptions original =
-        BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo", "--bool_option");
+    @org.junit.Test
+    fun testMultiValueOptionImmutability() {
+        val options: BuildOptions =
+            BuildOptions.of(
+                BUILD_CONFIG_OPTIONS,
+                OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+            )
+        val dummyTestOptions: DummyTestOptions =
+            options.get(com.google.devtools.build.lib.analysis.config.BuildOptionsTest.DummyTestOptions::class.java)
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable { dummyTestOptions.getAccumulatingOption()!!.add("foo") })
+    }
 
-    OptionsParser matchingParser =
-        OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build();
-    matchingParser.parse("--str_option=foo", "--bool_option");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parsingResultMatch() {
+        val original: BuildOptions =
+            BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo", "--bool_option")
 
-    OptionsParser notMatchingParser =
-        OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build();
-    notMatchingParser.parse("--str_option=foo", "--nobool_option");
+        val matchingParser: OptionsParser =
+            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+        matchingParser.parse("--str_option=foo", "--bool_option")
 
-    assertThat(original.matches(matchingParser)).isTrue();
-    assertThat(original.matches(notMatchingParser)).isFalse();
-  }
+        val notMatchingParser: OptionsParser =
+            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+        notMatchingParser.parse("--str_option=foo", "--nobool_option")
 
-  @Test
-  public void parsingResultMatchStarlark() throws Exception {
-    BuildOptions original =
-        BuildOptions.builder()
-            .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "hello")
-            .build();
+        assertThat(original.matches(matchingParser)).isTrue()
+        assertThat(original.matches(notMatchingParser)).isFalse()
+    }
 
-    OptionsParser matchingParser =
-        OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build();
-    matchingParser.setStarlarkOptions(ImmutableMap.of("//custom:flag", "hello"), ImmutableSet.of());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parsingResultMatchStarlark() {
+        val original: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "hello")
+                .build()
 
-    OptionsParser notMatchingParser =
-        OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build();
-    notMatchingParser.setStarlarkOptions(
-        ImmutableMap.of("//custom:flag", "foo"), ImmutableSet.of());
+        val matchingParser: OptionsParser =
+            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+        matchingParser.setStarlarkOptions(
+            com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "hello"),
+            com.google.common.collect.ImmutableSet.of<E?>()
+        )
 
-    assertThat(original.matches(matchingParser)).isTrue();
-    assertThat(original.matches(notMatchingParser)).isFalse();
-  }
+        val notMatchingParser: OptionsParser =
+            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+        notMatchingParser.setStarlarkOptions(
+            com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "foo"),
+            com.google.common.collect.ImmutableSet.of<E?>()
+        )
 
-  @Test
-  public void parsingResultMatchMissingFragment() throws Exception {
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo");
+        assertThat(original.matches(matchingParser)).isTrue()
+        assertThat(original.matches(notMatchingParser)).isFalse()
+    }
 
-    ImmutableList<Class<? extends FragmentOptions>> fragmentClasses =
-        ImmutableList.of(DummyTestOptions.class, SecondDummyTestOptions.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parsingResultMatchMissingFragment() {
+        val original: BuildOptions = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo")
 
-    OptionsParser parser = OptionsParser.builder().optionsClasses(fragmentClasses).build();
-    parser.parse("--str_option=foo", "--second_str_option=bar");
+        val fragmentClasses: com.google.common.collect.ImmutableList<java.lang.Class<out FragmentOptions?>?> =
+            com.google.common.collect.ImmutableList.of<E?>(
+                com.google.devtools.build.lib.analysis.config.BuildOptionsTest.DummyTestOptions::class.java,
+                SecondDummyTestOptions::class.java
+            )
 
-    assertThat(original.matches(parser)).isTrue();
-  }
+        val parser: OptionsParser = OptionsParser.builder().optionsClasses(fragmentClasses).build()
+        parser.parse("--str_option=foo", "--second_str_option=bar")
 
-  @Test
-  public void parsingResultMatchEmptyNativeMatch() throws Exception {
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo");
+        assertThat(original.matches(parser)).isTrue()
+    }
 
-    ImmutableList<Class<? extends FragmentOptions>> fragmentClasses =
-        ImmutableList.of(DummyTestOptions.class, SecondDummyTestOptions.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parsingResultMatchEmptyNativeMatch() {
+        val original: BuildOptions = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo")
 
-    OptionsParser parser = OptionsParser.builder().optionsClasses(fragmentClasses).build();
-    parser.parse("--second_str_option=bar");
+        val fragmentClasses: com.google.common.collect.ImmutableList<java.lang.Class<out FragmentOptions?>?> =
+            com.google.common.collect.ImmutableList.of<E?>(
+                com.google.devtools.build.lib.analysis.config.BuildOptionsTest.DummyTestOptions::class.java,
+                SecondDummyTestOptions::class.java
+            )
 
-    assertThat(original.matches(parser)).isFalse();
-  }
+        val parser: OptionsParser = OptionsParser.builder().optionsClasses(fragmentClasses).build()
+        parser.parse("--second_str_option=bar")
 
-  @Test
-  public void parsingResultMatchEmptyNativeMatchWithStarlark() throws Exception {
-    BuildOptions original =
-        BuildOptions.builder()
-            .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "hello")
-            .build();
+        assertThat(original.matches(parser)).isFalse()
+    }
 
-    ImmutableList<Class<? extends FragmentOptions>> fragmentClasses =
-        ImmutableList.<Class<? extends FragmentOptions>>builder()
-            .add(DummyTestOptions.class)
-            .add(SecondDummyTestOptions.class)
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parsingResultMatchEmptyNativeMatchWithStarlark() {
+        val original: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "hello")
+                .build()
 
-    OptionsParser parser = OptionsParser.builder().optionsClasses(fragmentClasses).build();
-    parser.parse("--second_str_option=bar");
-    parser.setStarlarkOptions(ImmutableMap.of("//custom:flag", "hello"), ImmutableSet.of());
+        val fragmentClasses: com.google.common.collect.ImmutableList<java.lang.Class<out FragmentOptions?>?> =
+            com.google.common.collect.ImmutableList.builder<java.lang.Class<out FragmentOptions?>?>()
+                .add(com.google.devtools.build.lib.analysis.config.BuildOptionsTest.DummyTestOptions::class.java)
+                .add(SecondDummyTestOptions::class.java)
+                .build()
 
-    assertThat(original.matches(parser)).isTrue();
-  }
+        val parser: OptionsParser = OptionsParser.builder().optionsClasses(fragmentClasses).build()
+        parser.parse("--second_str_option=bar")
+        parser.setStarlarkOptions(
+            com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "hello"),
+            com.google.common.collect.ImmutableSet.of<E?>()
+        )
 
-  @Test
-  public void parsingResultMatchStarlarkOptionMissing() throws Exception {
-    BuildOptions original =
-        BuildOptions.builder()
-            .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag1"), "hello")
-            .build();
+        assertThat(original.matches(parser)).isTrue()
+    }
 
-    OptionsParser parser = OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build();
-    parser.setStarlarkOptions(ImmutableMap.of("//custom:flag2", "foo"), ImmutableSet.of());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parsingResultMatchStarlarkOptionMissing() {
+        val original: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag1"), "hello")
+                .build()
 
-    assertThat(original.matches(parser)).isFalse();
-  }
+        val parser: OptionsParser = OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+        parser.setStarlarkOptions(
+            com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag2", "foo"),
+            com.google.common.collect.ImmutableSet.of<E?>()
+        )
 
-  @Test
-  public void parsingResultMatchNullOption() throws Exception {
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+        assertThat(original.matches(parser)).isFalse()
+    }
 
-    OptionsParser parser = OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build();
-    parser.parse("--null_option=foo"); // Note: null_option is null by default.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parsingResultMatchNullOption() {
+        val original: BuildOptions = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-    assertThat(original.matches(parser)).isFalse();
-  }
+        val parser: OptionsParser = OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+        parser.parse("--null_option=foo") // Note: null_option is null by default.
 
-  @Test
-  public void nativeOptionsOrderedLexicographically() {
-    var options1 = Options.getDefaults(DummyTestOptions.class);
-    var options2 = Options.getDefaults(SecondDummyTestOptions.class);
+        assertThat(original.matches(parser)).isFalse()
+    }
 
-    BuildOptions forward =
-        BuildOptions.builder().addFragmentOptions(options1).addFragmentOptions(options2).build();
-    BuildOptions backward =
-        BuildOptions.builder().addFragmentOptions(options2).addFragmentOptions(options1).build();
+    @org.junit.Test
+    fun nativeOptionsOrderedLexicographically() {
+        val options1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            Options.getDefaults(com.google.devtools.build.lib.analysis.config.BuildOptionsTest.DummyTestOptions::class.java)
+        val options2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            Options.getDefaults(SecondDummyTestOptions::class.java)
 
-    assertThat(forward.getFragmentClasses())
-        .isInOrder(BuildOptions.LEXICAL_FRAGMENT_OPTIONS_COMPARATOR);
-    assertThat(backward.getFragmentClasses())
-        .isInOrder(BuildOptions.LEXICAL_FRAGMENT_OPTIONS_COMPARATOR);
-    assertThat(forward.getNativeOptions()).containsExactly(options1, options2).inOrder();
-    assertThat(backward.getNativeOptions()).containsExactly(options1, options2).inOrder();
-  }
+        val forward: BuildOptions =
+            BuildOptions.builder().addFragmentOptions(options1).addFragmentOptions(options2).build()
+        val backward: BuildOptions =
+            BuildOptions.builder().addFragmentOptions(options2).addFragmentOptions(options1).build()
 
-  @Test
-  public void starlarkOptionsOrderedByLabel() {
-    Label label1 = Label.parseCanonicalUnchecked("//pkg:option1");
-    Label label2 = Label.parseCanonicalUnchecked("//pkg:option2");
+        assertThat(forward.getFragmentClasses())
+            .isInOrder(BuildOptions.LEXICAL_FRAGMENT_OPTIONS_COMPARATOR)
+        assertThat(backward.getFragmentClasses())
+            .isInOrder(BuildOptions.LEXICAL_FRAGMENT_OPTIONS_COMPARATOR)
+        assertThat(forward.getNativeOptions()).containsExactly(options1, options2).inOrder()
+        assertThat(backward.getNativeOptions()).containsExactly(options1, options2).inOrder()
+    }
 
-    BuildOptions forward =
-        BuildOptions.builder()
-            .addStarlarkOption(label1, true)
-            .addStarlarkOption(label2, false)
-            .build();
-    BuildOptions backward =
-        BuildOptions.builder()
-            .addStarlarkOption(label2, false)
-            .addStarlarkOption(label1, true)
-            .build();
-    assertThat(forward.getStarlarkOptions()).containsExactly(label1, true, label2, false).inOrder();
-    assertThat(backward.getStarlarkOptions())
-        .containsExactly(label1, true, label2, false)
-        .inOrder();
-    assertThat(backward).isEqualTo(forward);
-    assertThat(backward.checksum()).isEqualTo(forward.checksum());
-  }
+    @org.junit.Test
+    fun starlarkOptionsOrderedByLabel() {
+        val label1: Label? = Label.parseCanonicalUnchecked("//pkg:option1")
+        val label2: Label? = Label.parseCanonicalUnchecked("//pkg:option2")
 
-  @Test
-  public void listAndSetAreDifferent() {
-    Label label = Label.parseCanonicalUnchecked("//pkg:option");
+        val forward: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(label1, true)
+                .addStarlarkOption(label2, false)
+                .build()
+        val backward: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(label2, false)
+                .addStarlarkOption(label1, true)
+                .build()
+        assertThat(forward.getStarlarkOptions()).containsExactly(label1, true, label2, false).inOrder()
+        assertThat(backward.getStarlarkOptions())
+            .containsExactly(label1, true, label2, false)
+            .inOrder()
+        assertThat(backward).isEqualTo(forward)
+        assertThat(backward.checksum()).isEqualTo(forward.checksum())
+    }
 
-    BuildOptions optionsWithList =
-        BuildOptions.builder().addStarlarkOption(label, Lists.newArrayList("a")).build();
-    BuildOptions optionsWithSet =
-        BuildOptions.builder()
-            .addStarlarkOption(label, new LinkedHashSet<>(ImmutableList.of("a")))
-            .build();
+    @org.junit.Test
+    fun listAndSetAreDifferent() {
+        val label: Label? = Label.parseCanonicalUnchecked("//pkg:option")
 
-    assertThat(optionsWithList).isNotEqualTo(optionsWithSet);
-    assertThat(optionsWithList.checksum()).isNotEqualTo(optionsWithSet.checksum());
-  }
+        val optionsWithList: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(label, com.google.common.collect.Lists.< E > newArrayList < E ? > ("a")).build()
+        val optionsWithSet: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(label, LinkedHashSet<E?>(com.google.common.collect.ImmutableList.of<E?>("a")))
+                .build()
 
-  @Test
-  public void emptyListDifferentFromListWithEmptyString() {
-    Label label = Label.parseCanonicalUnchecked("//pkg:option");
+        assertThat(optionsWithList).isNotEqualTo(optionsWithSet)
+        assertThat(optionsWithList.checksum()).isNotEqualTo(optionsWithSet.checksum())
+    }
 
-    BuildOptions emptyListOptions =
-        BuildOptions.builder().addStarlarkOption(label, new ArrayList<>()).build();
-    BuildOptions emptyStringListOptions =
-        BuildOptions.builder().addStarlarkOption(label, Lists.newArrayList("")).build();
+    @org.junit.Test
+    fun emptyListDifferentFromListWithEmptyString() {
+        val label: Label? = Label.parseCanonicalUnchecked("//pkg:option")
 
-    assertThat(emptyListOptions).isNotEqualTo(emptyStringListOptions);
-    assertThat(emptyListOptions.checksum()).isNotEqualTo(emptyStringListOptions.checksum());
-  }
+        val emptyListOptions: BuildOptions =
+            BuildOptions.builder().addStarlarkOption(label, java.util.ArrayList<E?>()).build()
+        val emptyStringListOptions: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(label, com.google.common.collect.Lists.< E > newArrayList < E ? > ("")).build()
 
-  @Test
-  public void emptySetDifferentFromSetWithEmptyString() {
-    Label label = Label.parseCanonicalUnchecked("//pkg:option");
+        assertThat(emptyListOptions).isNotEqualTo(emptyStringListOptions)
+        assertThat(emptyListOptions.checksum()).isNotEqualTo(emptyStringListOptions.checksum())
+    }
 
-    BuildOptions emptySetOptions =
-        BuildOptions.builder().addStarlarkOption(label, new LinkedHashSet<>()).build();
-    BuildOptions emptyStringSetOptions =
-        BuildOptions.builder()
-            .addStarlarkOption(label, new LinkedHashSet<>(ImmutableList.of("")))
-            .build();
+    @org.junit.Test
+    fun emptySetDifferentFromSetWithEmptyString() {
+        val label: Label? = Label.parseCanonicalUnchecked("//pkg:option")
 
-    assertThat(emptySetOptions).isNotEqualTo(emptyStringSetOptions);
-    assertThat(emptySetOptions.checksum()).isNotEqualTo(emptyStringSetOptions.checksum());
-  }
+        val emptySetOptions: BuildOptions =
+            BuildOptions.builder().addStarlarkOption(label, LinkedHashSet<E?>()).build()
+        val emptyStringSetOptions: BuildOptions =
+            BuildOptions.builder()
+                .addStarlarkOption(label, LinkedHashSet<E?>(com.google.common.collect.ImmutableList.of<E?>("")))
+                .build()
+
+        assertThat(emptySetOptions).isNotEqualTo(emptyStringSetOptions)
+        assertThat(emptySetOptions.checksum()).isNotEqualTo(emptyStringSetOptions.checksum())
+    }
+
+    companion object {
+        private val BUILD_CONFIG_OPTIONS: com.google.common.collect.ImmutableList<java.lang.Class<out FragmentOptions?>?> =
+            com.google.common.collect.ImmutableList.of<E?>(com.google.devtools.build.lib.analysis.config.BuildOptionsTest.DummyTestOptions::class.java)
+
+        private fun makeOptionsClassBuilder(): com.google.common.collect.ImmutableList.Builder<java.lang.Class<out FragmentOptions?>?> {
+            return com.google.common.collect.ImmutableList.builder<java.lang.Class<out FragmentOptions?>?>().addAll(
+                BUILD_CONFIG_OPTIONS
+            )
+        }
+    }
 }

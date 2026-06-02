@@ -11,295 +11,318 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.testutil.TestUtils
+import com.google.devtools.build.lib.vfs.Dirent
+import com.google.devtools.build.lib.vfs.util.FileSystems
+import org.junit.Assert
+import org.junit.Rule
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import java.io.File
+import java.nio.charset.StandardCharsets
+import java.nio.file.Path
+import java.util.function.Supplier
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.repository.decompressor.TestArchiveDescriptor.INNER_FOLDER_NAME;
-import static com.google.devtools.build.lib.bazel.repository.decompressor.TestArchiveDescriptor.ROOT_FOLDER_NAME;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.stream.Collectors.toCollection;
-import static org.junit.Assert.assertThrows;
+/** Tests .7z decompression.  */
+@RunWith(JUnit4::class)
+class SevenZDecompressorTest {
+    @Rule
+    var name: TestName = TestName()
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
-import java.util.HashMap;
-import java.util.List;
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
-import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TestName;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    /** Provides a test filesystem descriptor for a test. NOTE: unique per individual test ONLY.  */
+    @Throws(Exception::class)
+    private fun archiveDescriptor(): TestArchiveDescriptor {
+        return TestArchiveDescriptor(
+            ARCHIVE_NAME,  /* outDirName= */
+            this.javaClass.getSimpleName() + "_" + name.getMethodName(),  /* withHardLinks= */
+            false
+        )
+    }
 
-/** Tests .7z decompression. */
-@RunWith(JUnit4.class)
-public class SevenZDecompressorTest {
-  @Rule public TestName name = new TestName();
+    /** Test decompressing a .7z file without stripping a prefix  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithoutPrefix() {
+        val outputDir: Path = decompress(archiveDescriptor().createDescriptorBuilder().build())
 
-  /**
-   * .7z file, created with one file:
-   *
-   * <ul>
-   *   <li>root_folder/another_folder/regularFile
-   * </ul>
-   *
-   * Compressed with command "7zz a test_decompress_archive.7z root_folder"
-   */
-  private static final String ARCHIVE_NAME = "test_decompress_archive.7z";
+        val fileDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)
+            .getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(files).contains(REGULAR_FILENAME)
+        assertThat(fileDir.getRelative(REGULAR_FILENAME).getFileSize()).isNotEqualTo(0)
+    }
 
-  private static final String REGULAR_FILENAME = "regularFile";
+    /** Test decompressing a .7z file and stripping a prefix.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithPrefix() {
+        val descriptorBuilder =
+            archiveDescriptor().createDescriptorBuilder().setPrefix(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
+        val fileDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
 
-  /** Provides a test filesystem descriptor for a test. NOTE: unique per individual test ONLY. */
-  private TestArchiveDescriptor archiveDescriptor() throws Exception {
-    return new TestArchiveDescriptor(
-        ARCHIVE_NAME,
-        /* outDirName= */ this.getClass().getSimpleName() + "_" + name.getMethodName(),
-        /* withHardLinks= */ false);
-  }
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(files).contains(REGULAR_FILENAME)
+    }
 
-  /** Test decompressing a .7z file without stripping a prefix */
-  @Test
-  public void testDecompressWithoutPrefix() throws Exception {
-    Path outputDir = decompress(archiveDescriptor().createDescriptorBuilder().build());
+    /** Test decompressing a .7z file and stripping components.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithStripComponents() {
+        val descriptorBuilder =
+            archiveDescriptor().createDescriptorBuilder().setStripComponents(1)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
+        val fileDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
 
-    Path fileDir = outputDir.getRelative(ROOT_FOLDER_NAME).getRelative(INNER_FOLDER_NAME);
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
-    assertThat(files).contains(REGULAR_FILENAME);
-    assertThat(fileDir.getRelative(REGULAR_FILENAME).getFileSize()).isNotEqualTo(0);
-  }
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(files).contains(REGULAR_FILENAME)
+    }
 
-  /** Test decompressing a .7z file and stripping a prefix. */
-  @Test
-  public void testDecompressWithPrefix() throws Exception {
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor().createDescriptorBuilder().setPrefix(ROOT_FOLDER_NAME);
-    Path outputDir = decompress(descriptorBuilder.build());
-    Path fileDir = outputDir.getRelative(INNER_FOLDER_NAME);
+    /** Test decompressing a .7z with entries being renamed during the extraction process.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFiles() {
+        val innerDirName =
+            TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME + "/" + TestArchiveDescriptor.Companion.INNER_FOLDER_NAME
 
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
-    assertThat(files).contains(REGULAR_FILENAME);
-  }
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(innerDirName + "/" + REGULAR_FILENAME, innerDirName + "/renamedFile")
+        val descriptorBuilder =
+            archiveDescriptor().createDescriptorBuilder().setRenameFiles(renameFiles)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
 
-  /** Test decompressing a .7z file and stripping components. */
-  @Test
-  public void testDecompressWithStripComponents() throws Exception {
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor().createDescriptorBuilder().setStripComponents(1);
-    Path outputDir = decompress(descriptorBuilder.build());
-    Path fileDir = outputDir.getRelative(INNER_FOLDER_NAME);
+        val fileDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)
+            .getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        val files: MutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream()
+                .map(Dirent::getName)
+                .collect(Collectors.toCollection(Supplier { ArrayList() }))
+        Truth.assertThat(files).contains("renamedFile")
+        assertThat(fileDir.getRelative("renamedFile").getFileSize()).isNotEqualTo(0)
+    }
 
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
-    assertThat(files).contains(REGULAR_FILENAME);
-  }
+    /** Test that entry renaming is applied prior to prefix stripping.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFilesAndPrefix() {
+        val innerDirName =
+            TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME + "/" + TestArchiveDescriptor.Companion.INNER_FOLDER_NAME
 
-  /** Test decompressing a .7z with entries being renamed during the extraction process. */
-  @Test
-  public void testDecompressWithRenamedFiles() throws Exception {
-    String innerDirName = ROOT_FOLDER_NAME + "/" + INNER_FOLDER_NAME;
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(innerDirName + "/" + REGULAR_FILENAME, innerDirName + "/renamedFile")
+        val descriptorBuilder =
+            archiveDescriptor()
+                .createDescriptorBuilder()
+                .setPrefix(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)!!
+                .setRenameFiles(renameFiles)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
 
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(innerDirName + "/" + REGULAR_FILENAME, innerDirName + "/renamedFile");
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor().createDescriptorBuilder().setRenameFiles(renameFiles);
-    Path outputDir = decompress(descriptorBuilder.build());
+        val fileDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(files).contains("renamedFile")
+        assertThat(fileDir.getRelative("renamedFile").getFileSize()).isNotEqualTo(0)
+    }
 
-    Path fileDir = outputDir.getRelative(ROOT_FOLDER_NAME).getRelative(INNER_FOLDER_NAME);
-    List<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream()
-            .map(Dirent::getName)
-            .collect(toCollection(ArrayList::new));
-    assertThat(files).contains("renamedFile");
-    assertThat(fileDir.getRelative("renamedFile").getFileSize()).isNotEqualTo(0);
-  }
+    /** Test that entry renaming is applied prior to stripping components.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFilesAndStripComponents() {
+        val innerDirName =
+            TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME + "/" + TestArchiveDescriptor.Companion.INNER_FOLDER_NAME
 
-  /** Test that entry renaming is applied prior to prefix stripping. */
-  @Test
-  public void testDecompressWithRenamedFilesAndPrefix() throws Exception {
-    String innerDirName = ROOT_FOLDER_NAME + "/" + INNER_FOLDER_NAME;
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(innerDirName + "/" + REGULAR_FILENAME, innerDirName + "/renamedFile")
+        val descriptorBuilder =
+            archiveDescriptor()
+                .createDescriptorBuilder()
+                .setStripComponents(1)!!
+                .setRenameFiles(renameFiles)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
 
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(innerDirName + "/" + REGULAR_FILENAME, innerDirName + "/renamedFile");
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor()
-            .createDescriptorBuilder()
-            .setPrefix(ROOT_FOLDER_NAME)
-            .setRenameFiles(renameFiles);
-    Path outputDir = decompress(descriptorBuilder.build());
+        val fileDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(files).contains("renamedFile")
+        assertThat(fileDir.getRelative("renamedFile").getFileSize()).isNotEqualTo(0)
+    }
 
-    Path fileDir = outputDir.getRelative(INNER_FOLDER_NAME);
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
-    assertThat(files).contains("renamedFile");
-    assertThat(fileDir.getRelative("renamedFile").getFileSize()).isNotEqualTo(0);
-  }
+    /** Test decompressing a .7z file where everything is stripped  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressStripAllComponents() {
+        val outputDir: Path =
+            decompress(archiveDescriptor().createDescriptorBuilder().setStripComponents(1000)!!.build())
 
-  /** Test that entry renaming is applied prior to stripping components. */
-  @Test
-  public void testDecompressWithRenamedFilesAndStripComponents() throws Exception {
-    String innerDirName = ROOT_FOLDER_NAME + "/" + INNER_FOLDER_NAME;
+        assertThat(outputDir.exists()).isFalse()
+    }
 
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(innerDirName + "/" + REGULAR_FILENAME, innerDirName + "/renamedFile");
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor()
-            .createDescriptorBuilder()
-            .setStripComponents(1)
-            .setRenameFiles(renameFiles);
-    Path outputDir = decompress(descriptorBuilder.build());
+    private var archiveDir: File? = null
+    private var extractionDir: File? = null
 
-    Path fileDir = outputDir.getRelative(INNER_FOLDER_NAME);
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
-    assertThat(files).contains("renamedFile");
-    assertThat(fileDir.getRelative("renamedFile").getFileSize()).isNotEqualTo(0);
-  }
+    fun setUpTestDirectories() {
+        // Create an "archives" directory to hold the .7z archive and an "extracted" directory where the
+        // extraction will occur.
+        val tmpDir: String? =
+            Path.of(TestUtils.tmpDir()).resolve(name.getMethodName()).toString()
+        archiveDir = Path.of(tmpDir).resolve("archives").toFile()
+        Truth.assertThat(archiveDir!!.mkdirs()).isTrue()
+        extractionDir = Path.of(tmpDir).resolve("extracted").toFile()
+        Truth.assertThat(extractionDir!!.mkdirs()).isTrue()
+    }
 
-  /** Test decompressing a .7z file where everything is stripped */
-  @Test
-  public void testDecompressStripAllComponents() throws Exception {
-    Path outputDir =
-        decompress(archiveDescriptor().createDescriptorBuilder().setStripComponents(1_000).build());
+    @Test
+    @Throws(Exception::class)
+    fun test7zFileModificationDate() {
+        setUpTestDirectories()
 
-    assertThat(outputDir.exists()).isFalse();
-  }
+        // Create a test archive.
+        val sevenZOutput: SevenZOutputFile =
+            SevenZOutputFile(File(archiveDir!!.getPath(), ARCHIVE_NAME))
 
-  private File archiveDir;
-  private File extractionDir;
+        // A regular entry with modification date set to 2000/02/14.
+        val entry: SevenZArchiveEntry =
+            sevenZOutput.createArchiveEntry(
+                File(TestUtils.tmpDirFile(), "test_file"),
+                "root_folder/another_folder/regularFile"
+            )
+        val testDate: GregorianCalendar = GregorianCalendar(2000, Calendar.FEBRUARY, 14, 3, 7, 14)
+        entry.setLastModifiedDate(testDate.getTime())
+        sevenZOutput.putArchiveEntry(entry)
+        sevenZOutput.write(
+            "regular test file contents with modification date 2000/02/14\n".toByteArray(StandardCharsets.UTF_8)
+        )
+        sevenZOutput.closeArchiveEntry()
 
-  public void setUpTestDirectories() {
-    // Create an "archives" directory to hold the .7z archive and an "extracted" directory where the
-    // extraction will occur.
-    String tmpDir =
-        java.nio.file.Path.of(TestUtils.tmpDir()).resolve(name.getMethodName()).toString();
-    archiveDir = java.nio.file.Path.of(tmpDir).resolve("archives").toFile();
-    assertThat(archiveDir.mkdirs()).isTrue();
-    extractionDir = java.nio.file.Path.of(tmpDir).resolve("extracted").toFile();
-    assertThat(extractionDir.mkdirs()).isTrue();
-  }
+        // An entry that has no modification date (shouldn't crash on this).
+        val entryWithNoModifiedDate: SevenZArchiveEntry =
+            sevenZOutput.createArchiveEntry(
+                File(TestUtils.tmpDirFile(), "test_file"),
+                "root_folder/another_folder/fileNoModificationDate"
+            )
+        entryWithNoModifiedDate.setLastModifiedDate(null)
+        sevenZOutput.putArchiveEntry(entryWithNoModifiedDate)
+        sevenZOutput.write("entry has no modification date\n".toByteArray(StandardCharsets.UTF_8))
+        sevenZOutput.closeArchiveEntry()
+        sevenZOutput.finish()
 
-  @Test
-  public void test7zFileModificationDate() throws Exception {
-    setUpTestDirectories();
+        val testFs: FileSystem = FileSystems.getNativeFileSystem()
+        val descriptor: DecompressorDescriptor.Builder =
+            DecompressorDescriptor.builder()
+                .setDestinationPath(testFs.getPath(extractionDir!!.getCanonicalPath()))
+                .setArchivePath(
+                    testFs.getPath(archiveDir.getCanonicalPath())
+                        .getRelative(SevenZDecompressorTest.Companion.ARCHIVE_NAME)
+                )!!
 
-    // Create a test archive.
-    SevenZOutputFile sevenZOutput =
-        new SevenZOutputFile(new File(archiveDir.getPath(), ARCHIVE_NAME));
+        // Decompression should not crash and set the correct modification date.
+        val outputDir: Path = decompress(descriptor.build())
 
-    // A regular entry with modification date set to 2000/02/14.
-    SevenZArchiveEntry entry =
-        sevenZOutput.createArchiveEntry(
-            new File(TestUtils.tmpDirFile(), "test_file"),
-            "root_folder/another_folder/regularFile");
-    GregorianCalendar testDate = new GregorianCalendar(2000, Calendar.FEBRUARY, 14, 3, 7, 14);
-    entry.setLastModifiedDate(testDate.getTime());
-    sevenZOutput.putArchiveEntry(entry);
-    sevenZOutput.write(
-        "regular test file contents with modification date 2000/02/14\n".getBytes(UTF_8));
-    sevenZOutput.closeArchiveEntry();
+        val fileDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)
+            .getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
 
-    // An entry that has no modification date (shouldn't crash on this).
-    SevenZArchiveEntry entryWithNoModifiedDate =
-        sevenZOutput.createArchiveEntry(
-            new File(TestUtils.tmpDirFile(), "test_file"),
-            "root_folder/another_folder/fileNoModificationDate");
-    entryWithNoModifiedDate.setLastModifiedDate(null);
-    sevenZOutput.putArchiveEntry(entryWithNoModifiedDate);
-    sevenZOutput.write("entry has no modification date\n".getBytes(UTF_8));
-    sevenZOutput.closeArchiveEntry();
-    sevenZOutput.finish();
+        Truth.assertThat(files).containsExactly("fileNoModificationDate", "regularFile")
+        assertThat(fileDir.getRelative("regularFile").getLastModifiedTime())
+            .isEqualTo(testDate.getTimeInMillis())
+    }
 
-    FileSystem testFs = FileSystems.getNativeFileSystem();
-    DecompressorDescriptor.Builder descriptor =
-        DecompressorDescriptor.builder()
-            .setDestinationPath(testFs.getPath(extractionDir.getCanonicalPath()))
-            .setArchivePath(
-                testFs.getPath(archiveDir.getCanonicalPath()).getRelative(ARCHIVE_NAME));
+    /** Check that we throw when handling nameless 7z entries.  */
+    @Test
+    @Throws(Exception::class)
+    fun test7zEntriesWithNoNameThrows() {
+        setUpTestDirectories()
+        // Create a test archive.
+        val sevenZOutput: SevenZOutputFile =
+            SevenZOutputFile(File(archiveDir!!.getPath(), ARCHIVE_NAME))
 
-    // Decompression should not crash and set the correct modification date.
-    Path outputDir = decompress(descriptor.build());
+        val entryWithNoName: SevenZArchiveEntry =
+            sevenZOutput.createArchiveEntry(File(TestUtils.tmpDirFile(), "test_file"), "")
+        sevenZOutput.putArchiveEntry(entryWithNoName)
+        sevenZOutput.write("entry without a name\n".toByteArray(StandardCharsets.UTF_8))
+        sevenZOutput.closeArchiveEntry()
+        val entryWithNoName2: SevenZArchiveEntry =
+            sevenZOutput.createArchiveEntry(File(TestUtils.tmpDirFile(), "test_file"), "")
+        sevenZOutput.putArchiveEntry(entryWithNoName2)
+        sevenZOutput.write("entry without a name2\n".toByteArray(StandardCharsets.UTF_8))
+        sevenZOutput.closeArchiveEntry()
 
-    Path fileDir = outputDir.getRelative(ROOT_FOLDER_NAME).getRelative(INNER_FOLDER_NAME);
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
+        sevenZOutput.finish()
+        val testFs: FileSystem = FileSystems.getNativeFileSystem()
+        val descriptor: DecompressorDescriptor.Builder =
+            DecompressorDescriptor.builder()
+                .setDestinationPath(testFs.getPath(extractionDir!!.getCanonicalPath()))
+                .setArchivePath(
+                    testFs.getPath(archiveDir.getCanonicalPath())
+                        .getRelative(SevenZDecompressorTest.Companion.ARCHIVE_NAME)
+                )!!
 
-    assertThat(files).containsExactly("fileNoModificationDate", "regularFile");
-    assertThat(fileDir.getRelative("regularFile").getLastModifiedTime())
-        .isEqualTo(testDate.getTimeInMillis());
-  }
+        val e: IOException? = Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            ThrowingRunnable { decompress(descriptor.build()) })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("7z archive contains unnamed entry")
+    }
 
-  /** Check that we throw when handling nameless 7z entries. */
-  @Test
-  public void test7zEntriesWithNoNameThrows() throws Exception {
-    setUpTestDirectories();
-    // Create a test archive.
-    SevenZOutputFile sevenZOutput =
-        new SevenZOutputFile(new File(archiveDir.getPath(), ARCHIVE_NAME));
+    @Test
+    @Throws(Exception::class)
+    fun testDecompress7zWithUpLevelReference() {
+        setUpTestDirectories()
+        // Create a test archive.
+        val sevenZOutput: SevenZOutputFile =
+            SevenZOutputFile(File(archiveDir!!.getPath(), ARCHIVE_NAME))
 
-    SevenZArchiveEntry entryWithNoName =
-        sevenZOutput.createArchiveEntry(new File(TestUtils.tmpDirFile(), "test_file"), "");
-    sevenZOutput.putArchiveEntry(entryWithNoName);
-    sevenZOutput.write("entry without a name\n".getBytes(UTF_8));
-    sevenZOutput.closeArchiveEntry();
-    SevenZArchiveEntry entryWithNoName2 =
-        sevenZOutput.createArchiveEntry(new File(TestUtils.tmpDirFile(), "test_file"), "");
-    sevenZOutput.putArchiveEntry(entryWithNoName2);
-    sevenZOutput.write("entry without a name2\n".getBytes(UTF_8));
-    sevenZOutput.closeArchiveEntry();
+        val entry: SevenZArchiveEntry =
+            sevenZOutput.createArchiveEntry(File(TestUtils.tmpDirFile(), "test_file"), "../foo")
+        sevenZOutput.putArchiveEntry(entry)
+        sevenZOutput.write("bar".toByteArray(StandardCharsets.UTF_8))
+        sevenZOutput.closeArchiveEntry()
+        sevenZOutput.finish()
 
-    sevenZOutput.finish();
-    FileSystem testFs = FileSystems.getNativeFileSystem();
-    DecompressorDescriptor.Builder descriptor =
-        DecompressorDescriptor.builder()
-            .setDestinationPath(testFs.getPath(extractionDir.getCanonicalPath()))
-            .setArchivePath(
-                testFs.getPath(archiveDir.getCanonicalPath()).getRelative(ARCHIVE_NAME));
+        val testFs: FileSystem = FileSystems.getNativeFileSystem()
+        val descriptor =
+            DecompressorDescriptor.builder()
+                .setDestinationPath(testFs.getPath(extractionDir!!.getCanonicalPath()))!!
+                .setArchivePath(
+                    testFs.getPath(archiveDir!!.getCanonicalPath())
+                        .getRelative(SevenZDecompressorTest.Companion.ARCHIVE_NAME)
+                )!!
+                .build()
 
-    IOException e = assertThrows(IOException.class, () -> decompress(descriptor.build()));
-    assertThat(e).hasMessageThat().isEqualTo("7z archive contains unnamed entry");
-  }
+        val thrown: IOException? =
+            Assert.assertThrows<IOException?>(IOException::class.java, ThrowingRunnable { decompress(descriptor) })
+        Truth.assertThat(thrown).hasMessageThat().contains("path is escaping the destination directory")
+    }
 
-  @Test
-  public void testDecompress7zWithUpLevelReference() throws Exception {
-    setUpTestDirectories();
-    // Create a test archive.
-    SevenZOutputFile sevenZOutput =
-        new SevenZOutputFile(new File(archiveDir.getPath(), ARCHIVE_NAME));
+    @Throws(Exception::class)
+    private fun decompress(descriptor: DecompressorDescriptor): Path {
+        return SevenZDecompressor().decompress(descriptor)
+    }
 
-    SevenZArchiveEntry entry =
-        sevenZOutput.createArchiveEntry(new File(TestUtils.tmpDirFile(), "test_file"), "../foo");
-    sevenZOutput.putArchiveEntry(entry);
-    sevenZOutput.write("bar".getBytes(UTF_8));
-    sevenZOutput.closeArchiveEntry();
-    sevenZOutput.finish();
+    companion object {
+        /**
+         * .7z file, created with one file:
+         * 
+         * 
+         *  * root_folder/another_folder/regularFile
+         * 
+         * 
+         * Compressed with command "7zz a test_decompress_archive.7z root_folder"
+         */
+        private const val ARCHIVE_NAME = "test_decompress_archive.7z"
 
-    FileSystem testFs = FileSystems.getNativeFileSystem();
-    DecompressorDescriptor descriptor =
-        DecompressorDescriptor.builder()
-            .setDestinationPath(testFs.getPath(extractionDir.getCanonicalPath()))
-            .setArchivePath(testFs.getPath(archiveDir.getCanonicalPath()).getRelative(ARCHIVE_NAME))
-            .build();
-
-    IOException thrown = assertThrows(IOException.class, () -> decompress(descriptor));
-    assertThat(thrown).hasMessageThat().contains("path is escaping the destination directory");
-  }
-
-  private Path decompress(DecompressorDescriptor descriptor) throws Exception {
-    return new SevenZDecompressor().decompress(descriptor);
-  }
+        private const val REGULAR_FILENAME = "regularFile"
+    }
 }

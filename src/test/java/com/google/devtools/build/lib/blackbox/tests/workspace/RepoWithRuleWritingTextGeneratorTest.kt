@@ -11,81 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.tests.workspace
 
-package com.google.devtools.build.lib.blackbox.tests.workspace;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorDescriptor.Builder.build
+import com.google.devtools.build.lib.bazel.repository.starlark.StarlarkBaseExternalContext.readFile
+import com.google.devtools.build.lib.blackbox.tests.workspace.RepoWithRuleWritingTextGenerator
+import com.google.devtools.build.lib.vfs.Path
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.nio.file.Path
 
-import static com.google.common.truth.Truth.assertThat;
+/** Test for [RepoWithRuleWritingTextGenerator].  */
+@RunWith(JUnit4::class)
+class RepoWithRuleWritingTextGeneratorTest {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testOutput() {
+        val directory: Path? = java.nio.file.Files.createTempDirectory("test_repo_output")
+        try {
+            val generator: RepoWithRuleWritingTextGenerator = RepoWithRuleWritingTextGenerator(directory)
 
-import com.google.devtools.build.lib.blackbox.framework.PathUtils;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+            val repository: Path = generator.setupRepository()
+            Truth.assertThat(repository).isEqualTo(directory)
+            Truth.assertThat(java.nio.file.Files.exists(repository)).isTrue()
 
-/** Test for {@link RepoWithRuleWritingTextGenerator}. */
-@RunWith(JUnit4.class)
-public class RepoWithRuleWritingTextGeneratorTest {
-  private static final String BUILD_TEXT =
-      "load(\"@bazel_tools//tools/build_defs/pkg:pkg.bzl\", \"pkg_tar\")\n"
-          + "load('//:helper.bzl', 'write_to_file')\n"
-          + "write_to_file(name = 'write_text', filename = 'out', text ='HELLO')\n"
-          + "pkg_tar(name = \"pkg_tar_write_text\", srcs = glob([\"*\"]),)";
-  private static final String BUILD_TEXT_PARAMS =
-      "load(\"@bazel_tools//tools/build_defs/pkg:pkg.bzl\", \"pkg_tar\")\n"
-          + "load('//:helper.bzl', 'write_to_file')\n"
-          + "write_to_file(name = 'target', filename = 'file', text ='text')\n"
-          + "pkg_tar(name = \"pkg_tar_target\", srcs = glob([\"*\"]),)";
-
-  @Test
-  public void testOutput() throws IOException {
-    Path directory = Files.createTempDirectory("test_repo_output");
-    try {
-      RepoWithRuleWritingTextGenerator generator = new RepoWithRuleWritingTextGenerator(directory);
-
-      Path repository = generator.setupRepository();
-      assertThat(repository).isEqualTo(directory);
-      assertThat(Files.exists(repository)).isTrue();
-
-      String buildText = String.join("\n", PathUtils.readFile(repository.resolve("BUILD")));
-      assertThat(buildText).isEqualTo(BUILD_TEXT);
-      assertThat(generator.getPkgTarTarget()).isEqualTo("pkg_tar_write_text");
-    } finally {
-      PathUtils.deleteTree(directory);
+            val buildText: String = java.lang.String.join(
+                "\n",
+                com.google.devtools.build.lib.blackbox.framework.PathUtils.readFile(repository.resolve("BUILD"))
+            )
+            Truth.assertThat(buildText).isEqualTo(BUILD_TEXT)
+            Truth.assertThat(generator.getPkgTarTarget()).isEqualTo("pkg_tar_write_text")
+        } finally {
+            com.google.devtools.build.lib.blackbox.framework.PathUtils.deleteTree(directory)
+        }
     }
-  }
 
-  @Test
-  public void testOutputWithParameters() throws IOException {
-    Path directory = Files.createTempDirectory("test_repo_output_with_parameters");
-    try {
-      RepoWithRuleWritingTextGenerator generator =
-          new RepoWithRuleWritingTextGenerator(directory)
-              .withTarget("target")
-              .withOutFile("file")
-              .withOutputText("text");
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testOutputWithParameters() {
+        val directory: Path? = java.nio.file.Files.createTempDirectory("test_repo_output_with_parameters")
+        try {
+            val generator: RepoWithRuleWritingTextGenerator =
+                RepoWithRuleWritingTextGenerator(directory)
+                    .withTarget("target")
+                    .withOutFile("file")
+                    .withOutputText("text")
 
-      Path repository = generator.setupRepository();
-      assertThat(repository).isEqualTo(directory);
-      assertThat(Files.exists(repository)).isTrue();
+            val repository: Path = generator.setupRepository()
+            Truth.assertThat(repository).isEqualTo(directory)
+            Truth.assertThat(java.nio.file.Files.exists(repository)).isTrue()
 
-      String buildText = String.join("\n", PathUtils.readFile(repository.resolve("BUILD")));
-      assertThat(buildText).isEqualTo(BUILD_TEXT_PARAMS);
-      assertThat(generator.getPkgTarTarget()).isEqualTo("pkg_tar_target");
-    } finally {
-      PathUtils.deleteTree(directory);
+            val buildText: String = java.lang.String.join(
+                "\n",
+                com.google.devtools.build.lib.blackbox.framework.PathUtils.readFile(repository.resolve("BUILD"))
+            )
+            Truth.assertThat(buildText).isEqualTo(BUILD_TEXT_PARAMS)
+            Truth.assertThat(generator.getPkgTarTarget()).isEqualTo("pkg_tar_target")
+        } finally {
+            com.google.devtools.build.lib.blackbox.framework.PathUtils.deleteTree(directory)
+        }
     }
-  }
 
-  @Test
-  public void testStaticMethods() {
-    String loadText = RepoWithRuleWritingTextGenerator.loadRule("@my_repo");
-    assertThat(loadText).isEqualTo("load('@my_repo//:helper.bzl', 'write_to_file')");
+    @org.junit.Test
+    fun testStaticMethods() {
+        val loadText: String? = RepoWithRuleWritingTextGenerator.loadRule("@my_repo")
+        Truth.assertThat(loadText).isEqualTo("load('@my_repo//:helper.bzl', 'write_to_file')")
 
-    String callText =
-        RepoWithRuleWritingTextGenerator.callRule("my_target", "filename", "out_text");
-    assertThat(callText)
-        .isEqualTo("write_to_file(name = 'my_target', filename = 'filename', text ='out_text')");
-  }
+        val callText: String? =
+            RepoWithRuleWritingTextGenerator.callRule("my_target", "filename", "out_text")
+        Truth.assertThat(callText)
+            .isEqualTo("write_to_file(name = 'my_target', filename = 'filename', text ='out_text')")
+    }
+
+    companion object {
+        private val BUILD_TEXT = ("load(\"@bazel_tools//tools/build_defs/pkg:pkg.bzl\", \"pkg_tar\")\n"
+                + "load('//:helper.bzl', 'write_to_file')\n"
+                + "write_to_file(name = 'write_text', filename = 'out', text ='HELLO')\n"
+                + "pkg_tar(name = \"pkg_tar_write_text\", srcs = glob([\"*\"]),)")
+        private val BUILD_TEXT_PARAMS = ("load(\"@bazel_tools//tools/build_defs/pkg:pkg.bzl\", \"pkg_tar\")\n"
+                + "load('//:helper.bzl', 'write_to_file')\n"
+                + "write_to_file(name = 'target', filename = 'file', text ='text')\n"
+                + "pkg_tar(name = \"pkg_tar_target\", srcs = glob([\"*\"]),)")
+    }
 }

@@ -11,1102 +11,1194 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.bazel.repository.downloader;
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.repository.downloader.DownloaderTestUtils.sendLines;
-import static com.google.devtools.build.lib.bazel.repository.downloader.HttpParser.readHttpRequest;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.hash.Hashing
+import com.google.common.io.ByteStreams
+import com.google.devtools.build.lib.authandtls.StaticCredentials
+import org.junit.After
+import org.junit.Assert
+import org.junit.Rule
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.rules.Timeout
+import java.net.Socket
+import java.net.URI
+import java.nio.charset.StandardCharsets
+import java.time.Duration
+import java.util.*
+import java.util.concurrent.Callable
+import java.util.concurrent.Future
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.hash.Hashing;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.authandtls.StaticCredentials;
-import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.JavaIoFileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketException;
-import java.net.SocketTimeoutException;
-import java.net.URI;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.Phaser;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.After;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.rules.Timeout;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.stubbing.Answer;
+/** Tests for [HttpDownloader]  */
+@RunWith(JUnit4::class)
+class HttpDownloaderTest {
+    @Rule
+    val workingDir: TemporaryFolder = TemporaryFolder()
 
-/** Tests for {@link HttpDownloader} */
-@RunWith(JUnit4.class)
-public class HttpDownloaderTest {
+    @Rule
+    val timeout: Timeout = Timeout(30, TimeUnit.SECONDS)
 
-  @Rule public final TemporaryFolder workingDir = new TemporaryFolder();
+    private val eventHandler: ExtendedEventHandler? = null
+    fun <ExtendedEventHandler> mock()
+    private val downloadCache: DownloadCache? = null
+    fun <DownloadCache> mock()
 
-  @Rule public final Timeout timeout = new Timeout(30, SECONDS);
+    // Scale timeouts down to make test fast.
+    private val httpDownloader = HttpDownloader(0, Duration.ZERO, 8, .1f)
+    private val downloadManager = DownloadManager(downloadCache, httpDownloader, httpDownloader, eventHandler)
 
-  private final ExtendedEventHandler eventHandler = mock(ExtendedEventHandler.class);
-  private final DownloadCache downloadCache = mock(DownloadCache.class);
-  // Scale timeouts down to make test fast.
-  private final HttpDownloader httpDownloader = new HttpDownloader(0, Duration.ZERO, 8, .1f);
-  private final DownloadManager downloadManager =
-      new DownloadManager(downloadCache, httpDownloader, httpDownloader, eventHandler);
+    private val executor: ExecutorService = Executors.newFixedThreadPool(2)
+    private val fs: JavaIoFileSystem
 
-  private final ExecutorService executor = Executors.newFixedThreadPool(2);
-  private final JavaIoFileSystem fs;
-
-  public HttpDownloaderTest() {
-    fs = new JavaIoFileSystem(DigestHashFunction.SHA256);
-  }
-
-  @After
-  public void after() {
-    executor.shutdown();
-  }
-
-  @Test
-  public void downloadFrom1UrlOk() throws IOException, InterruptedException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "hello");
-                }
-                return null;
-              });
-
-      Path resultingFile =
-          download(
-              downloadManager,
-              Collections.singletonList(
-                  URI.create(String.format("http://localhost:%d/foo", server.getLocalPort()))),
-              Collections.emptyMap(),
-              Collections.emptyMap(),
-              Optional.empty(),
-              "testCanonicalId",
-              Optional.empty(),
-              fs.getPath(workingDir.newFile().getAbsolutePath()),
-              Collections.emptyMap(),
-              "testRepo");
-
-      assertThat(new String(FileSystemUtils.readContent(resultingFile), UTF_8)).isEqualTo("hello");
+    init {
+        fs = JavaIoFileSystem(DigestHashFunction.SHA256)
     }
-  }
 
-  @Test
-  public void downloadFrom1UrlOk_specialCharInBasename() throws IOException, InterruptedException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "hello");
-                }
-                return null;
-              });
-
-      Path resultingFile =
-          download(
-              downloadManager,
-              Collections.singletonList(
-                  URI.create(
-                      String.format("http://localhost:%d/arch:ve.zip", server.getLocalPort()))),
-              Collections.emptyMap(),
-              Collections.emptyMap(),
-              Optional.empty(),
-              "testCanonicalId",
-              Optional.of("zip"),
-              fs.getPath(workingDir.newFolder().getAbsolutePath()),
-              Collections.emptyMap(),
-              "testRepo");
-
-      assertThat(new String(FileSystemUtils.readContent(resultingFile), UTF_8)).isEqualTo("hello");
-      assertThat(resultingFile.asFragment().getFileExtension()).isEqualTo("zip");
-      assertThat(resultingFile.asFragment().getBaseName()).doesNotContain(":");
+    @After
+    fun after() {
+        executor.shutdown()
     }
-  }
 
-  @Test
-  public void downloadFromOpaqueFileUrl_withExplicitOutput() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  Path output = invocationOnMock.getArgument(5, Path.class);
-                  try (OutputStream outputStream = output.getOutputStream()) {
-                    ByteStreams.copy(new ByteArrayInputStream(data), outputStream);
-                  }
-                  return null;
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    Path result =
-        download(
-            downloadManager,
-            ImmutableList.of(URI.create("file:../vendored_lodash-4.17.21.tgz")),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.empty(),
-            fs.getPath(workingDir.newFile().getAbsolutePath()),
-            ImmutableMap.of(),
-            "testRepo");
-
-    assertThat(new String(ByteStreams.toByteArray(result.getInputStream()), UTF_8))
-        .isEqualTo("content");
-  }
-
-  @Test
-  public void downloadFromOpaqueFileUrl_withType() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  Path output = invocationOnMock.getArgument(5, Path.class);
-                  try (OutputStream outputStream = output.getOutputStream()) {
-                    ByteStreams.copy(new ByteArrayInputStream(data), outputStream);
-                  }
-                  return null;
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    Path result =
-        download(
-            downloadManager,
-            ImmutableList.of(URI.create("file:../vendored_lodash-4.17.21.tgz")),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.of("tgz"),
-            fs.getPath(workingDir.newFolder().getAbsolutePath()),
-            ImmutableMap.of(),
-            "testRepo");
-
-    assertThat(result.getBaseName()).isEqualTo("vendored_lodash-4.17.21.tgz");
-    assertThat(new String(ByteStreams.toByteArray(result.getInputStream()), UTF_8))
-        .isEqualTo("content");
-  }
-
-  @Test
-  public void downloadFromOpaqueFileUrl_withEscapedQuestionMarkAndType() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  Path output = invocationOnMock.getArgument(5, Path.class);
-                  try (OutputStream outputStream = output.getOutputStream()) {
-                    ByteStreams.copy(new ByteArrayInputStream(data), outputStream);
-                  }
-                  return null;
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    Path result =
-        download(
-            downloadManager,
-            ImmutableList.of(URI.create("file:../foo%3Fbar.tgz")),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.of("tgz"),
-            fs.getPath(workingDir.newFolder().getAbsolutePath()),
-            ImmutableMap.of(),
-            "testRepo");
-
-    assertThat(result.getBaseName()).isEqualTo("foo_bar.tgz");
-    assertThat(new String(ByteStreams.toByteArray(result.getInputStream()), UTF_8))
-        .isEqualTo("content");
-  }
-
-  @Test
-  public void getCandidateFileNames_opaqueFileUrlWithEscapedQuestionMark() {
-    assertThat(
-            DownloadManager.getCandidateFileNames(
-                URI.create("file:../foo%3Fbar.tgz"), fs.getPath("/tmp/foo_bar.tgz")))
-        .containsExactly("foo?bar.tgz", "foo_bar.tgz");
-  }
-
-  @Test
-  public void downloadFrom2UrlsFirstOk() throws IOException, InterruptedException {
-    try (ServerSocket server1 = new ServerSocket(0, 1, InetAddress.getByName(null));
-        ServerSocket server2 = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                while (!executor.isShutdown()) {
-                  try (Socket socket = server1.accept()) {
-                    readHttpRequest(socket.getInputStream());
-                    sendLines(
-                        socket,
-                        "HTTP/1.1 200 OK",
-                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                        "Connection: close",
-                        "Content-Type: text/plain",
-                        "",
-                        "content1");
-                  }
-                }
-                return null;
-              });
-
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError2 =
-          executor.submit(
-              () -> {
-                while (!executor.isShutdown()) {
-                  try (Socket socket = server2.accept()) {
-                    readHttpRequest(socket.getInputStream());
-                    sendLines(
-                        socket,
-                        "HTTP/1.1 200 OK",
-                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                        "Connection: close",
-                        "Content-Type: text/plain",
-                        "",
-                        "content2");
-                  }
-                }
-                return null;
-              });
-
-      final List<URI> urls = new ArrayList<>(2);
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())));
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())));
-
-      Path resultingFile =
-          download(
-              downloadManager,
-              urls,
-              Collections.emptyMap(),
-              Collections.emptyMap(),
-              Optional.empty(),
-              "testCanonicalId",
-              Optional.empty(),
-              fs.getPath(workingDir.newFile().getAbsolutePath()),
-              Collections.emptyMap(),
-              "testRepo");
-
-      assertThat(new String(FileSystemUtils.readContent(resultingFile), UTF_8))
-          .isEqualTo("content1");
-    }
-  }
-
-  @Ignore("b/182150157")
-  @Test
-  public void downloadFrom2UrlsFirstSocketTimeoutOnBodyReadSecondOk()
-      throws IOException, InterruptedException {
-    try (ServerSocket server1 = new ServerSocket(0, 1, InetAddress.getByName(null));
-        ServerSocket server2 = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                Socket socket = server1.accept();
-                readHttpRequest(socket.getInputStream());
-
-                sendLines(
-                    socket,
-                    "HTTP/1.1 200 OK",
-                    "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                    "Connection: close",
-                    "Content-Type: text/plain",
-                    "",
-                    "content1");
-
-                // Never close the socket to cause SocketTimeoutException during body read on client
-                // side.
-                return null;
-              });
-
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError2 =
-          executor.submit(
-              () -> {
-                while (!executor.isShutdown()) {
-                  try (Socket socket = server2.accept()) {
-                    readHttpRequest(socket.getInputStream());
-                    sendLines(
-                        socket,
-                        "HTTP/1.1 200 OK",
-                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                        "Connection: close",
-                        "Content-Type: text/plain",
-                        "",
-                        "content2");
-                  }
-                }
-                return null;
-              });
-
-      final List<URI> urls = new ArrayList<>(2);
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())));
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())));
-
-      Path resultingFile =
-          download(
-              downloadManager,
-              urls,
-              Collections.emptyMap(),
-              Collections.emptyMap(),
-              Optional.empty(),
-              "testCanonicalId",
-              Optional.empty(),
-              fs.getPath(workingDir.newFile().getAbsolutePath()),
-              Collections.emptyMap(),
-              "testRepo");
-
-      assertThat(new String(FileSystemUtils.readContent(resultingFile), UTF_8))
-          .isEqualTo("content2");
-    }
-  }
-
-  @Ignore("b/182150157")
-  @Test
-  public void downloadFrom2UrlsBothSocketTimeoutDuringBodyRead()
-      throws IOException, InterruptedException {
-    try (ServerSocket server1 = new ServerSocket(0, 1, InetAddress.getByName(null));
-        ServerSocket server2 = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                Socket socket = server1.accept();
-                readHttpRequest(socket.getInputStream());
-
-                sendLines(
-                    socket,
-                    "HTTP/1.1 200 OK",
-                    "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                    "Connection: close",
-                    "Content-Type: text/plain",
-                    "",
-                    "content1");
-
-                // Never close the socket to cause SocketTimeoutException during body read on client
-                // side.
-                return null;
-              });
-
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError2 =
-          executor.submit(
-              () -> {
-                Socket socket = server1.accept();
-                readHttpRequest(socket.getInputStream());
-
-                sendLines(
-                    socket,
-                    "HTTP/1.1 200 OK",
-                    "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                    "Connection: close",
-                    "Content-Type: text/plain",
-                    "",
-                    "content2");
-
-                // Never close the socket to cause SocketTimeoutException during body read on client
-                // side.
-                return null;
-              });
-
-      final List<URI> urls = new ArrayList<>(2);
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())));
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())));
-
-      Path outputFile = fs.getPath(workingDir.newFile().getAbsolutePath());
-      try {
-        download(
-            downloadManager,
-            urls,
-            Collections.emptyMap(),
-            Collections.emptyMap(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.empty(),
-            outputFile,
-            Collections.emptyMap(),
-            "testRepo");
-        fail("Should have thrown");
-      } catch (IOException expected) {
-        assertThat(expected.getSuppressed()).hasLength(2);
-
-        for (Throwable suppressed : expected.getSuppressed()) {
-          assertThat(suppressed).isInstanceOf(IOException.class);
-          assertThat(suppressed).hasCauseThat().isInstanceOf(SocketTimeoutException.class);
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadFrom1UrlOk() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 5",
+                                "",
+                                "hello"
+                            )
+                        }
+                        null
+                    })
+            val resultingFile: Path =
+                download(
+                    downloadManager,
+                    mutableListOf<URI?>(
+                        URI.create(String.format("http://localhost:%d/foo", server.getLocalPort()))
+                    ),
+                    mutableMapOf<String?, MutableList<String?>?>(),
+                    mutableMapOf<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                    Optional.empty<Checksum?>(),
+                    "testCanonicalId",
+                    Optional.empty<String?>(),
+                    fs.getPath(workingDir.newFile().getAbsolutePath()),
+                    mutableMapOf<String?, String?>(),
+                    "testRepo"
+                )
+            Truth.assertThat(String(FileSystemUtils.readContent(resultingFile), StandardCharsets.UTF_8))
+                .isEqualTo("hello")
         }
-      }
     }
-  }
 
-  @Test
-  public void downloadFrom2UrlsFirstTlsErrorSecondOk() throws IOException, InterruptedException {
-    try (ServerSocket server1 = new ServerSocket(0, 1, InetAddress.getByName(null));
-        ServerSocket server2 = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      Future<?> server1Future =
-          executor.submit(
-              () -> {
-                // Determine which port was assigned
-                try (Socket socket = server1.accept()) {
-                  // Write garbage to trigger SSL handshake failure on client
-                  socket.getOutputStream().write("Not SSL".getBytes(UTF_8));
-                }
-                return null;
-              });
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadFrom1UrlOk_specialCharInBasename() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 5",
+                                "",
+                                "hello"
+                            )
+                        }
+                        null
+                    })
+            val resultingFile: Path =
+                download(
+                    downloadManager,
+                    mutableListOf<URI?>(
+                        URI.create(
+                            String.format("http://localhost:%d/arch:ve.zip", server.getLocalPort())
+                        )
+                    ),
+                    mutableMapOf<String?, MutableList<String?>?>(),
+                    mutableMapOf<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                    Optional.empty<Checksum?>(),
+                    "testCanonicalId",
+                    Optional.of<String?>("zip"),
+                    fs.getPath(workingDir.newFolder().getAbsolutePath()),
+                    mutableMapOf<String?, String?>(),
+                    "testRepo"
+                )
 
-      Future<?> server2Future =
-          executor.submit(
-              () -> {
-                try (Socket socket = server2.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "",
-                      "content2");
-                }
-                return null;
-              });
-
-      final List<URI> urls = new ArrayList<>(2);
-      // Use https for the first one to trigger SSL handshake
-      urls.add(URI.create(String.format("https://localhost:%d/foo", server1.getLocalPort())));
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())));
-
-      Path resultingFile = fs.getPath(workingDir.newFile().getAbsolutePath());
-
-      httpDownloader.download(
-          urls,
-          ImmutableMap.of(),
-          StaticCredentials.EMPTY,
-          Optional.empty(),
-          "testCanonicalId",
-          resultingFile,
-          eventHandler,
-          ImmutableMap.of(),
-          Optional.empty(),
-          "testRepo");
-
-      try {
-        server1Future.get();
-        server2Future.get();
-      } catch (ExecutionException e) {
-        throw new IOException(e.getCause());
-      }
-
-      assertThat(new String(FileSystemUtils.readContent(resultingFile), UTF_8))
-          .isEqualTo("content2");
+            Truth.assertThat(String(FileSystemUtils.readContent(resultingFile), StandardCharsets.UTF_8))
+                .isEqualTo("hello")
+            assertThat(resultingFile.asFragment().getFileExtension()).isEqualTo("zip")
+            assertThat(resultingFile.asFragment().getBaseName()).doesNotContain(":")
+        }
     }
-  }
 
-  @Test
-  public void downloadOneUrl_ok() throws IOException, InterruptedException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "hello");
+    @Test
+    @Throws(Exception::class)
+    fun downloadFromOpaqueFileUrl_withExplicitOutput() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                val output: Path = invocationOnMock.getArgument<Path>(5, Path::class.java)
+                output.getOutputStream().use { outputStream ->
+                    ByteStreams.copy(ByteArrayInputStream(data), outputStream)
                 }
-                return null;
-              });
-      Path destination = fs.getPath(workingDir.newFile().getAbsolutePath());
-      httpDownloader.download(
-          Collections.singletonList(
-              URI.create(String.format("http://localhost:%d/foo", server.getLocalPort()))),
-          Collections.emptyMap(),
-          StaticCredentials.EMPTY,
-          Optional.empty(),
-          "testCanonicalId",
-          destination,
-          eventHandler,
-          Collections.emptyMap(),
-          Optional.empty(),
-          "context");
+                null
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
 
-      assertThat(new String(FileSystemUtils.readContent(destination), UTF_8)).isEqualTo("hello");
-    }
-  }
 
-  @Test
-  public void downloadOneUrl_notFound() throws IOException, InterruptedException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 404 Not Found",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "");
-                }
-                return null;
-              });
-      assertThrows(
-          IOException.class,
-          () ->
-              httpDownloader.download(
-                  Collections.singletonList(
-                      URI.create(String.format("http://localhost:%d/foo", server.getLocalPort()))),
-                  Collections.emptyMap(),
-                  StaticCredentials.EMPTY,
-                  Optional.empty(),
-                  "testCanonicalId",
-                  fs.getPath(workingDir.newFile().getAbsolutePath()),
-                  eventHandler,
-                  Collections.emptyMap(),
-                  Optional.empty(),
-                  "context"));
-    }
-  }
-
-  @Test
-  public void downloadTwoUrls_firstNotFoundAndSecondOk() throws IOException, InterruptedException {
-    try (ServerSocket server1 = new ServerSocket(0, 1, InetAddress.getByName(null));
-        ServerSocket server2 = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server1.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 404 Not Found",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "");
-                }
-                return null;
-              });
-
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError2 =
-          executor.submit(
-              () -> {
-                while (!executor.isShutdown()) {
-                  try (Socket socket = server2.accept()) {
-                    readHttpRequest(socket.getInputStream());
-                    sendLines(
-                        socket,
-                        "HTTP/1.1 200 OK",
-                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                        "Connection: close",
-                        "Content-Type: text/plain",
-                        "",
-                        "content2");
-                  }
-                }
-                return null;
-              });
-
-      final List<URI> urls = new ArrayList<>(2);
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())));
-      urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())));
-
-      Path destination = fs.getPath(workingDir.newFile().getAbsolutePath());
-      httpDownloader.download(
-          urls,
-          Collections.emptyMap(),
-          StaticCredentials.EMPTY,
-          Optional.empty(),
-          "testCanonicalId",
-          destination,
-          eventHandler,
-          Collections.emptyMap(),
-          Optional.empty(),
-          "context");
-
-      assertThat(new String(FileSystemUtils.readContent(destination), UTF_8)).isEqualTo("content2");
-    }
-  }
-
-  @Test
-  public void downloadAndReadOneUrl_ok() throws IOException, InterruptedException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "hello");
-                }
-                return null;
-              });
-
-      assertThat(
-              new String(
-                  httpDownloader.downloadAndReadOneUrl(
-                      URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
-                      StaticCredentials.EMPTY,
-                      Optional.empty(),
-                      eventHandler,
-                      Collections.emptyMap()),
-                  UTF_8))
-          .isEqualTo("hello");
-    }
-  }
-
-  @Test
-  public void downloadAndReadOneUrl_notFound() throws IOException, InterruptedException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 404 Not Found",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "");
-                }
-                return null;
-              });
-
-      assertThrows(
-          IOException.class,
-          () ->
-              httpDownloader.downloadAndReadOneUrl(
-                  URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
-                  StaticCredentials.EMPTY,
-                  Optional.empty(),
-                  eventHandler,
-                  Collections.emptyMap()));
-    }
-  }
-
-  @Test
-  public void downloadAndReadOneUrl_checksumProvided()
-      throws IOException, Checksum.InvalidChecksumException, InterruptedException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 5",
-                      "",
-                      "hello");
-                }
-                return null;
-              });
-
-      assertThat(
-              new String(
-                  httpDownloader.downloadAndReadOneUrl(
-                      URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
-                      StaticCredentials.EMPTY,
-                      Optional.of(
-                          Checksum.fromString(
-                              DownloadCache.KeyType.SHA256,
-                              Hashing.sha256().hashString("hello", UTF_8).toString())),
-                      eventHandler,
-                      ImmutableMap.of()),
-                  UTF_8))
-          .isEqualTo("hello");
-    }
-  }
-
-  @Test
-  public void downloadAndReadOneUrl_checksumMismatch() throws IOException {
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> possiblyIgnoredError =
-          executor.submit(
-              () -> {
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "Content-Type: text/plain",
-                      "Content-Length: 9",
-                      "",
-                      "malicious");
-                }
-                return null;
-              });
-
-      var e =
-          assertThrows(
-              UnrecoverableHttpException.class,
-              () ->
-                  httpDownloader.downloadAndReadOneUrl(
-                      URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
-                      StaticCredentials.EMPTY,
-                      Optional.of(
-                          Checksum.fromString(
-                              DownloadCache.KeyType.SHA256,
-                              Hashing.sha256().hashUnencodedChars("hello").toString())),
-                      eventHandler,
-                      ImmutableMap.of()));
-      assertThat(e).hasMessageThat().contains("Checksum was");
-    }
-  }
-
-  @Test
-  public void download_contentLengthMismatch_propagateErrorIfNotRetry() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    HttpDownloader httpDownloader = mock(HttpDownloader.class);
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    // do not retry
-    downloadManager.setRetries(0);
-    AtomicInteger times = new AtomicInteger(0);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  times.getAndIncrement();
-                  throw new ContentLengthMismatchException(0, data.length);
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    assertThrows(
-        ContentLengthMismatchException.class,
-        () ->
+        val result: Path =
             download(
                 downloadManager,
-                ImmutableList.of(URI.create("http://localhost")),
-                Collections.emptyMap(),
-                ImmutableMap.of(),
-                Optional.empty(),
+                ImmutableList.of<URI?>(URI.create("file:../vendored_lodash-4.17.21.tgz")),
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                Optional.empty<Checksum?>(),
                 "testCanonicalId",
-                Optional.empty(),
+                Optional.empty<String?>(),
                 fs.getPath(workingDir.newFile().getAbsolutePath()),
-                ImmutableMap.of(),
-                "testRepo"));
+                ImmutableMap.of<String?, String?>(),
+                "testRepo"
+            )
 
-    assertThat(times.get()).isEqualTo(1);
-  }
-
-  @Test
-  public void download_contentLengthMismatch_retries() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    HttpDownloader httpDownloader = mock(HttpDownloader.class);
-    int retries = 5;
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    downloadManager.setRetries(retries);
-    AtomicInteger times = new AtomicInteger(0);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  if (times.getAndIncrement() < 3) {
-                    throw new ContentLengthMismatchException(0, data.length);
-                  }
-                  Path output = invocationOnMock.getArgument(5, Path.class);
-                  try (OutputStream outputStream = output.getOutputStream()) {
-                    ByteStreams.copy(new ByteArrayInputStream(data), outputStream);
-                  }
-
-                  return null;
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    Path result =
-        download(
-            downloadManager,
-            ImmutableList.of(URI.create("http://localhost")),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.empty(),
-            fs.getPath(workingDir.newFile().getAbsolutePath()),
-            ImmutableMap.of(),
-            "testRepo");
-
-    assertThat(times.get()).isEqualTo(4);
-    String content = new String(ByteStreams.toByteArray(result.getInputStream()), UTF_8);
-    assertThat(content).isEqualTo("content");
-  }
-
-  @Test
-  public void download_contentLengthMismatchWithOtherErrors_retries() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    HttpDownloader httpDownloader = mock(HttpDownloader.class);
-    int retries = 5;
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    downloadManager.setRetries(retries);
-    AtomicInteger times = new AtomicInteger(0);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  if (times.getAndIncrement() < 3) {
-                    IOException e = new IOException();
-                    e.addSuppressed(new ContentLengthMismatchException(0, data.length));
-                    e.addSuppressed(new IOException());
-                    throw e;
-                  }
-                  Path output = invocationOnMock.getArgument(5, Path.class);
-                  try (OutputStream outputStream = output.getOutputStream()) {
-                    ByteStreams.copy(new ByteArrayInputStream(data), outputStream);
-                  }
-
-                  return null;
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    Path result =
-        download(
-            downloadManager,
-            ImmutableList.of(URI.create("http://localhost")),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.empty(),
-            fs.getPath(workingDir.newFile().getAbsolutePath()),
-            ImmutableMap.of(),
-            "testRepo");
-
-    assertThat(times.get()).isEqualTo(4);
-    String content = new String(result.getInputStream().readAllBytes(), UTF_8);
-    assertThat(content).isEqualTo("content");
-  }
-
-  @Test
-  public void download_socketException_retries() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    HttpDownloader httpDownloader = mock(HttpDownloader.class);
-    int retries = 5;
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    downloadManager.setRetries(retries);
-    AtomicInteger times = new AtomicInteger(0);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  if (times.getAndIncrement() < 3) {
-                    throw new SocketException("Connection reset");
-                  }
-                  Path output = invocationOnMock.getArgument(5, Path.class);
-                  try (OutputStream outputStream = output.getOutputStream()) {
-                    ByteStreams.copy(new ByteArrayInputStream(data), outputStream);
-                  }
-
-                  return null;
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    Path result =
-        download(
-            downloadManager,
-            ImmutableList.of(URI.create("http://localhost")),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.empty(),
-            fs.getPath(workingDir.newFile().getAbsolutePath()),
-            ImmutableMap.of(),
-            "testRepo");
-
-    assertThat(times.get()).isEqualTo(4);
-    String content = new String(ByteStreams.toByteArray(result.getInputStream()), UTF_8);
-    assertThat(content).isEqualTo("content");
-  }
-
-  @Test
-  public void download_socketExceptionWithOtherErrors_retries() throws Exception {
-    Downloader downloader = mock(Downloader.class);
-    HttpDownloader httpDownloader = mock(HttpDownloader.class);
-    int retries = 5;
-    DownloadManager downloadManager =
-        new DownloadManager(downloadCache, downloader, httpDownloader, eventHandler);
-    downloadManager.setRetries(retries);
-    AtomicInteger times = new AtomicInteger(0);
-    byte[] data = "content".getBytes(UTF_8);
-    doAnswer(
-            (Answer<Void>)
-                invocationOnMock -> {
-                  if (times.getAndIncrement() < 3) {
-                    IOException e = new IOException();
-                    e.addSuppressed(new SocketException("Connection reset"));
-                    e.addSuppressed(new IOException());
-                    throw e;
-                  }
-                  Path output = invocationOnMock.getArgument(5, Path.class);
-                  try (OutputStream outputStream = output.getOutputStream()) {
-                    ByteStreams.copy(new ByteArrayInputStream(data), outputStream);
-                  }
-
-                  return null;
-                })
-        .when(downloader)
-        .download(any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("testRepo"));
-
-    Path result =
-        download(
-            downloadManager,
-            ImmutableList.of(URI.create("http://localhost")),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            Optional.empty(),
-            "testCanonicalId",
-            Optional.empty(),
-            fs.getPath(workingDir.newFile().getAbsolutePath()),
-            ImmutableMap.of(),
-            "testRepo");
-
-    assertThat(times.get()).isEqualTo(4);
-    String content = new String(ByteStreams.toByteArray(result.getInputStream()), UTF_8);
-    assertThat(content).isEqualTo("content");
-  }
-
-  public Path download(
-      DownloadManager downloadManager,
-      List<URI> originalUrls,
-      Map<String, List<String>> headers,
-      Map<URI, Map<String, List<String>>> authHeaders,
-      Optional<Checksum> checksum,
-      String canonicalId,
-      Optional<String> type,
-      Path output,
-      Map<String, String> clientEnv,
-      String context)
-      throws IOException, InterruptedException {
-    Phaser downloadPhaser = new Phaser();
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Path> future =
-          downloadManager.startDownload(
-              executorService,
-              originalUrls,
-              headers,
-              authHeaders,
-              checksum,
-              canonicalId,
-              type,
-              output,
-              clientEnv,
-              context,
-              downloadPhaser,
-              /* mayHardlink= */ true);
-      Path downloadedPath = downloadManager.finalizeDownload(future);
-      // Should not be in the download phase.
-      assertThat(downloadPhaser.getPhase()).isNotEqualTo(0);
-      return downloadedPath;
+        Truth.assertThat(String(ByteStreams.toByteArray(result.getInputStream()), StandardCharsets.UTF_8))
+            .isEqualTo("content")
     }
-  }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadFromOpaqueFileUrl_withType() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                val output: Path = invocationOnMock.getArgument<Path>(5, Path::class.java)
+                output.getOutputStream().use { outputStream ->
+                    ByteStreams.copy(ByteArrayInputStream(data), outputStream)
+                }
+                null
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
+
+
+        val result: Path =
+            download(
+                downloadManager,
+                ImmutableList.of<URI?>(URI.create("file:../vendored_lodash-4.17.21.tgz")),
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                Optional.empty<Checksum?>(),
+                "testCanonicalId",
+                Optional.of<String?>("tgz"),
+                fs.getPath(workingDir.newFolder().getAbsolutePath()),
+                ImmutableMap.of<String?, String?>(),
+                "testRepo"
+            )
+
+        assertThat(result.getBaseName()).isEqualTo("vendored_lodash-4.17.21.tgz")
+        Truth.assertThat(String(ByteStreams.toByteArray(result.getInputStream()), StandardCharsets.UTF_8))
+            .isEqualTo("content")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadFromOpaqueFileUrl_withEscapedQuestionMarkAndType() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                val output: Path = invocationOnMock.getArgument<Path>(5, Path::class.java)
+                output.getOutputStream().use { outputStream ->
+                    ByteStreams.copy(ByteArrayInputStream(data), outputStream)
+                }
+                null
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
+
+
+        val result: Path =
+            download(
+                downloadManager,
+                ImmutableList.of<URI?>(URI.create("file:../foo%3Fbar.tgz")),
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                Optional.empty<Checksum?>(),
+                "testCanonicalId",
+                Optional.of<String?>("tgz"),
+                fs.getPath(workingDir.newFolder().getAbsolutePath()),
+                ImmutableMap.of<String?, String?>(),
+                "testRepo"
+            )
+
+        assertThat(result.getBaseName()).isEqualTo("foo_bar.tgz")
+        Truth.assertThat(String(ByteStreams.toByteArray(result.getInputStream()), StandardCharsets.UTF_8))
+            .isEqualTo("content")
+    }
+
+    @Test
+    fun getCandidateFileNames_opaqueFileUrlWithEscapedQuestionMark() {
+        assertThat(
+            DownloadManager.getCandidateFileNames(
+                URI.create("file:../foo%3Fbar.tgz"), fs.getPath("/tmp/foo_bar.tgz")
+            )
+        )
+            .containsExactly("foo?bar.tgz", "foo_bar.tgz")
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadFrom2UrlsFirstOk() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server1 ->
+            ServerSocket(0, 1, InetAddress.getByName(null)).use { server2 ->
+                @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            while (!executor.isShutdown()) {
+                                server1.accept().use { socket ->
+                                    readHttpRequest(socket.getInputStream())
+                                    DownloaderTestUtils.sendLines(
+                                        socket,
+                                        "HTTP/1.1 200 OK",
+                                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                        "Connection: close",
+                                        "Content-Type: text/plain",
+                                        "",
+                                        "content1"
+                                    )
+                                }
+                            }
+                            null
+                        })
+                @Suppress("unused") val possiblyIgnoredError2: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            while (!executor.isShutdown()) {
+                                server2.accept().use { socket ->
+                                    readHttpRequest(socket.getInputStream())
+                                    DownloaderTestUtils.sendLines(
+                                        socket,
+                                        "HTTP/1.1 200 OK",
+                                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                        "Connection: close",
+                                        "Content-Type: text/plain",
+                                        "",
+                                        "content2"
+                                    )
+                                }
+                            }
+                            null
+                        })
+
+                val urls: MutableList<URI?> = ArrayList<URI?>(2)
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())))
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())))
+
+                val resultingFile: Path =
+                    download(
+                        downloadManager,
+                        urls,
+                        mutableMapOf<String?, MutableList<String?>?>(),
+                        mutableMapOf<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                        Optional.empty<Checksum?>(),
+                        "testCanonicalId",
+                        Optional.empty<String?>(),
+                        fs.getPath(workingDir.newFile().getAbsolutePath()),
+                        mutableMapOf<String?, String?>(),
+                        "testRepo"
+                    )
+                Truth.assertThat(String(FileSystemUtils.readContent(resultingFile), StandardCharsets.UTF_8))
+                    .isEqualTo("content1")
+            }
+        }
+    }
+
+    @Ignore("b/182150157")
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadFrom2UrlsFirstSocketTimeoutOnBodyReadSecondOk() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server1 ->
+            ServerSocket(0, 1, InetAddress.getByName(null)).use { server2 ->
+                @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            val socket: Socket = server1.accept()
+                            readHttpRequest(socket.getInputStream())
+
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "",
+                                "content1"
+                            )
+                            null
+                        })
+                @Suppress("unused") val possiblyIgnoredError2: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            while (!executor.isShutdown()) {
+                                server2.accept().use { socket ->
+                                    readHttpRequest(socket.getInputStream())
+                                    DownloaderTestUtils.sendLines(
+                                        socket,
+                                        "HTTP/1.1 200 OK",
+                                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                        "Connection: close",
+                                        "Content-Type: text/plain",
+                                        "",
+                                        "content2"
+                                    )
+                                }
+                            }
+                            null
+                        })
+
+                val urls: MutableList<URI?> = ArrayList<URI?>(2)
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())))
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())))
+
+                val resultingFile: Path =
+                    download(
+                        downloadManager,
+                        urls,
+                        mutableMapOf<String?, MutableList<String?>?>(),
+                        mutableMapOf<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                        Optional.empty<Checksum?>(),
+                        "testCanonicalId",
+                        Optional.empty<String?>(),
+                        fs.getPath(workingDir.newFile().getAbsolutePath()),
+                        mutableMapOf<String?, String?>(),
+                        "testRepo"
+                    )
+                Truth.assertThat(String(FileSystemUtils.readContent(resultingFile), StandardCharsets.UTF_8))
+                    .isEqualTo("content2")
+            }
+        }
+    }
+
+    @Ignore("b/182150157")
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadFrom2UrlsBothSocketTimeoutDuringBodyRead() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server1 ->
+            ServerSocket(0, 1, InetAddress.getByName(null)).use { server2 ->
+                @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            val socket: Socket = server1.accept()
+                            readHttpRequest(socket.getInputStream())
+
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "",
+                                "content1"
+                            )
+                            null
+                        })
+                @Suppress("unused") val possiblyIgnoredError2: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            val socket: Socket = server1.accept()
+                            readHttpRequest(socket.getInputStream())
+
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "",
+                                "content2"
+                            )
+                            null
+                        })
+
+                val urls: MutableList<URI?> = ArrayList<URI?>(2)
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())))
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())))
+
+                val outputFile: Path = fs.getPath(workingDir.newFile().getAbsolutePath())
+                try {
+                    download(
+                        downloadManager,
+                        urls,
+                        mutableMapOf<String?, MutableList<String?>?>(),
+                        mutableMapOf<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                        Optional.empty<Checksum?>(),
+                        "testCanonicalId",
+                        Optional.empty<String?>(),
+                        outputFile,
+                        mutableMapOf<String?, String?>(),
+                        "testRepo"
+                    )
+                    Assert.fail("Should have thrown")
+                } catch (expected: IOException) {
+                    Truth.assertThat<Throwable?>(expected.getSuppressed()).hasLength(2)
+
+                    for (suppressed in expected.getSuppressed()) {
+                        Truth.assertThat(suppressed).isInstanceOf(IOException::class.java)
+                        Truth.assertThat(suppressed).hasCauseThat().isInstanceOf(SocketTimeoutException::class.java)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadFrom2UrlsFirstTlsErrorSecondOk() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server1 ->
+            ServerSocket(0, 1, InetAddress.getByName(null)).use { server2 ->
+                val server1Future: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            server1.accept().use { socket ->
+                                // Write garbage to trigger SSL handshake failure on client
+                                socket.getOutputStream().write("Not SSL".toByteArray(StandardCharsets.UTF_8))
+                            }
+                            null
+                        })
+                val server2Future: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            server2.accept().use { socket ->
+                                readHttpRequest(socket.getInputStream())
+                                DownloaderTestUtils.sendLines(
+                                    socket,
+                                    "HTTP/1.1 200 OK",
+                                    "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                    "Connection: close",
+                                    "Content-Type: text/plain",
+                                    "",
+                                    "content2"
+                                )
+                            }
+                            null
+                        })
+
+                val urls: MutableList<URI?> = ArrayList<URI?>(2)
+                // Use https for the first one to trigger SSL handshake
+                urls.add(URI.create(String.format("https://localhost:%d/foo", server1.getLocalPort())))
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())))
+
+                val resultingFile: Path = fs.getPath(workingDir.newFile().getAbsolutePath())
+
+                httpDownloader.download(
+                    urls,
+                    ImmutableMap.of<String?, MutableList<String?>?>(),
+                    StaticCredentials.EMPTY,
+                    Optional.empty<Checksum?>(),
+                    "testCanonicalId",
+                    resultingFile,
+                    eventHandler,
+                    ImmutableMap.of<String?, String?>(),
+                    Optional.empty<String?>(),
+                    "testRepo"
+                )
+
+                try {
+                    server1Future.get()
+                    server2Future.get()
+                } catch (e: ExecutionException) {
+                    throw IOException(e.cause)
+                }
+                Truth.assertThat(String(FileSystemUtils.readContent(resultingFile), StandardCharsets.UTF_8))
+                    .isEqualTo("content2")
+            }
+        }
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadOneUrl_ok() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 5",
+                                "",
+                                "hello"
+                            )
+                        }
+                        null
+                    })
+            val destination: Path = fs.getPath(workingDir.newFile().getAbsolutePath())
+            httpDownloader.download(
+                mutableListOf<URI>(
+                    URI.create(String.format("http://localhost:%d/foo", server.getLocalPort()))
+                ),
+                mutableMapOf<String?, MutableList<String?>?>(),
+                StaticCredentials.EMPTY,
+                Optional.empty<Checksum?>(),
+                "testCanonicalId",
+                destination,
+                eventHandler,
+                mutableMapOf<String?, String?>(),
+                Optional.empty<String?>(),
+                "context"
+            )
+            Truth.assertThat(String(FileSystemUtils.readContent(destination), StandardCharsets.UTF_8))
+                .isEqualTo("hello")
+        }
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadOneUrl_notFound() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 404 Not Found",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 5",
+                                "",
+                                ""
+                            )
+                        }
+                        null
+                    })
+            Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                ThrowingRunnable {
+                    httpDownloader.download(
+                        mutableListOf<URI>(
+                            URI.create(String.format("http://localhost:%d/foo", server.getLocalPort()))
+                        ),
+                        mutableMapOf<String?, MutableList<String?>?>(),
+                        StaticCredentials.EMPTY,
+                        Optional.empty<Checksum?>(),
+                        "testCanonicalId",
+                        fs.getPath(workingDir.newFile().getAbsolutePath()),
+                        eventHandler,
+                        mutableMapOf<String?, String?>(),
+                        Optional.empty<String?>(),
+                        "context"
+                    )
+                })
+        }
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadTwoUrls_firstNotFoundAndSecondOk() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server1 ->
+            ServerSocket(0, 1, InetAddress.getByName(null)).use { server2 ->
+                @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            server1.accept().use { socket ->
+                                readHttpRequest(socket.getInputStream())
+                                DownloaderTestUtils.sendLines(
+                                    socket,
+                                    "HTTP/1.1 404 Not Found",
+                                    "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                    "Connection: close",
+                                    "Content-Type: text/plain",
+                                    "Content-Length: 5",
+                                    "",
+                                    ""
+                                )
+                            }
+                            null
+                        })
+                @Suppress("unused") val possiblyIgnoredError2: Future<*> =
+                    executor.submit<Any?>(
+                        Callable {
+                            while (!executor.isShutdown()) {
+                                server2.accept().use { socket ->
+                                    readHttpRequest(socket.getInputStream())
+                                    DownloaderTestUtils.sendLines(
+                                        socket,
+                                        "HTTP/1.1 200 OK",
+                                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                        "Connection: close",
+                                        "Content-Type: text/plain",
+                                        "",
+                                        "content2"
+                                    )
+                                }
+                            }
+                            null
+                        })
+
+                val urls: MutableList<URI?> = ArrayList<URI?>(2)
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server1.getLocalPort())))
+                urls.add(URI.create(String.format("http://localhost:%d/foo", server2.getLocalPort())))
+
+                val destination: Path = fs.getPath(workingDir.newFile().getAbsolutePath())
+                httpDownloader.download(
+                    urls,
+                    mutableMapOf<String?, MutableList<String?>?>(),
+                    StaticCredentials.EMPTY,
+                    Optional.empty<Checksum?>(),
+                    "testCanonicalId",
+                    destination,
+                    eventHandler,
+                    mutableMapOf<String?, String?>(),
+                    Optional.empty<String?>(),
+                    "context"
+                )
+                Truth.assertThat(String(FileSystemUtils.readContent(destination), StandardCharsets.UTF_8))
+                    .isEqualTo("content2")
+            }
+        }
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadAndReadOneUrl_ok() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 5",
+                                "",
+                                "hello"
+                            )
+                        }
+                        null
+                    })
+            Truth.assertThat(
+                String(
+                    httpDownloader.downloadAndReadOneUrl(
+                        URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
+                        StaticCredentials.EMPTY,
+                        Optional.empty<Checksum?>(),
+                        eventHandler,
+                        mutableMapOf<String?, String?>()
+                    ),
+                    StandardCharsets.UTF_8
+                )
+            )
+                .isEqualTo("hello")
+        }
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun downloadAndReadOneUrl_notFound() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 404 Not Found",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 5",
+                                "",
+                                ""
+                            )
+                        }
+                        null
+                    })
+            Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                ThrowingRunnable {
+                    httpDownloader.downloadAndReadOneUrl(
+                        URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
+                        StaticCredentials.EMPTY,
+                        Optional.empty<Checksum?>(),
+                        eventHandler,
+                        mutableMapOf<String?, String?>()
+                    )
+                })
+        }
+    }
+
+    @Test
+    @Throws(IOException::class, InvalidChecksumException::class, InterruptedException::class)
+    fun downloadAndReadOneUrl_checksumProvided() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 5",
+                                "",
+                                "hello"
+                            )
+                        }
+                        null
+                    })
+            Truth.assertThat(
+                String(
+                    httpDownloader.downloadAndReadOneUrl(
+                        URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
+                        StaticCredentials.EMPTY,
+                        Optional.of<T?>(
+                            Checksum.fromString(
+                                DownloadCache.KeyType.SHA256,
+                                Hashing.sha256().hashString("hello", StandardCharsets.UTF_8).toString()
+                            )
+                        ),
+                        eventHandler,
+                        ImmutableMap.of<String?, String?>()
+                    ),
+                    StandardCharsets.UTF_8
+                )
+            )
+                .isEqualTo("hello")
+        }
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun downloadAndReadOneUrl_checksumMismatch() {
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val possiblyIgnoredError: Future<*> =
+                executor.submit<Any?>(
+                    Callable {
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "Content-Type: text/plain",
+                                "Content-Length: 9",
+                                "",
+                                "malicious"
+                            )
+                        }
+                        null
+                    })
+            val e =
+                Assert.assertThrows<UnrecoverableHttpException?>(
+                    UnrecoverableHttpException::class.java,
+                    ThrowingRunnable {
+                        httpDownloader.downloadAndReadOneUrl(
+                            URI.create(String.format("http://localhost:%d/foo", server.getLocalPort())),
+                            StaticCredentials.EMPTY,
+                            Optional.of<T?>(
+                                Checksum.fromString(
+                                    DownloadCache.KeyType.SHA256,
+                                    Hashing.sha256().hashUnencodedChars("hello").toString()
+                                )
+                            ),
+                            eventHandler,
+                            ImmutableMap.of<String?, String?>()
+                        )
+                    })
+            Truth.assertThat(e).hasMessageThat().contains("Checksum was")
+        }
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun download_contentLengthMismatch_propagateErrorIfNotRetry() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val httpDownloader: HttpDownloader
+        HttpDownloader > Mockito.mock<HttpDownloader?>(HttpDownloader::class.java)
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        // do not retry
+        downloadManager.setRetries(0)
+        val times: AtomicInteger = AtomicInteger(0)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                times.getAndIncrement()
+                throw ContentLengthMismatchException(0, data.size.toLong())
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
+
+
+        ContentLengthMismatchException > Assert.assertThrows<ContentLengthMismatchException?>(
+            ContentLengthMismatchException::class.java,
+            ThrowingRunnable {
+                download(
+                    downloadManager,
+                    ImmutableList.of<URI?>(URI.create("http://localhost")),
+                    mutableMapOf<String?, MutableList<String?>?>(),
+                    ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                    Optional.empty<Checksum?>(),
+                    "testCanonicalId",
+                    Optional.empty<String?>(),
+                    fs.getPath(workingDir.newFile().getAbsolutePath()),
+                    ImmutableMap.of<String?, String?>(),
+                    "testRepo"
+                )
+            })
+
+        Truth.assertThat(times.get()).isEqualTo(1)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun download_contentLengthMismatch_retries() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val httpDownloader: HttpDownloader
+        HttpDownloader > Mockito.mock<HttpDownloader?>(HttpDownloader::class.java)
+        val retries = 5
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        downloadManager.setRetries(retries)
+        val times: AtomicInteger = AtomicInteger(0)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                if (times.getAndIncrement() < 3) {
+                    throw ContentLengthMismatchException(0, data.size.toLong())
+                }
+                val output: Path = invocationOnMock.getArgument<Path>(5, Path::class.java)
+                output.getOutputStream().use { outputStream ->
+                    ByteStreams.copy(ByteArrayInputStream(data), outputStream)
+                }
+                null
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
+
+
+        val result: Path =
+            download(
+                downloadManager,
+                ImmutableList.of<URI?>(URI.create("http://localhost")),
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                Optional.empty<Checksum?>(),
+                "testCanonicalId",
+                Optional.empty<String?>(),
+                fs.getPath(workingDir.newFile().getAbsolutePath()),
+                ImmutableMap.of<String?, String?>(),
+                "testRepo"
+            )
+
+        Truth.assertThat(times.get()).isEqualTo(4)
+        val content = String(ByteStreams.toByteArray(result.getInputStream()), StandardCharsets.UTF_8)
+        Truth.assertThat(content).isEqualTo("content")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun download_contentLengthMismatchWithOtherErrors_retries() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val httpDownloader: HttpDownloader
+        HttpDownloader > Mockito.mock<HttpDownloader?>(HttpDownloader::class.java)
+        val retries = 5
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        downloadManager.setRetries(retries)
+        val times: AtomicInteger = AtomicInteger(0)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                if (times.getAndIncrement() < 3) {
+                    val e: IOException = IOException()
+                    e.addSuppressed(ContentLengthMismatchException(0, data.size.toLong()))
+                    e.addSuppressed(IOException())
+                    throw e
+                }
+                val output: Path = invocationOnMock.getArgument<Path>(5, Path::class.java)
+                output.getOutputStream().use { outputStream ->
+                    ByteStreams.copy(ByteArrayInputStream(data), outputStream)
+                }
+                null
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
+
+
+        val result: Path =
+            download(
+                downloadManager,
+                ImmutableList.of<URI?>(URI.create("http://localhost")),
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                Optional.empty<Checksum?>(),
+                "testCanonicalId",
+                Optional.empty<String?>(),
+                fs.getPath(workingDir.newFile().getAbsolutePath()),
+                ImmutableMap.of<String?, String?>(),
+                "testRepo"
+            )
+
+        Truth.assertThat(times.get()).isEqualTo(4)
+        val content = String(result.getInputStream().readAllBytes(), StandardCharsets.UTF_8)
+        Truth.assertThat(content).isEqualTo("content")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun download_socketException_retries() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val httpDownloader: HttpDownloader
+        HttpDownloader > Mockito.mock<HttpDownloader?>(HttpDownloader::class.java)
+        val retries = 5
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        downloadManager.setRetries(retries)
+        val times: AtomicInteger = AtomicInteger(0)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                if (times.getAndIncrement() < 3) {
+                    throw SocketException("Connection reset")
+                }
+                val output: Path = invocationOnMock.getArgument<Path>(5, Path::class.java)
+                output.getOutputStream().use { outputStream ->
+                    ByteStreams.copy(ByteArrayInputStream(data), outputStream)
+                }
+                null
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
+
+
+        val result: Path =
+            download(
+                downloadManager,
+                ImmutableList.of<URI?>(URI.create("http://localhost")),
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                Optional.empty<Checksum?>(),
+                "testCanonicalId",
+                Optional.empty<String?>(),
+                fs.getPath(workingDir.newFile().getAbsolutePath()),
+                ImmutableMap.of<String?, String?>(),
+                "testRepo"
+            )
+
+        Truth.assertThat(times.get()).isEqualTo(4)
+        val content = String(ByteStreams.toByteArray(result.getInputStream()), StandardCharsets.UTF_8)
+        Truth.assertThat(content).isEqualTo("content")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun download_socketExceptionWithOtherErrors_retries() {
+        val downloader: Downloader
+        Downloader > Mockito.mock<Downloader?>(Downloader::class.java)
+        val httpDownloader: HttpDownloader
+        HttpDownloader > Mockito.mock<HttpDownloader?>(HttpDownloader::class.java)
+        val retries = 5
+        val downloadManager =
+            DownloadManager(downloadCache, downloader, httpDownloader, eventHandler)
+        downloadManager.setRetries(retries)
+        val times: AtomicInteger = AtomicInteger(0)
+        val data: ByteArray = "content".toByteArray(StandardCharsets.UTF_8)
+        Mockito.doAnswer(
+            Answer { invocationOnMock: InvocationOnMock? ->
+                if (times.getAndIncrement() < 3) {
+                    val e: IOException = IOException()
+                    e.addSuppressed(SocketException("Connection reset"))
+                    e.addSuppressed(IOException())
+                    throw e
+                }
+                val output: Path = invocationOnMock.getArgument<Path>(5, Path::class.java)
+                output.getOutputStream().use { outputStream ->
+                    ByteStreams.copy(ByteArrayInputStream(data), outputStream)
+                }
+                null
+            } as Answer<Void?>)
+            .`when`<Downloader?>(downloader)
+            .download(TODO("Cannot convert element")) < List < URI shr ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.any<Any?>()
+        Path > ArgumentMatchers.any<Any?>()
+        ExtendedEventHandler > ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        ArgumentMatchers.any<Any?>()
+        String > ArgumentMatchers.eq<String?>("testRepo")
+
+
+        val result: Path =
+            download(
+                downloadManager,
+                ImmutableList.of<URI?>(URI.create("http://localhost")),
+                ImmutableMap.of<String?, MutableList<String?>?>(),
+                ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(),
+                Optional.empty<Checksum?>(),
+                "testCanonicalId",
+                Optional.empty<String?>(),
+                fs.getPath(workingDir.newFile().getAbsolutePath()),
+                ImmutableMap.of<String?, String?>(),
+                "testRepo"
+            )
+
+        Truth.assertThat(times.get()).isEqualTo(4)
+        val content = String(ByteStreams.toByteArray(result.getInputStream()), StandardCharsets.UTF_8)
+        Truth.assertThat(content).isEqualTo("content")
+    }
+
+    @Throws(IOException::class, InterruptedException::class)
+    fun download(
+        downloadManager: DownloadManager,
+        originalUrls: MutableList<URI?>,
+        headers: MutableMap<String?, MutableList<String?>?>?,
+        authHeaders: MutableMap<URI?, MutableMap<String?, MutableList<String?>?>?>?,
+        checksum: Optional<Checksum?>,
+        canonicalId: String?,
+        type: Optional<String?>,
+        output: Path,
+        clientEnv: MutableMap<String?, String?>?,
+        context: String?
+    ): Path {
+        val downloadPhaser: Phaser = Phaser()
+        Executors.newVirtualThreadPerTaskExecutor().use { executorService ->
+            val future: Future<Path?>? =
+                downloadManager.startDownload(
+                    executorService,
+                    originalUrls,
+                    headers,
+                    authHeaders,
+                    checksum,
+                    canonicalId,
+                    type,
+                    output,
+                    clientEnv,
+                    context,
+                    downloadPhaser,  /* mayHardlink= */
+                    true
+                )
+            val downloadedPath: Path = downloadManager.finalizeDownload(future)
+            // Should not be in the download phase.
+            Truth.assertThat(downloadPhaser.getPhase()).isNotEqualTo(0)
+            return downloadedPath
+        }
+    }
 }

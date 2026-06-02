@@ -11,183 +11,238 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.bzlmod.modcommand
 
-package com.google.devtools.build.lib.bazel.bzlmod.modcommand;
+import com.google.common.collect.ImmutableBiMap
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import java.util.*
+import java.util.function.Function
 
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.AugmentedModuleBuilder.buildAugmentedModule;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static org.junit.Assert.assertThrows;
+@RunWith(JUnit4::class)
+class ExtensionArgTest {
+    @Test
+    @Throws(Exception::class)
+    fun converter() {
+        Truth.assertThat(ExtensionArgConverter.INSTANCE.convert("<root>//abc:haha.bzl%ext"))
+            .isEqualTo(
+                ExtensionArg.create(
+                    SpecificVersionOfModule.create(ModuleKey.ROOT), "//abc:haha.bzl", "ext"
+                )
+            )
+        Truth.assertThat(ExtensionArgConverter.INSTANCE.convert("@@abc//:def.bzl%ghi"))
+            .isEqualTo(
+                ExtensionArg.create(
+                    CanonicalRepoName.create(RepositoryName.createUnvalidated("abc")),
+                    "//:def.bzl",
+                    "ghi"
+                )
+            )
+        Truth.assertThat(ExtensionArgConverter.INSTANCE.convert("@abc//:def.bzl%ghi"))
+            .isEqualTo(ExtensionArg.create(ApparentRepoName.create("abc"), "//:def.bzl", "ghi"))
+        Truth.assertThat(ExtensionArgConverter.INSTANCE.convert("abc//:def.bzl%ghi"))
+            .isEqualTo(ExtensionArg.create(AllVersionsOfModule.create("abc"), "//:def.bzl", "ghi"))
+        Truth.assertThat(ExtensionArgConverter.INSTANCE.convert("a@b//:def.bzl%ghi"))
+            .isEqualTo(
+                ExtensionArg.create(
+                    SpecificVersionOfModule.create(BzlmodTestUtil.createModuleKey("a", "b")), "//:def.bzl", "ghi"
+                )
+            )
 
-import com.google.common.collect.ImmutableBiMap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleInspectorValue.AugmentedModule;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ExtensionArg.ExtensionArgConverter;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModuleArg.AllVersionsOfModule;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModuleArg.ApparentRepoName;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModuleArg.CanonicalRepoName;
-import com.google.devtools.build.lib.bazel.bzlmod.modcommand.ModuleArg.SpecificVersionOfModule;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.Optional;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        Assert.assertThrows<T?>(
+            OptionsParsingException::class.java,
+            ThrowingRunnable { ExtensionArgConverter.INSTANCE.convert("abc@//:def.bzl%ghi") })
+        Assert.assertThrows<T?>(
+            OptionsParsingException::class.java,
+            ThrowingRunnable { ExtensionArgConverter.INSTANCE.convert("@_abc//:def.bzl%ghi") })
+        Assert.assertThrows<T?>(
+            OptionsParsingException::class.java, ThrowingRunnable { ExtensionArgConverter.INSTANCE.convert("abc") })
+        Assert.assertThrows<T?>(
+            OptionsParsingException::class.java, ThrowingRunnable { ExtensionArgConverter.INSTANCE.convert("abc%def") })
+        Assert.assertThrows<T?>(
+            OptionsParsingException::class.java,
+            ThrowingRunnable { ExtensionArgConverter.INSTANCE.convert("@_abc%ghi//def") })
+    }
 
-@RunWith(JUnit4.class)
-public class ExtensionArgTest {
-  @Test
-  public void converter() throws Exception {
-    assertThat(ExtensionArgConverter.INSTANCE.convert("<root>//abc:haha.bzl%ext"))
-        .isEqualTo(
-            ExtensionArg.create(
-                SpecificVersionOfModule.create(ModuleKey.ROOT), "//abc:haha.bzl", "ext"));
-    assertThat(ExtensionArgConverter.INSTANCE.convert("@@abc//:def.bzl%ghi"))
-        .isEqualTo(
-            ExtensionArg.create(
-                CanonicalRepoName.create(RepositoryName.createUnvalidated("abc")),
-                "//:def.bzl",
-                "ghi"));
-    assertThat(ExtensionArgConverter.INSTANCE.convert("@abc//:def.bzl%ghi"))
-        .isEqualTo(ExtensionArg.create(ApparentRepoName.create("abc"), "//:def.bzl", "ghi"));
-    assertThat(ExtensionArgConverter.INSTANCE.convert("abc//:def.bzl%ghi"))
-        .isEqualTo(ExtensionArg.create(AllVersionsOfModule.create("abc"), "//:def.bzl", "ghi"));
-    assertThat(ExtensionArgConverter.INSTANCE.convert("a@b//:def.bzl%ghi"))
-        .isEqualTo(
-            ExtensionArg.create(
-                SpecificVersionOfModule.create(createModuleKey("a", "b")), "//:def.bzl", "ghi"));
+    @Test
+    @Throws(Exception::class)
+    fun resolve_good() {
+        val key: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "1.0")
+        val modulesIndex: ImmutableMap<String?, ImmutableSet<ModuleKey?>?> =
+            ImmutableMap.of<String?, ImmutableSet<ModuleKey?>?>(
+                "",
+                ImmutableSet.of<ModuleKey?>(ModuleKey.ROOT),
+                "foo",
+                ImmutableSet.of<ModuleKey?>(key)
+            )
+        val depGraph: ImmutableMap<ModuleKey?, AugmentedModule?> =
+            ImmutableMap.builder<ModuleKey?, AugmentedModule?>()
+                .put(
+                    AugmentedModuleBuilder.Companion.buildAugmentedModule("", "").addDep("fred", "foo", "1.0")
+                        .buildEntry()
+                )
+                .put(
+                    AugmentedModuleBuilder.Companion.buildAugmentedModule("foo", "1.0")
+                        .addStillDependant(ModuleKey.ROOT).buildEntry()
+                )
+                .buildOrThrow()
+        val moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?> =
+            depGraph.keys.stream()
+                .collect(
+                    ImmutableMap.toImmutableMap<Any?, Any?, Any?>(
+                        Function { k: Any? -> k },
+                        ModuleKey::getCanonicalRepoNameWithVersion
+                    )
+                )
+        val baseModuleDeps: ImmutableBiMap<String?, ModuleKey?> = ImmutableBiMap.of<String?, ModuleKey?>("fred", key)
+        val baseModuleUnusedDeps: ImmutableBiMap<String?, ModuleKey?> = ImmutableBiMap.of<String?, ModuleKey?>()
 
-    assertThrows(
-        OptionsParsingException.class,
-        () -> ExtensionArgConverter.INSTANCE.convert("abc@//:def.bzl%ghi"));
-    assertThrows(
-        OptionsParsingException.class,
-        () -> ExtensionArgConverter.INSTANCE.convert("@_abc//:def.bzl%ghi"));
-    assertThrows(
-        OptionsParsingException.class, () -> ExtensionArgConverter.INSTANCE.convert("abc"));
-    assertThrows(
-        OptionsParsingException.class, () -> ExtensionArgConverter.INSTANCE.convert("abc%def"));
-    assertThrows(
-        OptionsParsingException.class,
-        () -> ExtensionArgConverter.INSTANCE.convert("@_abc%ghi//def"));
-  }
-
-  @Test
-  public void resolve_good() throws Exception {
-    ModuleKey key = createModuleKey("foo", "1.0");
-    ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex =
-        ImmutableMap.of("", ImmutableSet.of(ModuleKey.ROOT), "foo", ImmutableSet.of(key));
-    ImmutableMap<ModuleKey, AugmentedModule> depGraph =
-        ImmutableMap.<ModuleKey, AugmentedModule>builder()
-            .put(buildAugmentedModule("", "").addDep("fred", "foo", "1.0").buildEntry())
-            .put(buildAugmentedModule("foo", "1.0").addStillDependant(ModuleKey.ROOT).buildEntry())
-            .buildOrThrow();
-    ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames =
-        depGraph.keySet().stream()
-            .collect(toImmutableMap(k -> k, ModuleKey::getCanonicalRepoNameWithVersion));
-    ImmutableBiMap<String, ModuleKey> baseModuleDeps = ImmutableBiMap.of("fred", key);
-    ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps = ImmutableBiMap.of();
-
-    assertThat(
+        assertThat(
             ExtensionArg.create(SpecificVersionOfModule.create(key), "//:abc.bzl", "def")
                 .resolveToExtensionId(
                     modulesIndex,
                     depGraph,
                     moduleKeyToCanonicalNames,
                     baseModuleDeps,
-                    baseModuleUnusedDeps))
-        .isEqualTo(
-            ModuleExtensionId.create(
-                Label.parseCanonical("@@foo+1.0//:abc.bzl"), "def", Optional.empty()));
-  }
+                    baseModuleUnusedDeps
+                )
+        )
+            .isEqualTo(
+                ModuleExtensionId.create(
+                    Label.parseCanonical("@@foo+1.0//:abc.bzl"), "def", Optional.empty<T?>()
+                )
+            )
+    }
 
-  @Test
-  public void resolve_badLabel() throws Exception {
-    ModuleKey key = createModuleKey("foo", "1.0");
-    ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex =
-        ImmutableMap.of("", ImmutableSet.of(ModuleKey.ROOT), "foo", ImmutableSet.of(key));
-    ImmutableMap<ModuleKey, AugmentedModule> depGraph =
-        ImmutableMap.<ModuleKey, AugmentedModule>builder()
-            .put(buildAugmentedModule("", "").addDep("fred", "foo", "1.0").buildEntry())
-            .put(buildAugmentedModule("foo", "1.0").addStillDependant(ModuleKey.ROOT).buildEntry())
-            .buildOrThrow();
-    ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames =
-        depGraph.keySet().stream()
-            .collect(toImmutableMap(k -> k, ModuleKey::getCanonicalRepoNameWithVersion));
-    ImmutableBiMap<String, ModuleKey> baseModuleDeps = ImmutableBiMap.of("fred", key);
-    ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps = ImmutableBiMap.of();
+    @Test
+    @Throws(Exception::class)
+    fun resolve_badLabel() {
+        val key: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "1.0")
+        val modulesIndex: ImmutableMap<String?, ImmutableSet<ModuleKey?>?> =
+            ImmutableMap.of<String?, ImmutableSet<ModuleKey?>?>(
+                "",
+                ImmutableSet.of<ModuleKey?>(ModuleKey.ROOT),
+                "foo",
+                ImmutableSet.of<ModuleKey?>(key)
+            )
+        val depGraph: ImmutableMap<ModuleKey?, AugmentedModule?> =
+            ImmutableMap.builder<ModuleKey?, AugmentedModule?>()
+                .put(
+                    AugmentedModuleBuilder.Companion.buildAugmentedModule("", "").addDep("fred", "foo", "1.0")
+                        .buildEntry()
+                )
+                .put(
+                    AugmentedModuleBuilder.Companion.buildAugmentedModule("foo", "1.0")
+                        .addStillDependant(ModuleKey.ROOT).buildEntry()
+                )
+                .buildOrThrow()
+        val moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?> =
+            depGraph.keys.stream()
+                .collect(
+                    ImmutableMap.toImmutableMap<Any?, Any?, Any?>(
+                        Function { k: Any? -> k },
+                        ModuleKey::getCanonicalRepoNameWithVersion
+                    )
+                )
+        val baseModuleDeps: ImmutableBiMap<String?, ModuleKey?> = ImmutableBiMap.of<String?, ModuleKey?>("fred", key)
+        val baseModuleUnusedDeps: ImmutableBiMap<String?, ModuleKey?> = ImmutableBiMap.of<String?, ModuleKey?>()
 
-    assertThrows(
-        InvalidArgumentException.class,
-        () ->
-            ExtensionArg.create(SpecificVersionOfModule.create(key), "/:def.bzl", "ext")
-                .resolveToExtensionId(
-                    modulesIndex,
-                    depGraph,
-                    moduleKeyToCanonicalNames,
-                    baseModuleDeps,
-                    baseModuleUnusedDeps));
-    assertThrows(
-        InvalidArgumentException.class,
-        () ->
-            ExtensionArg.create(SpecificVersionOfModule.create(key), "///////", "ext")
-                .resolveToExtensionId(
-                    modulesIndex,
-                    depGraph,
-                    moduleKeyToCanonicalNames,
-                    baseModuleDeps,
-                    baseModuleUnusedDeps));
-  }
+        Assert.assertThrows<InvalidArgumentException?>(
+            InvalidArgumentException::class.java,
+            ThrowingRunnable {
+                ExtensionArg.create(SpecificVersionOfModule.create(key), "/:def.bzl", "ext")
+                    .resolveToExtensionId(
+                        modulesIndex,
+                        depGraph,
+                        moduleKeyToCanonicalNames,
+                        baseModuleDeps,
+                        baseModuleUnusedDeps
+                    )
+            })
+        Assert.assertThrows<InvalidArgumentException?>(
+            InvalidArgumentException::class.java,
+            ThrowingRunnable {
+                ExtensionArg.create(SpecificVersionOfModule.create(key), "///////", "ext")
+                    .resolveToExtensionId(
+                        modulesIndex,
+                        depGraph,
+                        moduleKeyToCanonicalNames,
+                        baseModuleDeps,
+                        baseModuleUnusedDeps
+                    )
+            })
+    }
 
-  @Test
-  public void resolve_noneOrtooManyModules() throws Exception {
-    ModuleKey foo1 = createModuleKey("foo", "1.0");
-    ModuleKey foo2 = createModuleKey("foo", "2.0");
-    ImmutableMap<String, ImmutableSet<ModuleKey>> modulesIndex =
-        ImmutableMap.of("", ImmutableSet.of(ModuleKey.ROOT), "foo", ImmutableSet.of(foo1, foo2));
-    ImmutableMap<ModuleKey, AugmentedModule> depGraph =
-        ImmutableMap.<ModuleKey, AugmentedModule>builder()
-            .put(
-                buildAugmentedModule("", "")
-                    .addDep("foo1", "foo", "1.0")
-                    .addDep("foo2", "foo", "2.0")
-                    .buildEntry())
-            .put(buildAugmentedModule("foo", "1.0").addStillDependant(ModuleKey.ROOT).buildEntry())
-            .put(buildAugmentedModule("foo", "2.0").addStillDependant(ModuleKey.ROOT).buildEntry())
-            .buildOrThrow();
-    ImmutableMap<ModuleKey, RepositoryName> moduleKeyToCanonicalNames =
-        depGraph.keySet().stream()
-            .collect(toImmutableMap(k -> k, ModuleKey::getCanonicalRepoNameWithVersion));
-    ImmutableBiMap<String, ModuleKey> baseModuleDeps =
-        ImmutableBiMap.of("foo1", foo1, "foo2", foo2);
-    ImmutableBiMap<String, ModuleKey> baseModuleUnusedDeps = ImmutableBiMap.of();
+    @Test
+    @Throws(Exception::class)
+    fun resolve_noneOrtooManyModules() {
+        val foo1: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "1.0")
+        val foo2: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "2.0")
+        val modulesIndex: ImmutableMap<String?, ImmutableSet<ModuleKey?>?> =
+            ImmutableMap.of<String?, ImmutableSet<ModuleKey?>?>(
+                "",
+                ImmutableSet.of<ModuleKey?>(ModuleKey.ROOT),
+                "foo",
+                ImmutableSet.of<ModuleKey?>(foo1, foo2)
+            )
+        val depGraph: ImmutableMap<ModuleKey?, AugmentedModule?> =
+            ImmutableMap.builder<ModuleKey?, AugmentedModule?>()
+                .put(
+                    AugmentedModuleBuilder.Companion.buildAugmentedModule("", "")
+                        .addDep("foo1", "foo", "1.0")
+                        .addDep("foo2", "foo", "2.0")
+                        .buildEntry()
+                )
+                .put(
+                    AugmentedModuleBuilder.Companion.buildAugmentedModule("foo", "1.0")
+                        .addStillDependant(ModuleKey.ROOT).buildEntry()
+                )
+                .put(
+                    AugmentedModuleBuilder.Companion.buildAugmentedModule("foo", "2.0")
+                        .addStillDependant(ModuleKey.ROOT).buildEntry()
+                )
+                .buildOrThrow()
+        val moduleKeyToCanonicalNames: ImmutableMap<ModuleKey?, RepositoryName?> =
+            depGraph.keys.stream()
+                .collect(
+                    ImmutableMap.toImmutableMap<Any?, Any?, Any?>(
+                        Function { k: Any? -> k },
+                        ModuleKey::getCanonicalRepoNameWithVersion
+                    )
+                )
+        val baseModuleDeps: ImmutableBiMap<String?, ModuleKey?> =
+            ImmutableBiMap.of<String?, ModuleKey?>("foo1", foo1, "foo2", foo2)
+        val baseModuleUnusedDeps: ImmutableBiMap<String?, ModuleKey?> = ImmutableBiMap.of<String?, ModuleKey?>()
 
-    // Found too many, bad!
-    assertThrows(
-        InvalidArgumentException.class,
-        () ->
-            ExtensionArg.create(AllVersionsOfModule.create("foo"), "//:def.bzl", "ext")
-                .resolveToExtensionId(
-                    modulesIndex,
-                    depGraph,
-                    moduleKeyToCanonicalNames,
-                    baseModuleDeps,
-                    baseModuleUnusedDeps));
-    // Found none, bad!
-    assertThrows(
-        InvalidArgumentException.class,
-        () ->
-            ExtensionArg.create(AllVersionsOfModule.create("bar"), "//:def.bzl", "ext")
-                .resolveToExtensionId(
-                    modulesIndex,
-                    depGraph,
-                    moduleKeyToCanonicalNames,
-                    baseModuleDeps,
-                    baseModuleUnusedDeps));
-  }
+        // Found too many, bad!
+        Assert.assertThrows<InvalidArgumentException?>(
+            InvalidArgumentException::class.java,
+            ThrowingRunnable {
+                ExtensionArg.create(AllVersionsOfModule.create("foo"), "//:def.bzl", "ext")
+                    .resolveToExtensionId(
+                        modulesIndex,
+                        depGraph,
+                        moduleKeyToCanonicalNames,
+                        baseModuleDeps,
+                        baseModuleUnusedDeps
+                    )
+            })
+        // Found none, bad!
+        Assert.assertThrows<InvalidArgumentException?>(
+            InvalidArgumentException::class.java,
+            ThrowingRunnable {
+                ExtensionArg.create(AllVersionsOfModule.create("bar"), "//:def.bzl", "ext")
+                    .resolveToExtensionId(
+                        modulesIndex,
+                        depGraph,
+                        moduleKeyToCanonicalNames,
+                        baseModuleDeps,
+                        baseModuleUnusedDeps
+                    )
+            })
+    }
 }

@@ -11,157 +11,151 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.authandtls.credentialhelper;
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Policy
+import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions
+import com.google.devtools.build.lib.testutil.ManualClock
+import com.google.devtools.common.options.Options
+import org.junit.Test
+import java.net.URI
+import java.time.Duration
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Policy.CacheEntry;
-import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.net.URI;
-import java.time.Duration;
-import java.time.Instant;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [CredentialModule].  */
+@RunWith(JUnit4::class)
+class CredentialModuleTest {
+    private val clock = ManualClock()
+    private val module: CredentialModule = CredentialModule(clock)
+    private val cache: Cache<URI?, GetCredentialsResponse?> = module.getCredentialCache()
 
-/** Tests for {@link CredentialModule}. */
-@RunWith(JUnit4.class)
-public final class CredentialModuleTest {
+    @Test
+    fun putWithExplicitExpiration() {
+        initModule("build", Duration.ofMinutes(60))
 
-  private static final URI TEST_URI = URI.create("https://example.com");
-  private static final GetCredentialsResponse DEFAULT_RESPONSE =
-      GetCredentialsResponse.newBuilder().build();
+        val expiry: Instant? = clock.now()!!.plus(Duration.ofMinutes(123))
 
-  private final ManualClock clock = new ManualClock();
-  private final CredentialModule module = new CredentialModule(clock);
-  private final Cache<URI, GetCredentialsResponse> cache = module.getCredentialCache();
+        cache.put(TEST_URI, GetCredentialsResponse.newBuilder().setExpires(expiry).build())
+        assertInCache(TEST_URI, expiry)
 
-  @Test
-  public void putWithExplicitExpiration() {
-    initModule("build", Duration.ofMinutes(60));
+        clock.advance(Duration.ofMinutes(122))
+        assertInCache(TEST_URI, expiry)
 
-    var expiry = clock.now().plus(Duration.ofMinutes(123));
+        clock.advance(Duration.ofMinutes(2))
+        assertNotInCache(TEST_URI)
+    }
 
-    cache.put(TEST_URI, GetCredentialsResponse.newBuilder().setExpires(expiry).build());
-    assertInCache(TEST_URI, expiry);
+    @Test
+    fun putWithNonzeroDefaultExpiration() {
+        initModule("build", Duration.ofMinutes(60))
 
-    clock.advance(Duration.ofMinutes(122));
-    assertInCache(TEST_URI, expiry);
+        val expiry: Instant? = clock.now()!!.plus(Duration.ofMinutes(60))
 
-    clock.advance(Duration.ofMinutes(2));
-    assertNotInCache(TEST_URI);
-  }
+        cache.put(TEST_URI, DEFAULT_RESPONSE)
+        assertInCache(TEST_URI, expiry)
 
-  @Test
-  public void putWithNonzeroDefaultExpiration() {
-    initModule("build", Duration.ofMinutes(60));
+        clock.advance(Duration.ofMinutes(59))
+        assertInCache(TEST_URI, expiry)
 
-    var expiry = clock.now().plus(Duration.ofMinutes(60));
+        clock.advance(Duration.ofMinutes(2))
+        assertNotInCache(TEST_URI)
+    }
 
-    cache.put(TEST_URI, DEFAULT_RESPONSE);
-    assertInCache(TEST_URI, expiry);
+    @Test
+    fun putWithZeroDefaultExpiration() {
+        initModule("build", Duration.ZERO)
 
-    clock.advance(Duration.ofMinutes(59));
-    assertInCache(TEST_URI, expiry);
+        cache.put(TEST_URI, DEFAULT_RESPONSE)
 
-    clock.advance(Duration.ofMinutes(2));
-    assertNotInCache(TEST_URI);
-  }
+        assertNotInCache(TEST_URI)
+    }
 
-  @Test
-  public void putWithZeroDefaultExpiration() {
-    initModule("build", Duration.ZERO);
+    @Test
+    fun keepingDefaultDoesNotClearCache() {
+        initModule("build", Duration.ofMinutes(60))
 
-    cache.put(TEST_URI, DEFAULT_RESPONSE);
+        cache.put(TEST_URI, DEFAULT_RESPONSE)
+        assertInCache(TEST_URI, clock.now()!!.plus(Duration.ofMinutes(60)))
 
-    assertNotInCache(TEST_URI);
-  }
+        initModule("build", Duration.ofMinutes(60))
 
-  @Test
-  public void keepingDefaultDoesNotClearCache() {
-    initModule("build", Duration.ofMinutes(60));
+        assertInCache(TEST_URI, clock.now()!!.plus(Duration.ofMinutes(60)))
+    }
 
-    cache.put(TEST_URI, DEFAULT_RESPONSE);
-    assertInCache(TEST_URI, clock.now().plus(Duration.ofMinutes(60)));
+    @Test
+    fun changingDefaultToSmallerValueClearsCache() {
+        initModule("build", Duration.ofMinutes(60))
 
-    initModule("build", Duration.ofMinutes(60));
+        cache.put(TEST_URI, DEFAULT_RESPONSE)
+        assertInCache(TEST_URI, clock.now()!!.plus(Duration.ofMinutes(60)))
 
-    assertInCache(TEST_URI, clock.now().plus(Duration.ofMinutes(60)));
-  }
+        initModule("build", Duration.ofMinutes(30))
 
-  @Test
-  public void changingDefaultToSmallerValueClearsCache() {
-    initModule("build", Duration.ofMinutes(60));
+        assertNotInCache(TEST_URI)
+    }
 
-    cache.put(TEST_URI, DEFAULT_RESPONSE);
-    assertInCache(TEST_URI, clock.now().plus(Duration.ofMinutes(60)));
+    @Test
+    fun changingDefaultToLargerValueClearsCache() {
+        initModule("build", Duration.ofMinutes(30))
 
-    initModule("build", Duration.ofMinutes(30));
+        cache.put(TEST_URI, DEFAULT_RESPONSE)
+        assertInCache(TEST_URI, clock.now()!!.plus(Duration.ofMinutes(30)))
 
-    assertNotInCache(TEST_URI);
-  }
+        initModule("build", Duration.ofMinutes(60))
 
-  @Test
-  public void changingDefaultToLargerValueClearsCache() {
-    initModule("build", Duration.ofMinutes(30));
+        assertNotInCache(TEST_URI)
+    }
 
-    cache.put(TEST_URI, DEFAULT_RESPONSE);
-    assertInCache(TEST_URI, clock.now().plus(Duration.ofMinutes(30)));
+    @Test
+    fun cleanCommandClearsCache() {
+        initModule("build", Duration.ofMinutes(60))
 
-    initModule("build", Duration.ofMinutes(60));
+        cache.put(TEST_URI, DEFAULT_RESPONSE)
+        assertInCache(TEST_URI, clock.now()!!.plus(Duration.ofMinutes(60)))
 
-    assertNotInCache(TEST_URI);
-  }
+        initModule("clean", Duration.ofMinutes(60))
 
-  @Test
-  public void cleanCommandClearsCache() {
-    initModule("build", Duration.ofMinutes(60));
+        assertNotInCache(TEST_URI)
+    }
 
-    cache.put(TEST_URI, DEFAULT_RESPONSE);
-    assertInCache(TEST_URI, clock.now().plus(Duration.ofMinutes(60)));
+    private fun initModule(commandName: String?, cacheTimeout: Duration?) {
+        module.beforeCommand(createCommandEnvironment(commandName, cacheTimeout))
+    }
 
-    initModule("clean", Duration.ofMinutes(60));
+    private fun assertInCache(uri: URI?, expiry: Instant?) {
+        val entry: Policy.CacheEntry<URI?, GetCredentialsResponse?>? = cache.policy().getEntryIfPresentQuietly(uri)
+        Truth.assertThat(entry).isNotNull()
+        Truth.assertThat<Instant?>(fromEpochNano(entry!!.expiresAt())).isEqualTo(expiry)
+    }
 
-    assertNotInCache(TEST_URI);
-  }
+    private fun assertNotInCache(uri: URI?) {
+        Truth.assertThat(cache.policy().getEntryIfPresentQuietly(uri)).isNull()
+    }
 
-  private void initModule(String commandName, Duration cacheTimeout) {
-    module.beforeCommand(createCommandEnvironment(commandName, cacheTimeout));
-  }
+    companion object {
+        private val TEST_URI: URI = URI.create("https://example.com")
+        private val DEFAULT_RESPONSE: GetCredentialsResponse? = GetCredentialsResponse.newBuilder().build()
 
-  private static CommandEnvironment createCommandEnvironment(
-      String commandName, Duration cacheTimeout) {
-    AuthAndTLSOptions authAndTlsOptions = Options.getDefaults(AuthAndTLSOptions.class);
-    authAndTlsOptions.setCredentialHelperCacheTimeout(cacheTimeout);
+        private fun createCommandEnvironment(
+            commandName: String?, cacheTimeout: Duration?
+        ): CommandEnvironment {
+            val authAndTlsOptions: AuthAndTLSOptions = Options.getDefaults<O>(AuthAndTLSOptions::class.java)
+            authAndTlsOptions.setCredentialHelperCacheTimeout(cacheTimeout)
 
-    OptionsParsingResult optionsParsingResult = mock(OptionsParsingResult.class);
-    when(optionsParsingResult.getOptions(AuthAndTLSOptions.class)).thenReturn(authAndTlsOptions);
+            val optionsParsingResult: OptionsParsingResult =
+                Mockito.mock<OptionsParsingResult>(OptionsParsingResult::class.java)
+            Mockito.`when`<T?>(optionsParsingResult.getOptions<O?>(AuthAndTLSOptions::class.java))
+                .thenReturn(authAndTlsOptions)
 
-    CommandEnvironment env = mock(CommandEnvironment.class);
-    when(env.getCommandName()).thenReturn(commandName);
-    when(env.getOptions()).thenReturn(optionsParsingResult);
+            val env: CommandEnvironment = Mockito.mock<CommandEnvironment>(CommandEnvironment::class.java)
+            Mockito.`when`<T?>(env.getCommandName()).thenReturn(commandName)
+            Mockito.`when`<T?>(env.getOptions()).thenReturn(optionsParsingResult)
 
-    return env;
-  }
+            return env
+        }
 
-  private void assertInCache(URI uri, Instant expiry) {
-    CacheEntry<URI, GetCredentialsResponse> entry = cache.policy().getEntryIfPresentQuietly(uri);
-    assertThat(entry).isNotNull();
-    assertThat(fromEpochNano(entry.expiresAt())).isEqualTo(expiry);
-  }
-
-  private void assertNotInCache(URI uri) {
-    assertThat(cache.policy().getEntryIfPresentQuietly(uri)).isNull();
-  }
-
-  private static Instant fromEpochNano(long nano) {
-    return Instant.ofEpochSecond(0, nano);
-  }
+        private fun fromEpochNano(nano: Long): Instant? {
+            return Instant.ofEpochSecond(0, nano)
+        }
+    }
 }

@@ -11,101 +11,100 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.truth.Truth.assertThat;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import java.time.Duration;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [AggregatedSpawnMetrics].  */
+@RunWith(JUnit4::class)
+class AggregatedSpawnMetricsTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun sumDurationMetricsMaxOther() {
+        val metrics1: SpawnMetrics? =
+            SpawnMetrics.Builder.forRemoteExec()
+                .setTotalTimeInMs(1 * 1000)
+                .setExecutionWallTimeInMs(2 * 1000)
+                .setInputBytes(10)
+                .setInputFiles(20)
+                .setMemoryEstimateBytes(30)
+                .build()
+        val metrics2: SpawnMetrics? =
+            SpawnMetrics.Builder.forRemoteExec()
+                .setTotalTimeInMs(10 * 1000)
+                .setExecutionWallTimeInMs(20 * 1000)
+                .setInputBytes(100)
+                .setInputFiles(200)
+                .setMemoryEstimateBytes(300)
+                .build()
 
-/** Tests for {@link AggregatedSpawnMetrics}. */
-@RunWith(JUnit4.class)
-public final class AggregatedSpawnMetricsTest {
+        var aggregated: AggregatedSpawnMetrics = AggregatedSpawnMetrics.EMPTY
+        aggregated = aggregated.sumDurationsMaxOther(metrics1)
+        aggregated = aggregated.sumDurationsMaxOther(metrics2)
 
-  @Test
-  public void sumDurationMetricsMaxOther() throws Exception {
-    SpawnMetrics metrics1 =
-        SpawnMetrics.Builder.forRemoteExec()
-            .setTotalTimeInMs(1 * 1000)
-            .setExecutionWallTimeInMs(2 * 1000)
-            .setInputBytes(10)
-            .setInputFiles(20)
-            .setMemoryEstimateBytes(30)
-            .build();
-    SpawnMetrics metrics2 =
-        SpawnMetrics.Builder.forRemoteExec()
-            .setTotalTimeInMs(10 * 1000)
-            .setExecutionWallTimeInMs(20 * 1000)
-            .setInputBytes(100)
-            .setInputFiles(200)
-            .setMemoryEstimateBytes(300)
-            .build();
+        assertThat(aggregated.getRemoteMetrics().totalTimeInMs()).isEqualTo(11 * 1000)
+        assertThat(aggregated.getRemoteMetrics().executionWallTimeInMs()).isEqualTo(22 * 1000)
+        assertThat(aggregated.getRemoteMetrics().inputBytes()).isEqualTo(100)
+        assertThat(aggregated.getRemoteMetrics().inputFiles()).isEqualTo(200)
+        assertThat(aggregated.getRemoteMetrics().memoryEstimate()).isEqualTo(300)
+    }
 
-    AggregatedSpawnMetrics aggregated = AggregatedSpawnMetrics.EMPTY;
-    aggregated = aggregated.sumDurationsMaxOther(metrics1);
-    aggregated = aggregated.sumDurationsMaxOther(metrics2);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aggregatingMetrics_preservesExecKind() {
+        val metrics1: SpawnMetrics? = SpawnMetrics.Builder.forLocalExec().setTotalTimeInMs(1 * 1000).build()
+        val metrics2: SpawnMetrics? = SpawnMetrics.Builder.forRemoteExec().setTotalTimeInMs(2 * 1000).build()
+        val metrics3: SpawnMetrics? = SpawnMetrics.Builder.forWorkerExec().setTotalTimeInMs(3 * 1000).build()
 
-    assertThat(aggregated.getRemoteMetrics().totalTimeInMs()).isEqualTo(11 * 1000);
-    assertThat(aggregated.getRemoteMetrics().executionWallTimeInMs()).isEqualTo(22 * 1000);
-    assertThat(aggregated.getRemoteMetrics().inputBytes()).isEqualTo(100);
-    assertThat(aggregated.getRemoteMetrics().inputFiles()).isEqualTo(200);
-    assertThat(aggregated.getRemoteMetrics().memoryEstimate()).isEqualTo(300);
-  }
+        var aggregated: AggregatedSpawnMetrics = AggregatedSpawnMetrics.EMPTY
+        aggregated = aggregated.sumDurationsMaxOther(metrics1)
+        aggregated = aggregated.sumDurationsMaxOther(metrics2)
+        aggregated = aggregated.sumDurationsMaxOther(metrics3)
 
-  @Test
-  public void aggregatingMetrics_preservesExecKind() throws Exception {
-    SpawnMetrics metrics1 = SpawnMetrics.Builder.forLocalExec().setTotalTimeInMs(1 * 1000).build();
-    SpawnMetrics metrics2 = SpawnMetrics.Builder.forRemoteExec().setTotalTimeInMs(2 * 1000).build();
-    SpawnMetrics metrics3 = SpawnMetrics.Builder.forWorkerExec().setTotalTimeInMs(3 * 1000).build();
+        assertThat(aggregated.getMetrics(SpawnMetrics.ExecKind.LOCAL).totalTimeInMs())
+            .isEqualTo(1 * 1000L)
+        assertThat(aggregated.getMetrics(SpawnMetrics.ExecKind.REMOTE).totalTimeInMs())
+            .isEqualTo(2 * 1000L)
+        assertThat(aggregated.getMetrics(SpawnMetrics.ExecKind.WORKER).totalTimeInMs())
+            .isEqualTo(3 * 1000L)
+    }
 
-    AggregatedSpawnMetrics aggregated = AggregatedSpawnMetrics.EMPTY;
-    aggregated = aggregated.sumDurationsMaxOther(metrics1);
-    aggregated = aggregated.sumDurationsMaxOther(metrics2);
-    aggregated = aggregated.sumDurationsMaxOther(metrics3);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toString_printsOnlyRemote() {
+        val metrics1: SpawnMetrics? =
+            SpawnMetrics.Builder.forLocalExec()
+                .setTotalTimeInMs(1 * 1000)
+                .setExecutionWallTimeInMs(1 * 1000)
+                .build()
+        val metrics2: SpawnMetrics? =
+            SpawnMetrics.Builder.forRemoteExec()
+                .setTotalTimeInMs(2 * 1000)
+                .setNetworkTimeInMs(1 * 1000)
+                .setExecutionWallTimeInMs(1 * 1000)
+                .build()
+        val metrics3: SpawnMetrics? =
+            SpawnMetrics.Builder.forWorkerExec()
+                .setTotalTimeInMs(3 * 1000)
+                .setQueueTimeInMs(1 * 1000)
+                .setExecutionWallTimeInMs(2 * 1000)
+                .build()
 
-    assertThat(aggregated.getMetrics(SpawnMetrics.ExecKind.LOCAL).totalTimeInMs())
-        .isEqualTo(1 * 1000L);
-    assertThat(aggregated.getMetrics(SpawnMetrics.ExecKind.REMOTE).totalTimeInMs())
-        .isEqualTo(2 * 1000L);
-    assertThat(aggregated.getMetrics(SpawnMetrics.ExecKind.WORKER).totalTimeInMs())
-        .isEqualTo(3 * 1000L);
-  }
+        val aggregated: AggregatedSpawnMetrics =
+            Builder()
+                .addDurations(metrics1)
+                .addNonDurations(metrics1)
+                .addDurations(metrics2)
+                .addNonDurations(metrics2)
+                .addDurations(metrics3)
+                .addNonDurations(metrics3)
+                .build()
 
-  @Test
-  public void toString_printsOnlyRemote() throws Exception {
-    SpawnMetrics metrics1 =
-        SpawnMetrics.Builder.forLocalExec()
-            .setTotalTimeInMs(1 * 1000)
-            .setExecutionWallTimeInMs(1 * 1000)
-            .build();
-    SpawnMetrics metrics2 =
-        SpawnMetrics.Builder.forRemoteExec()
-            .setTotalTimeInMs(2 * 1000)
-            .setNetworkTimeInMs(1 * 1000)
-            .setExecutionWallTimeInMs(1 * 1000)
-            .build();
-    SpawnMetrics metrics3 =
-        SpawnMetrics.Builder.forWorkerExec()
-            .setTotalTimeInMs(3 * 1000)
-            .setQueueTimeInMs(1 * 1000)
-            .setExecutionWallTimeInMs(2 * 1000)
-            .build();
-
-    AggregatedSpawnMetrics aggregated =
-        new AggregatedSpawnMetrics.Builder()
-            .addDurations(metrics1)
-            .addNonDurations(metrics1)
-            .addDurations(metrics2)
-            .addNonDurations(metrics2)
-            .addDurations(metrics3)
-            .addNonDurations(metrics3)
-            .build();
-
-    assertThat(aggregated.toString(Duration.ofSeconds(6), true))
-        .isEqualTo(
-            "Remote (33.33% of the time): "
-                + "[queue: 0.00%, network: 16.67%, setup: 0.00%, process: 16.67%]");
-  }
+        assertThat(aggregated.toString(java.time.Duration.ofSeconds(6), true))
+            .isEqualTo(
+                "Remote (33.33% of the time): "
+                        + "[queue: 0.00%, network: 16.67%, setup: 0.00%, process: 16.67%]"
+            )
+    }
 }

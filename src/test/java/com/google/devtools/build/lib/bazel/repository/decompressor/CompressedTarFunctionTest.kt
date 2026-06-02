@@ -11,200 +11,207 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import com.google.devtools.build.lib.vfs.FileSystem
+import com.google.devtools.build.lib.vfs.util.FileSystems
+import org.junit.Assert
+import org.junit.Rule
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import java.io.InputStream
+import java.nio.charset.StandardCharsets
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.repository.decompressor.TestArchiveDescriptor.INNER_FOLDER_NAME;
-import static com.google.devtools.build.lib.bazel.repository.decompressor.TestArchiveDescriptor.ROOT_FOLDER_NAME;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertThrows;
+/** Tests decompressing archives.  */
+@RunWith(JUnit4::class)
+class CompressedTarFunctionTest {
+    @Rule
+    var folder: TemporaryFolder = TemporaryFolder()
 
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.HashMap;
-import java.util.zip.GZIPInputStream;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private var archiveDescriptor: TestArchiveDescriptor? = null
 
-/** Tests decompressing archives. */
-@RunWith(JUnit4.class)
-public class CompressedTarFunctionTest {
-
-  @Rule public TemporaryFolder folder = new TemporaryFolder();
-
-  /* Tarball, created by "tar -czf <ARCHIVE_NAME> <files...>" */
-  private static final String ARCHIVE_NAME = "test_decompress_archive.tar.gz";
-
-  private TestArchiveDescriptor archiveDescriptor;
-
-  @Before
-  public void setUpFs() throws Exception {
-    archiveDescriptor = new TestArchiveDescriptor(ARCHIVE_NAME, "out", true);
-  }
-
-  /**
-   * Test decompressing a tar.gz file with hard link file and symbolic link file inside without
-   * stripping a prefix
-   */
-  @Test
-  public void testDecompressWithoutPrefix() throws Exception {
-    Path outputDir = decompress(archiveDescriptor.createDescriptorBuilder().build());
-
-    archiveDescriptor.assertOutputFiles(outputDir, ROOT_FOLDER_NAME, INNER_FOLDER_NAME);
-  }
-
-  /**
-   * Test decompressing a tar.gz file with hard link file and symbolic link file inside and
-   * stripping a prefix
-   */
-  @Test
-  public void testDecompressWithPrefix() throws Exception {
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor.createDescriptorBuilder().setPrefix(ROOT_FOLDER_NAME);
-    Path outputDir = decompress(descriptorBuilder.build());
-
-    archiveDescriptor.assertOutputFiles(outputDir, INNER_FOLDER_NAME);
-  }
-
-  /**
-   * Test decompressing a tar.gz file with hard link file and symbolic link file inside and
-   * stripping the first component.
-   */
-  @Test
-  public void testDecompressWithStripComponents() throws Exception {
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor.createDescriptorBuilder().setStripComponents(1);
-    Path outputDir = decompress(descriptorBuilder.build());
-
-    archiveDescriptor.assertOutputFiles(outputDir, INNER_FOLDER_NAME);
-  }
-
-  /**
-   * Test decompressing a tar.gz file, with some entries being renamed during the extraction
-   * process.
-   */
-  @Test
-  public void testDecompressWithRenamedFiles() throws Exception {
-    String innerDirName = ROOT_FOLDER_NAME + "/" + INNER_FOLDER_NAME;
-
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(innerDirName + "/hardLinkFile", innerDirName + "/renamedFile");
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor.createDescriptorBuilder().setRenameFiles(renameFiles);
-    Path outputDir = decompress(descriptorBuilder.build());
-
-    Path innerDir = outputDir.getRelative(ROOT_FOLDER_NAME).getRelative(INNER_FOLDER_NAME);
-    assertThat(innerDir.getRelative("renamedFile").exists()).isTrue();
-  }
-
-  /** Test that entry renaming is applied prior to prefix stripping. */
-  @Test
-  public void testDecompressWithRenamedFilesAndPrefix() throws Exception {
-    String innerDirName = ROOT_FOLDER_NAME + "/" + INNER_FOLDER_NAME;
-
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(innerDirName + "/hardLinkFile", innerDirName + "/renamedFile");
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor
-            .createDescriptorBuilder()
-            .setPrefix(ROOT_FOLDER_NAME)
-            .setRenameFiles(renameFiles);
-    Path outputDir = decompress(descriptorBuilder.build());
-
-    Path innerDir = outputDir.getRelative(INNER_FOLDER_NAME);
-    assertThat(innerDir.getRelative("renamedFile").exists()).isTrue();
-  }
-
-  /** Test that entry renaming is applied prior to component stripping. */
-  @Test
-  public void testDecompressWithRenamedFilesAndStripComponents() throws Exception {
-    String innerDirName = ROOT_FOLDER_NAME + "/" + INNER_FOLDER_NAME;
-
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(innerDirName + "/hardLinkFile", innerDirName + "/renamedFile");
-    DecompressorDescriptor.Builder descriptorBuilder =
-        archiveDescriptor
-            .createDescriptorBuilder()
-            .setStripComponents(1)
-            .setRenameFiles(renameFiles);
-    Path outputDir = decompress(descriptorBuilder.build());
-
-    Path innerDir = outputDir.getRelative(INNER_FOLDER_NAME);
-    assertThat(innerDir.getRelative("renamedFile").exists()).isTrue();
-  }
-
-  private Path decompress(DecompressorDescriptor descriptor) throws Exception {
-    return new CompressedTarFunction() {
-      @Override
-      protected InputStream getDecompressorStream(BufferedInputStream compressedInputStream)
-          throws IOException {
-        return new GZIPInputStream(compressedInputStream);
-      }
-    }.decompress(descriptor);
-  }
-
-  @Test
-  public void testDecompressTarWithUpLevelReference() throws Exception {
-    FileSystem fs = FileSystems.getNativeFileSystem();
-    File tarGzFile = folder.newFile("malicious.tar.gz");
-    try (FileOutputStream fos = new FileOutputStream(tarGzFile);
-        GzipCompressorOutputStream gzos = new GzipCompressorOutputStream(fos);
-        TarArchiveOutputStream tos = new TarArchiveOutputStream(gzos)) {
-      TarArchiveEntry entry = new TarArchiveEntry("../foo");
-      entry.setSize(3);
-      tos.putArchiveEntry(entry);
-      tos.write("bar".getBytes(UTF_8));
-      tos.closeArchiveEntry();
+    @Before
+    @Throws(Exception::class)
+    fun setUpFs() {
+        archiveDescriptor = TestArchiveDescriptor(ARCHIVE_NAME, "out", true)
     }
-    Path tarGzPath = fs.getPath(tarGzFile.getAbsolutePath());
 
-    DecompressorDescriptor descriptor =
-        DecompressorDescriptor.builder()
-            .setArchivePath(tarGzPath)
-            .setDestinationPath(tarGzPath.getParentDirectory().getRelative("out"))
-            .build();
-    IOException thrown = assertThrows(IOException.class, () -> decompress(descriptor));
-    assertThat(thrown).hasMessageThat().contains("path is escaping the destination directory");
-  }
+    /**
+     * Test decompressing a tar.gz file with hard link file and symbolic link file inside without
+     * stripping a prefix
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithoutPrefix() {
+        val outputDir: Path = decompress(archiveDescriptor!!.createDescriptorBuilder().build())
 
-  @Test
-  public void testDecompressTarWithSymlinkEscape() throws Exception {
-    FileSystem fs = FileSystems.getNativeFileSystem();
-    File tarGzFile = folder.newFile("malicious_symlink.tar.gz");
-    try (FileOutputStream fos = new FileOutputStream(tarGzFile);
-        GzipCompressorOutputStream gzos = new GzipCompressorOutputStream(fos);
-        TarArchiveOutputStream tos = new TarArchiveOutputStream(gzos)) {
-      TarArchiveEntry entry = new TarArchiveEntry("link", TarArchiveEntry.LF_SYMLINK);
-      entry.setLinkName("../foo");
-      entry.setIds(0, 0);
-      entry.setNames("user", "group");
-      tos.putArchiveEntry(entry);
-      tos.closeArchiveEntry();
+        archiveDescriptor!!.assertOutputFiles(
+            outputDir,
+            TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME,
+            TestArchiveDescriptor.Companion.INNER_FOLDER_NAME
+        )
     }
-    Path tarGzPath = fs.getPath(tarGzFile.getAbsolutePath());
 
-    DecompressorDescriptor descriptor =
-        DecompressorDescriptor.builder()
-            .setArchivePath(tarGzPath)
-            .setDestinationPath(tarGzPath.getParentDirectory().getRelative("out"))
-            .build();
-    IOException thrown = assertThrows(IOException.class, () -> decompress(descriptor));
-    assertThat(thrown)
-        .hasMessageThat()
-        .contains("Tar entries cannot refer to files outside of their directory");
-  }
+    /**
+     * Test decompressing a tar.gz file with hard link file and symbolic link file inside and
+     * stripping a prefix
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithPrefix() {
+        val descriptorBuilder =
+            archiveDescriptor!!.createDescriptorBuilder().setPrefix(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
+
+        archiveDescriptor!!.assertOutputFiles(outputDir, TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+    }
+
+    /**
+     * Test decompressing a tar.gz file with hard link file and symbolic link file inside and
+     * stripping the first component.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithStripComponents() {
+        val descriptorBuilder =
+            archiveDescriptor!!.createDescriptorBuilder().setStripComponents(1)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
+
+        archiveDescriptor!!.assertOutputFiles(outputDir, TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+    }
+
+    /**
+     * Test decompressing a tar.gz file, with some entries being renamed during the extraction
+     * process.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFiles() {
+        val innerDirName =
+            TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME + "/" + TestArchiveDescriptor.Companion.INNER_FOLDER_NAME
+
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(innerDirName + "/hardLinkFile", innerDirName + "/renamedFile")
+        val descriptorBuilder =
+            archiveDescriptor!!.createDescriptorBuilder().setRenameFiles(renameFiles)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
+
+        val innerDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)
+            .getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        assertThat(innerDir.getRelative("renamedFile").exists()).isTrue()
+    }
+
+    /** Test that entry renaming is applied prior to prefix stripping.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFilesAndPrefix() {
+        val innerDirName =
+            TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME + "/" + TestArchiveDescriptor.Companion.INNER_FOLDER_NAME
+
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(innerDirName + "/hardLinkFile", innerDirName + "/renamedFile")
+        val descriptorBuilder =
+            archiveDescriptor!!
+                .createDescriptorBuilder()
+                .setPrefix(TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME)!!
+                .setRenameFiles(renameFiles)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
+
+        val innerDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        assertThat(innerDir.getRelative("renamedFile").exists()).isTrue()
+    }
+
+    /** Test that entry renaming is applied prior to component stripping.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFilesAndStripComponents() {
+        val innerDirName =
+            TestArchiveDescriptor.Companion.ROOT_FOLDER_NAME + "/" + TestArchiveDescriptor.Companion.INNER_FOLDER_NAME
+
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(innerDirName + "/hardLinkFile", innerDirName + "/renamedFile")
+        val descriptorBuilder =
+            archiveDescriptor!!
+                .createDescriptorBuilder()
+                .setStripComponents(1)!!
+                .setRenameFiles(renameFiles)
+        val outputDir: Path = decompress(descriptorBuilder!!.build())
+
+        val innerDir: Path = outputDir.getRelative(TestArchiveDescriptor.Companion.INNER_FOLDER_NAME)
+        assertThat(innerDir.getRelative("renamedFile").exists()).isTrue()
+    }
+
+    @Throws(Exception::class)
+    private fun decompress(descriptor: DecompressorDescriptor): Path {
+        return object : CompressedTarFunction() {
+            @Throws(IOException::class)
+            override fun getDecompressorStream(compressedInputStream: BufferedInputStream): InputStream? {
+                return GZIPInputStream(compressedInputStream)
+            }
+        }.decompress(descriptor)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressTarWithUpLevelReference() {
+        val fs: FileSystem = FileSystems.getNativeFileSystem()
+        val tarGzFile = folder.newFile("malicious.tar.gz")
+        FileOutputStream(tarGzFile).use { fos ->
+            GzipCompressorOutputStream(fos).use { gzos ->
+                TarArchiveOutputStream(gzos).use { tos ->
+                    val entry: TarArchiveEntry = TarArchiveEntry("../foo")
+                    entry.setSize(3)
+                    tos.putArchiveEntry(entry)
+                    tos.write("bar".toByteArray(StandardCharsets.UTF_8))
+                    tos.closeArchiveEntry()
+                }
+            }
+        }
+        val tarGzPath: Path = fs.getPath(tarGzFile.getAbsolutePath())
+
+        val descriptor =
+            DecompressorDescriptor.builder()
+                .setArchivePath(tarGzPath)!!
+                .setDestinationPath(tarGzPath.getParentDirectory().getRelative("out"))!!
+                .build()
+        val thrown: IOException? =
+            Assert.assertThrows<IOException?>(IOException::class.java, ThrowingRunnable { decompress(descriptor) })
+        Truth.assertThat(thrown).hasMessageThat().contains("path is escaping the destination directory")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressTarWithSymlinkEscape() {
+        val fs: FileSystem = FileSystems.getNativeFileSystem()
+        val tarGzFile = folder.newFile("malicious_symlink.tar.gz")
+        FileOutputStream(tarGzFile).use { fos ->
+            GzipCompressorOutputStream(fos).use { gzos ->
+                TarArchiveOutputStream(gzos).use { tos ->
+                    val entry: TarArchiveEntry = TarArchiveEntry("link", TarArchiveEntry.LF_SYMLINK)
+                    entry.setLinkName("../foo")
+                    entry.setIds(0, 0)
+                    entry.setNames("user", "group")
+                    tos.putArchiveEntry(entry)
+                    tos.closeArchiveEntry()
+                }
+            }
+        }
+        val tarGzPath: Path = fs.getPath(tarGzFile.getAbsolutePath())
+
+        val descriptor =
+            DecompressorDescriptor.builder()
+                .setArchivePath(tarGzPath)!!
+                .setDestinationPath(tarGzPath.getParentDirectory().getRelative("out"))!!
+                .build()
+        val thrown: IOException? =
+            Assert.assertThrows<IOException?>(IOException::class.java, ThrowingRunnable { decompress(descriptor) })
+        Truth.assertThat(thrown)
+            .hasMessageThat()
+            .contains("Tar entries cannot refer to files outside of their directory")
+    }
+
+    companion object {
+        /* Tarball, created by "tar -czf <ARCHIVE_NAME> <files...>" */
+        private const val ARCHIVE_NAME = "test_decompress_archive.tar.gz"
+    }
 }

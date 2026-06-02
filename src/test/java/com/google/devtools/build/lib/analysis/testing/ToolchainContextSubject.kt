@@ -11,112 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.testing;
+package com.google.devtools.build.lib.analysis.testing
 
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.truth.Truth.assertAbout;
+import com.google.common.base.Functions
+import com.google.common.collect.ImmutableMap
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.analysis.ToolchainContext
 
-import com.google.common.base.Functions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.IterableSubject;
-import com.google.common.truth.MapSubject;
-import com.google.common.truth.Subject;
-import com.google.devtools.build.lib.analysis.ToolchainContext;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
+/** A Truth [Subject] for [ToolchainContext].  */
+open class ToolchainContextSubject protected constructor(failureMetadata: FailureMetadata?, subject: ToolchainContext) :
+    Subject(failureMetadata, subject) {
+    // Instance fields.
+    private val actual: ToolchainContext
+    private val toolchainTypesMap: ImmutableMap<Label?, ToolchainTypeRequirement?>
 
-/** A Truth {@link Subject} for {@link ToolchainContext}. */
-public class ToolchainContextSubject extends Subject {
-  // Static data.
+    init {
+        this.actual = subject
+        this.toolchainTypesMap = makeToolchainTypesMap(subject)
+    }
 
-  /** Entry point for test assertions related to {@link ToolchainContext}. */
-  public static ToolchainContextSubject assertThat(ToolchainContext toolchainContext) {
-    return assertAbout(ToolchainContextSubject::new).that(toolchainContext);
-  }
+    @Throws(LabelSyntaxException::class)
+    fun hasExecutionPlatform(platformLabel: String?) {
+        hasExecutionPlatform(Label.parseCanonical(platformLabel))
+    }
 
-  /** Static method for getting the subject factory (for use with assertAbout()). */
-  public static Subject.Factory<ToolchainContextSubject, ToolchainContext> toolchainContexts() {
-    return ToolchainContextSubject::new;
-  }
+    fun hasExecutionPlatform(platform: Label?) {
+        check("executionPlatform()").that(actual.executionPlatform()).isNotNull()
+        check("executionPlatform()").that(actual.executionPlatform().label()).isEqualTo(platform)
+    }
 
-  // Instance fields.
+    @Throws(LabelSyntaxException::class)
+    fun hasTargetPlatform(platformLabel: String?) {
+        hasTargetPlatform(Label.parseCanonical(platformLabel))
+    }
 
-  private final ToolchainContext actual;
-  private final ImmutableMap<Label, ToolchainTypeRequirement> toolchainTypesMap;
+    fun hasTargetPlatform(platform: Label?) {
+        check("targetPlatform()").that(actual.targetPlatform()).isNotNull()
+        check("targetPlatform()").that(actual.targetPlatform().label()).isEqualTo(platform)
+    }
 
-  protected ToolchainContextSubject(FailureMetadata failureMetadata, ToolchainContext subject) {
-    super(failureMetadata, subject);
-    this.actual = subject;
-    this.toolchainTypesMap = makeToolchainTypesMap(subject);
-  }
+    fun toolchainTypes(): MapSubject {
+        return check("toolchainTypes()").that(toolchainTypesMap)
+    }
 
-  private static ImmutableMap<Label, ToolchainTypeRequirement> makeToolchainTypesMap(
-      ToolchainContext subject) {
-    return subject.toolchainTypes().stream()
-        .collect(toImmutableMap(ToolchainTypeRequirement::toolchainType, Functions.identity()));
-  }
+    fun toolchainType(toolchainTypeLabel: String?): ToolchainTypeRequirementSubject? {
+        return toolchainType(Label.parseCanonicalUnchecked(toolchainTypeLabel))
+    }
 
-  public void hasExecutionPlatform(String platformLabel) throws LabelSyntaxException {
-    hasExecutionPlatform(Label.parseCanonical(platformLabel));
-  }
+    fun toolchainType(toolchainType: Label): ToolchainTypeRequirementSubject? {
+        return check("toolchainType(%s)", toolchainType)
+            .about<ToolchainTypeRequirementSubject?, ToolchainTypeRequirement?>(ToolchainTypeRequirementSubject.Companion.toolchainTypeRequirements())
+            .that(toolchainTypesMap.get(toolchainType))
+    }
 
-  public void hasExecutionPlatform(Label platform) {
-    check("executionPlatform()").that(actual.executionPlatform()).isNotNull();
-    check("executionPlatform()").that(actual.executionPlatform().label()).isEqualTo(platform);
-  }
+    fun hasToolchainType(toolchainTypeLabel: String?) {
+        toolchainType(toolchainTypeLabel).isNotNull()
+    }
 
-  public void hasTargetPlatform(String platformLabel) throws LabelSyntaxException {
-    hasTargetPlatform(Label.parseCanonical(platformLabel));
-  }
+    fun hasToolchainType(toolchainType: Label) {
+        toolchainType(toolchainType).isNotNull()
+    }
 
-  public void hasTargetPlatform(Label platform) {
-    check("targetPlatform()").that(actual.targetPlatform()).isNotNull();
-    check("targetPlatform()").that(actual.targetPlatform().label()).isEqualTo(platform);
-  }
+    fun doesntHaveToolchainType(toolchainTypeLabel: String?) {
+        doesntHaveToolchainType(Label.parseCanonicalUnchecked(toolchainTypeLabel))
+    }
 
-  public MapSubject toolchainTypes() {
-    return check("toolchainTypes()").that(toolchainTypesMap);
-  }
+    fun doesntHaveToolchainType(toolchainType: Label) {
+        check("toolchainType(%s)", toolchainType)
+            .that(toolchainTypesMap.containsKey(toolchainType))
+            .isFalse()
+    }
 
-  public ToolchainTypeRequirementSubject toolchainType(String toolchainTypeLabel) {
-    return toolchainType(Label.parseCanonicalUnchecked(toolchainTypeLabel));
-  }
+    @Throws(LabelSyntaxException::class)
+    fun hasResolvedToolchain(resolvedToolchainLabel: String?) {
+        hasResolvedToolchain(Label.parseCanonical(resolvedToolchainLabel))
+    }
 
-  public ToolchainTypeRequirementSubject toolchainType(Label toolchainType) {
-    return check("toolchainType(%s)", toolchainType)
-        .about(ToolchainTypeRequirementSubject.toolchainTypeRequirements())
-        .that(toolchainTypesMap.get(toolchainType));
-  }
+    fun hasResolvedToolchain(resolvedToolchain: Label?) {
+        resolvedToolchainLabels().contains(resolvedToolchain)
+    }
 
-  public void hasToolchainType(String toolchainTypeLabel) {
-    toolchainType(toolchainTypeLabel).isNotNull();
-  }
+    fun resolvedToolchainLabels(): IterableSubject? {
+        return check("resolvedToolchainLabels()").that(actual.resolvedToolchainLabels())
+    }
 
-  public void hasToolchainType(Label toolchainType) {
-    toolchainType(toolchainType).isNotNull();
-  }
+    companion object {
+        // Static data.
+        /** Entry point for test assertions related to [ToolchainContext].  */
+        fun assertThat(toolchainContext: ToolchainContext?): ToolchainContextSubject? {
+            return Truth.assertAbout<ToolchainContextSubject?, ToolchainContext?>(Subject.Factory { failureMetadata: FailureMetadata?, subject: ToolchainContext? ->
+                ToolchainContextSubject(
+                    failureMetadata,
+                    subject
+                )
+            }).that(toolchainContext)
+        }
 
-  public void doesntHaveToolchainType(String toolchainTypeLabel) {
-    doesntHaveToolchainType(Label.parseCanonicalUnchecked(toolchainTypeLabel));
-  }
+        /** Static method for getting the subject factory (for use with assertAbout()).  */
+        fun toolchainContexts(): Factory<ToolchainContextSubject?, ToolchainContext?> {
+            return Subject.Factory { failureMetadata: FailureMetadata?, subject: ToolchainContext? ->
+                ToolchainContextSubject(
+                    failureMetadata,
+                    subject
+                )
+            }
+        }
 
-  public void doesntHaveToolchainType(Label toolchainType) {
-    check("toolchainType(%s)", toolchainType)
-        .that(toolchainTypesMap.containsKey(toolchainType))
-        .isFalse();
-  }
-
-  public void hasResolvedToolchain(String resolvedToolchainLabel) throws LabelSyntaxException {
-    hasResolvedToolchain(Label.parseCanonical(resolvedToolchainLabel));
-  }
-
-  public void hasResolvedToolchain(Label resolvedToolchain) {
-    resolvedToolchainLabels().contains(resolvedToolchain);
-  }
-
-  public IterableSubject resolvedToolchainLabels() {
-    return check("resolvedToolchainLabels()").that(actual.resolvedToolchainLabels());
-  }
+        private fun makeToolchainTypesMap(
+            subject: ToolchainContext
+        ): ImmutableMap<Label?, ToolchainTypeRequirement?> {
+            return subject.toolchainTypes().stream()
+                .collect(
+                    ImmutableMap.toImmutableMap<T?, K?, V?>(
+                        ToolchainTypeRequirement::toolchainType,
+                        Functions.identity<E?>()
+                    )
+                )
+        }
+    }
 }

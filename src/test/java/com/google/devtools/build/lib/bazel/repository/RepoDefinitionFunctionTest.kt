@@ -12,166 +12,172 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.repository
 
-package com.google.devtools.build.lib.bazel.repository;
+import com.google.devtools.build.lib.bazel.repository.RepoDefinitionValue.Found
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static org.junit.Assert.fail;
+/** Tests for [RepoDefinitionFunction].  */
+@RunWith(JUnit4::class)
+class RepoDefinitionFunctionTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRepoSpec_bazelModule() {
+        scratch.overwriteFile(
+            "MODULE.bazel", "module(name='aaa',version='0.1')", "bazel_dep(name='bbb',version='1.0')"
+        )
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')")
+        invalidatePackages(false)
 
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionValue.Found;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val repo: RepositoryName? = RepositoryName.create("ccc+")
+        val result: EvaluationResult<RepoDefinitionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val repoDefinitionValue: RepoDefinitionValue = result.get(RepoDefinitionValue.key(repo))
+        assertThat(repoDefinitionValue).isInstanceOf(Found::class.java)
+        val repoDefinition: RepoDefinition = (repoDefinitionValue as Found).repoDefinition()
 
-/** Tests for {@link RepoDefinitionFunction}. */
-@RunWith(JUnit4.class)
-public final class RepoDefinitionFunctionTest extends BuildViewTestCase {
-
-  @Test
-  public void testRepoSpec_bazelModule() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel", "module(name='aaa',version='0.1')", "bazel_dep(name='bbb',version='1.0')");
-    registry
-        .addModule(
-            createModuleKey("bbb", "1.0"),
-            "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')")
-        .addModule(createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')");
-    invalidatePackages(false);
-
-    RepositoryName repo = RepositoryName.create("ccc+");
-    EvaluationResult<RepoDefinitionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository")
+        assertThat(repoDefinition.name()).isEqualTo("ccc+")
+        assertThat(repoDefinition.attrValues().attributes().get("path"))
+            .isEqualTo("/workspace/modules/ccc+2.0")
     }
-    RepoDefinitionValue repoDefinitionValue = result.get(RepoDefinitionValue.key(repo));
-    assertThat(repoDefinitionValue).isInstanceOf(Found.class);
-    RepoDefinition repoDefinition = ((Found) repoDefinitionValue).repoDefinition();
 
-    assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository");
-    assertThat(repoDefinition.name()).isEqualTo("ccc+");
-    assertThat(repoDefinition.attrValues().attributes().get("path"))
-        .isEqualTo("/workspace/modules/ccc+2.0");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRepoSpec_nonRegistryOverride() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "local_path_override(module_name='ccc',path='/foo/bar/C')"
+        )
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')")
+        invalidatePackages(false)
 
-  @Test
-  public void testRepoSpec_nonRegistryOverride() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "local_path_override(module_name='ccc',path='/foo/bar/C')");
-    registry
-        .addModule(
-            createModuleKey("bbb", "1.0"),
-            "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')")
-        .addModule(createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')");
-    invalidatePackages(false);
+        val repo: RepositoryName? = RepositoryName.create("ccc+")
+        val result: EvaluationResult<RepoDefinitionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val repoDefinitionValue: RepoDefinitionValue = result.get(RepoDefinitionValue.key(repo))
+        assertThat(repoDefinitionValue).isInstanceOf(Found::class.java)
+        val repoDefinition: RepoDefinition = (repoDefinitionValue as Found).repoDefinition()
 
-    RepositoryName repo = RepositoryName.create("ccc+");
-    EvaluationResult<RepoDefinitionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository")
+        assertThat(repoDefinition.name()).isEqualTo("ccc+")
+        assertThat(repoDefinition.attrValues().attributes().get("path")).isEqualTo("/foo/bar/C")
     }
-    RepoDefinitionValue repoDefinitionValue = result.get(RepoDefinitionValue.key(repo));
-    assertThat(repoDefinitionValue).isInstanceOf(Found.class);
-    RepoDefinition repoDefinition = ((Found) repoDefinitionValue).repoDefinition();
 
-    assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository");
-    assertThat(repoDefinition.name()).isEqualTo("ccc+");
-    assertThat(repoDefinition.attrValues().attributes().get("path")).isEqualTo("/foo/bar/C");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRepoSpec_singleVersionOverride() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "single_version_override(",
+            "  module_name='ccc',version='3.0')"
+        )
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("ccc", "3.0"), "module(name='ccc', version='3.0')")
+        invalidatePackages(false)
 
-  @Test
-  public void testRepoSpec_singleVersionOverride() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "single_version_override(",
-        "  module_name='ccc',version='3.0')");
-    registry
-        .addModule(
-            createModuleKey("bbb", "1.0"),
-            "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')")
-        .addModule(createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')")
-        .addModule(createModuleKey("ccc", "3.0"), "module(name='ccc', version='3.0')");
-    invalidatePackages(false);
+        val repo: RepositoryName? = RepositoryName.create("ccc+")
+        val result: EvaluationResult<RepoDefinitionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val repoDefinitionValue: RepoDefinitionValue = result.get(RepoDefinitionValue.key(repo))
+        assertThat(repoDefinitionValue).isInstanceOf(Found::class.java)
+        val repoDefinition: RepoDefinition = (repoDefinitionValue as Found).repoDefinition()
 
-    RepositoryName repo = RepositoryName.create("ccc+");
-    EvaluationResult<RepoDefinitionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository")
+        assertThat(repoDefinition.name()).isEqualTo("ccc+")
+        assertThat(repoDefinition.attrValues().attributes().get("path"))
+            .isEqualTo("/workspace/modules/ccc+3.0")
     }
-    RepoDefinitionValue repoDefinitionValue = result.get(RepoDefinitionValue.key(repo));
-    assertThat(repoDefinitionValue).isInstanceOf(Found.class);
-    RepoDefinition repoDefinition = ((Found) repoDefinitionValue).repoDefinition();
 
-    assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository");
-    assertThat(repoDefinition.name()).isEqualTo("ccc+");
-    assertThat(repoDefinition.attrValues().attributes().get("path"))
-        .isEqualTo("/workspace/modules/ccc+3.0");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRepoSpec_multipleVersionOverride() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='2.0')",
+            "multiple_version_override(module_name='ddd',versions=['1.0','2.0'])"
+        )
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                "module(name='bbb', version='1.0');bazel_dep(name='ddd',version='1.0')"
+            )
+            .addModule(
+                BzlmodTestUtil.createModuleKey("ccc", "2.0"),
+                "module(name='ccc', version='2.0');bazel_dep(name='ddd',version='2.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("ddd", "1.0"), "module(name='ddd', version='1.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("ddd", "2.0"), "module(name='ddd', version='2.0')")
+        invalidatePackages(false)
 
-  @Test
-  public void testRepoSpec_multipleVersionOverride() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='2.0')",
-        "multiple_version_override(module_name='ddd',versions=['1.0','2.0'])");
-    registry
-        .addModule(
-            createModuleKey("bbb", "1.0"),
-            "module(name='bbb', version='1.0');bazel_dep(name='ddd',version='1.0')")
-        .addModule(
-            createModuleKey("ccc", "2.0"),
-            "module(name='ccc', version='2.0');bazel_dep(name='ddd',version='2.0')")
-        .addModule(createModuleKey("ddd", "1.0"), "module(name='ddd', version='1.0')")
-        .addModule(createModuleKey("ddd", "2.0"), "module(name='ddd', version='2.0')");
-    invalidatePackages(false);
+        val repo: RepositoryName? = RepositoryName.create("ddd+2.0")
+        val result: EvaluationResult<RepoDefinitionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val repoDefinitionValue: RepoDefinitionValue = result.get(RepoDefinitionValue.key(repo))
+        assertThat(repoDefinitionValue).isInstanceOf(Found::class.java)
+        val repoDefinition: RepoDefinition = (repoDefinitionValue as Found).repoDefinition()
 
-    RepositoryName repo = RepositoryName.create("ddd+2.0");
-    EvaluationResult<RepoDefinitionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository")
+        assertThat(repoDefinition.name()).isEqualTo("ddd+2.0")
+        assertThat(repoDefinition.attrValues().attributes().get("path"))
+            .isEqualTo("/workspace/modules/ddd+2.0")
     }
-    RepoDefinitionValue repoDefinitionValue = result.get(RepoDefinitionValue.key(repo));
-    assertThat(repoDefinitionValue).isInstanceOf(Found.class);
-    RepoDefinition repoDefinition = ((Found) repoDefinitionValue).repoDefinition();
 
-    assertThat(repoDefinition.repoRule().id().ruleName()).isEqualTo("local_repository");
-    assertThat(repoDefinition.name()).isEqualTo("ddd+2.0");
-    assertThat(repoDefinition.attrValues().attributes().get("path"))
-        .isEqualTo("/workspace/modules/ddd+2.0");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRepoSpec_notFound() {
+        scratch.overwriteFile("MODULE.bazel", "module(name='aaa',version='0.1')")
+        invalidatePackages(false)
 
-  @Test
-  public void testRepoSpec_notFound() throws Exception {
-    scratch.overwriteFile("MODULE.bazel", "module(name='aaa',version='0.1')");
-    invalidatePackages(false);
-
-    RepositoryName repo = RepositoryName.create("ss");
-    EvaluationResult<RepoDefinitionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val repo: RepositoryName? = RepositoryName.create("ss")
+        val result: EvaluationResult<RepoDefinitionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, RepoDefinitionValue.key(repo), false, reporter
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val repoDefinitionValue: RepoDefinitionValue? = result.get(RepoDefinitionValue.key(repo))
+        assertThat(repoDefinitionValue).isEqualTo(RepoDefinitionValue.NOT_FOUND)
     }
-    RepoDefinitionValue repoDefinitionValue = result.get(RepoDefinitionValue.key(repo));
-    assertThat(repoDefinitionValue).isEqualTo(RepoDefinitionValue.NOT_FOUND);
-  }
 }

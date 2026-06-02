@@ -12,138 +12,121 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.bazel.repository.downloader.DownloadManager;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode
 
 /**
- * Fake implementation of {@link Registry}, where modules can be freely added and stored in memory.
+ * Fake implementation of [Registry], where modules can be freely added and stored in memory.
  * The contents of the modules are expected to be located under a given file path as subdirectories.
  */
-public class FakeRegistry implements Registry {
-  private static final Joiner JOINER = Joiner.on('\n');
-  private final String url;
-  private final String rootPath;
-  private final Map<ModuleKey, String> modules = new HashMap<>();
-  private final Map<String, ImmutableMap<Version, String>> yankedVersionMap = new HashMap<>();
+class FakeRegistry(val url: String, private val rootPath: String?) : Registry {
+    private val modules: MutableMap<ModuleKey?, String?> = HashMap<ModuleKey?, String?>()
+    private val yankedVersionMap: MutableMap<String?, com.google.common.collect.ImmutableMap<Version?, String?>?> =
+        HashMap<String?, com.google.common.collect.ImmutableMap<Version?, String?>?>()
 
-  public FakeRegistry(String url, String rootPath) {
-    this.url = url;
-    this.rootPath = rootPath;
-  }
-
-  @CanIgnoreReturnValue
-  public FakeRegistry addModule(ModuleKey key, String... moduleFileLines) {
-    modules.put(key, JOINER.join(moduleFileLines));
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public FakeRegistry addYankedVersion(
-      String moduleName, ImmutableMap<Version, String> yankedVersions) {
-    yankedVersionMap.put(moduleName, yankedVersions);
-    return this;
-  }
-
-  @Override
-  public String getUrl() {
-    return url;
-  }
-
-  @Override
-  public ModuleFile getModuleFile(
-      ModuleKey key, ExtendedEventHandler eventHandler, DownloadManager downloadManager)
-      throws NotFoundException {
-    String uri = String.format("%s/modules/%s/%s/MODULE.bazel", url, key.name, key.version());
-    var maybeContent = Optional.ofNullable(modules.get(key)).map(value -> value.getBytes(UTF_8));
-    eventHandler.post(RegistryFileDownloadEvent.create(uri, maybeContent));
-    if (maybeContent.isEmpty()) {
-      throw new NotFoundException("module not found: " + key);
-    }
-    return ModuleFile.create(maybeContent.get(), uri);
-  }
-
-  @Override
-  public RepoSpec getRepoSpec(
-      ModuleKey key,
-      ImmutableMap<String, Optional<Checksum>> moduleFileHashes,
-      ExtendedEventHandler eventHandler,
-      DownloadManager downloadManager) {
-    RepoSpec repoSpec =
-        LocalPathRepoSpecs.create(rootPath + "/" + key.getCanonicalRepoNameWithVersion().getName());
-    eventHandler.post(
-        RegistryFileDownloadEvent.create(
-            "%s/modules/%s/%s/source.json".formatted(url, key.name, key.version()),
-            Optional.of(
-                GsonTypeAdapterUtil.SINGLE_EXTENSION_USAGES_VALUE_GSON
-                    .toJson(repoSpec)
-                    .getBytes(UTF_8))));
-    return repoSpec;
-  }
-
-  @Override
-  public Optional<ImmutableMap<Version, String>> getYankedVersions(
-      String moduleName, ExtendedEventHandler eventHandler, DownloadManager downloadManager) {
-    return Optional.ofNullable(yankedVersionMap.get(moduleName));
-  }
-
-  @Override
-  public Optional<YankedVersionsValue> tryGetYankedVersionsFromLockfile(
-      ModuleKey selectedModuleKey) {
-    return Optional.empty();
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    return other instanceof FakeRegistry fakeRegistry
-        && this.url.equals(fakeRegistry.url)
-        && this.modules.equals(fakeRegistry.modules);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(url, modules);
-  }
-
-  public static final Factory DEFAULT_FACTORY = new Factory();
-
-  /** Fake {@link RegistryFactory} that only supports {@link FakeRegistry}. */
-  public static class Factory implements RegistryFactory {
-
-    private int numFakes = 0;
-    private final Map<String, FakeRegistry> registries = new HashMap<>();
-
-    public FakeRegistry newFakeRegistry(String rootPath) {
-      FakeRegistry registry = new FakeRegistry("fake:" + numFakes++, rootPath);
-      registries.put(registry.getUrl(), registry);
-      return registry;
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addModule(key: ModuleKey?, vararg moduleFileLines: String?): FakeRegistry {
+        modules.put(key, JOINER.join(moduleFileLines))
+        return this
     }
 
-    @Override
-    public Registry createRegistry(
-        String url,
-        LockfileMode lockfileMode,
-        ImmutableMap<String, Optional<Checksum>> fileHashes,
-        ImmutableMap<ModuleKey, String> previouslySelectedYankedVersions,
-        Optional<Path> vendorDir,
-        ImmutableSet<String> moduleMirrors) {
-      return Preconditions.checkNotNull(registries.get(url), "unknown registry url: %s", url);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addYankedVersion(
+        moduleName: String?, yankedVersions: com.google.common.collect.ImmutableMap<Version?, String?>?
+    ): FakeRegistry {
+        yankedVersionMap.put(moduleName, yankedVersions)
+        return this
     }
-  }
+
+    @Throws(NotFoundException::class)
+    public override fun getModuleFile(
+        key: ModuleKey, eventHandler: ExtendedEventHandler, downloadManager: DownloadManager?
+    ): ModuleFile {
+        val uri: String? = java.lang.String.format("%s/modules/%s/%s/MODULE.bazel", url, key.name, key.version())
+        val maybeContent: java.util.Optional<ByteArray?> = java.util.Optional.ofNullable<String?>(modules.get(key))
+            .map<ByteArray?>(java.util.function.Function { value: String? -> value.toByteArray(java.nio.charset.StandardCharsets.UTF_8) })
+        eventHandler.post(RegistryFileDownloadEvent.create(uri, maybeContent))
+        if (maybeContent.isEmpty()) {
+            throw NotFoundException("module not found: " + key)
+        }
+        return ModuleFile.create(maybeContent.get(), uri)
+    }
+
+    public override fun getRepoSpec(
+        key: ModuleKey,
+        moduleFileHashes: com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?,
+        eventHandler: ExtendedEventHandler,
+        downloadManager: DownloadManager?
+    ): RepoSpec? {
+        val repoSpec: RepoSpec? =
+            LocalPathRepoSpecs.create(rootPath + "/" + key.getCanonicalRepoNameWithVersion().getName())
+        eventHandler.post(
+            RegistryFileDownloadEvent.create(
+                "%s/modules/%s/%s/source.json".formatted(url, key.name, key.version()),
+                java.util.Optional.of<T?>(
+                    GsonTypeAdapterUtil.SINGLE_EXTENSION_USAGES_VALUE_GSON
+                        .toJson(repoSpec)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                )
+            )
+        )
+        return repoSpec
+    }
+
+    public override fun getYankedVersions(
+        moduleName: String?, eventHandler: ExtendedEventHandler?, downloadManager: DownloadManager?
+    ): java.util.Optional<com.google.common.collect.ImmutableMap<Version?, String?>?> {
+        return java.util.Optional.ofNullable<com.google.common.collect.ImmutableMap<Version?, String?>?>(
+            yankedVersionMap.get(moduleName)
+        )
+    }
+
+    public override fun tryGetYankedVersionsFromLockfile(
+        selectedModuleKey: ModuleKey?
+    ): java.util.Optional<YankedVersionsValue?> {
+        return java.util.Optional.empty<YankedVersionsValue?>()
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return other is FakeRegistry
+                && this.url == other.url
+                && this.modules == other.modules
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(url, modules)
+    }
+
+    /** Fake [RegistryFactory] that only supports [FakeRegistry].  */
+    class Factory : RegistryFactory {
+        private var numFakes = 0
+        private val registries: MutableMap<String?, FakeRegistry?> = HashMap<String?, FakeRegistry?>()
+
+        fun newFakeRegistry(rootPath: String?): FakeRegistry {
+            val registry = FakeRegistry("fake:" + numFakes++, rootPath)
+            registries.put(registry.url, registry)
+            return registry
+        }
+
+        public override fun createRegistry(
+            url: String?,
+            lockfileMode: LockfileMode?,
+            fileHashes: com.google.common.collect.ImmutableMap<String?, java.util.Optional<com.google.devtools.build.lib.bazel.repository.downloader.Checksum?>?>?,
+            previouslySelectedYankedVersions: com.google.common.collect.ImmutableMap<ModuleKey?, String?>?,
+            vendorDir: java.util.Optional<Path?>?,
+            moduleMirrors: com.google.common.collect.ImmutableSet<String?>?
+        ): Registry? {
+            return com.google.common.base.Preconditions.checkNotNull<FakeRegistry?>(
+                registries.get(url),
+                "unknown registry url: %s",
+                url
+            )
+        }
+    }
+
+    companion object {
+        private val JOINER: com.google.common.base.Joiner = com.google.common.base.Joiner.on('\n')
+        val DEFAULT_FACTORY: Factory = com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry.Factory()
+    }
 }

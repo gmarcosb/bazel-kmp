@@ -11,67 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.vfs.Path
 
-import com.google.common.collect.ObjectArrays;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Before;
-import org.junit.Test;
+/** Test for [RunfilesSupport].  */
+abstract class AbstractRunfilesSupportTest : BuildViewTestCase() {
+    protected abstract fun useJdkLauncher(): Boolean
 
-/** Test for {@link RunfilesSupport}. */
-public abstract class AbstractRunfilesSupportTest extends BuildViewTestCase {
-
-  protected abstract boolean useJdkLauncher();
-
-  @Override
-  protected final void useConfiguration(String... args) throws Exception {
-    if (useJdkLauncher()) {
-      super.useConfiguration(args);
-    } else {
-      super.useConfiguration(
-          ObjectArrays.concat(args, "--java_launcher=//tools/java/launcher:run_java"));
+    @Throws(java.lang.Exception::class)
+    override fun useConfiguration(vararg args: String?) {
+        if (useJdkLauncher()) {
+            super.useConfiguration(*args)
+        } else {
+            super.useConfiguration(
+                *com.google.common.collect.ObjectArrays.concat<String?>(
+                    args,
+                    "--java_launcher=//tools/java/launcher:run_java"
+                )
+            )
+        }
     }
-  }
 
-  @Before
-  public final void createDirectory() throws Exception {
-    scratch.dir(outputBase.getParentDirectory() + "/blaze-bin");
-  }
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createDirectory() {
+        scratch.dir(outputBase.getParentDirectory() + "/blaze-bin")
+    }
 
-  @Test
-  public void testWorkingDirectory() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWorkingDirectory() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_test.bzl", "cc_test")
         cc_test(
             name = "bar",
             srcs = ["bar.cc"],
         )
-        """);
-    ConfiguredTarget foo_bar;
-    useConfiguration("--build_runfile_links");
-    // we get expected runfiles directory
-    foo_bar = getConfiguredTarget("//foo:bar");
-    Path workDir1 = getRunfilesSupport(foo_bar).getRunfilesDirectory();
-    assertThat(workDir1.asFragment().endsWith(PathFragment.create("foo/bar.runfiles"))).isTrue();
+        
+        """.trimIndent()
+        )
+        var foo_bar: ConfiguredTarget?
+        useConfiguration("--build_runfile_links")
+        // we get expected runfiles directory
+        foo_bar = getConfiguredTarget("//foo:bar")
+        val workDir1: Path = getRunfilesSupport(foo_bar).getRunfilesDirectory()
+        assertThat(workDir1.asFragment().endsWith(PathFragment.create("foo/bar.runfiles"))).isTrue()
 
-    // .. even when we change some options
-    useConfiguration("--nobuild_runfile_links");
-    // Reconfigured targets.
-    foo_bar = getConfiguredTarget("//foo:bar");
-    Path workDir2 = getRunfilesSupport(foo_bar).getRunfilesDirectory();
-    assertThat(workDir2).isEqualTo(workDir1);
-  }
+        // .. even when we change some options
+        useConfiguration("--nobuild_runfile_links")
+        // Reconfigured targets.
+        foo_bar = getConfiguredTarget("//foo:bar")
+        val workDir2: Path? = getRunfilesSupport(foo_bar).getRunfilesDirectory()
+        assertThat(workDir2).isEqualTo(workDir1)
+    }
 
-  @Test
-  public void testVisitingPackageGroups() throws Exception {
-    scratch.file("honeydew/BUILD", "package_group(name='honeydew')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVisitingPackageGroups() {
+        scratch.file("honeydew/BUILD", "package_group(name='honeydew')")
 
-    collectRunfiles(getConfiguredTarget("//honeydew"));
-  }
+        BuildViewTestCase.collectRunfiles(getConfiguredTarget("//honeydew"))
+    }
 }

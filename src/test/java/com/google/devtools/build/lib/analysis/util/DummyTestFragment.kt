@@ -11,151 +11,141 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.util;
+package com.google.devtools.build.lib.analysis.util
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.EmptyToNullLabelConverter;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.util.EnvVar;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.List;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
+import com.google.devtools.common.options.Converter
+import com.google.devtools.common.options.Option
+import java.util.*
 
 /**
- * Expose a set of options that can be added to {@link BuildViewTestCase} and friends in order to
+ * Expose a set of options that can be added to [BuildViewTestCase] and friends in order to
  * force configuration changes without materially affecting the build.
- *
- * <p>Previously, supposed 'no-op' options like --test_arg were used; however, this interferes with
+ * 
+ * 
+ * Previously, supposed 'no-op' options like --test_arg were used; however, this interferes with
  * --trim_test_configuration.
- *
- * <p>Note that, for {@link BuildViewTestCase}, these can be 'enables' by overriding {@link
- * BuildViewTestCase.createRuleClassProvider} and using {@link
- * ConfiguredRuleClassProvider.Builder.addConfigurationFragment} for DummyTestFragment.class.
+ * 
+ * 
+ * Note that, for [BuildViewTestCase], these can be 'enables' by overriding [ ] and using [ ] for DummyTestFragment.class.
  */
-@RequiresOptions(options = {DummyTestFragment.DummyTestOptions.class})
-public final class DummyTestFragment extends Fragment {
-  public DummyTestFragment(BuildOptions buildOptions) {}
+@RequiresOptions(options = [DummyTestFragment.DummyTestOptions::class])
+class DummyTestFragment(buildOptions: BuildOptions?) : Fragment() {
+    /** Flags that exhibit a variety of flag behaviors.  */
+    @OptionsClass
+    abstract class DummyTestOptions : FragmentOptions() {
+        @get:Option(
+            name = "nullable_option",
+            converter = EmptyToNullLabelConverter::class,
+            defaultValue = "",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "An option that is sometimes set to null."
+        )
+        abstract val nullable: Label?
 
-  /** Flags that exhibit a variety of flag behaviors. */
-  @OptionsClass
-  public abstract static class DummyTestOptions extends FragmentOptions {
+        @get:Option(
+            name = "foo",
+            defaultValue = "",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "A regular string-typed option"
+        )
+        abstract var foo: String?
 
-    @Option(
-        name = "nullable_option",
-        converter = EmptyToNullLabelConverter.class,
-        defaultValue = "",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "An option that is sometimes set to null.")
-    public abstract Label getNullable();
+        @get:Option(
+            name = "internal foo",
+            defaultValue = "",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            metadataTags = [OptionMetadataTag.INTERNAL],
+            help = "A string-typed option that cannot be set on the commandline"
+        )
+        abstract val internalFoo: String?
 
-    @Option(
-        name = "foo",
-        defaultValue = "",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "A regular string-typed option")
-    public abstract String getFoo();
+        @get:Option(
+            name = "bar",
+            defaultValue = "",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "A regular string-typed option"
+        )
+        abstract val bar: String?
 
-    public abstract void setFoo(String value);
+        @get:Option(
+            name = "bazes",
+            defaultValue = "null",
+            allowMultiple = true,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "A regular string-typed option"
+        )
+        abstract val bazes: MutableList<String?>?
 
-    @Option(
-        name = "internal foo",
-        defaultValue = "",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        metadataTags = {OptionMetadataTag.INTERNAL},
-        help = "A string-typed option that cannot be set on the commandline")
-    public abstract String getInternalFoo();
+        @get:Option(
+            name = "bool",
+            defaultValue = "false",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "A regular bool-typed option"
+        )
+        abstract val bool: Boolean
 
-    @Option(
-        name = "bar",
-        defaultValue = "",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "A regular string-typed option")
-    public abstract String getBar();
+        @get:Option(
+            name = "unreadable_by_starlark",
+            defaultValue = "anything",
+            converter = UnreadableStringBoxConverter::class,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "This cannot be used as an input to a Starlark transition"
+        )
+        abstract val unreadableByStarlark: UnreadableStringBox?
 
-    @Option(
-        name = "bazes",
-        defaultValue = "null",
-        allowMultiple = true,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "A regular string-typed option")
-    public abstract List<String> getBazes();
+        @get:Option(
+            name = "allow_multiple_with_env_var_converter",
+            defaultValue = "null",
+            allowMultiple = true,
+            converter = EnvVar.Converter::class,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "allowMultiple flag with EnvVar converter"
+        )
+        abstract val allowMultipleWithEnvVarConverter: MutableList<EnvVar>?
 
-    @Option(
-        name = "bool",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "A regular bool-typed option")
-    public abstract boolean getBool();
+        @get:Option(
+            name = "allow_multiple_with_list_converter",
+            defaultValue = "null",
+            allowMultiple = true,
+            converter = CommaSeparatedOptionListConverter::class,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            help = "allowMultiple flag where the converter returns a list"
+        )
+        abstract val allowMultipleWithListConverter: MutableList<String?>?
 
-    @Option(
-        name = "unreadable_by_starlark",
-        defaultValue = "anything",
-        converter = UnreadableStringBoxConverter.class,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "This cannot be used as an input to a Starlark transition")
-    public abstract UnreadableStringBox getUnreadableByStarlark();
+        @AutoCodec
+        @kotlin.jvm.JvmRecord
+        data class UnreadableStringBox(val value: String?) {
+            init {
+                Objects.requireNonNull<String?>(value, "value")
+            }
 
-    @Option(
-        name = "allow_multiple_with_env_var_converter",
-        defaultValue = "null",
-        allowMultiple = true,
-        converter = EnvVar.Converter.class,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "allowMultiple flag with EnvVar converter")
-    public abstract List<EnvVar> getAllowMultipleWithEnvVarConverter();
+            companion object {
+                fun create(value: String?): UnreadableStringBox {
+                    return UnreadableStringBox(value)
+                }
+            }
+        }
 
-    @Option(
-        name = "allow_multiple_with_list_converter",
-        defaultValue = "null",
-        allowMultiple = true,
-        converter = CommaSeparatedOptionListConverter.class,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        help = "allowMultiple flag where the converter returns a list")
-    public abstract List<String> getAllowMultipleWithListConverter();
+        class UnreadableStringBoxConverter : Converter<UnreadableStringBox?> {
+            @Throws(OptionsParsingException::class)
+            override fun convert(input: String?, conversionContext: Any?): UnreadableStringBox {
+                return UnreadableStringBox.Companion.create(input)
+            }
 
-    @AutoCodec
-    public record UnreadableStringBox(String value) {
-      public UnreadableStringBox {
-        requireNonNull(value, "value");
-      }
-
-      public static UnreadableStringBox create(String value) {
-        return new UnreadableStringBox(value);
-      }
+            override fun getTypeDescription(): String {
+                return "a string that is not readable by Starlark"
+            }
+        }
     }
-
-    public static class UnreadableStringBoxConverter implements Converter<UnreadableStringBox> {
-      @Override
-      public UnreadableStringBox convert(String input, Object conversionContext)
-          throws OptionsParsingException {
-        return UnreadableStringBox.create(input);
-      }
-
-      @Override
-      public String getTypeDescription() {
-        return "a string that is not readable by Starlark";
-      }
-    }
-  }
 }

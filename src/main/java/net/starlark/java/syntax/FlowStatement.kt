@@ -11,46 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-/** A class for flow statements (break, continue, and pass) */
-public final class FlowStatement extends Statement {
+/** A class for flow statements (break, continue, and pass)  */
+class FlowStatement internal constructor(locs: FileLocations?, flowKind: TokenKind, offset: Int) :
+    Statement(locs, Kind.FLOW) {
+    @kotlin.jvm.JvmField
+    val flowKind: TokenKind // BREAK | CONTINUE | PASS
+    private val offset: Int
 
-  private final TokenKind flowKind; // BREAK | CONTINUE | PASS
-  private final int offset;
+    /**
+     * Constructs a new flow control statement.
+     * 
+     * @param flowKind The specific kind of flow control statement (break, continue, or pass)
+     */
+    init {
+        this.flowKind = flowKind
+        this.offset = offset
+    }
 
-  /**
-   * Constructs a new flow control statement.
-   *
-   * @param flowKind The specific kind of flow control statement (break, continue, or pass)
-   */
-  FlowStatement(FileLocations locs, TokenKind flowKind, int offset) {
-    super(locs, Kind.FLOW);
-    this.flowKind = flowKind;
-    this.offset = offset;
-  }
+    override fun toString(): String {
+        return flowKind.toString() + "\n"
+    }
 
-  public TokenKind getFlowKind() {
-    return flowKind;
-  }
+    override fun getStartOffset(): Int {
+        return offset
+    }
 
-  @Override
-  public String toString() {
-    return flowKind.toString() + "\n";
-  }
+    override fun getEndOffset(): Int {
+        return offset + flowKind.toString().length
+    }
 
-  @Override
-  public int getStartOffset() {
-    return offset;
-  }
-
-  @Override
-  public int getEndOffset() {
-    return offset + flowKind.toString().length();
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

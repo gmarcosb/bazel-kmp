@@ -11,70 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen.testutil;
+package com.google.devtools.build.docgen.testutil
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.packages.RuleClass;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
 /**
  * Rule definitions that can be used for testing.
  */
-public class TestData {
-  public static class TestRule implements RuleDefinition {
-    @Override
-    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
-      return builder
-          .add(attr("foo", LABEL_LIST))
-          .build();
+class TestData {
+    class TestRule : RuleDefinition {
+        public override fun build(builder: RuleClass.Builder, environment: RuleDefinitionEnvironment?): RuleClass {
+            return builder
+                .add(attr("foo", LABEL_LIST))
+                .build()
+        }
+
+        public override fun getMetadata(): Metadata {
+            return RuleDefinition.Metadata.builder().name("testrule")
+                .factoryClass(DummyRuleFactory::class.java).ancestors(IntermediateRule::class.java).build()
+        }
     }
 
-    @Override
-    public Metadata getMetadata() {
-      return RuleDefinition.Metadata.builder().name("testrule")
-          .factoryClass(DummyRuleFactory.class).ancestors(IntermediateRule.class).build();
-    }
-  }
+    class IntermediateRule : RuleDefinition {
+        public override fun build(builder: RuleClass.Builder, environment: RuleDefinitionEnvironment?): RuleClass {
+            return builder.build()
+        }
 
-  public static class IntermediateRule implements RuleDefinition {
-    @Override
-    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
-      return builder.build();
+        public override fun getMetadata(): Metadata {
+            return RuleDefinition.Metadata.builder().name("testrule")
+                .factoryClass(DummyRuleFactory::class.java).ancestors(BaseRule::class.java).build()
+        }
     }
 
-    @Override
-    public Metadata getMetadata() {
-      return RuleDefinition.Metadata.builder().name("testrule")
-          .factoryClass(DummyRuleFactory.class).ancestors(BaseRule.class).build();
-    }
-  }
+    class BaseRule : RuleDefinition {
+        public override fun build(builder: RuleClass.Builder, environment: RuleDefinitionEnvironment?): RuleClass {
+            return builder.build()
+        }
 
-  public static class BaseRule implements RuleDefinition {
-    @Override
-    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
-      return builder.build();
+        public override fun getMetadata(): Metadata {
+            return RuleDefinition.Metadata.builder().name("base_rule")
+                .factoryClass(DummyRuleFactory::class.java).build()
+        }
     }
 
-    @Override
-    public Metadata getMetadata() {
-      return RuleDefinition.Metadata.builder().name("base_rule")
-          .factoryClass(DummyRuleFactory.class).build();
+    class DummyRuleFactory : RuleConfiguredTargetFactory {
+        @Throws(InterruptedException::class, RuleErrorException::class, ActionConflictException::class)
+        public override fun create(ruleContext: RuleContext?): ConfiguredTarget? {
+            throw IllegalStateException()
+        }
     }
-  }
-
-  public static class DummyRuleFactory implements RuleConfiguredTargetFactory {
-    @Override
-    public ConfiguredTarget create(RuleContext ruleContext)
-        throws InterruptedException, RuleErrorException, ActionConflictException {
-      throw new IllegalStateException();
-    }
-  }
 }
 

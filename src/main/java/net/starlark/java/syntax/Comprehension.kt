@@ -11,155 +11,121 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
-
-import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableList
 
 /**
  * Syntax node for list and dict comprehensions.
- *
- * <p>A comprehension contains one or more clauses, e.g. [a+d for a in b if c for d in e] contains
+ * 
+ * 
+ * A comprehension contains one or more clauses, e.g. [a+d for a in b if c for d in e] contains
  * three clauses: "for a in b", "if c", "for d in e". For and If clauses can happen in any order,
  * except that the first one has to be a For.
- *
- * <p>The code above can be expanded as:
- *
+ * 
+ * 
+ * The code above can be expanded as:
+ * 
  * <pre>
- *   for a in b:
- *     if c:
- *       for d in e:
- *         result.append(a+d)
- * </pre>
- *
+ * for a in b:
+ * if c:
+ * for d in e:
+ * result.append(a+d)
+</pre> * 
+ * 
  * result is initialized to [] (list) or {} (dict) and is the return value of the whole expression.
  */
-public final class Comprehension extends Expression {
+class Comprehension internal constructor(
+    locs: FileLocations?,
+    isDict: Boolean,
+    lbracketOffset: Int,
+    body: Node?,
+    clauses: ImmutableList<Clause?>?,
+    rbracketOffset: Int
+) : Expression(locs, Kind.COMPREHENSION) {
+    /** For or If  */
+    abstract class Clause internal constructor(locs: FileLocations?) : Node(locs)
 
-  /** For or If */
-  public abstract static sealed class Clause extends Node permits For, If {
-    Clause(FileLocations locs) {
-      super(locs);
-    }
-  }
+    /** A for clause in a comprehension, e.g. "for a in b" in the example above.  */
+    class For internal constructor(locs: FileLocations?, forOffset: Int, vars: Expression?, iterable: Expression) :
+        Clause(locs) {
+        private val forOffset: Int
+        @kotlin.jvm.JvmField
+        val vars: Expression?
+        @kotlin.jvm.JvmField
+        val iterable: Expression
 
-  /** A for clause in a comprehension, e.g. "for a in b" in the example above. */
-  public static final class For extends Clause {
-    private final int forOffset;
-    private final Expression vars;
-    private final Expression iterable;
+        init {
+            this.forOffset = forOffset
+            this.vars = vars
+            this.iterable = iterable
+        }
 
-    For(FileLocations locs, int forOffset, Expression vars, Expression iterable) {
-      super(locs);
-      this.forOffset = forOffset;
-      this.vars = vars;
-      this.iterable = iterable;
-    }
+        override fun getStartOffset(): Int {
+            return forOffset
+        }
 
-    public Expression getVars() {
-      return vars;
-    }
+        override fun getEndOffset(): Int {
+            return iterable.getEndOffset()
+        }
 
-    public Expression getIterable() {
-      return iterable;
-    }
-
-    @Override
-    public int getStartOffset() {
-      return forOffset;
-    }
-
-    @Override
-    public int getEndOffset() {
-      return iterable.getEndOffset();
-    }
-
-    @Override
-    public void accept(NodeVisitor visitor) {
-      visitor.visit(this);
-    }
-  }
-
-  /** A if clause in a comprehension, e.g. "if c" in the example above. */
-  public static final class If extends Clause {
-    private final int ifOffset;
-    private final Expression condition;
-
-    If(FileLocations locs, int ifOffset, Expression condition) {
-      super(locs);
-      this.ifOffset = ifOffset;
-      this.condition = condition;
+        override fun accept(visitor: NodeVisitor) {
+            visitor.visit(this)
+        }
     }
 
-    public Expression getCondition() {
-      return condition;
+    /** A if clause in a comprehension, e.g. "if c" in the example above.  */
+    class If internal constructor(locs: FileLocations?, ifOffset: Int, condition: Expression) : Clause(locs) {
+        private val ifOffset: Int
+        val condition: Expression
+
+        init {
+            this.ifOffset = ifOffset
+            this.condition = condition
+        }
+
+        override fun getStartOffset(): Int {
+            return ifOffset
+        }
+
+        override fun getEndOffset(): Int {
+            return condition.getEndOffset()
+        }
+
+        override fun accept(visitor: NodeVisitor) {
+            visitor.visit(this)
+        }
     }
 
-    @Override
-    public int getStartOffset() {
-      return ifOffset;
+    val isDict: Boolean // {k: v for vars in iterable}
+    private val lbracketOffset: Int
+
+    /**
+     * Returns the loop body: an expression for a list comprehension, or a DictExpression.Entry for a
+     * dict comprehension.
+     */
+    val body: Node? // Expression or DictExpression.Entry
+    @kotlin.jvm.JvmField
+    val clauses: ImmutableList<Clause?>?
+    private val rbracketOffset: Int
+
+    init {
+        this.isDict = isDict
+        this.lbracketOffset = lbracketOffset
+        this.body = body
+        this.clauses = clauses
+        this.rbracketOffset = rbracketOffset
     }
 
-    @Override
-    public int getEndOffset() {
-      return condition.getEndOffset();
+    override fun getStartOffset(): Int {
+        return lbracketOffset
     }
 
-    @Override
-    public void accept(NodeVisitor visitor) {
-      visitor.visit(this);
+    override fun getEndOffset(): Int {
+        return rbracketOffset + 1
     }
-  }
 
-  private final boolean isDict; // {k: v for vars in iterable}
-  private final int lbracketOffset;
-  private final Node body; // Expression or DictExpression.Entry
-  private final ImmutableList<Clause> clauses;
-  private final int rbracketOffset;
-
-  Comprehension(
-      FileLocations locs,
-      boolean isDict,
-      int lbracketOffset,
-      Node body,
-      ImmutableList<Clause> clauses,
-      int rbracketOffset) {
-    super(locs, Kind.COMPREHENSION);
-    this.isDict = isDict;
-    this.lbracketOffset = lbracketOffset;
-    this.body = body;
-    this.clauses = clauses;
-    this.rbracketOffset = rbracketOffset;
-  }
-
-  public boolean isDict() {
-    return isDict;
-  }
-
-  /**
-   * Returns the loop body: an expression for a list comprehension, or a DictExpression.Entry for a
-   * dict comprehension.
-   */
-  public Node getBody() {
-    return body;
-  }
-
-  public ImmutableList<Clause> getClauses() {
-    return clauses;
-  }
-
-  @Override
-  public int getStartOffset() {
-    return lbracketOffset;
-  }
-
-  @Override
-  public int getEndOffset() {
-    return rbracketOffset + 1;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

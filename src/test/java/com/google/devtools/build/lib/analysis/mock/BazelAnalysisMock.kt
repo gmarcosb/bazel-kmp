@@ -11,98 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.mock;
+package com.google.devtools.build.lib.analysis.mock
 
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static java.lang.Short.MAX_VALUE;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.common.collect.ImmutableMap
+import com.google.common.io.MoreFiles
+import com.google.devtools.build.lib.analysis.BlazeDirectories
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.util.Map
+import java.util.function.Function
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.MoreFiles;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ShellConfiguration;
-import com.google.devtools.build.lib.analysis.util.AbstractMockJavaSupport;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.bazel.BazelRepositoryModule;
-import com.google.devtools.build.lib.bazel.bzlmod.LocalPathRepoSpecs;
-import com.google.devtools.build.lib.bazel.bzlmod.NonRegistryOverride;
-import com.google.devtools.build.lib.bazel.rules.BazelRuleClassProvider;
-import com.google.devtools.build.lib.packages.util.BazelMockCcSupport;
-import com.google.devtools.build.lib.packages.util.BazelMockPythonSupport;
-import com.google.devtools.build.lib.packages.util.MockCcSupport;
-import com.google.devtools.build.lib.packages.util.MockGenruleSupport;
-import com.google.devtools.build.lib.packages.util.MockObjcSupport;
-import com.google.devtools.build.lib.packages.util.MockPlatformSupport;
-import com.google.devtools.build.lib.packages.util.MockProtoSupport;
-import com.google.devtools.build.lib.packages.util.MockPythonSupport;
-import com.google.devtools.build.lib.packages.util.MockToolsConfig;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.runfiles.Runfiles;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.Map;
+/** Subclass of [AnalysisMock] using Bazel-specific semantics.  */
+class BazelAnalysisMock private constructor() : AnalysisMock() {
+    @Throws(IOException::class)
+    override fun setupMockClientInternal(config: MockToolsConfig) {
+        config.create(
+            "local_config_xcode_workspace/BUILD",
+            "load('@build_bazel_apple_support//xcode:xcode_config.bzl', 'xcode_config')",
+            "xcode_config(name = 'host_xcodes')"
+        )
+        MockObjcSupport.setupXcodeRules(config)
+        config.create(
+            "local_config_xcode_workspace/MODULE.bazel", "module(name = 'local_config_xcode')"
+        )
+        config.create("third_party/protobuf/BUILD")
+        config.create("third_party/protobuf/MODULE.bazel", "module(name='com_google_protobuf')")
+        config.overwrite(
+            "MODULE.bazel",
+            "register_toolchains('@rules_java//java/toolchains/runtime:all')",
+            "register_toolchains('@rules_java//java/toolchains/javac:all')",
+            "register_toolchains('@bazel_tools//tools/cpp:all')",
+            "register_toolchains('@bazel_tools//tools/jdk:all')",
+            "register_toolchains('@bazel_tools//tools/python:autodetecting_toolchain')"
+        )
+        /* The rest of platforms is initialized in {@link MockPlatformSupport}. */
+        config.create("platforms_workspace/MODULE.bazel", "module(name = 'platforms')")
+        config.create(
+            "build_bazel_apple_support/MODULE.bazel", "module(name = 'build_bazel_apple_support')"
+        )
+        config.create(
+            "third_party/bazel_rules/rules_shell/MODULE.bazel", "module(name = 'rules_shell')"
+        )
 
-/** Subclass of {@link AnalysisMock} using Bazel-specific semantics. */
-public final class BazelAnalysisMock extends AnalysisMock {
-  public static final AnalysisMock INSTANCE = new BazelAnalysisMock();
+        // TODO: remove after figuring out https://github.com/bazelbuild/bazel/issues/22208
+        config.create(
+            ".bazelignore",
+            "embedded_tools",
+            "platforms_workspace",
+            "rules_java_workspace",
+            "rules_python_workspace",
+            "third_party/protobuf",
+            "proto_bazel_features_workspace",
+            "bazel_features_workspace",
+            "build_bazel_apple_support",
+            "local_config_xcode_workspace",
+            "third_party/bazel_rules/rules_cc",
+            "third_party/bazel_rules/rules_shell"
+        )
 
-  private BazelAnalysisMock() {}
-
-  @Override
-  public void setupMockClientInternal(MockToolsConfig config) throws IOException {
-    config.create(
-        "local_config_xcode_workspace/BUILD",
-        "load('@build_bazel_apple_support//xcode:xcode_config.bzl', 'xcode_config')",
-        "xcode_config(name = 'host_xcodes')");
-    MockObjcSupport.setupXcodeRules(config);
-    config.create(
-        "local_config_xcode_workspace/MODULE.bazel", "module(name = 'local_config_xcode')");
-    config.create("third_party/protobuf/BUILD");
-    config.create("third_party/protobuf/MODULE.bazel", "module(name='com_google_protobuf')");
-    config.overwrite(
-        "MODULE.bazel",
-        "register_toolchains('@rules_java//java/toolchains/runtime:all')",
-        "register_toolchains('@rules_java//java/toolchains/javac:all')",
-        "register_toolchains('@bazel_tools//tools/cpp:all')",
-        "register_toolchains('@bazel_tools//tools/jdk:all')",
-        "register_toolchains('@bazel_tools//tools/python:autodetecting_toolchain')");
-    /* The rest of platforms is initialized in {@link MockPlatformSupport}. */
-    config.create("platforms_workspace/MODULE.bazel", "module(name = 'platforms')");
-    config.create(
-        "build_bazel_apple_support/MODULE.bazel", "module(name = 'build_bazel_apple_support')");
-    config.create(
-        "third_party/bazel_rules/rules_shell/MODULE.bazel", "module(name = 'rules_shell')");
-
-    // TODO: remove after figuring out https://github.com/bazelbuild/bazel/issues/22208
-    config.create(
-        ".bazelignore",
-        "embedded_tools",
-        "platforms_workspace",
-        "rules_java_workspace",
-        "rules_python_workspace",
-        "third_party/protobuf",
-        "proto_bazel_features_workspace",
-        "bazel_features_workspace",
-        "build_bazel_apple_support",
-        "local_config_xcode_workspace",
-        "third_party/bazel_rules/rules_cc",
-        "third_party/bazel_rules/rules_shell");
-
-    Runfiles runfiles = Runfiles.preload().withSourceRepository("");
-    for (String filename : Arrays.asList("tools/jdk/java_toolchain_alias.bzl")) {
-      java.nio.file.Path path = Paths.get(runfiles.rlocation("io_bazel/" + filename));
-      if (!Files.exists(path)) {
-        continue; // the io_bazel workspace root only exists for Bazel
-      }
-      config.create("embedded_tools/" + filename, MoreFiles.asCharSource(path, UTF_8).read());
-    }
-    config.create(
-        "embedded_tools/tools/jdk/launcher_flag_alias.bzl",
-        """
+        val runfiles: Runfiles = Runfiles.preload().withSourceRepository("")
+        for (filename in mutableListOf<String?>("tools/jdk/java_toolchain_alias.bzl")) {
+            val path: Path = Paths.get(runfiles.rlocation("io_bazel/" + filename))
+            if (!Files.exists(path)) {
+                continue  // the io_bazel workspace root only exists for Bazel
+            }
+            config.create("embedded_tools/" + filename, MoreFiles.asCharSource(path, StandardCharsets.UTF_8).read())
+        }
+        config.create(
+            "embedded_tools/tools/jdk/launcher_flag_alias.bzl",
+            """
         load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
         load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
@@ -131,10 +108,12 @@ public final class BazelAnalysisMock extends AnalysisMock {
                 ),
             },
         )
-        """);
-    config.create(
-        "embedded_tools/tools/jdk/BUILD",
-"""
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/jdk/BUILD",
+            """
 load("@rules_java//java:defs.bzl",
   "java_binary", "java_import", "java_toolchain", "java_runtime")
 load(
@@ -280,43 +259,51 @@ launcher_flag_alias(
     name = "launcher_flag_alias",
     visibility = ["//visibility:public"],
 )
-""");
 
-    config.create(
-        TestConstants.CONSTRAINTS_PATH + "/android/BUILD",
-        "package(default_visibility=['//visibility:public'])",
-        "platform(",
-        "  name = 'armeabi-v7a',",
-        "  parents = ['" + TestConstants.PLATFORM_LABEL + "'],",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:android',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7',",
-        "  ],",
-        ")");
+""".trimIndent()
+        )
 
-    // Create the actual SDKs.
-    config.create(
-        "embedded_tools/src/tools/android/java/com/google/devtools/build/android/r8/BUILD",
-        """
+        config.create(
+            TestConstants.CONSTRAINTS_PATH + "/android/BUILD",
+            "package(default_visibility=['//visibility:public'])",
+            "platform(",
+            "  name = 'armeabi-v7a',",
+            "  parents = ['" + TestConstants.PLATFORM_LABEL + "'],",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:android',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7',",
+            "  ],",
+            ")"
+        )
+
+        // Create the actual SDKs.
+        config.create(
+            "embedded_tools/src/tools/android/java/com/google/devtools/build/android/r8/BUILD",
+            """
         filegroup(name='r8', srcs = [])
-        """);
-    config.create(
-        "android_gmaven_r8/jar/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "android_gmaven_r8/jar/BUILD",
+            """
         filegroup(name = "jar", srcs = ["r8.jar"])
         filegroup(name = "file", srcs = [])
-        """);
-    config.create("android_gmaven_r8/REPO.bazel");
+        
+        """.trimIndent()
+        )
+        config.create("android_gmaven_r8/REPO.bazel")
 
-    MockGenruleSupport.setup(config);
+        MockGenruleSupport.setup(config)
 
-    config.create(
-        "embedded_tools/tools/BUILD",
-        "alias(name='host_platform',actual='" + TestConstants.PLATFORM_LABEL + "')");
-    // Contains a stripped down version of @bazel_tools//tools/test.
-    config.create(
-        "embedded_tools/tools/test/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/BUILD",
+            "alias(name='host_platform',actual='" + TestConstants.PLATFORM_LABEL + "')"
+        )
+        // Contains a stripped down version of @bazel_tools//tools/test.
+        config.create(
+            "embedded_tools/tools/test/BUILD",
+            """
         load(":default_test_toolchain.bzl", "bool_flag", "empty_toolchain")
 
         toolchain_type(
@@ -435,10 +422,12 @@ launcher_flag_alias(
             name = "lcov_merger",
             srcs = ["lcov_merger.sh"],
         )
-        """);
-    config.create(
-        "embedded_tools/tools/test/default_test_toolchain.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/test/default_test_toolchain.bzl",
+            """
         visibility("private")
 
         bool_flag = rule(
@@ -450,56 +439,60 @@ launcher_flag_alias(
         empty_toolchain = rule(
             implementation = lambda ctx: platform_common.ToolchainInfo(),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Create fake, minimal implementations of test-setup.sh and test-xml-generator.sh for test
-    // cases that actually execute tests. Does not support coverage, interruption, signals, etc.
-    // For proper test execution support, the actual test-setup.sh will need to be included in the
-    // Java test's runfiles and copied/symlinked into the MockToolsConfig's workspace.
-    config
-        .create(
-            "embedded_tools/tools/test/test-setup.sh",
-            """
+        // Create fake, minimal implementations of test-setup.sh and test-xml-generator.sh for test
+        // cases that actually execute tests. Does not support coverage, interruption, signals, etc.
+        // For proper test execution support, the actual test-setup.sh will need to be included in the
+        // Java test's runfiles and copied/symlinked into the MockToolsConfig's workspace.
+        config
+            .create(
+                "embedded_tools/tools/test/test-setup.sh",
+                """
             #!/bin/bash
             set -e
             function is_absolute {
-              [[ "$1" = /* ]] || [[ "$1" =~ ^[a-zA-Z]:[/\\].* ]]
+              [[ "${'$'}1" = /* ]] || [[ "${'$'}1" =~ ^[a-zA-Z]:[/\].* ]]
             }
-            is_absolute "$TEST_SRCDIR" || TEST_SRCDIR="$PWD/$TEST_SRCDIR"
-            RUNFILES_MANIFEST_FILE="${TEST_SRCDIR}/MANIFEST"
-            cd ${TEST_SRCDIR}
+            is_absolute "${'$'}TEST_SRCDIR" || TEST_SRCDIR="${'$'}PWD/${'$'}TEST_SRCDIR"
+            RUNFILES_MANIFEST_FILE="${'$'}{TEST_SRCDIR}/MANIFEST"
+            cd ${'$'}{TEST_SRCDIR}
             function rlocation() {
-              if is_absolute "$1" ; then
+              if is_absolute "${'$'}1" ; then
                 # If the file path is already fully specified, simply return it.
-                echo "$1"
-              elif [[ -e "$TEST_SRCDIR/$1" ]]; then
-                # If the file exists in the $TEST_SRCDIR then just use it.
-                echo "$TEST_SRCDIR/$1"
-              elif [[ -e "$RUNFILES_MANIFEST_FILE" ]]; then
+                echo "${'$'}1"
+              elif [[ -e "${'$'}TEST_SRCDIR/${'$'}1" ]]; then
+                # If the file exists in the ${'$'}TEST_SRCDIR then just use it.
+                echo "${'$'}TEST_SRCDIR/${'$'}1"
+              elif [[ -e "${'$'}RUNFILES_MANIFEST_FILE" ]]; then
                 # If a runfiles manifest file exists then use it.
-                echo "$(grep "^$1 " "$RUNFILES_MANIFEST_FILE" | sed 's/[^ ]* //')"
+                echo "${'$'}(grep "^${'$'}1 " "${'$'}RUNFILES_MANIFEST_FILE" | sed 's/[^ ]* //')"
               fi
             }
 
-            EXE="${1#./}"
+            EXE="${'$'}{1#./}"
             shift
 
-            if is_absolute "$EXE"; then
-              TEST_PATH="$EXE"
+            if is_absolute "${'$'}EXE"; then
+              TEST_PATH="${'$'}EXE"
             else
-              TEST_PATH="$(rlocation $TEST_WORKSPACE/$EXE)"
+              TEST_PATH="${'$'}(rlocation ${'$'}TEST_WORKSPACE/${'$'}EXE)"
             fi
-            exec $TEST_PATH
-            """)
-        .chmod(0755);
-    config
-        .create("embedded_tools/tools/test/test-xml-generator.sh", "#!/bin/sh", "cp \"$1\" \"$2\"")
-        .chmod(0755);
+            exec ${'$'}TEST_PATH
+            
+            """.trimIndent()
+            )
+            .chmod(493)
+        config
+            .create("embedded_tools/tools/test/test-xml-generator.sh", "#!/bin/sh", "cp \"$1\" \"$2\"")
+            .chmod(493)
 
-    // Use an alias package group to allow for modification at the simpler path
-    config.create(
-        "embedded_tools/tools/allowlists/config_feature_flag/BUILD",
-        """
+        // Use an alias package group to allow for modification at the simpler path
+        config.create(
+            "embedded_tools/tools/allowlists/config_feature_flag/BUILD",
+            """
         package_group(
             name = "config_feature_flag",
             includes = ["@@//tools/allowlists/config_feature_flag"],
@@ -509,11 +502,13 @@ launcher_flag_alias(
             name = "config_feature_flag_setter",
             includes = ["@@//tools/allowlists/config_feature_flag:config_feature_flag_setter"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "tools/allowlists/config_feature_flag/BUILD",
-        """
+        config.create(
+            "tools/allowlists/config_feature_flag/BUILD",
+            """
         package_group(
             name = "config_feature_flag",
             packages = ["public"],
@@ -523,18 +518,22 @@ launcher_flag_alias(
             name = "config_feature_flag_Setter",
             packages = ["public"],
         )
-        """);
-    config.create(
-        "embedded_tools/tools/allowlists/initializer_allowlist/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/allowlists/initializer_allowlist/BUILD",
+            """
         package_group(
             name = "initializer_allowlist",
             packages = [],
         )
-        """);
-    config.create(
-        "embedded_tools/tools/allowlists/extend_rule_allowlist/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/allowlists/extend_rule_allowlist/BUILD",
+            """
         package_group(
             name = "extend_rule_allowlist",
             packages = ["public"],
@@ -543,33 +542,40 @@ launcher_flag_alias(
             name = "extend_rule_api_allowlist",
             packages = [],
         )
-        """);
-    config.create(
-        "embedded_tools/tools/allowlists/subrules_allowlist/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/allowlists/subrules_allowlist/BUILD",
+            """
         package_group(
             name = "subrules_allowlist",
             packages = [],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "embedded_tools/tools/allowlists/android_binary_allowlist/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/allowlists/android_binary_allowlist/BUILD",
+            """
         package_group(
             name = "enable_starlark_dex_desugar_proguard",
             includes = [
             "@@//tools/allowlists/android_binary_allowlist:enable_starlark_dex_desugar_proguard",
             ],
         )
-        """);
-    config.create(
-        "tools/allowlists/android_binary_allowlist/BUILD",
-        "package_group(name='enable_starlark_dex_desugar_proguard', packages=[])");
+        
+        """.trimIndent()
+        )
+        config.create(
+            "tools/allowlists/android_binary_allowlist/BUILD",
+            "package_group(name='enable_starlark_dex_desugar_proguard', packages=[])"
+        )
 
-    config.create(
-        "embedded_tools/tools/proto/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/proto/BUILD",
+            """
         package(default_visibility = ["//visibility:public"])
 
         alias(
@@ -591,11 +597,13 @@ launcher_flag_alias(
             name = "cc_toolchain",
             actual = "@com_google_protobuf//:cc_toolchain",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "embedded_tools/tools/zip/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/zip/BUILD",
+            """
         load("@bazel_tools//third_party/cc_rules/macros:defs.bzl", "cc_binary")
 
         package(default_visibility = ["//visibility:public"])
@@ -611,11 +619,13 @@ launcher_flag_alias(
             name = "unzip_fdo",
             actual = ":zipper",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "embedded_tools/tools/launcher/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/launcher/BUILD",
+            """
         load("@bazel_tools//third_party/cc_rules/macros:defs.bzl", "cc_binary")
 
         package(default_visibility = ["//visibility:public"])
@@ -629,22 +639,26 @@ launcher_flag_alias(
             name = "launcher_maker",
             srcs = ["launcher_maker.cc"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "embedded_tools/tools/def_parser/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/def_parser/BUILD",
+            """
         package(default_visibility = ["//visibility:public"])
 
         filegroup(
             name = "def_parser",
             srcs = ["def_parser.exe"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "embedded_tools/objcproto/BUILD",
-        """
+        config.create(
+            "embedded_tools/objcproto/BUILD",
+            """
         package(default_visibility = ["//visibility:public"])
 
         objc_library(
@@ -660,48 +674,61 @@ launcher_flag_alias(
             name = "well_known_type_proto",
                 srcs = ["well_known_type.proto"],
             )
-        """);
-    config.create("embedded_tools/objcproto/empty.m");
-    config.create("embedded_tools/objcproto/empty.cc");
-    config.create("embedded_tools/objcproto/well_known_type.proto");
+        
+        """.trimIndent()
+        )
+        config.create("embedded_tools/objcproto/empty.m")
+        config.create("embedded_tools/objcproto/empty.cc")
+        config.create("embedded_tools/objcproto/well_known_type.proto")
 
-    // Copies bazel_skylib from real @bazel_skylib (needed by rules_python)
-    PathFragment path = PathFragment.create(runfiles.rlocation("bazel_skylib/BUILD"));
-    config.copyDirectory(path.getParentDirectory(), "bazel_skylib_workspace", MAX_VALUE, true);
-    config.overwrite("bazel_skylib_workspace/MODULE.bazel", "module(name = 'bazel_skylib')");
+        // Copies bazel_skylib from real @bazel_skylib (needed by rules_python)
+        val path: PathFragment = PathFragment.create(runfiles.rlocation("bazel_skylib/BUILD"))
+        config.copyDirectory(
+            path.getParentDirectory(),
+            "bazel_skylib_workspace",
+            Short.Companion.MAX_VALUE.toInt(),
+            true
+        )
+        config.overwrite("bazel_skylib_workspace/MODULE.bazel", "module(name = 'bazel_skylib')")
 
-    config.create(
-        "embedded_tools/tools/allowlists/function_transition_allowlist/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/allowlists/function_transition_allowlist/BUILD",
+            """
         package_group(
             name = "function_transition_allowlist",
             packages = ["public"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "embedded_tools/tools/allowlists/dormant_dependency_allowlist/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/allowlists/dormant_dependency_allowlist/BUILD",
+            """
         package_group(
             name = "dormant_dependency_allowlist",
             packages = ["public"],
         )
-        """);
-    config.create("bazel_features_workspace/MODULE.bazel", "module(name = 'bazel_features')");
-    config.create("bazel_features_workspace/BUILD");
-    config.create(
-        "bazel_features_workspace/features.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create("bazel_features_workspace/MODULE.bazel", "module(name = 'bazel_features')")
+        config.create("bazel_features_workspace/BUILD")
+        config.create(
+            "bazel_features_workspace/features.bzl",
+            """
         bazel_features = struct(
           rules = struct(
             _has_launcher_maker_toolchain = False,
           ),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create(
-        "embedded_tools/tools/allowlists/materializer_rule_allowlist/BUILD",
-        """
+        config.create(
+            "embedded_tools/tools/allowlists/materializer_rule_allowlist/BUILD",
+            """
         package_group(
             name = "materializer_rule_allowlist",
             packages = ["public"],
@@ -710,30 +737,35 @@ launcher_flag_alias(
           name = 'materializer_rule_real_deps_allowlist',
           packages = ["public"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    MockProtoSupport.setupWorkspace(config);
-    MockPlatformSupport.setup(config);
-    ccSupport().setup(config);
-    javaSupport().setupRulesJava(config, runfiles::rlocation);
-    pySupport().setup(config);
-    ShellConfiguration.injectShellExecutableFinder(
-        BazelRuleClassProvider::getDefaultPathFromOptions,
-        BazelRuleClassProvider.SHELL_EXECUTABLES);
-  }
+        MockProtoSupport.setupWorkspace(config)
+        MockPlatformSupport.setup(config)
+        ccSupport().setup(config)
+        javaSupport().setupRulesJava(config, Function { path: String? -> runfiles.rlocation(path) })
+        pySupport().setup(config)
+        ShellConfiguration.injectShellExecutableFinder(
+            BazelRuleClassProvider::getDefaultPathFromOptions,
+            BazelRuleClassProvider.SHELL_EXECUTABLES
+        )
+    }
 
-  @Override
-  public void setupMockToolsRepository(MockToolsConfig config) throws IOException {
-    config.create(
-        "embedded_tools/MODULE.bazel",
-        """
+    @Throws(IOException::class)
+    override fun setupMockToolsRepository(config: MockToolsConfig) {
+        config.create(
+            "embedded_tools/MODULE.bazel",
+            """
         module(name='bazel_tools')
         register_toolchains("//tools/test:all")
-        """);
-    config.create("embedded_tools/tools/build_defs/repo/BUILD");
-    config.create(
-        "embedded_tools/tools/build_defs/build_info/bazel_cc_build_info.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create("embedded_tools/tools/build_defs/repo/BUILD")
+        config.create(
+            "embedded_tools/tools/build_defs/build_info/bazel_cc_build_info.bzl",
+            """
         def _impl(ctx):
             volatile_file = ctx.actions.declare_file("volatile_file.h")
             non_volatile_file = ctx.actions.declare_file("non_volatile_file.h")
@@ -748,10 +780,12 @@ launcher_flag_alias(
             return OutputGroupInfo(**output_groups)
 
         bazel_cc_build_info = rule(implementation = _impl)
-        """);
-    config.create(
-        "embedded_tools/tools/build_defs/build_info/bazel_java_build_info.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/build_defs/build_info/bazel_java_build_info.bzl",
+            """
         def _impl(ctx):
             volatile_file = ctx.actions.declare_file("volatile_file.properties")
             non_volatile_file = ctx.actions.declare_file("non_volatile_file.properties")
@@ -766,10 +800,12 @@ launcher_flag_alias(
             return OutputGroupInfo(**output_groups)
 
         bazel_java_build_info = rule(implementation = _impl)
-        """);
-    config.create(
-        "embedded_tools/tools/build_defs/build_info/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/build_defs/build_info/BUILD",
+            """
         load("//tools/build_defs/build_info:bazel_cc_build_info.bzl", "bazel_cc_build_info")
         load("//tools/build_defs/build_info:bazel_java_build_info.bzl", "bazel_java_build_info")
 
@@ -782,17 +818,21 @@ launcher_flag_alias(
             name = "java_build_info",
             visibility = ["//visibility:public"],
         )
-        """);
-    config.create(
-        "embedded_tools/tools/build_defs/repo/utils.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/build_defs/repo/utils.bzl",
+            """
         def maybe(repo_rule, name, **kwargs):
             if name not in native.existing_rules():
                 repo_rule(name = name, **kwargs)
-        """);
-    config.create(
-        "embedded_tools/tools/build_defs/repo/http.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/build_defs/repo/http.bzl",
+            """
         def http_archive(**kwargs):
             pass
 
@@ -801,10 +841,12 @@ launcher_flag_alias(
 
         def http_jar(**kwargs):
             pass
-        """);
-    config.create(
-        "embedded_tools/tools/build_defs/repo/local.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/build_defs/repo/local.bzl",
+            """
         def _local_repository_impl(rctx):
           path = rctx.workspace_root.get_child(rctx.attr.path)
           rctx.symlink(path, ".")
@@ -815,97 +857,112 @@ launcher_flag_alias(
 
         def new_local_repository(**kwargs):
             pass
-        """);
-    config.create("embedded_tools/tools/jdk/jdk_build_file.bzl", "JDK_BUILD_TEMPLATE = ''");
-    config.create(
-        "embedded_tools/tools/jdk/local_java_repository.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create("embedded_tools/tools/jdk/jdk_build_file.bzl", "JDK_BUILD_TEMPLATE = ''")
+        config.create(
+            "embedded_tools/tools/jdk/local_java_repository.bzl",
+            """
         def local_java_repository(**kwargs):
             pass
-        """);
-    config.create(
-        "embedded_tools/tools/jdk/remote_java_repository.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/jdk/remote_java_repository.bzl",
+            """
         def remote_java_repository(**kwargs):
             pass
-        """);
-    config.create(
-        "embedded_tools/tools/cpp/cc_configure.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "embedded_tools/tools/cpp/cc_configure.bzl",
+            """
         def cc_configure(**kwargs):
             pass
-        """);
+        
+        """.trimIndent()
+        )
 
-    config.create("embedded_tools/tools/sh/BUILD");
-    config.create("embedded_tools/tools/osx/BUILD");
-    config.create(
-        "embedded_tools/tools/osx/xcode_configure.bzl",
-        """
+        config.create("embedded_tools/tools/sh/BUILD")
+        config.create("embedded_tools/tools/osx/BUILD")
+        config.create(
+            "embedded_tools/tools/osx/xcode_configure.bzl",
+            """
         # no positional arguments for XCode
         def xcode_configure(*args, **kwargs):
             pass
-        """);
-    config.create("embedded_tools/bin/sh", "def sh(**kwargs):", "  pass");
-  }
+        
+        """.trimIndent()
+        )
+        config.create("embedded_tools/bin/sh", "def sh(**kwargs):", "  pass")
+    }
 
-  @Override
-  public ImmutableMap<String, NonRegistryOverride> getBuiltinModules(BlazeDirectories directories) {
-    ImmutableMap<String, String> moduleNameToPath =
-        ImmutableMap.<String, String>builder()
-            .put("bazel_tools", "embedded_tools")
-            .put("platforms", "platforms_workspace")
-            .put("rules_java", "rules_java_workspace")
-            .put("rules_python", "rules_python_workspace")
-            .put("rules_python_internal", "rules_python_internal_workspace")
-            .put("bazel_skylib", "bazel_skylib_workspace")
-            .put(
-                "com_google_protobuf",
-                "third_party/protobuf") // for WORKSPACE compatibility use com_google_protobuf
-            .put("proto_bazel_features", "proto_bazel_features_workspace")
-            .put("bazel_features", "bazel_features_workspace")
-            .put("build_bazel_apple_support", "build_bazel_apple_support")
-            .put("local_config_xcode", "local_config_xcode_workspace")
-            .put("rules_cc", "third_party/bazel_rules/rules_cc")
-            .put("rules_shell", "third_party/bazel_rules/rules_shell")
-            .buildOrThrow();
-    return moduleNameToPath.entrySet().stream()
-        .collect(
-            toImmutableMap(
-                Map.Entry::getKey,
-                e ->
-                    new NonRegistryOverride(
-                        LocalPathRepoSpecs.create(
-                            directories
-                                .getWorkingDirectory()
-                                .getRelative(e.getValue())
-                                .getPathString()))));
-  }
+    override fun getBuiltinModules(directories: BlazeDirectories): ImmutableMap<String?, NonRegistryOverride?> {
+        val moduleNameToPath =
+            ImmutableMap.builder<String?, String?>()
+                .put("bazel_tools", "embedded_tools")
+                .put("platforms", "platforms_workspace")
+                .put("rules_java", "rules_java_workspace")
+                .put("rules_python", "rules_python_workspace")
+                .put("rules_python_internal", "rules_python_internal_workspace")
+                .put("bazel_skylib", "bazel_skylib_workspace")
+                .put(
+                    "com_google_protobuf",
+                    "third_party/protobuf"
+                ) // for WORKSPACE compatibility use com_google_protobuf
+                .put("proto_bazel_features", "proto_bazel_features_workspace")
+                .put("bazel_features", "bazel_features_workspace")
+                .put("build_bazel_apple_support", "build_bazel_apple_support")
+                .put("local_config_xcode", "local_config_xcode_workspace")
+                .put("rules_cc", "third_party/bazel_rules/rules_cc")
+                .put("rules_shell", "third_party/bazel_rules/rules_shell")
+                .buildOrThrow()
+        return moduleNameToPath.entries.stream()
+            .collect(
+                TODO("Cannot convert element")
+            ) < Map.Entry < String
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |String>, String, NonRegistryOverride>toImmutableMap(
+            |                Map.Entry::getKey,
+            |                e ->
+            |                    new NonRegistryOverride(
+            |                        LocalPathRepoSpecs.create(
+            |                            directories
+            |                                .getWorkingDirectory()
+            |                                .getRelative(e.getValue())
+            |                                .getPathString())))
+            """.trimMargin()
+        )
+    }
 
-  @Override
-  public void setupPrelude(MockToolsConfig mockToolsConfig) {}
+    override fun setupPrelude(mockToolsConfig: MockToolsConfig?) {}
 
-  @Override
-  public boolean isThisBazel() {
-    return true;
-  }
+    val isThisBazel: Boolean
+        get() = true
 
-  @Override
-  public MockCcSupport ccSupport() {
-    return BazelMockCcSupport.INSTANCE;
-  }
+    override fun ccSupport(): MockCcSupport {
+        return BazelMockCcSupport.INSTANCE
+    }
 
-  @Override
-  public AbstractMockJavaSupport javaSupport() {
-    return AbstractMockJavaSupport.BAZEL;
-  }
+    override fun javaSupport(): AbstractMockJavaSupport {
+        return AbstractMockJavaSupport.Companion.BAZEL
+    }
 
-  @Override
-  public MockPythonSupport pySupport() {
-    return BazelMockPythonSupport.INSTANCE;
-  }
+    override fun pySupport(): MockPythonSupport {
+        return BazelMockPythonSupport.INSTANCE
+    }
 
-  @Override
-  public BlazeModule getBazelRepositoryModule(BlazeDirectories directories) {
-    return new BazelRepositoryModule(getBuiltinModules(directories));
-  }
+    override fun getBazelRepositoryModule(directories: BlazeDirectories): BlazeModule {
+        return BazelRepositoryModule(getBuiltinModules(directories))
+    }
+
+    companion object {
+        val INSTANCE: AnalysisMock = BazelAnalysisMock()
+    }
 }

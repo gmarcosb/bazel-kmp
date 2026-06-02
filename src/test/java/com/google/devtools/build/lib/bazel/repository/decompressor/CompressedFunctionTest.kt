@@ -11,185 +11,180 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import com.github.luben.zstd.ZstdOutputStream
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.testutil.TestUtils
+import com.google.devtools.build.lib.vfs.util.FileSystems
+import org.junit.Assert
+import org.junit.Rule
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.runners.Parameterized
+import java.io.File
+import java.io.OutputStream
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.*
+import kotlin.collections.MutableList
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertThrows;
+@RunWith(Parameterized::class)
+class CompressedFunctionTest(private val clazz: Class<*>, private val compressedFileName: String?) {
+    @Rule
+    var name: TestName = TestName()
 
-import com.github.luben.zstd.ZstdOutputStream;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorValue.Decompressor;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import org.apache.commons.compress.compressors.CompressorException;
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
-import org.apache.commons.compress.compressors.xz.XZCompressorOutputStream;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TestName;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+    private var archiveDir: File? = null
+    private var extractionDir: File? = null
+    private var testFs: FileSystem? = null
 
-@RunWith(Parameterized.class)
-public class CompressedFunctionTest {
-  @Rule public TestName name = new TestName();
+    @Before
+    @Throws(IOException::class, CompressorException::class)
+    fun setUp() {
+        // Create an "archives" directory to hold compressed files and an "extracted" directory where
+        // the extraction will occur.
+        val tmpDir: String? = Paths.get(TestUtils.tmpDir()).resolve(name.getMethodName()).toString()
+        archiveDir = Paths.get(tmpDir).resolve("archives").toFile()
+        Truth.assertThat(archiveDir!!.mkdirs()).isTrue()
+        extractionDir = Paths.get(tmpDir).resolve("extracted").toFile()
+        Truth.assertThat(extractionDir!!.mkdirs()).isTrue()
 
-  private final String compressedFileName;
-  private final Class<?> clazz;
+        val out =
+            Files.newOutputStream(
+                Path.of(archiveDir!!.getPath()).resolve(compressedFileName)
+            )
+        val os: OutputStream?
+        if (clazz == Bz2Function::class.java) {
+            os = BZip2CompressorOutputStream(out)
+        } else if (clazz == GzFunction::class.java) {
+            os = GzipCompressorOutputStream(out)
+        } else if (clazz == XzFunction::class.java) {
+            os = XZCompressorOutputStream(out)
+        } else if (clazz == ZstFunction::class.java) {
+            os = ZstdOutputStream(out)
+        } else {
+            throw IllegalArgumentException("Unknown compressor class passed: " + clazz)
+        }
+        os.write(("test compressed " + compressedFileName + " file contents\n").toByteArray(StandardCharsets.UTF_8))
+        os!!.close()
 
-  private File archiveDir;
-  private File extractionDir;
-  private FileSystem testFs;
-
-  public CompressedFunctionTest(Class<?> clazz, String compressedFileName) {
-    this.clazz = clazz;
-    this.compressedFileName = compressedFileName;
-  }
-
-  public static final String EXTRACTED_FILE_NAME = "archive.txt";
-
-  @Parameterized.Parameters
-  public static List<Object[]> data() {
-    return Arrays.asList(
-        new Object[][] {
-          {Bz2Function.class, EXTRACTED_FILE_NAME + ".bz2"},
-          {GzFunction.class, EXTRACTED_FILE_NAME + ".gz"},
-          {XzFunction.class, EXTRACTED_FILE_NAME + ".xz"},
-          {ZstFunction.class, EXTRACTED_FILE_NAME + ".zst"},
-        });
-  }
-
-  @Before
-  public void setUp() throws IOException, CompressorException {
-    // Create an "archives" directory to hold compressed files and an "extracted" directory where
-    // the extraction will occur.
-    String tmpDir = Paths.get(TestUtils.tmpDir()).resolve(name.getMethodName()).toString();
-    archiveDir = Paths.get(tmpDir).resolve("archives").toFile();
-    assertThat(archiveDir.mkdirs()).isTrue();
-    extractionDir = Paths.get(tmpDir).resolve("extracted").toFile();
-    assertThat(extractionDir.mkdirs()).isTrue();
-
-    OutputStream out =
-        Files.newOutputStream(
-            java.nio.file.Path.of(archiveDir.getPath()).resolve(compressedFileName));
-    OutputStream os;
-    if (clazz == Bz2Function.class) {
-      os = new BZip2CompressorOutputStream(out);
-    } else if (clazz == GzFunction.class) {
-      os = new GzipCompressorOutputStream(out);
-    } else if (clazz == XzFunction.class) {
-      os = new XZCompressorOutputStream(out);
-    } else if (clazz == ZstFunction.class) {
-      os = new ZstdOutputStream(out);
-    } else {
-      throw new IllegalArgumentException("Unknown compressor class passed: " + clazz);
+        testFs = FileSystems.getNativeFileSystem()
     }
-    os.write(("test compressed " + compressedFileName + " file contents\n").getBytes(UTF_8));
-    os.close();
 
-    testFs = FileSystems.getNativeFileSystem();
-  }
+    /** Basic decompression. Verifies that the uncompressed file name and contents are correct.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompress() {
+        val descriptor: DecompressorDescriptor.Builder =
+            DecompressorDescriptor.builder()
+                .setDestinationPath(testFs.getPath(extractionDir!!.getCanonicalPath()))
+                .setArchivePath(
+                    testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName)
+                )!!
 
-  /** Basic decompression. Verifies that the uncompressed file name and contents are correct. */
-  @Test
-  public void testDecompress() throws Exception {
-    DecompressorDescriptor.Builder descriptor =
-        DecompressorDescriptor.builder()
-            .setDestinationPath(testFs.getPath(extractionDir.getCanonicalPath()))
-            .setArchivePath(
-                testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName));
+        val fileDir: Path = decompress(descriptor.build())
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
 
-    Path fileDir = decompress(descriptor.build());
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
+        Truth.assertThat(files).containsExactly(EXTRACTED_FILE_NAME)
+        val pathFile: File = fileDir.getRelative(EXTRACTED_FILE_NAME).getPathFile()
+        Truth.assertThat(Files.readString(pathFile.toPath()))
+            .contains("test compressed " + compressedFileName + " file contents\n")
+    }
 
-    assertThat(files).containsExactly(EXTRACTED_FILE_NAME);
-    File pathFile = fileDir.getRelative(EXTRACTED_FILE_NAME).getPathFile();
-    assertThat(Files.readString(pathFile.toPath()))
-        .contains("test compressed " + compressedFileName + " file contents\n");
-  }
+    /**
+     * Prefixes are ignored, so setting one will not throw and everything still works as the regular
+     * decompression.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithPrefixIsIgnored() {
+        val descriptor: DecompressorDescriptor.Builder =
+            DecompressorDescriptor.builder()
+                .setDestinationPath(testFs.getPath(extractionDir!!.getCanonicalPath()))!!
+                .setPrefix("archive")
+                .setArchivePath(
+                    testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName)
+                )!!
 
-  /**
-   * Prefixes are ignored, so setting one will not throw and everything still works as the regular
-   * decompression.
-   */
-  @Test
-  public void testDecompressWithPrefixIsIgnored() throws Exception {
-    DecompressorDescriptor.Builder descriptor =
-        DecompressorDescriptor.builder()
-            .setDestinationPath(testFs.getPath(extractionDir.getCanonicalPath()))
-            .setPrefix("archive")
-            .setArchivePath(
-                testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName));
+        val fileDir: Path = decompress(descriptor.build())
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
 
-    Path fileDir = decompress(descriptor.build());
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
+        Truth.assertThat(files).containsExactly(EXTRACTED_FILE_NAME)
+        val pathFile: File = fileDir.getRelative(EXTRACTED_FILE_NAME).getPathFile()
+        Truth.assertThat(Files.readString(pathFile.toPath()))
+            .contains("test compressed " + compressedFileName + " file contents\n")
+    }
 
-    assertThat(files).containsExactly(EXTRACTED_FILE_NAME);
-    File pathFile = fileDir.getRelative(EXTRACTED_FILE_NAME).getPathFile();
-    assertThat(Files.readString(pathFile.toPath()))
-        .contains("test compressed " + compressedFileName + " file contents\n");
-  }
+    /** Test renaming the single compressed file.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFiles() {
+        val testFs: FileSystem = FileSystems.getNativeFileSystem()
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(EXTRACTED_FILE_NAME, "renamedFile")
+        val descriptor: DecompressorDescriptor.Builder =
+            DecompressorDescriptor.builder()
+                .setDestinationPath(testFs.getPath(extractionDir!!.getCanonicalPath()))!!
+                .setRenameFiles(renameFiles)
+                .setArchivePath(
+                    testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName)
+                )!!
 
-  /** Test renaming the single compressed file. */
-  @Test
-  public void testDecompressWithRenamedFiles() throws Exception {
-    FileSystem testFs = FileSystems.getNativeFileSystem();
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(EXTRACTED_FILE_NAME, "renamedFile");
-    DecompressorDescriptor.Builder descriptor =
-        DecompressorDescriptor.builder()
-            .setDestinationPath(testFs.getPath(extractionDir.getCanonicalPath()))
-            .setRenameFiles(renameFiles)
-            .setArchivePath(
-                testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName));
+        val fileDir: Path = decompress(descriptor.build())
+        val files: ImmutableList<String?>? =
+            fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName)
+                .collect(ImmutableList.toImmutableList<E?>())
 
-    Path fileDir = decompress(descriptor.build());
-    ImmutableList<String> files =
-        fileDir.readdir(Symlinks.NOFOLLOW).stream().map(Dirent::getName).collect(toImmutableList());
+        Truth.assertThat(files).containsExactly("renamedFile")
+        val pathFile: File = fileDir.getRelative("renamedFile").getPathFile()
+        Truth.assertThat(Files.readString(pathFile.toPath()))
+            .contains("test compressed " + compressedFileName + " file contents\n")
+    }
 
-    assertThat(files).containsExactly("renamedFile");
-    File pathFile = fileDir.getRelative("renamedFile").getPathFile();
-    assertThat(Files.readString(pathFile.toPath()))
-        .contains("test compressed " + compressedFileName + " file contents\n");
-  }
+    @Throws(Exception::class)
+    private fun decompress(descriptor: DecompressorDescriptor?): Path {
+        return (clazz.getConstructor().newInstance() as DecompressorValue.Decompressor).decompress(descriptor)
+    }
 
-  private Path decompress(DecompressorDescriptor descriptor) throws Exception {
-    return ((Decompressor) clazz.getConstructor().newInstance()).decompress(descriptor);
-  }
+    /** Test renaming the single compressed file to something that escapes.  */
+    @Test
+    @Throws(Exception::class)
+    fun testDecompressWithRenamedFileEscape() {
+        val testFs: FileSystem = FileSystems.getNativeFileSystem()
+        val renameFiles: HashMap<String?, String?> = HashMap<String?, String?>()
+        renameFiles.put(EXTRACTED_FILE_NAME, "../escaped.txt")
+        val descriptor: DecompressorDescriptor.Builder =
+            DecompressorDescriptor.builder()
+                .setDestinationPath(testFs.getPath(extractionDir!!.getCanonicalPath()))!!
+                .setRenameFiles(renameFiles)
+                .setArchivePath(
+                    testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName)
+                )!!
 
-  /** Test renaming the single compressed file to something that escapes. */
-  @Test
-  public void testDecompressWithRenamedFileEscape() throws Exception {
-    FileSystem testFs = FileSystems.getNativeFileSystem();
-    HashMap<String, String> renameFiles = new HashMap<>();
-    renameFiles.put(EXTRACTED_FILE_NAME, "../escaped.txt");
-    DecompressorDescriptor.Builder descriptor =
-        DecompressorDescriptor.builder()
-            .setDestinationPath(testFs.getPath(extractionDir.getCanonicalPath()))
-            .setRenameFiles(renameFiles)
-            .setArchivePath(
-                testFs.getPath(archiveDir.getCanonicalPath()).getRelative(compressedFileName));
+        val thrown: IOException? = Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            ThrowingRunnable { decompress(descriptor.build()) })
+        Truth.assertThat(thrown).hasMessageThat().contains("path is escaping the destination directory")
+    }
 
-    IOException thrown = assertThrows(IOException.class, () -> decompress(descriptor.build()));
-    assertThat(thrown).hasMessageThat().contains("path is escaping the destination directory");
-  }
+    companion object {
+        const val EXTRACTED_FILE_NAME: String = "archive.txt"
+
+        @Parameterized.Parameters
+        fun data(): MutableList<Array<Any?>?> {
+            return Arrays.asList<Array<Any?>?>(
+                *arrayOf<Array<Any?>?>(
+                    arrayOf<Any?>(Bz2Function::class.java, EXTRACTED_FILE_NAME + ".bz2"),
+                    arrayOf<Any?>(GzFunction::class.java, EXTRACTED_FILE_NAME + ".gz"),
+                    arrayOf<Any?>(XzFunction::class.java, EXTRACTED_FILE_NAME + ".xz"),
+                    arrayOf<Any?>(ZstFunction::class.java, EXTRACTED_FILE_NAME + ".zst"),
+                )
+            )
+        }
+    }
 }

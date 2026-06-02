@@ -11,150 +11,140 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
+import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifactType;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.CompletionContext.ArtifactReceiver;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.util.ArrayList;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.InOrder;
+/** Tests for [CompletionContext].  */
+@RunWith(JUnit4::class)
+class CompletionContextTest {
+    private val inputMap: ActionInputMap = ActionInputMap(0)
+    private val outputRoot: ArtifactRoot = ArtifactRoot.asDerivedRoot(
+        InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/execroot"),
+        RootType.OUTPUT,
+        "out"
+    )
 
-/** Tests for {@link CompletionContext}. */
-@RunWith(JUnit4.class)
-public final class CompletionContextTest {
-  private static final FileArtifactValue DUMMY_METADATA =
-      FileArtifactValue.createForRemoteFile(
-          /* digest= */ new byte[0], /* size= */ 0, /* locationIndex= */ 0);
+    @org.junit.Test
+    fun regularArtifact() {
+        val file: Artifact = ActionsTestUtil.Companion.createArtifact(outputRoot, "file")
+        inputMap.put(file, DUMMY_METADATA)
+        val ctx: CompletionContext = createCompletionContext( /* expandFilesets= */true)
 
-  private final ActionInputMap inputMap = new ActionInputMap(0);
-  private final ArtifactRoot outputRoot =
-      ArtifactRoot.asDerivedRoot(
-          new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/execroot"),
-          RootType.OUTPUT,
-          "out");
+        Truth.assertThat(visit(ctx, file)).containsExactly(file)
+    }
 
-  @Test
-  public void regularArtifact() {
-    Artifact file = ActionsTestUtil.createArtifact(outputRoot, "file");
-    inputMap.put(file, DUMMY_METADATA);
-    CompletionContext ctx = createCompletionContext(/* expandFilesets= */ true);
+    @org.junit.Test
+    fun treeArtifact_present() {
+        val tree: SpecialArtifact = createTreeArtifact("tree")
+        val treeFile1: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(tree, "file1")
+        val treeFile2: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(tree, "file2")
+        val treeValue: TreeArtifactValue? =
+            TreeArtifactValue.newBuilder(tree)
+                .putChild(treeFile1, DUMMY_METADATA)
+                .putChild(treeFile2, DUMMY_METADATA)
+                .build()
+        inputMap.putTreeArtifact(tree, treeValue)
+        val ctx: CompletionContext = createCompletionContext( /* expandFilesets= */true)
 
-    assertThat(visit(ctx, file)).containsExactly(file);
-  }
+        Truth.assertThat(visit(ctx, tree)).containsExactly(treeFile1, treeFile2).inOrder()
+    }
 
-  @Test
-  public void treeArtifact_present() {
-    SpecialArtifact tree = createTreeArtifact("tree");
-    TreeFileArtifact treeFile1 = TreeFileArtifact.createTreeOutput(tree, "file1");
-    TreeFileArtifact treeFile2 = TreeFileArtifact.createTreeOutput(tree, "file2");
-    TreeArtifactValue treeValue =
-        TreeArtifactValue.newBuilder(tree)
-            .putChild(treeFile1, DUMMY_METADATA)
-            .putChild(treeFile2, DUMMY_METADATA)
-            .build();
-    inputMap.putTreeArtifact(tree, treeValue);
-    CompletionContext ctx = createCompletionContext(/* expandFilesets= */ true);
+    @org.junit.Test
+    fun fileset_noExpansion() {
+        val fileset: SpecialArtifact = createFileset("fs")
+        inputMap.putFileset(
+            fileset,
+            FilesetOutputTree.create(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    filesetLink("a1", ActionsTestUtil.Companion.createArtifact(outputRoot, "b1")),
+                    filesetLink("a2", ActionsTestUtil.Companion.createArtifact(outputRoot, "b2"))
+                ),  /* treeArtifacts= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        )
+        val ctx: CompletionContext = createCompletionContext( /* expandFilesets= */false)
 
-    assertThat(visit(ctx, tree)).containsExactly(treeFile1, treeFile2).inOrder();
-  }
+        val receiver: ArtifactReceiver? = Mockito.mock<ArtifactReceiver?>(ArtifactReceiver::class.java)
+        ctx.visitArtifacts(com.google.common.collect.ImmutableList.of<E?>(fileset), receiver)
+        Mockito.verifyNoInteractions(receiver)
 
-  @Test
-  public void fileset_noExpansion() {
-    SpecialArtifact fileset = createFileset("fs");
-    inputMap.putFileset(
-        fileset,
-        FilesetOutputTree.create(
-            ImmutableList.of(
-                filesetLink("a1", ActionsTestUtil.createArtifact(outputRoot, "b1")),
-                filesetLink("a2", ActionsTestUtil.createArtifact(outputRoot, "b2"))),
-            /* treeArtifacts= */ ImmutableMap.of()));
-    CompletionContext ctx = createCompletionContext(/* expandFilesets= */ false);
+        Truth.assertThat(visit(ctx, fileset)).isEmpty()
+    }
 
-    ArtifactReceiver receiver = mock(ArtifactReceiver.class);
-    ctx.visitArtifacts(ImmutableList.of(fileset), receiver);
-    verifyNoInteractions(receiver);
+    @org.junit.Test
+    fun fileset_withExpansion() {
+        val fileset: SpecialArtifact = createFileset("fs")
+        val b1: Artifact = ActionsTestUtil.Companion.createArtifact(outputRoot, "b1")
+        val b2: Artifact = ActionsTestUtil.Companion.createArtifact(outputRoot, "b2")
+        val links: com.google.common.collect.ImmutableList<FilesetOutputSymlink?> =
+            com.google.common.collect.ImmutableList.of<FilesetOutputSymlink?>(
+                filesetLink("a1", b1),
+                filesetLink("a2", b2)
+            )
+        inputMap.putFileset(
+            fileset,
+            FilesetOutputTree.create(links,  /* treeArtifacts= */com.google.common.collect.ImmutableMap.of<K?, V?>())
+        )
+        val ctx: CompletionContext = createCompletionContext( /* expandFilesets= */true)
 
-    assertThat(visit(ctx, fileset)).isEmpty();
-  }
+        val receiver: ArtifactReceiver? = Mockito.mock<ArtifactReceiver?>(ArtifactReceiver::class.java)
+        ctx.visitArtifacts(com.google.common.collect.ImmutableList.of<E?>(fileset), receiver)
+        val inOrder: InOrder = Mockito.inOrder(receiver)
+        inOrder
+            .verify<Any?>(receiver)
+            .acceptFilesetMapping(
+                fileset, FilesetOutputSymlink(PathFragment.create("a1"), b1, DUMMY_METADATA)
+            )
+        inOrder
+            .verify<Any?>(receiver)
+            .acceptFilesetMapping(
+                fileset, FilesetOutputSymlink(PathFragment.create("a2"), b2, DUMMY_METADATA)
+            )
+    }
 
-  @Test
-  public void fileset_withExpansion() {
-    SpecialArtifact fileset = createFileset("fs");
-    Artifact b1 = ActionsTestUtil.createArtifact(outputRoot, "b1");
-    Artifact b2 = ActionsTestUtil.createArtifact(outputRoot, "b2");
-    ImmutableList<FilesetOutputSymlink> links =
-        ImmutableList.of(filesetLink("a1", b1), filesetLink("a2", b2));
-    inputMap.putFileset(
-        fileset, FilesetOutputTree.create(links, /* treeArtifacts= */ ImmutableMap.of()));
-    CompletionContext ctx = createCompletionContext(/* expandFilesets= */ true);
+    private fun createTreeArtifact(rootRelativePath: String?): SpecialArtifact {
+        return createTreeArtifactWithGeneratingAction(
+            outputRoot, outputRoot.getExecPath().getRelative(rootRelativePath)
+        )
+    }
 
-    ArtifactReceiver receiver = mock(ArtifactReceiver.class);
-    ctx.visitArtifacts(ImmutableList.of(fileset), receiver);
-    InOrder inOrder = inOrder(receiver);
-    inOrder
-        .verify(receiver)
-        .acceptFilesetMapping(
-            fileset, new FilesetOutputSymlink(PathFragment.create("a1"), b1, DUMMY_METADATA));
-    inOrder
-        .verify(receiver)
-        .acceptFilesetMapping(
-            fileset, new FilesetOutputSymlink(PathFragment.create("a2"), b2, DUMMY_METADATA));
-  }
+    private fun createFileset(rootRelativePath: String?): SpecialArtifact {
+        return SpecialArtifact.create(
+            outputRoot,
+            outputRoot.getExecPath().getRelative(rootRelativePath),
+            ActionsTestUtil.Companion.NULL_ARTIFACT_OWNER,
+            SpecialArtifactType.FILESET
+        )
+    }
 
-  private static List<Artifact> visit(CompletionContext ctx, Artifact artifact) {
-    List<Artifact> visited = new ArrayList<>();
-    ctx.visitArtifacts(
-        ImmutableList.of(artifact),
-        new ArtifactReceiver() {
-          @Override
-          public void accept(Artifact artifact, FileArtifactValue metadata) {
-            visited.add(artifact);
-          }
+    private fun createCompletionContext(expandFilesets: Boolean): CompletionContext {
+        return CompletionContext(ArtifactPathResolver.IDENTITY, inputMap, expandFilesets)
+    }
 
-          @Override
-          public void acceptFilesetMapping(Artifact fileset, FilesetOutputSymlink link) {
-            throw new AssertionError(fileset);
-          }
-        });
-    return visited;
-  }
+    companion object {
+        private val DUMMY_METADATA: FileArtifactValue? = FileArtifactValue.createForRemoteFile( /* digest= */
+            ByteArray(0),  /* size= */0,  /* locationIndex= */0
+        )
 
-  private SpecialArtifact createTreeArtifact(String rootRelativePath) {
-    return ActionsTestUtil.createTreeArtifactWithGeneratingAction(
-        outputRoot, outputRoot.getExecPath().getRelative(rootRelativePath));
-  }
+        private fun visit(ctx: CompletionContext, artifact: Artifact): MutableList<Artifact?> {
+            val visited: MutableList<Artifact?> = java.util.ArrayList<Artifact?>()
+            ctx.visitArtifacts(
+                com.google.common.collect.ImmutableList.of<E?>(artifact),
+                object : ArtifactReceiver() {
+                    public override fun accept(artifact: Artifact?, metadata: FileArtifactValue?) {
+                        visited.add(artifact)
+                    }
 
-  private SpecialArtifact createFileset(String rootRelativePath) {
-    return SpecialArtifact.create(
-        outputRoot,
-        outputRoot.getExecPath().getRelative(rootRelativePath),
-        ActionsTestUtil.NULL_ARTIFACT_OWNER,
-        SpecialArtifactType.FILESET);
-  }
+                    public override fun acceptFilesetMapping(fileset: Artifact?, link: FilesetOutputSymlink?) {
+                        throw java.lang.AssertionError(fileset)
+                    }
+                })
+            return visited
+        }
 
-  private static FilesetOutputSymlink filesetLink(String from, Artifact target) {
-    return new FilesetOutputSymlink(PathFragment.create(from), target, DUMMY_METADATA);
-  }
-
-  private CompletionContext createCompletionContext(boolean expandFilesets) {
-    return new CompletionContext(ArtifactPathResolver.IDENTITY, inputMap, expandFilesets);
-  }
+        private fun filesetLink(from: String?, target: Artifact?): FilesetOutputSymlink {
+            return FilesetOutputSymlink(PathFragment.create(from), target, DUMMY_METADATA)
+        }
+    }
 }

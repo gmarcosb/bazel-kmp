@@ -11,39 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil
+import com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.InterimModuleBuilder
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorDescriptor.Builder.build
+import com.google.devtools.build.lib.bazel.repository.downloader.HttpStream.Factory.create
+import com.google.devtools.build.lib.bazel.repository.downloader.ProgressInputStream.Factory.create
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-
-import com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.InterimModuleBuilder;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link InterimModule}. */
-@RunWith(JUnit4.class)
-public class InterimModuleTest {
-
-  @Test
-  public void withDepsTransformed() throws Exception {
-    assertThat(
-            InterimModuleBuilder.create("", "")
-                .addDep("dep_foo", createModuleKey("foo", "1.0"))
-                .addDep("dep_bar", createModuleKey("bar", "2.0"))
-                .addNodepDep(createModuleKey("quux", "3.0"))
+/** Tests for [InterimModule].  */
+@RunWith(JUnit4::class)
+class InterimModuleTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withDepsTransformed() {
+        assertThat(
+            InterimModuleBuilder.Companion.create("", "")
+                .addDep("dep_foo", BzlmodTestUtil.createModuleKey("foo", "1.0"))
+                .addDep("dep_bar", BzlmodTestUtil.createModuleKey("bar", "2.0"))
+                .addNodepDep(BzlmodTestUtil.createModuleKey("quux", "3.0"))
                 .build()
                 .withDepsTransformed(
-                    key ->
-                        createModuleKey(key.name + "_new", key.version().getNormalized() + ".1")))
-        .isEqualTo(
-            InterimModuleBuilder.create("", "")
-                .addDep("dep_foo", createModuleKey("foo_new", "1.0.1"))
-                .addOriginalDep("dep_foo", createModuleKey("foo", "1.0"))
-                .addDep("dep_bar", createModuleKey("bar_new", "2.0.1"))
-                .addOriginalDep("dep_bar", createModuleKey("bar", "2.0"))
-                .addNodepDep(createModuleKey("quux_new", "3.0.1"))
-                .build());
-  }
+                    { key -> BzlmodTestUtil.createModuleKey(key.name + "_new", key.version().getNormalized() + ".1") })
+        )
+            .isEqualTo(
+                InterimModuleBuilder.Companion.create("", "")
+                    .addDep("dep_foo", BzlmodTestUtil.createModuleKey("foo_new", "1.0.1"))
+                    .addOriginalDep("dep_foo", BzlmodTestUtil.createModuleKey("foo", "1.0"))
+                    .addDep("dep_bar", BzlmodTestUtil.createModuleKey("bar_new", "2.0.1"))
+                    .addOriginalDep("dep_bar", BzlmodTestUtil.createModuleKey("bar", "2.0"))
+                    .addNodepDep(BzlmodTestUtil.createModuleKey("quux_new", "3.0.1"))
+                    .build()
+            )
+    }
 }

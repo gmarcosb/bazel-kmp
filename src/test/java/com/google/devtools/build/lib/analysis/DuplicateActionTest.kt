@@ -1,5 +1,9 @@
-//// Copyright 2015 The Bazel Authors. All rights reserved.
-//
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.AnalysisTestCase
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+
+/**/ Copyright 2015 The Bazel Authors. All rights reserved. */ //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,30 +15,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.analysis;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+package com.google.devtools.build.lib.analysis
 
 /**
  * Tests for duplicate action detection and handling when incremental analysis is enabled.
  */
-@RunWith(JUnit4.class)
-public class DuplicateActionTest extends AnalysisTestCase {
-
-  @Test
-  public void testDuplicateBuildInfoHeaderAction() throws Exception {
-    scratch.file("a/stamp.cc",
-        "// Empty."
-    );
-    scratch.file(
-        "a/BUILD",
-        """
+@RunWith(JUnit4::class)
+class DuplicateActionTest : AnalysisTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDuplicateBuildInfoHeaderAction() {
+        scratch.file(
+            "a/stamp.cc",
+            "// Empty."
+        )
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -56,9 +53,11 @@ public class DuplicateActionTest extends AnalysisTestCase {
             name = "c",
             linkstamp = "stamp.cc",
         )
-        """);
-    update("//a:a", "//a:b");
-    assertThat(hasErrors(getConfiguredTarget("//a:a"))).isFalse();
-    assertThat(hasErrors(getConfiguredTarget("//a:b"))).isFalse();
-  }
+        
+        """.trimIndent()
+        )
+        update("//a:a", "//a:b")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//a:a"))).isFalse()
+        Truth.assertThat(hasErrors(getConfiguredTarget("//a:b"))).isFalse()
+    }
 }

@@ -11,92 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.cmdline.Label
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests of [ConstraintCollection].  */
+@RunWith(JUnit4::class)
+class ConstraintCollectionTest : BuildViewTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun testSetArithmetic() {
+        val setting1: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s1"))
+        val value1: ConstraintValueInfo =
+            ConstraintValueInfo.create(setting1, Label.parseCanonicalUnchecked("//foo:value1"))
+        val setting2: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s2"))
+        val value2: ConstraintValueInfo =
+            ConstraintValueInfo.create(setting2, Label.parseCanonicalUnchecked("//foo:value2"))
+        val setting3: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s3"))
+        val value3: ConstraintValueInfo =
+            ConstraintValueInfo.create(setting3, Label.parseCanonicalUnchecked("//foo:value3"))
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val collection: ConstraintCollection =
+            ConstraintCollection.builder().addConstraints(value1, value2).build()
+        assertThat(collection.containsAll(ImmutableList.of<E?>(value1))).isTrue()
+        assertThat(collection.findMissing(ImmutableList.of<E?>(value1))).isEmpty()
+        assertThat(collection.containsAll(ImmutableList.of<E?>(value2))).isTrue()
+        assertThat(collection.containsAll(ImmutableList.of<E?>(value1, value2))).isTrue()
+        assertThat(collection.containsAll(ImmutableList.of<E?>(value3))).isFalse()
+        assertThat(collection.findMissing(ImmutableList.of<E?>(value3))).containsExactly(value3)
+        assertThat(collection.containsAll(ImmutableList.of<E?>(value1, value3))).isFalse()
+        assertThat(collection.findMissing(ImmutableList.of<E?>(value3))).containsExactly(value3)
+    }
 
-/** Tests of {@link ConstraintCollection}. */
-@RunWith(JUnit4.class)
-public class ConstraintCollectionTest extends BuildViewTestCase {
-  @Test
-  public void testSetArithmetic() throws Exception {
-    ConstraintSettingInfo setting1 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s1"));
-    ConstraintValueInfo value1 =
-        ConstraintValueInfo.create(setting1, Label.parseCanonicalUnchecked("//foo:value1"));
-    ConstraintSettingInfo setting2 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s2"));
-    ConstraintValueInfo value2 =
-        ConstraintValueInfo.create(setting2, Label.parseCanonicalUnchecked("//foo:value2"));
-    ConstraintSettingInfo setting3 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s3"));
-    ConstraintValueInfo value3 =
-        ConstraintValueInfo.create(setting3, Label.parseCanonicalUnchecked("//foo:value3"));
+    @Test
+    @Throws(Exception::class)
+    fun testSetArithmetic_withDefaultValues() {
+        val setting: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(
+                Label.parseCanonicalUnchecked("//foo:s"),
+                Label.parseCanonicalUnchecked("//foo:value1")
+            )
+        val value1: ConstraintValueInfo =
+            ConstraintValueInfo.create(setting, Label.parseCanonicalUnchecked("//foo:value1"))
+        val value2: ConstraintValueInfo =
+            ConstraintValueInfo.create(setting, Label.parseCanonicalUnchecked("//foo:value2"))
 
-    ConstraintCollection collection =
-        ConstraintCollection.builder().addConstraints(value1, value2).build();
-    assertThat(collection.containsAll(ImmutableList.of(value1))).isTrue();
-    assertThat(collection.findMissing(ImmutableList.of(value1))).isEmpty();
-    assertThat(collection.containsAll(ImmutableList.of(value2))).isTrue();
-    assertThat(collection.containsAll(ImmutableList.of(value1, value2))).isTrue();
-    assertThat(collection.containsAll(ImmutableList.of(value3))).isFalse();
-    assertThat(collection.findMissing(ImmutableList.of(value3))).containsExactly(value3);
-    assertThat(collection.containsAll(ImmutableList.of(value1, value3))).isFalse();
-    assertThat(collection.findMissing(ImmutableList.of(value3))).containsExactly(value3);
-  }
+        val collection1: ConstraintCollection =
+            ConstraintCollection.builder().addConstraints(value1).build()
+        assertThat(collection1.containsAll(ImmutableList.of<E?>(value1))).isTrue()
+        assertThat(collection1.findMissing(ImmutableList.of<E?>(value1))).isEmpty()
+        assertThat(collection1.containsAll(ImmutableList.of<E?>(value2))).isFalse()
+        assertThat(collection1.findMissing(ImmutableList.of<E?>(value2))).containsExactly(value2)
 
-  @Test
-  public void testSetArithmetic_withDefaultValues() throws Exception {
-    ConstraintSettingInfo setting =
-        ConstraintSettingInfo.create(
-            Label.parseCanonicalUnchecked("//foo:s"),
-            Label.parseCanonicalUnchecked("//foo:value1"));
-    ConstraintValueInfo value1 =
-        ConstraintValueInfo.create(setting, Label.parseCanonicalUnchecked("//foo:value1"));
-    ConstraintValueInfo value2 =
-        ConstraintValueInfo.create(setting, Label.parseCanonicalUnchecked("//foo:value2"));
+        val collectionWithDefault: ConstraintCollection = ConstraintCollection.builder().build()
+        assertThat(collectionWithDefault.containsAll(ImmutableList.of<E?>(value1))).isTrue()
+        assertThat(collectionWithDefault.findMissing(ImmutableList.of<E?>(value1))).isEmpty()
+        assertThat(collectionWithDefault.containsAll(ImmutableList.of<E?>(value2))).isFalse()
+        assertThat(collectionWithDefault.findMissing(ImmutableList.of<E?>(value2))).containsExactly(value2)
+    }
 
-    ConstraintCollection collection1 =
-        ConstraintCollection.builder().addConstraints(value1).build();
-    assertThat(collection1.containsAll(ImmutableList.of(value1))).isTrue();
-    assertThat(collection1.findMissing(ImmutableList.of(value1))).isEmpty();
-    assertThat(collection1.containsAll(ImmutableList.of(value2))).isFalse();
-    assertThat(collection1.findMissing(ImmutableList.of(value2))).containsExactly(value2);
+    @Test
+    @Throws(Exception::class)
+    fun testDiff() {
+        val setting1: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s1"))
+        val value1: ConstraintValueInfo? =
+            ConstraintValueInfo.create(setting1, Label.parseCanonicalUnchecked("//foo:value1"))
+        val setting2: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s2"))
+        val value2a: ConstraintValueInfo? =
+            ConstraintValueInfo.create(setting2, Label.parseCanonicalUnchecked("//foo:value2a"))
+        val value2b: ConstraintValueInfo? =
+            ConstraintValueInfo.create(setting2, Label.parseCanonicalUnchecked("//foo:value2b"))
 
-    ConstraintCollection collectionWithDefault = ConstraintCollection.builder().build();
-    assertThat(collectionWithDefault.containsAll(ImmutableList.of(value1))).isTrue();
-    assertThat(collectionWithDefault.findMissing(ImmutableList.of(value1))).isEmpty();
-    assertThat(collectionWithDefault.containsAll(ImmutableList.of(value2))).isFalse();
-    assertThat(collectionWithDefault.findMissing(ImmutableList.of(value2))).containsExactly(value2);
-  }
-
-  @Test
-  public void testDiff() throws Exception {
-    ConstraintSettingInfo setting1 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s1"));
-    ConstraintValueInfo value1 =
-        ConstraintValueInfo.create(setting1, Label.parseCanonicalUnchecked("//foo:value1"));
-    ConstraintSettingInfo setting2 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:s2"));
-    ConstraintValueInfo value2a =
-        ConstraintValueInfo.create(setting2, Label.parseCanonicalUnchecked("//foo:value2a"));
-    ConstraintValueInfo value2b =
-        ConstraintValueInfo.create(setting2, Label.parseCanonicalUnchecked("//foo:value2b"));
-
-    ConstraintCollection collection1 =
-        ConstraintCollection.builder().addConstraints(value1, value2a).build();
-    ConstraintCollection collection2 =
-        ConstraintCollection.builder().addConstraints(value1, value2b).build();
-    assertThat(collection1.diff(collection2)).containsExactly(setting2);
-    assertThat(collection1.diff(collection2))
-        .containsAtLeastElementsIn(collection2.diff(collection1));
-  }
+        val collection1: ConstraintCollection =
+            ConstraintCollection.builder().addConstraints(value1, value2a).build()
+        val collection2: ConstraintCollection =
+            ConstraintCollection.builder().addConstraints(value1, value2b).build()
+        assertThat(collection1.diff(collection2)).containsExactly(setting2)
+        assertThat(collection1.diff(collection2))
+            .containsAtLeastElementsIn(collection2.diff(collection1))
+    }
 }

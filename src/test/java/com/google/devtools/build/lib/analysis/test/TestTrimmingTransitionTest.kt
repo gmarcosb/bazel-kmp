@@ -11,140 +11,146 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.analysis.PlatformOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.PlatformOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.ExecutionTransitionFactory;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.packages.AttributeTransitionData;
-import com.google.devtools.build.lib.testutil.FakeAttributeMapper;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [TestTrimmingTransitionFactory.TestTrimmingTransition].  */
+@RunWith(JUnit4::class)
+class TestTrimmingTransitionTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(OptionsParsingException::class, java.lang.InterruptedException::class)
+    fun removesTestOptionsWhenSet() {
+        val options: BuildOptions? =
+            BuildOptions.of(
+                com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java, TestOptions::class.java),
+                "--trim_test_configuration"
+            )
 
-/** Tests for {@link TestTrimmingTransitionFactory.TestTrimmingTransition}. */
-@RunWith(JUnit4.class)
-public class TestTrimmingTransitionTest extends BuildViewTestCase {
-  private static final PatchTransition TRIM_TRANSITION =
-      TestTrimmingTransitionFactory.TestTrimmingTransition.INSTANCE;
+        val result: BuildOptions =
+            TRIM_TRANSITION.patch(
+                BuildOptionsView(options, TRIM_TRANSITION.requiresOptionFragments()),
+                StoredEventHandler()
+            )
 
-  @Test
-  public void removesTestOptionsWhenSet() throws OptionsParsingException, InterruptedException {
-    BuildOptions options =
-        BuildOptions.of(
-            ImmutableList.of(CoreOptions.class, TestOptions.class), "--trim_test_configuration");
+        // Verify the transitions actually applied.
+        assertThat(result).isNotNull()
+        assertThat(result).isNotEqualTo(options)
+        assertThat(result.contains(TestOptions::class.java)).isFalse()
+    }
 
-    BuildOptions result =
-        TRIM_TRANSITION.patch(
-            new BuildOptionsView(options, TRIM_TRANSITION.requiresOptionFragments()),
-            new StoredEventHandler());
+    @get:Throws(OptionsParsingException::class, java.lang.InterruptedException::class)
+    @get:org.junit.Test
+    val isNOPWhenUnset: Unit
+        get() {
+            val options: BuildOptions? =
+                BuildOptions.of(
+                    com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java, TestOptions::class.java),
+                    "--notrim_test_configuration"
+                )
 
-    // Verify the transitions actually applied.
-    assertThat(result).isNotNull();
-    assertThat(result).isNotEqualTo(options);
-    assertThat(result.contains(TestOptions.class)).isFalse();
-  }
+            val result: BuildOptions? =
+                TRIM_TRANSITION.patch(
+                    BuildOptionsView(
+                        options,
+                        TRIM_TRANSITION.requiresOptionFragments()
+                    ),
+                    StoredEventHandler()
+                )
 
-  @Test
-  public void isNOPWhenUnset() throws OptionsParsingException, InterruptedException {
-    BuildOptions options =
-        BuildOptions.of(
-            ImmutableList.of(CoreOptions.class, TestOptions.class), "--notrim_test_configuration");
+            // Verify the transitions actually applied.
+            assertThat(result).isNotNull()
+            assertThat(result).isEqualTo(options)
+        }
 
-    BuildOptions result =
-        TRIM_TRANSITION.patch(
-            new BuildOptionsView(options, TRIM_TRANSITION.requiresOptionFragments()),
-            new StoredEventHandler());
+    @org.junit.Test
+    @Throws(OptionsParsingException::class, java.lang.InterruptedException::class)
+    fun retainsStarlarkOptions() {
+        val starlarkOptionKey: Label? = Label.parseCanonicalUnchecked("//options:foo")
+        val starlarkOptionValue = "bar"
 
-    // Verify the transitions actually applied.
-    assertThat(result).isNotNull();
-    assertThat(result).isEqualTo(options);
-  }
+        val options: BuildOptions? =
+            BuildOptions.of(
+                com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java, TestOptions::class.java),
+                "--trim_test_configuration"
+            )
+                .toBuilder()
+                .addStarlarkOption(starlarkOptionKey, starlarkOptionValue)
+                .build()
 
-  @Test
-  public void retainsStarlarkOptions() throws OptionsParsingException, InterruptedException {
-    Label starlarkOptionKey = Label.parseCanonicalUnchecked("//options:foo");
-    String starlarkOptionValue = "bar";
+        val result: BuildOptions =
+            TRIM_TRANSITION.patch(
+                BuildOptionsView(options, TRIM_TRANSITION.requiresOptionFragments()),
+                StoredEventHandler()
+            )
 
-    BuildOptions options =
-        BuildOptions.of(
-                ImmutableList.of(CoreOptions.class, TestOptions.class), "--trim_test_configuration")
-            .toBuilder()
-            .addStarlarkOption(starlarkOptionKey, starlarkOptionValue)
-            .build();
+        // Verify the transitions actually applied.
+        assertThat(result).isNotNull()
+        assertThat(result).isNotEqualTo(options)
+        assertThat(result.getStarlarkOptions().get(starlarkOptionKey)).isEqualTo(starlarkOptionValue)
+    }
 
-    BuildOptions result =
-        TRIM_TRANSITION.patch(
-            new BuildOptionsView(options, TRIM_TRANSITION.requiresOptionFragments()),
-            new StoredEventHandler());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun composeCommutativelyWithExecutionTransition() {
+        val executionPlatform: Label? = Label.parseCanonicalUnchecked("//platform:exec")
 
-    // Verify the transitions actually applied.
-    assertThat(result).isNotNull();
-    assertThat(result).isNotEqualTo(options);
-    assertThat(result.getStarlarkOptions().get(starlarkOptionKey)).isEqualTo(starlarkOptionValue);
-  }
+        val execTransition: PatchTransition =
+            ExecutionTransitionFactory.createFactory()
+                .create(
+                    AttributeTransitionData.builder()
+                        .attributes(FakeAttributeMapper.empty())
+                        .analysisData(
+                            getSkyframeExecutor()
+                                .getStarlarkExecTransition(targetConfig.getOptions(), reporter)
+                        )
+                        .executionPlatform(executionPlatform)
+                        .build()
+                )
+        assertThat(execTransition).isNotNull()
 
-  @Test
-  public void composeCommutativelyWithExecutionTransition() throws Exception {
-    Label executionPlatform = Label.parseCanonicalUnchecked("//platform:exec");
+        // Apply the transition.
+        val options: BuildOptions? =
+            BuildOptions.of(
+                targetConfig.getOptions().getFragmentClasses(),
+                "--platforms=//platform:target",
+                "--trim_test_configuration"
+            )
 
-    PatchTransition execTransition =
-        ExecutionTransitionFactory.createFactory()
-            .create(
-                AttributeTransitionData.builder()
-                    .attributes(FakeAttributeMapper.empty())
-                    .analysisData(
-                        getSkyframeExecutor()
-                            .getStarlarkExecTransition(targetConfig.getOptions(), reporter))
-                    .executionPlatform(executionPlatform)
-                    .build());
-    assertThat(execTransition).isNotNull();
+        val handler: com.google.devtools.build.lib.events.EventHandler = StoredEventHandler()
 
-    // Apply the transition.
-    BuildOptions options =
-        BuildOptions.of(
-            targetConfig.getOptions().getFragmentClasses(),
-            "--platforms=//platform:target",
-            "--trim_test_configuration");
+        val execTransitionOptions: BuildOptions? =
+            execTransition.patch(
+                BuildOptionsView(options, execTransition.requiresOptionFragments()), handler
+            )
+        val execThenTrim: BuildOptions =
+            TRIM_TRANSITION.patch(
+                BuildOptionsView(execTransitionOptions, TRIM_TRANSITION.requiresOptionFragments()),
+                handler
+            )
 
-    EventHandler handler = new StoredEventHandler();
+        val trimTransitionOptions: BuildOptions? =
+            TRIM_TRANSITION.patch(
+                BuildOptionsView(options, TRIM_TRANSITION.requiresOptionFragments()), handler
+            )
+        val trimThenExec: BuildOptions? =
+            execTransition.patch(
+                BuildOptionsView(trimTransitionOptions, execTransition.requiresOptionFragments()),
+                handler
+            )
 
-    BuildOptions execTransitionOptions =
-        execTransition.patch(
-            new BuildOptionsView(options, execTransition.requiresOptionFragments()), handler);
-    BuildOptions execThenTrim =
-        TRIM_TRANSITION.patch(
-            new BuildOptionsView(execTransitionOptions, TRIM_TRANSITION.requiresOptionFragments()),
-            handler);
+        assertThat(execThenTrim).isEqualTo(trimThenExec)
 
-    BuildOptions trimTransitionOptions =
-        TRIM_TRANSITION.patch(
-            new BuildOptionsView(options, TRIM_TRANSITION.requiresOptionFragments()), handler);
-    BuildOptions trimThenExec =
-        execTransition.patch(
-            new BuildOptionsView(trimTransitionOptions, execTransition.requiresOptionFragments()),
-            handler);
+        // Verify the transitions actually applied.
+        assertThat(execThenTrim).isNotNull()
+        assertThat(execThenTrim).isNotEqualTo(options)
 
-    assertThat(execThenTrim).isEqualTo(trimThenExec);
+        assertThat(execThenTrim.get(PlatformOptions::class.java).getPlatforms())
+            .containsExactly(executionPlatform)
+        assertThat(execThenTrim.contains(TestOptions::class.java)).isFalse()
+    }
 
-    // Verify the transitions actually applied.
-    assertThat(execThenTrim).isNotNull();
-    assertThat(execThenTrim).isNotEqualTo(options);
-
-    assertThat(execThenTrim.get(PlatformOptions.class).getPlatforms())
-        .containsExactly(executionPlatform);
-    assertThat(execThenTrim.contains(TestOptions.class)).isFalse();
-  }
+    companion object {
+        private val TRIM_TRANSITION: PatchTransition = TestTrimmingTransitionFactory.TestTrimmingTransition.INSTANCE
+    }
 }

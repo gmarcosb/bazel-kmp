@@ -11,24 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib;
+package com.google.devtools.build.lib
 
-import com.google.devtools.build.lib.testutil.BazelTestSuiteBuilder;
-import com.google.devtools.build.lib.testutil.CustomSuite;
-
-import org.junit.runner.RunWith;
-
-import java.util.Set;
+import com.google.devtools.build.lib.testutil.BazelTestSuiteBuilder
+import com.google.devtools.build.lib.testutil.CustomSuite
+import org.junit.runner.RunWith
 
 /**
  * General test suite with defaults suitable for most of our tests.
  */
-@RunWith(CustomSuite.class)
-public class AllTests extends BazelTestSuiteBuilder {
-  public static Set<Class<?>> suite() {
-    return new AllTests()
-        .getBuilder()
-        .matchClasses(BazelTestSuiteBuilder.TEST_SUPPORTS_CURRENT_OS)
-        .create();
-  }
+@RunWith(CustomSuite::class)
+object AllTests : BazelTestSuiteBuilder() {
+    fun suite(): MutableSet<java.lang.Class<*>?> {
+        return AllTests()
+            .getBuilder()
+            .matchClasses(BazelTestSuiteBuilder.TEST_SUPPORTS_CURRENT_OS)
+            .create()
+    }
 }

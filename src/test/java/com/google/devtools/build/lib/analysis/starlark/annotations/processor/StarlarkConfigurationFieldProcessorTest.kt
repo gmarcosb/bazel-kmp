@@ -11,98 +11,111 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark.annotations.processor
 
-package com.google.devtools.build.lib.analysis.starlark.annotations.processor;
-
-import static com.google.common.truth.Truth.assertAbout;
-import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
-
-import com.google.common.io.Resources;
-import com.google.testing.compile.JavaFileObjects;
-import javax.tools.JavaFileObject;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.starlark.annotations.processor.StarlarkConfigurationFieldProcessor
+import com.google.testing.compile.JavaFileObjects
+import com.google.testing.compile.JavaSourceSubjectFactory
+import com.google.testing.compile.JavaSourcesSubject.SingleSourceAdapter
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import javax.tools.JavaFileObject
 
 /**
  * Unit tests for StarlarkConfigurationFieldProcessor.
  */
-@RunWith(JUnit4.class)
-public final class StarlarkConfigurationFieldProcessorTest {
+@RunWith(JUnit4::class)
+class StarlarkConfigurationFieldProcessorTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGoldenConfigurationField() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("GoldenConfigurationField.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .compilesWithoutError()
+    }
 
-  private static JavaFileObject getFile(String pathToFile) {
-    return JavaFileObjects.forResource(Resources.getResource(
-        StarlarkConfigurationFieldProcessorTest.class, "optiontestsources/" + pathToFile));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGoldenConfigurationFieldThroughApi() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("GoldenConfigurationFieldThroughApi.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void testGoldenConfigurationField() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("GoldenConfigurationField.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .compilesWithoutError();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHasMethodParameters() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("HasMethodParameters.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "@StarlarkConfigurationField annotated methods must have zero arguments."
+            )
+    }
 
-  @Test
-  public void testGoldenConfigurationFieldThroughApi() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("GoldenConfigurationFieldThroughApi.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .compilesWithoutError();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMethodIsPrivate() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("MethodIsPrivate.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .failsToCompile()
+            .withErrorContaining("@StarlarkConfigurationField annotated methods must be public.")
+    }
 
-  @Test
-  public void testHasMethodParameters() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("HasMethodParameters.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "@StarlarkConfigurationField annotated methods must have zero arguments.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMethodThrowsException() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("MethodThrowsException.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .failsToCompile()
+            .withErrorContaining("@StarlarkConfigurationField annotated must not throw exceptions.")
+    }
 
-  @Test
-  public void testMethodIsPrivate() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("MethodIsPrivate.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .failsToCompile()
-        .withErrorContaining("@StarlarkConfigurationField annotated methods must be public.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonConfigurationFragment() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NonConfigurationFragment.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "@StarlarkConfigurationField annotated methods must be methods "
+                        + "of configuration fragments."
+            )
+    }
 
-  @Test
-  public void testMethodThrowsException() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("MethodThrowsException.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .failsToCompile()
-        .withErrorContaining("@StarlarkConfigurationField annotated must not throw exceptions.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonExposedConfigurationFragment() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NonExposedConfigurationFragment.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void testNonConfigurationFragment() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("NonConfigurationFragment.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .failsToCompile()
-        .withErrorContaining("@StarlarkConfigurationField annotated methods must be methods "
-            + "of configuration fragments.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReturnsOtherType() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ReturnsOtherType.java"))
+            .processedWith(StarlarkConfigurationFieldProcessor())
+            .failsToCompile()
+            .withErrorContaining("@StarlarkConfigurationField annotated methods must return Label.")
+    }
 
-  @Test
-  public void testNonExposedConfigurationFragment() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("NonExposedConfigurationFragment.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .compilesWithoutError();
-  }
-
-  @Test
-  public void testReturnsOtherType() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ReturnsOtherType.java"))
-        .processedWith(new StarlarkConfigurationFieldProcessor())
-        .failsToCompile()
-        .withErrorContaining("@StarlarkConfigurationField annotated methods must return Label.");
-  }
+    companion object {
+        private fun getFile(pathToFile: String?): JavaFileObject {
+            return JavaFileObjects.forResource(
+                com.google.common.io.Resources.getResource(
+                    StarlarkConfigurationFieldProcessorTest::class.java, "optiontestsources/" + pathToFile
+                )
+            )
+        }
+    }
 }

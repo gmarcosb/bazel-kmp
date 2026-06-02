@@ -11,69 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions.util;
+package com.google.devtools.build.lib.actions.util
 
-import com.google.devtools.build.lib.actions.cache.ActionCache;
-import com.google.devtools.build.lib.actions.cache.Protos.ActionCacheStatistics;
-import com.google.devtools.build.lib.actions.cache.Protos.ActionCacheStatistics.MissReason;
-import java.io.PrintStream;
-import java.time.Duration;
-import java.util.function.Predicate;
+import com.google.devtools.build.lib.actions.cache.ActionCache
+import java.time.Duration
+import java.util.function.Predicate
 
 /**
  * Utilities for tests that use the action cache.
  */
-public class ActionCacheTestHelper {
-  private ActionCacheTestHelper() {}
+object ActionCacheTestHelper {
+    /** A cache which does not remember anything. Causes perpetual rebuilds!  */
+    @kotlin.jvm.JvmField
+    val AMNESIAC_CACHE: ActionCache = object : ActionCache() {
+        public override fun put(fingerprint: String?, entry: Entry?) {}
 
-  /** A cache which does not remember anything. Causes perpetual rebuilds! */
-  public static final ActionCache AMNESIAC_CACHE =
-      new ActionCache() {
-        @Override
-        public void put(String fingerprint, Entry entry) {}
-
-        @Override
-        public Entry get(String fingerprint) {
-          return null;
+        public override fun get(fingerprint: String?): Entry? {
+            return null
         }
 
-        @Override
-        public void remove(String key) {}
+        public override fun remove(key: String?) {}
 
-        @Override
-        public void removeIf(Predicate<Entry> predicate) {}
+        public override fun removeIf(predicate: Predicate<Entry?>?) {}
 
-        @Override
-        public long save() {
-          return -1;
+        public override fun save(): Long {
+            return -1
         }
 
-        @Override
-        public void clear() {}
+        public override fun clear() {}
 
-        @Override
-        public ActionCache trim(float threshold, Duration maxAge) {
-          throw new UnsupportedOperationException();
+        public override fun trim(threshold: Float, maxAge: Duration?): ActionCache? {
+            throw UnsupportedOperationException()
         }
 
-        @Override
-        public void dump(PrintStream out) {}
+        public override fun dump(out: PrintStream?) {}
 
-        @Override
-        public int size() {
-          return 0;
+        public override fun size(): Int {
+            return 0
         }
 
-        @Override
-        public void accountHit() {}
+        public override fun accountHit() {}
 
-        @Override
-        public void accountMiss(MissReason reason) {}
+        public override fun accountMiss(reason: MissReason?) {}
 
-        @Override
-        public void mergeIntoActionCacheStatistics(ActionCacheStatistics.Builder builder) {}
+        public override fun mergeIntoActionCacheStatistics(builder: ActionCacheStatistics.Builder?) {}
 
-        @Override
-        public void resetStatistics() {}
-      };
+        public override fun resetStatistics() {}
+    }
 }

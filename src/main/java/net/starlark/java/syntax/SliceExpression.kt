@@ -11,72 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import javax.annotation.Nullable;
+/** Syntax node for a slice expression, `object[start:stop:step]`.  */
+class SliceExpression internal constructor(
+    locs: FileLocations?,
+    `object`: Expression,
+    lbracketOffset: Int,
+    start: Expression?,
+    stop: Expression?,
+    step: Expression?,
+    rbracketOffset: Int
+) : Expression(locs, Kind.SLICE) {
+    private val `object`: Expression
+    private val lbracketOffset: Int
+    @kotlin.jvm.JvmField
+    private val start: Expression?
+    @kotlin.jvm.JvmField
+    private val stop: Expression?
+    @kotlin.jvm.JvmField
+    private val step: Expression?
+    private val rbracketOffset: Int
 
-/** Syntax node for a slice expression, {@code object[start:stop:step]}. */
-public final class SliceExpression extends Expression {
+    init {
+        this.`object` = `object`
+        this.lbracketOffset = lbracketOffset
+        this.start = start
+        this.stop = stop
+        this.step = step
+        this.rbracketOffset = rbracketOffset
+    }
 
-  private final Expression object;
-  private final int lbracketOffset;
-  @Nullable private final Expression start;
-  @Nullable private final Expression stop;
-  @Nullable private final Expression step;
-  private final int rbracketOffset;
+    fun getObject(): Expression {
+        return `object`
+    }
 
-  SliceExpression(
-      FileLocations locs,
-      Expression object,
-      int lbracketOffset,
-      Expression start,
-      Expression stop,
-      Expression step,
-      int rbracketOffset) {
-    super(locs, Kind.SLICE);
-    this.object = object;
-    this.lbracketOffset = lbracketOffset;
-    this.start = start;
-    this.stop = stop;
-    this.step = step;
-    this.rbracketOffset = rbracketOffset;
-  }
+    fun getStart(): Expression? {
+        return start
+    }
 
-  public Expression getObject() {
-    return object;
-  }
+    fun getStop(): Expression? {
+        return stop
+    }
 
-  @Nullable
-  public Expression getStart() {
-    return start;
-  }
+    fun getStep(): Expression? {
+        return step
+    }
 
-  @Nullable
-  public Expression getStop() {
-    return stop;
-  }
+    override fun getStartOffset(): Int {
+        return `object`.getStartOffset()
+    }
 
-  @Nullable
-  public Expression getStep() {
-    return step;
-  }
+    override fun getEndOffset(): Int {
+        return rbracketOffset + 1
+    }
 
-  @Override
-  public int getStartOffset() {
-    return object.getStartOffset();
-  }
+    fun getLbracketLocation(): Location {
+        return locs.getLocation(lbracketOffset)
+    }
 
-  @Override
-  public int getEndOffset() {
-    return rbracketOffset + 1;
-  }
-
-  public Location getLbracketLocation() {
-    return locs.getLocation(lbracketOffset);
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

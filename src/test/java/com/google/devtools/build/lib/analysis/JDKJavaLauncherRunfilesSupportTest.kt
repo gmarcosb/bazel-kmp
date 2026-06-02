@@ -11,18 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.AbstractRunfilesSupportTest
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
  * Tests runfiles support as if we were using the JdkLauncher.
  */
-@RunWith(JUnit4.class)
-public final class JDKJavaLauncherRunfilesSupportTest extends AbstractRunfilesSupportTest {
-  @Override
-  protected boolean useJdkLauncher() {
-    return true;
-  }
+@RunWith(JUnit4::class)
+class JDKJavaLauncherRunfilesSupportTest : AbstractRunfilesSupportTest() {
+    override fun useJdkLauncher(): Boolean {
+        return true
+    }
 }

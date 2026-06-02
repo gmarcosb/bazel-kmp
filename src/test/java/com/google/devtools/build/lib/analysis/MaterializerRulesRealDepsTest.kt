@@ -11,44 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.actions.Artifact
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+@RunWith(JUnit4::class)
+class MaterializerRulesRealDepsTest : AnalysisTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun enableDormantDeps() {
+        useConfiguration(
+            "--experimental_dormant_deps", "--incompatible_package_group_has_public_syntax"
+        )
+    }
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun writeMaterializerRulesAllowlist() {
+        writeMaterializerRulesAllowlist(true, true)
+    }
 
-@RunWith(JUnit4.class)
-public final class MaterializerRulesRealDepsTest extends AnalysisTestCase {
-
-  @Before
-  public void enableDormantDeps() throws Exception {
-    useConfiguration(
-        "--experimental_dormant_deps", "--incompatible_package_group_has_public_syntax");
-  }
-
-  @Before
-  public void writeMaterializerRulesAllowlist() throws Exception {
-    writeMaterializerRulesAllowlist(true, true);
-  }
-
-  public void writeMaterializerRulesAllowlist(
-      boolean materializerRuleAllowed, boolean allowRealDeps) throws Exception {
-
-    scratch.overwriteFile(
-        TestConstants.TOOLS_REPOSITORY_SCRATCH
-            + "tools/allowlists/materializer_rule_allowlist/BUILD",
-        """
+    @Throws(java.lang.Exception::class)
+    fun writeMaterializerRulesAllowlist(
+        materializerRuleAllowed: Boolean, allowRealDeps: Boolean
+    ) {
+        scratch.overwriteFile(
+            TestConstants.TOOLS_REPOSITORY_SCRATCH
+                    + "tools/allowlists/materializer_rule_allowlist/BUILD",
+            """
         package_group(
             name = 'materializer_rule_allowlist',
             packages = [%s],
@@ -58,15 +48,20 @@ public final class MaterializerRulesRealDepsTest extends AnalysisTestCase {
             name = 'materializer_rule_real_deps_allowlist',
             packages = [%s],
         )
+        
         """
-            .formatted(
-                materializerRuleAllowed ? "\"public\"" : "", allowRealDeps ? "\"public\"" : ""));
-  }
+                .trimIndent()
+                .formatted(
+                    if (materializerRuleAllowed) "\"public\"" else "", if (allowRealDeps) "\"public\"" else ""
+                )
+        )
+    }
 
-  private void writeBasicMaterializerRule() throws Exception {
-    scratch.file(
-        "defs.bzl",
-"""
+    @Throws(java.lang.Exception::class)
+    private fun writeBasicMaterializerRule() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["output", "info"])
@@ -113,17 +108,20 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
-  }
 
-  /** Tests materializing real deps through materializer rules. */
-  @Test
-  public void basicMaterializerRuleRealDeps_works() throws Exception {
-    writeBasicMaterializerRule();
+""".trimIndent()
+        )
+    }
 
-    scratch.file(
-        "BUILD",
-"""
+    /** Tests materializing real deps through materializer rules.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicMaterializerRuleRealDeps_works() {
+        writeBasicMaterializerRule()
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -151,23 +149,26 @@ component(name = "b", info = "yes")
 component(name = "c", info = "no")
 component(name = "d", info = "no")
 component(name = "zzz", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("aaa.txt", "a.txt", "b.txt", "zzz.txt");
-  }
+""".trimIndent()
+        )
 
-  /** Tests that multiple materializer rules in an attribute works. */
-  @Test
-  public void multipleMaterializerRules_works() throws Exception {
-    writeBasicMaterializerRule();
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("aaa.txt", "a.txt", "b.txt", "zzz.txt")
+    }
 
-    scratch.file(
-        "BUILD",
-"""
+    /** Tests that multiple materializer rules in an attribute works.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleMaterializerRules_works() {
+        writeBasicMaterializerRule()
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -210,22 +211,25 @@ component(name = "f", info = "yes")
 component(name = "g", info = "no")
 component(name = "h", info = "no")
 component(name = "zzz", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("aaa.txt", "a.txt", "b.txt", "e.txt", "f.txt", "zzz.txt");
-  }
+""".trimIndent()
+        )
 
-  @Test
-  public void multipleMaterializersReturnSameTarget_works() throws Exception {
-    writeBasicMaterializerRule();
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("aaa.txt", "a.txt", "b.txt", "e.txt", "f.txt", "zzz.txt")
+    }
 
-    scratch.file(
-        "BUILD",
-"""
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleMaterializersReturnSameTarget_works() {
+        writeBasicMaterializerRule()
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -270,25 +274,27 @@ component(name = "f", info = "yes")
 component(name = "g", info = "no")
 component(name = "h", info = "no")
 component(name = "zzz", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("aaa.txt", "a.txt", "b.txt", "c.txt", "f.txt", "zzz.txt");
-  }
+""".trimIndent()
+        )
 
-  @Test
-  public void materializerWithRealDepsNotInAllowlist_throwsError() throws Exception {
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("aaa.txt", "a.txt", "b.txt", "c.txt", "f.txt", "zzz.txt")
+    }
 
-    writeMaterializerRulesAllowlist(true, false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerWithRealDepsNotInAllowlist_throwsError() {
+        writeMaterializerRulesAllowlist(true, false)
 
-    writeBasicMaterializerRule();
+        writeBasicMaterializerRule()
 
-    scratch.file(
-        "BUILD",
-"""
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -302,20 +308,26 @@ component_selector(
 )
 
 component(name = "a", info = "yes")
-""");
 
-    this.reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//:bin"));
-    assertContainsEvent(
-        "in component_selector rule //:component_selector: Non-allowlisted use of real deps in "
-            + "materializer target");
-  }
+""".trimIndent()
+        )
 
-  @Test
-  public void aspectsThroughMaterializerRules_works() throws Exception {
-    scratch.file(
-        "defs.bzl",
-"""
+        this.reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//:bin") })
+        assertContainsEvent(
+            "in component_selector rule //:component_selector: Non-allowlisted use of real deps in "
+                    + "materializer target"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectsThroughMaterializerRules_works() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["info"])
@@ -385,11 +397,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo], aspects = [mt_aspect]),
     },
 )
-""");
 
-    scratch.file(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -422,24 +436,27 @@ genrule(
     name = "aspect_tool",
     outs = ["tool"],
     executable = True,
-    cmd = "echo 'touch $$1' > $@",
+    cmd = "echo 'touch ${'$'}${'$'}1' > ${'$'}@",
 )
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    // The .info files come from the aspect, and only the files from the selected deps
-    // should be returned.
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("aaa.info", "a.info", "b.info", "zzz.info");
-  }
+""".trimIndent()
+        )
 
-  @Test
-  public void aspectsOriginatingFromMaterializerRules_works() throws Exception {
-    scratch.file(
-        "defs.bzl",
-"""
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        // The .info files come from the aspect, and only the files from the selected deps
+        // should be returned.
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("aaa.info", "a.info", "b.info", "zzz.info")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectsOriginatingFromMaterializerRules_works() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["output", "deps_outputs", "include"])
@@ -514,11 +531,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
 
-    scratch.file(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "binary", "component_selector", "component")
 
 binary(
@@ -542,29 +561,31 @@ component(name = "f", include = True)
 component(name = "g", deps = [":h", ":i"])
 component(name = "h")
 component(name = "i")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
+""".trimIndent()
+        )
 
-    // Only the artifacts from branches that have "include = True" somewhere in the DAG as collected
-    // by the aspect are included.
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("d.txt", "e.txt", "f.txt");
-  }
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
 
-  /**
-   * Materializers-to-materializers aren't implemented to with dormant deps because they would need
-   * to be recursively resolved within a single ConfiguredTarget function (and cycles would need to
-   * be detected), but with "real deps" they're properly resolved at each level.
-   */
-  @Test
-  public void materializerToMaterializer_works() throws Exception {
+        // Only the artifacts from branches that have "include = True" somewhere in the DAG as collected
+        // by the aspect are included.
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("d.txt", "e.txt", "f.txt")
+    }
 
-    scratch.file(
-        "defs.bzl",
-"""
+    /**
+     * Materializers-to-materializers aren't implemented to with dormant deps because they would need
+     * to be recursively resolved within a single ConfiguredTarget function (and cycles would need to
+     * be detected), but with "real deps" they're properly resolved at each level.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerToMaterializer_works() {
+        scratch.file(
+            "defs.bzl",
+            """
 #################################################
 # Component
 
@@ -614,11 +635,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
 
-    scratch.file(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -643,25 +666,27 @@ component(name = "a", info = "yes")
 component(name = "b", info = "yes")
 component(name = "c", info = "yes")
 component(name = "d", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("a.txt", "b.txt", "c.txt", "d.txt");
-  }
+""".trimIndent()
+        )
 
-  /**
-   * Tests that an alias can point to a materializer rule (i.e. a materializer rule can go through
-   * an alias).
-   */
-  @Test
-  public void aliasToMaterializerRule_works() throws Exception {
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("a.txt", "b.txt", "c.txt", "d.txt")
+    }
 
-    scratch.file(
-        "defs.bzl",
-"""
+    /**
+     * Tests that an alias can point to a materializer rule (i.e. a materializer rule can go through
+     * an alias).
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aliasToMaterializerRule_works() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["info"])
@@ -721,11 +746,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo], aspects = [mt_aspect]),
     },
 )
-""");
 
-    scratch.file(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 # Real deps through single alias ####################################
@@ -779,41 +806,43 @@ component(name = "b", info = "yes")
 component(name = "c", info = "no")
 component(name = "d", info = "no")
 component(name = "ZZZ", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("AAA.info", "a.info", "b.info", "ZZZ.info");
-    eventCollector.clear();
+""".trimIndent()
+        )
 
-    cleanSkyframe();
-    update("//:bin_alias_chain");
-    ConfiguredTarget targetAliasChain = getConfiguredTarget("//:bin_alias_chain");
-    NestedSet<Artifact> filesToBuildAliasChain =
-        targetAliasChain.getProvider(FileProvider.class).getFilesToBuild();
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuildAliasChain))
-        .containsExactly("AAA.info", "a.info", "b.info", "ZZZ.info");
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("AAA.info", "a.info", "b.info", "ZZZ.info")
+        eventCollector.clear()
 
-    // Especially when going through an alias chain, an aspect should still visit the nodes once.
-    assertContainsEventWithFrequency("aspect visiting target: @@//:AAA", 1);
-    assertContainsEventWithFrequency("aspect visiting target: @@//:ZZZ", 1);
-    assertContainsEventWithFrequency("aspect visiting target: @@//:b", 1);
-    assertContainsEventWithFrequency("aspect visiting target: @@//:a", 1);
-    assertDoesNotContainEvent("aspect visiting target: @@//:c");
-    assertDoesNotContainEvent("aspect visiting target: @@//:d");
-  }
+        cleanSkyframe()
+        update("//:bin_alias_chain")
+        val targetAliasChain: ConfiguredTarget = getConfiguredTarget("//:bin_alias_chain")
+        val filesToBuildAliasChain: NestedSet<Artifact?>? =
+            targetAliasChain.getProvider(FileProvider::class.java).getFilesToBuild()
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuildAliasChain))
+            .containsExactly("AAA.info", "a.info", "b.info", "ZZZ.info")
 
-  /** Tests that a materializer can point to an alias and the final target is materialized. */
-  @Test
-  public void materializerToAlias_works() throws Exception {
+        // Especially when going through an alias chain, an aspect should still visit the nodes once.
+        assertContainsEventWithFrequency("aspect visiting target: @@//:AAA", 1)
+        assertContainsEventWithFrequency("aspect visiting target: @@//:ZZZ", 1)
+        assertContainsEventWithFrequency("aspect visiting target: @@//:b", 1)
+        assertContainsEventWithFrequency("aspect visiting target: @@//:a", 1)
+        assertDoesNotContainEvent("aspect visiting target: @@//:c")
+        assertDoesNotContainEvent("aspect visiting target: @@//:d")
+    }
 
-    writeBasicMaterializerRule();
+    /** Tests that a materializer can point to an alias and the final target is materialized.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerToAlias_works() {
+        writeBasicMaterializerRule()
 
-    scratch.file(
-        "BUILD",
-"""
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -846,21 +875,24 @@ component(name = "b", info = "yes")
 component(name = "c", info = "no")
 component(name = "d", info = "no")
 component(name = "zzz", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
-        .containsExactly("aaa.txt", "a.txt", "b.txt", "zzz.txt");
-  }
+""".trimIndent()
+        )
 
-  /** Tests alias -> materializer -> alias -> materializer -> alias works with real deps. */
-  @Test
-  public void aliasToMaterializerToAliasToMaterializerToAlias_works() throws Exception {
-    scratch.file(
-        "defs.bzl",
-"""
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        assertThat(ActionsTestUtil.baseArtifactNames(filesToBuild))
+            .containsExactly("aaa.txt", "a.txt", "b.txt", "zzz.txt")
+    }
+
+    /** Tests alias -> materializer -> alias -> materializer -> alias works with real deps.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aliasToMaterializerToAliasToMaterializerToAlias_works() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["output", "info"])
@@ -903,11 +935,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
 
-    scratch.file(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -947,19 +981,22 @@ alias(
 component(name = "aaa", info = "yes")
 component(name = "a", info = "yes")
 component(name = "zzz", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    List<String> artifactNames = ActionsTestUtil.baseArtifactNames(filesToBuild);
-    assertThat(artifactNames).containsExactly("aaa.txt", "a.txt", "zzz.txt");
-  }
+""".trimIndent()
+        )
 
-  private void writeMaterializerSplitTransitionBzlFile() throws Exception {
-    scratch.file(
-        "defs.bzl",
-"""
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        val artifactNames: MutableList<String?>? = ActionsTestUtil.baseArtifactNames(filesToBuild)
+        Truth.assertThat(artifactNames).containsExactly("aaa.txt", "a.txt", "zzz.txt")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun writeMaterializerSplitTransitionBzlFile() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component selector setting ###########################################
 
 ComponentSelectorProvider = provider(fields = ["selector"])
@@ -1032,18 +1069,20 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo], cfg = component_transition),
     },
 )
-""");
-  }
 
-  /** Tests a materializer rule under a split transition. */
-  @Test
-  public void materializerRulesUnderSplitTransition_works() throws Exception {
+""".trimIndent()
+        )
+    }
 
-    writeMaterializerSplitTransitionBzlFile();
+    /** Tests a materializer rule under a split transition.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerRulesUnderSplitTransition_works() {
+        writeMaterializerSplitTransitionBzlFile()
 
-    scratch.file(
-        "BUILD",
-"""
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary", "component_selector_setting")
 
 component_selector_setting(
@@ -1071,27 +1110,29 @@ component(name = "a", info = "yes")
 component(name = "b", info = "yes")
 component(name = "c", info = "no")
 component(name = "d", info = "no")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    List<String> artifactNames = ActionsTestUtil.baseArtifactNames(filesToBuild);
-    assertThat(artifactNames).containsAtLeast("a.txt", "b.txt");
-    assertThat(artifactNames).containsNoneOf("c.txt", "d.txt");
-  }
+""".trimIndent()
+        )
 
-  /**
-   * Tests a materializer rule under a split transition with a select() input to the materializer.
-   */
-  @Test
-  public void materializerRulesUnderSplitTransitionAndSelect_works() throws Exception {
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        val artifactNames: MutableList<String?>? = ActionsTestUtil.baseArtifactNames(filesToBuild)
+        Truth.assertThat(artifactNames).containsAtLeast("a.txt", "b.txt")
+        Truth.assertThat(artifactNames).containsNoneOf("c.txt", "d.txt")
+    }
 
-    writeMaterializerSplitTransitionBzlFile();
+    /**
+     * Tests a materializer rule under a split transition with a select() input to the materializer.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerRulesUnderSplitTransitionAndSelect_works() {
+        writeMaterializerSplitTransitionBzlFile()
 
-    scratch.file(
-        "BUILD",
-"""
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary", "component_selector_setting")
 
 component_selector_setting(
@@ -1141,21 +1182,24 @@ component(name = "d", info = "yes")
 component(name = "e", info = "yes")
 component(name = "f", info = "no")
 component(name = "g", info = "no")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    NestedSet<Artifact> filesToBuild = target.getProvider(FileProvider.class).getFilesToBuild();
-    List<String> artifactNames = ActionsTestUtil.baseArtifactNames(filesToBuild);
-    assertThat(artifactNames).containsAtLeast("a.txt", "b.txt", "c.txt", "d.txt", "e.txt");
-    assertThat(artifactNames).containsNoneOf("f.txt", "g.txt");
-  }
+""".trimIndent()
+        )
 
-  @Test
-  public void materializerRulesPropagatesValidationActions_works() throws Exception {
-    scratch.file(
-        "defs.bzl",
-"""
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val filesToBuild: NestedSet<Artifact?>? = target.getProvider(FileProvider::class.java).getFilesToBuild()
+        val artifactNames: MutableList<String?>? = ActionsTestUtil.baseArtifactNames(filesToBuild)
+        Truth.assertThat(artifactNames).containsAtLeast("a.txt", "b.txt", "c.txt", "d.txt", "e.txt")
+        Truth.assertThat(artifactNames).containsNoneOf("f.txt", "g.txt")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerRulesPropagatesValidationActions_works() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["output", "info"])
@@ -1168,7 +1212,7 @@ def _component_impl(ctx):
     ctx.actions.run_shell(
         inputs = [f],
         outputs = [validation_output],
-        command = "touch $1",
+        command = "touch ${'$'}1",
         arguments = [validation_output.path],
     )
 
@@ -1214,11 +1258,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
 
-    scratch.file(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -1246,22 +1292,25 @@ component(name = "b", info = "yes")
 component(name = "c", info = "no")
 component(name = "d", info = "no")
 component(name = "zzz", info = "yes")
-""");
 
-    update("//:bin");
-    ConfiguredTarget target = getConfiguredTarget("//:bin");
-    OutputGroupInfo outputGroupInfo = target.get(OutputGroupInfo.STARLARK_CONSTRUCTOR);
-    NestedSet<Artifact> validationOutputs =
-        outputGroupInfo.getOutputGroup(OutputGroupInfo.VALIDATION);
-    List<String> artifactNames = ActionsTestUtil.baseArtifactNames(validationOutputs);
-    assertThat(artifactNames)
-        .containsExactly("aaa.validation", "a.validation", "b.validation", "zzz.validation");
-  }
+""".trimIndent()
+        )
 
-  private void writeVisibilityDefsBzlFile() throws Exception {
-    scratch.file(
-        "defs.bzl",
-"""
+        update("//:bin")
+        val target: ConfiguredTarget = getConfiguredTarget("//:bin")
+        val outputGroupInfo: OutputGroupInfo = target.get(OutputGroupInfo.STARLARK_CONSTRUCTOR)
+        val validationOutputs: NestedSet<Artifact?>? =
+            outputGroupInfo.getOutputGroup(OutputGroupInfo.VALIDATION)
+        val artifactNames: MutableList<String?>? = ActionsTestUtil.baseArtifactNames(validationOutputs)
+        Truth.assertThat(artifactNames)
+            .containsExactly("aaa.validation", "a.validation", "b.validation", "zzz.validation")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun writeVisibilityDefsBzlFile() {
+        scratch.file(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["info"])
@@ -1305,17 +1354,20 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
-  }
 
-  @Test
-  public void materializerRuleVisibilityViolation_throwsError() throws Exception {
-    writeVisibilityDefsBzlFile();
-    scratch.file("BUILD", "");
+""".trimIndent()
+        )
+    }
 
-    scratch.file(
-        "binary1/BUILD",
-"""
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerRuleVisibilityViolation_throwsError() {
+        writeVisibilityDefsBzlFile()
+        scratch.file("BUILD", "")
+
+        scratch.file(
+            "binary1/BUILD",
+            """
 load("//:defs.bzl", "binary")
 
 binary(
@@ -1324,11 +1376,13 @@ binary(
         "//components:component_selector",
     ],
 )
-""");
 
-    scratch.file(
-        "binary2/BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "binary2/BUILD",
+            """
 load("//:defs.bzl", "binary")
 
 binary(
@@ -1337,11 +1391,13 @@ binary(
         "//components:component_selector",
     ],
 )
-""");
 
-    scratch.file(
-        "components/BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "components/BUILD",
+            """
 load("//:defs.bzl", "component", "component_selector", "binary")
 
 component_selector(
@@ -1359,31 +1415,38 @@ component(name = "a", info = "yes", visibility = ["//:__subpackages__"])
 component(name = "b", info = "yes", visibility = ["//:__subpackages__"])
 component(name = "c", info = "no", visibility = ["//:__subpackages__"])
 component(name = "d", info = "no", visibility = ["//:__subpackages__"])
-""");
 
-    // The materializer target is visible to bin1.
-    update("//binary1:bin1");
+""".trimIndent()
+        )
 
-    // The materializer target is not visible to bin2.
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//binary2:bin2"));
-    assertContainsEvent(
-"""
+        // The materializer target is visible to bin1.
+        update("//binary1:bin1")
+
+        // The materializer target is not visible to bin2.
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//binary2:bin2") })
+        assertContainsEvent(
+            """
 ERROR /workspace/binary2/BUILD:3:7: in binary rule //binary2:bin2: Visibility error:
 target '//components:component_selector' is not visible from
 target '//binary2:bin2'
-""");
-  }
 
-  @Test
-  public void materializerRuleMaterializedTargetVisibilityViolation_throwsError() throws Exception {
-    scratch.file("BUILD", "");
+""".trimIndent()
+        )
+    }
 
-    writeVisibilityDefsBzlFile();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun materializerRuleMaterializedTargetVisibilityViolation_throwsError() {
+        scratch.file("BUILD", "")
 
-    scratch.file(
-        "binary/BUILD",
-"""
+        writeVisibilityDefsBzlFile()
+
+        scratch.file(
+            "binary/BUILD",
+            """
 load("//:defs.bzl", "binary")
 
 binary(
@@ -1392,11 +1455,13 @@ binary(
         "//components:component_selector",
     ],
 )
-""");
 
-    scratch.file(
-        "components/BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "components/BUILD",
+            """
 load("//:defs.bzl", "component", "component_selector", "binary")
 
 component_selector(
@@ -1414,22 +1479,30 @@ component(name = "a", info = "yes", visibility = ["//visibility:private"])
 component(name = "b", info = "yes", visibility = ["//visibility:private"])
 component(name = "c", info = "no", visibility = ["//visibility:private"])
 component(name = "d", info = "no", visibility = ["//visibility:private"])
-""");
 
-    // The materializer target is visible to bin, but the materialized targets are not.
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//binary:bin"));
-    assertContainsEvent(
-"""
+""".trimIndent()
+        )
+
+        // The materializer target is visible to bin, but the materialized targets are not.
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//binary:bin") })
+        assertContainsEvent(
+            """
 ERROR /workspace/binary/BUILD:3:7: in binary rule //binary:bin: Visibility error:
 target '//components:a' is not visible from
 target '//binary:bin'
-""");
-    assertContainsEvent(
-"""
+
+""".trimIndent()
+        )
+        assertContainsEvent(
+            """
 ERROR /workspace/binary/BUILD:3:7: in binary rule //binary:bin: Visibility error:
 target '//components:b' is not visible from
 target '//binary:bin'
-""");
-  }
+
+""".trimIndent()
+        )
+    }
 }

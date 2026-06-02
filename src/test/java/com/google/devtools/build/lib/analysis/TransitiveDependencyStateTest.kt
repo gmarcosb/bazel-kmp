@@ -11,266 +11,266 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Iterables.getLast;
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Comparator.comparing;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.packages.AspectClass;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.packages.AspectParameters;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Package.Builder.PackageSettings;
-import com.google.devtools.build.lib.packages.util.MockObjcSupport;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class TransitiveDependencyStateTest {
+    @org.junit.Test
+    fun singlyAddedPackages_areSorted() {
+        val orderedPackages: com.google.common.collect.ImmutableList<Package.Metadata?> =
+            com.google.common.collect.ImmutableList.of<Package.Metadata?>(
+                createFakePackageMetadata(PackageIdentifier.createInMainRepo("package1")),
+                createFakePackageMetadata(PackageIdentifier.createInMainRepo("package2")),
+                createFakePackageMetadata(PackageIdentifier.createInMainRepo("package3"))
+            )
+        val workingCopy: java.util.ArrayList<Package.Metadata?> =
+            java.util.ArrayList<Package.Metadata?>(orderedPackages)
 
-@RunWith(JUnit4.class)
-public final class TransitiveDependencyStateTest {
-  private static final Random rng = new Random(0);
-  private static final Root fakeRoot =
-      Root.fromPath(new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/fake"));
+        for (i in 0..2) {
+            val state: TransitiveDependencyState = newTransitiveState()
 
-  @Test
-  public void singlyAddedPackages_areSorted() {
-    var orderedPackages =
-        ImmutableList.<Package.Metadata>of(
-            createFakePackageMetadata(PackageIdentifier.createInMainRepo("package1")),
-            createFakePackageMetadata(PackageIdentifier.createInMainRepo("package2")),
-            createFakePackageMetadata(PackageIdentifier.createInMainRepo("package3")));
-    var workingCopy = new ArrayList<>(orderedPackages);
+            Collections.shuffle(workingCopy, rng)
+            workingCopy.forEach(state::updateTransitivePackages)
 
-    for (int i = 0; i < 3; i++) {
-      var state = newTransitiveState();
-
-      Collections.shuffle(workingCopy, rng);
-      workingCopy.forEach(state::updateTransitivePackages);
-
-      assertThat(state.transitivePackages().toList())
-          .containsExactlyElementsIn(orderedPackages)
-          .inOrder();
-    }
-  }
-
-  @Test
-  public void configuredTargetPackages_areSorted() {
-    ImmutableList<ConfiguredTargetKey> orderedKeys = getOrderedConfiguredTargetKeys();
-
-    ImmutableList<Package.Metadata> orderedPackageMetadataList =
-        createFakePackageMetadataList(orderedKeys.size());
-    ImmutableList<NestedSet<Package.Metadata>> orderedPackageMetadataNestedSets =
-        asSingletonNestedSets(orderedPackageMetadataList);
-
-    var shuffledIndices = new ArrayList<Integer>();
-    for (int i = 0; i < orderedKeys.size(); i++) {
-      shuffledIndices.add(i);
+            assertThat(state.transitivePackages().toList())
+                .containsExactlyElementsIn(orderedPackages)
+                .inOrder()
+        }
     }
 
-    for (int i = 0; i < 3; ++i) {
-      var state = newTransitiveState();
+    @org.junit.Test
+    fun configuredTargetPackages_areSorted() {
+        val orderedKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?> =
+            orderedConfiguredTargetKeys
 
-      // Adds the entries to `state` in random order.
-      Collections.shuffle(shuffledIndices, rng);
-      for (int index : shuffledIndices) {
-        state.updateTransitivePackages(
-            orderedKeys.get(index), orderedPackageMetadataNestedSets.get(index));
-      }
+        val orderedPackageMetadataList: com.google.common.collect.ImmutableList<Package.Metadata?> =
+            createFakePackageMetadataList(orderedKeys.size)
+        val orderedPackageMetadataNestedSets: com.google.common.collect.ImmutableList<NestedSet<Package.Metadata?>?> =
+            asSingletonNestedSets(orderedPackageMetadataList)
 
-      // The result is always ordered.
-      assertThat(state.transitivePackages().toList())
-          .containsExactlyElementsIn(orderedPackageMetadataList)
-          .inOrder();
-    }
-  }
+        val shuffledIndices: java.util.ArrayList<Int?> = java.util.ArrayList<Int?>()
+        for (i in orderedKeys.indices) {
+            shuffledIndices.add(i)
+        }
 
-  @Test
-  public void aspectPackages_areSorted() {
-    ImmutableList<AspectKey> orderedKeys = getOrderedAspectKeys();
+        for (i in 0..2) {
+            val state: TransitiveDependencyState = newTransitiveState()
 
-    ImmutableList<Package.Metadata> orderedPackageMetadataList =
-        createFakePackageMetadataList(orderedKeys.size());
-    ImmutableList<NestedSet<Package.Metadata>> orderedPackagMetadataNestedSets =
-        asSingletonNestedSets(orderedPackageMetadataList);
+            // Adds the entries to `state` in random order.
+            Collections.shuffle(shuffledIndices, rng)
+            for (index in shuffledIndices) {
+                state.updateTransitivePackages(
+                    orderedKeys.get(index), orderedPackageMetadataNestedSets.get(index)
+                )
+            }
 
-    var shuffledIndices = new ArrayList<Integer>();
-    for (int i = 0; i < orderedKeys.size(); i++) {
-      shuffledIndices.add(i);
-    }
-
-    for (int i = 0; i < 3; ++i) {
-      var state = newTransitiveState();
-
-      // Adds the entries to `state` in random order.
-      Collections.shuffle(shuffledIndices, rng);
-      for (int index : shuffledIndices) {
-        state.updateTransitivePackages(
-            orderedKeys.get(index), orderedPackagMetadataNestedSets.get(index));
-      }
-
-      // The result is always ordered.
-      assertThat(state.transitivePackages().toList())
-          .containsExactlyElementsIn(orderedPackageMetadataList)
-          .inOrder();
-    }
-  }
-
-  private static TransitiveDependencyState newTransitiveState() {
-    return new TransitiveDependencyState(
-        /* storeTransitivePackages= */ true, /* prerequisitePackages= */ p -> null);
-  }
-
-  private static Package.Metadata createFakePackageMetadata(PackageIdentifier id) {
-    return Package.Metadata.builder()
-        .packageIdentifier(id)
-        .buildFilename(
-            RootedPath.toRootedPath(
-                fakeRoot, fakeRoot.getRelative(id.getPackageFragment().getRelative("BUILD"))))
-        .workspaceName("workspace")
-        .repositoryMapping(RepositoryMapping.EMPTY)
-        .succinctTargetNotFoundErrors(PackageSettings.DEFAULTS.succinctTargetNotFoundErrors())
-        .build();
-  }
-
-  private static ImmutableList<Package.Metadata> createFakePackageMetadataList(int count) {
-    var orderedIds = new ArrayList<PackageIdentifier>(count);
-    for (int i = 0; i < count; ++i) {
-      orderedIds.add(PackageIdentifier.createInMainRepo("package" + i));
-    }
-    // Scrambles the order so if the result is ordered it's not somehow due to package sorting.
-    Collections.shuffle(orderedIds, rng);
-    return orderedIds.stream()
-        .map(TransitiveDependencyStateTest::createFakePackageMetadata)
-        .collect(toImmutableList());
-  }
-
-  private static ImmutableList<NestedSet<Package.Metadata>> asSingletonNestedSets(
-      List<Package.Metadata> packageMetadataList) {
-    return packageMetadataList.stream()
-        .map(
-            pkgMetadata ->
-                NestedSetBuilder.<Package.Metadata>stableOrder().add(pkgMetadata).build())
-        .collect(toImmutableList());
-  }
-
-  private static ImmutableSortedSet<BuildOptions> createTestOptions() {
-    try {
-      return ImmutableSortedSet.copyOf(
-          comparing(BuildOptions::checksum),
-          Arrays.<BuildOptions>asList(
-              createTestOptions(ImmutableList.of("--platforms=" + TestConstants.PLATFORM_LABEL)),
-              createTestOptions(ImmutableList.of("--platforms=" + MockObjcSupport.DARWIN_X86_64))));
-    } catch (OptionsParsingException e) {
-      throw new ExceptionInInitializerError(e);
-    }
-  }
-
-  private static BuildOptions createTestOptions(List<String> args) throws OptionsParsingException {
-    var fragments = ImmutableList.<Class<? extends FragmentOptions>>of(PlatformOptions.class);
-    var optionsParser = OptionsParser.builder().optionsClasses(fragments).build();
-    optionsParser.parse(args);
-    return BuildOptions.of(fragments, optionsParser);
-  }
-
-  private static final ImmutableSortedSet<BuildOptions> TEST_OPTIONS = createTestOptions();
-  private static final BuildOptions FIRST_OPTIONS = TEST_OPTIONS.iterator().next();
-  private static final BuildOptions SECOND_OPTIONS = getLast(TEST_OPTIONS);
-
-  private static ImmutableList<ConfiguredTargetKey> getOrderedConfiguredTargetKeys() {
-    var label1 = Label.parseCanonicalUnchecked("//label1");
-    var label2 = Label.parseCanonicalUnchecked("//label2");
-    var platformLabel = Label.parseCanonicalUnchecked("//platforms:a");
-    return ImmutableList.<ConfiguredTargetKey>of(
-        ConfiguredTargetKey.builder().setLabel(label1).build(),
-        ConfiguredTargetKey.builder()
-            .setLabel(label1)
-            .setConfigurationKey(BuildConfigurationKey.create(FIRST_OPTIONS))
-            .build(),
-        ConfiguredTargetKey.builder()
-            .setLabel(label1)
-            .setConfigurationKey(BuildConfigurationKey.create(SECOND_OPTIONS))
-            .build(),
-        ConfiguredTargetKey.builder()
-            .setLabel(label1)
-            .setExecutionPlatformLabel(platformLabel)
-            .build(),
-        ConfiguredTargetKey.builder()
-            .setLabel(label1)
-            .setExecutionPlatformLabel(platformLabel)
-            .setConfigurationKey(BuildConfigurationKey.create(FIRST_OPTIONS))
-            .build(),
-        ConfiguredTargetKey.builder()
-            .setLabel(label1)
-            .setExecutionPlatformLabel(platformLabel)
-            .setConfigurationKey(BuildConfigurationKey.create(SECOND_OPTIONS))
-            .build(),
-        ConfiguredTargetKey.builder().setLabel(label2).build());
-  }
-
-  private static final AspectClass ASPECT_CLASS1 = () -> "aspect1";
-  private static final AspectClass ASPECT_CLASS2 = () -> "aspect2";
-  private static final AspectClass ASPECT_CLASS3 = () -> "aspect3";
-  private static final AspectClass ASPECT_CLASS4 = () -> "aspect4";
-
-  private static ImmutableList<AspectDescriptor> getOrderedAspectDescriptors() {
-    return ImmutableList.of(
-        AspectDescriptor.of(ASPECT_CLASS1, AspectParameters.EMPTY),
-        AspectDescriptor.of(
-            ASPECT_CLASS1, new AspectParameters.Builder().addAttribute("foo", "bar").build()),
-        AspectDescriptor.of(ASPECT_CLASS2, AspectParameters.EMPTY));
-  }
-
-  private static ImmutableList<AspectKey> getOrderedAspectKeys() {
-    var descriptors = getOrderedAspectDescriptors();
-    var builder = ImmutableList.<AspectKey>builder();
-
-    var baseDescriptor1 = AspectDescriptor.of(ASPECT_CLASS3, AspectParameters.EMPTY);
-    var baseDescriptor2 = AspectDescriptor.of(ASPECT_CLASS4, AspectParameters.EMPTY);
-
-    for (var baseConfiguredTargetKey : getOrderedConfiguredTargetKeys()) {
-      for (var descriptor : descriptors) {
-        builder.add(AspectKeyCreator.createAspectKey(descriptor, baseConfiguredTargetKey));
-      }
-
-      // Constructs some additional keys that differ only in graph structure.
-      var baseKey1 = AspectKeyCreator.createAspectKey(baseDescriptor1, baseConfiguredTargetKey);
-      var baseKey2 = AspectKeyCreator.createAspectKey(baseDescriptor2, baseConfiguredTargetKey);
-
-      builder.add(
-          AspectKeyCreator.createAspectKey(
-              getLast(descriptors), ImmutableList.of(baseKey1), baseConfiguredTargetKey));
-      builder.add(
-          AspectKeyCreator.createAspectKey(
-              getLast(descriptors), ImmutableList.of(baseKey1, baseKey2), baseConfiguredTargetKey));
+            // The result is always ordered.
+            assertThat(state.transitivePackages().toList())
+                .containsExactlyElementsIn(orderedPackageMetadataList)
+                .inOrder()
+        }
     }
 
-    return builder.build();
-  }
+    @org.junit.Test
+    fun aspectPackages_areSorted() {
+        val orderedKeys: com.google.common.collect.ImmutableList<AspectKey?> =
+            orderedAspectKeys
+
+        val orderedPackageMetadataList: com.google.common.collect.ImmutableList<Package.Metadata?> =
+            createFakePackageMetadataList(orderedKeys.size)
+        val orderedPackagMetadataNestedSets: com.google.common.collect.ImmutableList<NestedSet<Package.Metadata?>?> =
+            asSingletonNestedSets(orderedPackageMetadataList)
+
+        val shuffledIndices: java.util.ArrayList<Int?> = java.util.ArrayList<Int?>()
+        for (i in orderedKeys.indices) {
+            shuffledIndices.add(i)
+        }
+
+        for (i in 0..2) {
+            val state: TransitiveDependencyState = newTransitiveState()
+
+            // Adds the entries to `state` in random order.
+            Collections.shuffle(shuffledIndices, rng)
+            for (index in shuffledIndices) {
+                state.updateTransitivePackages(
+                    orderedKeys.get(index), orderedPackagMetadataNestedSets.get(index)
+                )
+            }
+
+            // The result is always ordered.
+            assertThat(state.transitivePackages().toList())
+                .containsExactlyElementsIn(orderedPackageMetadataList)
+                .inOrder()
+        }
+    }
+
+    companion object {
+        private val rng: Random = Random(0)
+        private val fakeRoot: Root = Root.fromPath(InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/fake"))
+
+        private fun newTransitiveState(): TransitiveDependencyState {
+            return TransitiveDependencyState( /* storeTransitivePackages= */
+                true,  /* prerequisitePackages= */{ p -> null })
+        }
+
+        private fun createFakePackageMetadata(id: PackageIdentifier): Package.Metadata {
+            return Package.Metadata.builder()
+                .packageIdentifier(id)
+                .buildFilename(
+                    RootedPath.toRootedPath(
+                        fakeRoot, fakeRoot.getRelative(id.getPackageFragment().getRelative("BUILD"))
+                    )
+                )
+                .workspaceName("workspace")
+                .repositoryMapping(RepositoryMapping.EMPTY)
+                .succinctTargetNotFoundErrors(PackageSettings.DEFAULTS.succinctTargetNotFoundErrors())
+                .build()
+        }
+
+        private fun createFakePackageMetadataList(count: Int): com.google.common.collect.ImmutableList<Package.Metadata?> {
+            val orderedIds: java.util.ArrayList<PackageIdentifier?> = java.util.ArrayList<PackageIdentifier?>(count)
+            for (i in 0..<count) {
+                orderedIds.add(PackageIdentifier.createInMainRepo("package" + i))
+            }
+            // Scrambles the order so if the result is ordered it's not somehow due to package sorting.
+            Collections.shuffle(orderedIds, rng)
+            return orderedIds.stream()
+                .map<Package.Metadata?> { id: PackageIdentifier? -> createFakePackageMetadata(id) }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Package.Metadata?>())
+        }
+
+        private fun asSingletonNestedSets(
+            packageMetadataList: MutableList<Package.Metadata?>
+        ): com.google.common.collect.ImmutableList<NestedSet<Package.Metadata?>?> {
+            return packageMetadataList.stream()
+                .map<Any?> { pkgMetadata: Package.Metadata? ->
+                    NestedSetBuilder.Metadata > stableOrder<Package.Metadata?>().add(
+                        pkgMetadata
+                    ).build()
+                }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        }
+
+        private fun createTestOptions(): com.google.common.collect.ImmutableSortedSet<BuildOptions> {
+            try {
+                return com.google.common.collect.ImmutableSortedSet.copyOf<BuildOptions?>(
+                    java.util.Comparator.comparing<Any?, Any?>(BuildOptions::checksum),
+                    java.util.Arrays.asList<BuildOptions?>(
+                        createTestOptions(com.google.common.collect.ImmutableList.of<String?>("--platforms=" + TestConstants.PLATFORM_LABEL)),
+                        createTestOptions(com.google.common.collect.ImmutableList.of<String?>("--platforms=" + MockObjcSupport.DARWIN_X86_64))
+                    )
+                )
+            } catch (e: OptionsParsingException) {
+                throw java.lang.ExceptionInInitializerError(e)
+            }
+        }
+
+        @Throws(OptionsParsingException::class)
+        private fun createTestOptions(args: MutableList<String?>?): BuildOptions {
+            val fragments: com.google.common.collect.ImmutableList<java.lang.Class<out FragmentOptions?>?> =
+                com.google.common.collect.ImmutableList.of<java.lang.Class<out FragmentOptions?>?>(PlatformOptions::class.java)
+            val optionsParser: OptionsParser = OptionsParser.builder().optionsClasses(fragments).build()
+            optionsParser.parse(args)
+            return BuildOptions.of(fragments, optionsParser)
+        }
+
+        private val TEST_OPTIONS: com.google.common.collect.ImmutableSortedSet<BuildOptions> = createTestOptions()
+        private val FIRST_OPTIONS: BuildOptions = TEST_OPTIONS.iterator().next()
+        private val SECOND_OPTIONS: BuildOptions? =
+            com.google.common.collect.Iterables.getLast<BuildOptions?>(TEST_OPTIONS)
+
+        private val orderedConfiguredTargetKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>
+            get() {
+                val label1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    Label.parseCanonicalUnchecked("//label1")
+                val label2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    Label.parseCanonicalUnchecked("//label2")
+                val platformLabel: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    Label.parseCanonicalUnchecked("//platforms:a")
+                return com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(
+                    ConfiguredTargetKey.builder().setLabel(label1).build(),
+                    ConfiguredTargetKey.builder()
+                        .setLabel(label1)
+                        .setConfigurationKey(BuildConfigurationKey.create(FIRST_OPTIONS))
+                        .build(),
+                    ConfiguredTargetKey.builder()
+                        .setLabel(label1)
+                        .setConfigurationKey(BuildConfigurationKey.create(SECOND_OPTIONS))
+                        .build(),
+                    ConfiguredTargetKey.builder()
+                        .setLabel(label1)
+                        .setExecutionPlatformLabel(platformLabel)
+                        .build(),
+                    ConfiguredTargetKey.builder()
+                        .setLabel(label1)
+                        .setExecutionPlatformLabel(platformLabel)
+                        .setConfigurationKey(BuildConfigurationKey.create(FIRST_OPTIONS))
+                        .build(),
+                    ConfiguredTargetKey.builder()
+                        .setLabel(label1)
+                        .setExecutionPlatformLabel(platformLabel)
+                        .setConfigurationKey(BuildConfigurationKey.create(SECOND_OPTIONS))
+                        .build(),
+                    ConfiguredTargetKey.builder().setLabel(label2).build()
+                )
+            }
+
+        private val ASPECT_CLASS1: AspectClass = AspectClass { "aspect1" }
+        private val ASPECT_CLASS2: AspectClass = AspectClass { "aspect2" }
+        private val ASPECT_CLASS3: AspectClass = AspectClass { "aspect3" }
+        private val ASPECT_CLASS4: AspectClass = AspectClass { "aspect4" }
+
+        private val orderedAspectDescriptors: com.google.common.collect.ImmutableList<AspectDescriptor?>
+            get() = com.google.common.collect.ImmutableList.of<E?>(
+                AspectDescriptor.of(ASPECT_CLASS1, AspectParameters.EMPTY),
+                AspectDescriptor.of(
+                    ASPECT_CLASS1, Builder().addAttribute("foo", "bar").build()
+                ),
+                AspectDescriptor.of(ASPECT_CLASS2, AspectParameters.EMPTY)
+            )
+
+        private val orderedAspectKeys: com.google.common.collect.ImmutableList<AspectKey?>
+            get() {
+                val descriptors: com.google.common.collect.ImmutableList<AspectDescriptor?> =
+                    orderedAspectDescriptors
+                val builder: com.google.common.collect.ImmutableList.Builder<AspectKey?> =
+                    com.google.common.collect.ImmutableList.builder<AspectKey?>()
+
+                val baseDescriptor1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    AspectDescriptor.of(ASPECT_CLASS3, AspectParameters.EMPTY)
+                val baseDescriptor2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    AspectDescriptor.of(ASPECT_CLASS4, AspectParameters.EMPTY)
+
+                for (baseConfiguredTargetKey in orderedConfiguredTargetKeys) {
+                    for (descriptor in descriptors) {
+                        builder.add(AspectKeyCreator.createAspectKey(descriptor, baseConfiguredTargetKey))
+                    }
+
+                    // Constructs some additional keys that differ only in graph structure.
+                    val baseKey1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                        AspectKeyCreator.createAspectKey(baseDescriptor1, baseConfiguredTargetKey)
+                    val baseKey2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                        AspectKeyCreator.createAspectKey(baseDescriptor2, baseConfiguredTargetKey)
+
+                    builder.add(
+                        AspectKeyCreator.createAspectKey(
+                            com.google.common.collect.Iterables.getLast<T?>(descriptors),
+                            com.google.common.collect.ImmutableList.of<E?>(baseKey1),
+                            baseConfiguredTargetKey
+                        )
+                    )
+                    builder.add(
+                        AspectKeyCreator.createAspectKey(
+                            com.google.common.collect.Iterables.getLast<T?>(descriptors),
+                            com.google.common.collect.ImmutableList.of<E?>(baseKey1, baseKey2),
+                            baseConfiguredTargetKey
+                        )
+                    )
+                }
+
+                return builder.build()
+            }
+    }
 }

@@ -11,36 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+/** Syntax node for the singleton ellipsis expression.  */
+class Ellipsis internal constructor(locs: FileLocations?, startOffset: Int) : Expression(locs, Kind.ELLIPSIS) {
+    private val startOffset: Int
 
-/** Syntax node for the singleton ellipsis expression. */
-public final class Ellipsis extends Expression {
+    init {
+        this.startOffset = startOffset
+    }
 
-  private final int startOffset;
+    override fun getStartOffset(): Int {
+        return startOffset
+    }
 
-  Ellipsis(FileLocations locs, int startOffset) {
-    super(locs, Kind.ELLIPSIS);
-    this.startOffset = startOffset;
-  }
+    override fun getEndOffset(): Int {
+        return startOffset + 3
+    }
 
-  @Override
-  public int getStartOffset() {
-    return startOffset;
-  }
+    override fun toString(): String {
+        return "..."
+    }
 
-  @Override
-  public int getEndOffset() {
-    return startOffset + 3;
-  }
-
-  @Override
-  public String toString() {
-    return "...";
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

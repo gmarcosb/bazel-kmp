@@ -11,135 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.truth.Correspondence;
-import com.google.devtools.build.lib.analysis.test.AnalysisFailure;
-import com.google.devtools.build.lib.analysis.test.AnalysisFailureInfo;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.analysis.test.AnalysisFailure
 
 /**
- * Tests verifying analysis failure propagation via {@link AnalysisFailureInfo} when {@code
- * --allow_analysis_failures=true}.
+ * Tests verifying analysis failure propagation via [AnalysisFailureInfo] when `--allow_analysis_failures=true`.
  */
-@RunWith(TestParameterInjector.class)
-public final class AnalysisFailureInfoTest extends BuildViewTestCase {
+@RunWith(TestParameterInjector::class)
+class AnalysisFailureInfoTest : BuildViewTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        useConfiguration("--allow_analysis_failures=true")
+    }
 
-  @Before
-  public void setUp() throws Exception {
-    useConfiguration("--allow_analysis_failures=true");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun analysisFailureInfoStarlarkApi() {
+        val label: Label? = Label.create("test", "test")
+        val failure: AnalysisFailure = AnalysisFailure.create(label, "ErrorMessage")
+        Truth.assertThat(getattr(failure, "label")).isSameInstanceAs(label)
+        Truth.assertThat(getattr(failure, "message")).isEqualTo("ErrorMessage")
 
-  @Test
-  public void analysisFailureInfoStarlarkApi() throws Exception {
-    Label label = Label.create("test", "test");
-    AnalysisFailure failure = AnalysisFailure.create(label, "ErrorMessage");
-    assertThat(getattr(failure, "label")).isSameInstanceAs(label);
-    assertThat(getattr(failure, "message")).isEqualTo("ErrorMessage");
+        val info: AnalysisFailureInfo? =
+            AnalysisFailureInfo.forAnalysisFailures(com.google.common.collect.ImmutableList.of<E?>(failure))
+        // info.causes.to_list()[0] == failure
+        val causes: NestedSet<AnalysisFailure?> =
+            Depset.cast(getattr(info, "causes"), AnalysisFailure::class.java, "causes")
+        assertThat(causes.toList().get(0)).isSameInstanceAs(failure)
+    }
 
-    AnalysisFailureInfo info = AnalysisFailureInfo.forAnalysisFailures(ImmutableList.of(failure));
-    // info.causes.to_list()[0] == failure
-    NestedSet<AnalysisFailure> causes =
-        Depset.cast(getattr(info, "causes"), AnalysisFailure.class, "causes");
-    assertThat(causes.toList().get(0)).isSameInstanceAs(failure);
-  }
-
-  private static Object getattr(Object x, String name) throws Exception {
-    return Starlark.getattr(/*mu=*/ null, StarlarkSemantics.DEFAULT, x, name, null);
-  }
-
-  /** Regression test for b/154007057 (rule name) and b/186685477 (output file). */
-  @Test
-  public void nativeRuleExpanderFailure(
-      @TestParameter({"//test:bad_variable", "//test:bad_variable.out"}) String targetToRequest)
-      throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    /** Regression test for b/154007057 (rule name) and b/186685477 (output file).  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nativeRuleExpanderFailure(
+        @TestParameter("//test:bad_variable", "//test:bad_variable.out") targetToRequest: String?
+    ) {
+        scratch.file(
+            "test/BUILD",
+            """
         genrule(
             name = "bad_variable",
             outs = ["bad_variable.out"],
-            cmd = "cp $< $@",  # Error to use $< with no srcs
+            cmd = "cp ${'$'}< ${'$'}@",  # Error to use ${'$'}< with no srcs
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget(targetToRequest);
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
-    assertThat(failure.getMessage()).contains("variable '$<' : no input file");
-    assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:bad_variable"));
-  }
+        val target: ConfiguredTarget? = getConfiguredTarget(targetToRequest)
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val failure: AnalysisFailure = info.getCauses().getSet(AnalysisFailure::class.java).toList().get(0)
+        com.google.common.truth.Subject.contains("variable '$<' : no input file")
+        assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:bad_variable"))
+    }
 
-  /** Regression test for b/154007057. */
-  @Test
-  public void nativeRuleConfiguredTargetFactoryCreateReturningNull() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    /** Regression test for b/154007057.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nativeRuleConfiguredTargetFactoryCreateReturningNull() {
+        scratch.file(
+            "test/BUILD",
+            """
         native_rule_with_failing_configured_target_factory(
             name = "bad_factory",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:bad_factory");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
-    assertThat(failure.getMessage()).contains("FailingRuleConfiguredTargetFactory.create() fails");
-    assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:bad_factory"));
-  }
-
-  /** Dummy factory whose {@code create()} method always returns {@code null}. */
-  public static final class FailingRuleConfiguredTargetFactory
-      implements RuleConfiguredTargetFactory {
-    @Override
-    @Nullable
-    public ConfiguredTarget create(RuleContext ruleContext) {
-      ruleContext.ruleError("FailingRuleConfiguredTargetFactory.create() fails");
-      return null;
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:bad_factory")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val failure: AnalysisFailure = info.getCauses().getSet(AnalysisFailure::class.java).toList().get(0)
+        com.google.common.truth.Subject.contains("FailingRuleConfiguredTargetFactory.create() fails")
+        assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:bad_factory"))
     }
-  }
 
-  @Test
-  public void analysisTestNotReturningAnalysisTestResultInfo_cannotPropagate() throws Exception {
-    scratch.file(
-        "test/BUILD", //
-        "providerless_analysis_lib(name = 'providerless')");
+    /** Dummy factory whose `create()` method always returns `null`.  */
+    class FailingRuleConfiguredTargetFactory
 
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//test:providerless");
-    assertContainsEvent(
-        "Error while collecting analysis-phase failure information for '//test:providerless': rules"
-            + " with analysis_test=true must return an instance of AnalysisTestResultInfo");
-  }
+        : RuleConfiguredTargetFactory {
+        public override fun create(ruleContext: RuleContext): ConfiguredTarget? {
+            ruleContext.ruleError("FailingRuleConfiguredTargetFactory.create() fails")
+            return null
+        }
+    }
 
-  /** Regression test for b/233890545 */
-  @Test
-  public void analysisTestExpectingFailureDependedOnByAnalysisTest_cannotPropagate()
-      throws Exception {
-    useConfiguration("--allow_analysis_failures=false");
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun analysisTestNotReturningAnalysisTestResultInfo_cannotPropagate() {
+        scratch.file(
+            "test/BUILD",  //
+            "providerless_analysis_lib(name = 'providerless')"
+        )
+
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        getConfiguredTarget("//test:providerless")
+        assertContainsEvent(
+            "Error while collecting analysis-phase failure information for '//test:providerless': rules"
+                    + " with analysis_test=true must return an instance of AnalysisTestResultInfo"
+        )
+    }
+
+    /** Regression test for b/233890545  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun analysisTestExpectingFailureDependedOnByAnalysisTest_cannotPropagate() {
+        useConfiguration("--allow_analysis_failures=false")
+        scratch.file(
+            "test/extension.bzl",
+            """
         def bad_rule_impl(ctx):
             fail("Bad rule fails")
 
@@ -160,11 +144,13 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             analysis_test = True,
             attrs = {"dep": attr.label(cfg = _transition)},
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "analysis_test", "bad_rule")
 
         analysis_test(
@@ -178,77 +164,77 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
         )
 
         bad_rule(name = "tested_by_inner")
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//test:outer");
-    assertContainsEvent(
-        "Error while collecting analysis-phase failure information for '//test:inner':"
-            + " analysis_test rule '//test:inner' cannot be transitively depended on by another"
-            + " analysis test rule");
-  }
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        getConfiguredTarget("//test:outer")
+        assertContainsEvent(
+            ("Error while collecting analysis-phase failure information for '//test:inner':"
+                    + " analysis_test rule '//test:inner' cannot be transitively depended on by another"
+                    + " analysis test rule")
+        )
+    }
 
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder =
-        new ConfiguredRuleClassProvider.Builder()
-            .addRuleDefinition(
-                ((MockRule)
-                    () ->
-                        MockRule.factory(FailingRuleConfiguredTargetFactory.class)
-                            .define("native_rule_with_failing_configured_target_factory")))
-            .addRuleDefinition(
-                (MockRule)
-                    () ->
-                        MockRule.ancestor(BaseRuleClasses.NativeBuildRule.class)
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder =
+            Builder()
+                .addRuleDefinition(
+                    (MockRule {
+                        MockRule.factory(FailingRuleConfiguredTargetFactory::class.java)
+                            .define("native_rule_with_failing_configured_target_factory")
+                    } as MockRule))
+                .addRuleDefinition(
+                    MockRule {
+                        MockRule.ancestor(BaseRuleClasses.NativeBuildRule::class.java)
                             .type(RuleClassType.NORMAL)
                             .define(
                                 "providerless_analysis_lib",
-                                (ruleClassBuilder, env) -> ruleClassBuilder.setIsAnalysisTest()));
-    TestRuleClassProvider.addStandardRules(builder);
-    return builder.build();
-  }
+                                MockRuleCustomBehavior { ruleClassBuilder: RuleClass.Builder?, env: RuleDefinitionEnvironment? -> ruleClassBuilder.setIsAnalysisTest() })
+                    } as MockRule)
+        TestRuleClassProvider.addStandardRules(builder)
+        return builder.build()
+    }
 
-  private static final Correspondence<AnalysisFailure, AnalysisFailure>
-      analysisFailureCorrespondence =
-          Correspondence.from(
-              (actual, expected) ->
-                  actual.getLabel().equals(expected.getLabel())
-                      && actual.getMessage().contains(expected.getMessage()),
-              "is equivalent to");
-
-  @Test
-  public void starlarkRuleFailure() throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkRuleFailure() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         def custom_rule_impl(ctx):
             fail("This Is My Failure Message")
 
         custom_rule = rule(implementation = custom_rule_impl)
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_rule")
 
         custom_rule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:r");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
-    assertThat(failure.getMessage()).contains("This Is My Failure Message");
-    assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"));
-  }
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:r")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val failure: AnalysisFailure = info.getCauses().getSet(AnalysisFailure::class.java).toList().get(0)
+        com.google.common.truth.Subject.contains("This Is My Failure Message")
+        assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"))
+    }
 
-  @Test
-  public void starlarkRuleFailure_forTest() throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkRuleFailure_forTest() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         def custom_rule_impl(ctx):
             fail("This Is My Failure Message")
 
@@ -256,29 +242,34 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             implementation = custom_rule_impl,
             test = True,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_test")
 
         custom_test(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:r");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
-    assertThat(failure.getMessage()).contains("This Is My Failure Message");
-    assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"));
-  }
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:r")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val failure: AnalysisFailure = info.getCauses().getSet(AnalysisFailure::class.java).toList().get(0)
+        com.google.common.truth.Subject.contains("This Is My Failure Message")
+        assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"))
+    }
 
-  @Test
-  public void starlarkRuleFailure_withOutput() throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkRuleFailure_withOutput() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         def custom_rule_impl(ctx):
             fail("This Is My Failure Message")
 
@@ -286,29 +277,34 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             implementation = custom_rule_impl,
             outputs = {"my_output": "%{name}.txt"},
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_rule")
 
         custom_rule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:r");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure failure = info.getCauses().getSet(AnalysisFailure.class).toList().get(0);
-    assertThat(failure.getMessage()).contains("This Is My Failure Message");
-    assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"));
-  }
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:r")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val failure: AnalysisFailure = info.getCauses().getSet(AnalysisFailure::class.java).toList().get(0)
+        com.google.common.truth.Subject.contains("This Is My Failure Message")
+        assertThat(failure.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:r"))
+    }
 
-  @Test
-  public void transitiveStarlarkRuleFailure() throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun transitiveStarlarkRuleFailure() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         def custom_rule_impl(ctx):
             fail("This Is My Failure Message")
 
@@ -321,11 +317,13 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             implementation = depending_rule_impl,
             attrs = {"deps": attr.label_list()},
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_rule", "depending_rule")
 
         custom_rule(name = "one")
@@ -344,29 +342,34 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             name = "failures_are_indirect_deps",
             deps = [":failures_are_direct_deps"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:failures_are_indirect_deps");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:failures_are_indirect_deps")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
 
-    AnalysisFailure expectedOne =
-        AnalysisFailure.create(
-            Label.parseCanonicalUnchecked("//test:one"), "This Is My Failure Message");
-    AnalysisFailure expectedTwo =
-        AnalysisFailure.create(
-            Label.parseCanonicalUnchecked("//test:two"), "This Is My Failure Message");
+        val expectedOne: AnalysisFailure? =
+            AnalysisFailure.create(
+                Label.parseCanonicalUnchecked("//test:one"), "This Is My Failure Message"
+            )
+        val expectedTwo: AnalysisFailure? =
+            AnalysisFailure.create(
+                Label.parseCanonicalUnchecked("//test:two"), "This Is My Failure Message"
+            )
 
-    assertThat(info.getCausesNestedSet().toList())
-        .comparingElementsUsing(analysisFailureCorrespondence)
-        .containsExactly(expectedOne, expectedTwo);
-  }
+        assertThat(info.getCausesNestedSet().toList())
+            .comparingElementsUsing(analysisFailureCorrespondence)
+            .containsExactly(expectedOne, expectedTwo)
+    }
 
-  @Test
-  public void starlarkAspectFailure() throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkAspectFailure() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         def custom_aspect_impl(target, ctx):
             fail("This Is My Aspect Failure Message")
 
@@ -379,10 +382,12 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             implementation = custom_rule_impl,
             attrs = {"deps": attr.label_list(aspects = [custom_aspect])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_rule")
 
         custom_rule(name = "one")
@@ -391,25 +396,29 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             name = "two",
             deps = [":one"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:two");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure expectedOne =
-        AnalysisFailure.create(
-            Label.parseCanonicalUnchecked("//test:one"), "This Is My Aspect Failure Message");
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:two")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val expectedOne: AnalysisFailure? =
+            AnalysisFailure.create(
+                Label.parseCanonicalUnchecked("//test:one"), "This Is My Aspect Failure Message"
+            )
 
-    assertThat(info.getCausesNestedSet().toList())
-        .comparingElementsUsing(analysisFailureCorrespondence)
-        .containsExactly(expectedOne);
-  }
+        assertThat(info.getCausesNestedSet().toList())
+            .comparingElementsUsing(analysisFailureCorrespondence)
+            .containsExactly(expectedOne)
+    }
 
-  @Test
-  public void transitiveStarlarkAspectFailure() throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun transitiveStarlarkAspectFailure() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         def custom_aspect_impl(target, ctx):
             if hasattr(ctx.rule.attr, "kaboom") and ctx.rule.attr.kaboom:
                 fail("This Is My Aspect Failure Message")
@@ -427,10 +436,12 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
                 "kaboom": attr.bool(),
             },
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_rule")
 
         custom_rule(
@@ -447,26 +458,29 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             name = "three",
             deps = [":two"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:three");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure expectedOne =
-        AnalysisFailure.create(
-            Label.parseCanonicalUnchecked("//test:one"), "This Is My Aspect Failure Message");
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:three")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val expectedOne: AnalysisFailure? =
+            AnalysisFailure.create(
+                Label.parseCanonicalUnchecked("//test:one"), "This Is My Aspect Failure Message"
+            )
 
-    assertThat(info.getCausesNestedSet().toList())
-        .comparingElementsUsing(analysisFailureCorrespondence)
-        .containsExactly(expectedOne);
-  }
+        assertThat(info.getCausesNestedSet().toList())
+            .comparingElementsUsing(analysisFailureCorrespondence)
+            .containsExactly(expectedOne)
+    }
 
-  @Test
-  public void starlarkAspectAndRuleFailure_analysisFailureInfoPropagatesOnlyFromRuleFailure()
-      throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkAspectAndRuleFailure_analysisFailureInfoPropagatesOnlyFromRuleFailure() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         def custom_aspect_impl(target, ctx):
             fail("This Is My Aspect Failure Message")
 
@@ -479,10 +493,12 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             implementation = custom_rule_impl,
             attrs = {"deps": attr.label_list(aspects = [custom_aspect])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_rule")
 
         custom_rule(name = "one")
@@ -491,26 +507,29 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             name = "two",
             deps = [":one"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:two");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure expectedRuleFailure =
-        AnalysisFailure.create(
-            Label.parseCanonicalUnchecked("//test:one"), "This Is My Rule Failure Message");
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:two")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val expectedRuleFailure: AnalysisFailure? =
+            AnalysisFailure.create(
+                Label.parseCanonicalUnchecked("//test:one"), "This Is My Rule Failure Message"
+            )
 
-    assertThat(info.getCausesNestedSet().toList())
-        .comparingElementsUsing(analysisFailureCorrespondence)
-        .containsExactly(expectedRuleFailure);
-  }
+        assertThat(info.getCausesNestedSet().toList())
+            .comparingElementsUsing(analysisFailureCorrespondence)
+            .containsExactly(expectedRuleFailure)
+    }
 
-  @Test
-  public void starlarkAspectWithAdvertisedProvidersFailure_analysisFailurePropagates()
-      throws Exception {
-    scratch.file(
-        "test/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkAspectWithAdvertisedProvidersFailure_analysisFailurePropagates() {
+        scratch.file(
+            "test/extension.bzl",
+            """
         MyInfo = provider()
 
         def custom_aspect_impl(target, ctx):
@@ -525,10 +544,12 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             implementation = custom_rule_impl,
             attrs = {"deps": attr.label_list(aspects = [custom_aspect])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:extension.bzl", "custom_rule")
 
         custom_rule(name = "one")
@@ -537,16 +558,34 @@ public final class AnalysisFailureInfoTest extends BuildViewTestCase {
             name = "two",
             deps = [":one"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:two");
-    AnalysisFailureInfo info =
-        (AnalysisFailureInfo) target.get(AnalysisFailureInfo.provider.getKey());
-    AnalysisFailure expectedRuleFailure =
-        AnalysisFailure.create(Label.parseCanonicalUnchecked("//test:one"), "Aspect Failure");
+        val target: ConfiguredTarget? = getConfiguredTarget("//test:two")
+        val info: AnalysisFailureInfo =
+            target.get(AnalysisFailureInfo.provider.getKey()) as AnalysisFailureInfo
+        val expectedRuleFailure: AnalysisFailure? =
+            AnalysisFailure.create(Label.parseCanonicalUnchecked("//test:one"), "Aspect Failure")
 
-    assertThat(info.getCausesNestedSet().toList())
-        .comparingElementsUsing(analysisFailureCorrespondence)
-        .containsExactly(expectedRuleFailure);
-  }
+        assertThat(info.getCausesNestedSet().toList())
+            .comparingElementsUsing(analysisFailureCorrespondence)
+            .containsExactly(expectedRuleFailure)
+    }
+
+    companion object {
+        @Throws(java.lang.Exception::class)
+        private fun getattr(x: Any?, name: String?): Any? {
+            return Starlark.getattr( /*mu=*/null, StarlarkSemantics.DEFAULT, x, name, null)
+        }
+
+        private val analysisFailureCorrespondence: Correspondence<AnalysisFailure?, AnalysisFailure?> =
+            Correspondence.from<AnalysisFailure?, AnalysisFailure?>(
+                BinaryPredicate { actual: AnalysisFailure?, expected: AnalysisFailure? ->
+                    actual.getLabel().equals(expected.getLabel())
+                            && actual.getMessage().contains(expected.getMessage())
+                },
+                "is equivalent to"
+            )
+    }
 }

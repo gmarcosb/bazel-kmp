@@ -11,126 +11,126 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.junit
 
-package com.google.devtools.build.lib.blackbox.junit;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.blackbox.bazel.BlackBoxTestEnvironmentImpl;
-import com.google.devtools.build.lib.blackbox.bazel.CrossToolsSetup;
-import com.google.devtools.build.lib.blackbox.bazel.CxxToolsSetup;
-import com.google.devtools.build.lib.blackbox.bazel.DefaultToolsSetup;
-import com.google.devtools.build.lib.blackbox.bazel.JavaToolsSetup;
-import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext;
-import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestEnvironment;
-import com.google.devtools.build.lib.blackbox.framework.PathUtils;
-import com.google.devtools.build.lib.blackbox.framework.ToolsSetup;
-import com.google.devtools.build.lib.util.OS;
-import java.nio.file.Path;
-import java.util.List;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.rules.TestName;
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorDescriptor.Builder.build
+import com.google.devtools.build.lib.blackbox.bazel.BlackBoxTestEnvironmentImpl
+import com.google.devtools.build.lib.blackbox.bazel.CrossToolsSetup
+import com.google.devtools.build.lib.blackbox.bazel.CxxToolsSetup
+import com.google.devtools.build.lib.blackbox.bazel.DefaultToolsSetup
+import com.google.devtools.build.lib.blackbox.bazel.JavaToolsSetup
+import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext
+import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestEnvironment
+import com.google.devtools.build.lib.blackbox.framework.ToolsSetup
+import com.google.devtools.build.lib.vfs.Path
+import org.junit.AfterClass
+import org.junit.Before
+import org.junit.BeforeClass
+import org.junit.rules.TestName
+import java.nio.file.Path
 
 /**
  * Abstract base class for all JUnit integration tests for Bazel and Blaze.
- *
- * <p>Reuses {@link BlackBoxTestEnvironment} for all the test methods in the class. Initializes the
+ * 
+ * 
+ * Reuses [BlackBoxTestEnvironment] for all the test methods in the class. Initializes the
  * test environment and creates the test context for thet concrete test methods. Alternatively,
- * {@link #setUp()} method can be overridden in concrete tests, and {@link
- * #prepareEnvironment(ImmutableList)} method be called for each test method separately to let them
+ * [.setUp] method can be overridden in concrete tests, and [ ][.prepareEnvironment] method be called for each test method separately to let them
  * initialize the unique set of tools.
- *
- * <p>See {@link BlackBoxTestEnvironment}, {@link BlackBoxTestContext}
+ * 
+ * 
+ * See [BlackBoxTestEnvironment], [BlackBoxTestContext]
  */
-public abstract class AbstractBlackBoxTest {
-  public static final List<ToolsSetup> DEFAULT_TOOLS =
-      ImmutableList.of(
-          new DefaultToolsSetup(),
-          new JavaToolsSetup(),
-          new CxxToolsSetup(),
-          new CrossToolsSetup());
-  protected static final String MODULE_DOT_BAZEL = "MODULE.bazel";
+abstract class AbstractBlackBoxTest {
+    @org.junit.Rule
+    var testName: TestName = TestName()
 
-  @Rule public TestName testName = new TestName();
+    /** Test context, available to the concrete test methods through a getter [.context]  */
+    private var context: BlackBoxTestContext? = null
 
-  /**
-   * Shares the common infrastructure of a test group (execution service), serves as a test context
-   * factory.
-   */
-  private static BlackBoxTestEnvironment testEnvironment;
-  /** Test context, available to the concrete test methods through a getter {@link #context()} */
-  private BlackBoxTestContext context;
-
-  @BeforeClass
-  public static void beforeClass() {
-    testEnvironment = new BlackBoxTestEnvironmentImpl();
-  }
-
-  @AfterClass
-  public static void afterClass() {
-    testEnvironment.dispose();
-  }
-
-  @Before
-  public void setUp() throws Exception {
-    prepareEnvironment(getAdditionalTools());
-  }
-
-  @After
-  public void tearDown() throws Exception {
-    if (context != null) {
-      try {
-        context.bazel().shutdown();
-      } finally {
-        Path workDir = context.getWorkDir();
-        if (workDir != null) {
-          PathUtils.deleteTreeWithRetry(workDir);
-        }
-      }
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        prepareEnvironment(this.additionalTools)
     }
-  }
 
-  /**
-   * Prepares the test environment for the test method and set the test context.
-   *
-   * @param tools all {@link ToolsSetup} to be called during environment initialization
-   * @throws Exception if any {@link ToolsSetup} call fails
-   */
-  protected void prepareEnvironment(ImmutableList<ToolsSetup> tools) throws Exception {
-    context = testEnvironment.prepareEnvironment(testName.getMethodName(), tools);
-  }
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun tearDown() {
+        if (context != null) {
+            try {
+                context.bazel().shutdown()
+            } finally {
+                val workDir: Path? = context.getWorkDir()
+                if (workDir != null) {
+                    com.google.devtools.build.lib.blackbox.framework.PathUtils.deleteTreeWithRetry(workDir)
+                }
+            }
+        }
+    }
 
-  /**
-   * Getter method for test context. Concrete test methods should only use the test context, but not
-   * modify it.
-   *
-   * @return test context
-   */
-  protected BlackBoxTestContext context() {
-    return context;
-  }
+    /**
+     * Prepares the test environment for the test method and set the test context.
+     * 
+     * @param tools all [ToolsSetup] to be called during environment initialization
+     * @throws Exception if any [ToolsSetup] call fails
+     */
+    @Throws(java.lang.Exception::class)
+    protected fun prepareEnvironment(tools: com.google.common.collect.ImmutableList<ToolsSetup?>?) {
+        context = testEnvironment.prepareEnvironment(testName.getMethodName(), tools)
+    }
 
-  /**
-   * Concrete test can either override this method to provide the list of additional tools besides
-   * {@link #DEFAULT_TOOLS} to be initialized for all test methods, or call {@link
-   * #prepareEnvironment(ImmutableList)} in each test method separately, passing the list of tools
-   *
-   * @return the list of {@link ToolsSetup} to be called in environment initialization
-   */
-  protected ImmutableList<ToolsSetup> getAdditionalTools() {
-    return ImmutableList.of();
-  }
+    /**
+     * Getter method for test context. Concrete test methods should only use the test context, but not
+     * modify it.
+     * 
+     * @return test context
+     */
+    protected fun context(): BlackBoxTestContext? {
+        return context
+    }
 
-  /**
-   * Check if we are running tests on Windows
-   *
-   * @return True, if we are running tests on Windows; False, if we are running tests on other
-   *     platforms.
-   */
-  protected static boolean isWindows() {
-    return OS.WINDOWS.equals(OS.getCurrent());
-  }
+    protected open val additionalTools: com.google.common.collect.ImmutableList<ToolsSetup?>?
+        /**
+         * Concrete test can either override this method to provide the list of additional tools besides
+         * [.DEFAULT_TOOLS] to be initialized for all test methods, or call [ ][.prepareEnvironment] in each test method separately, passing the list of tools
+         * 
+         * @return the list of [ToolsSetup] to be called in environment initialization
+         */
+        get() = com.google.common.collect.ImmutableList.of<ToolsSetup?>()
+
+    companion object {
+        val DEFAULT_TOOLS: MutableList<ToolsSetup?> = com.google.common.collect.ImmutableList.of<ToolsSetup?>(
+            DefaultToolsSetup(),
+            JavaToolsSetup(),
+            CxxToolsSetup(),
+            CrossToolsSetup()
+        )
+        protected const val MODULE_DOT_BAZEL: String = "MODULE.bazel"
+
+        /**
+         * Shares the common infrastructure of a test group (execution service), serves as a test context
+         * factory.
+         */
+        private var testEnvironment: BlackBoxTestEnvironment? = null
+
+        @BeforeClass
+        fun beforeClass() {
+            testEnvironment = BlackBoxTestEnvironmentImpl()
+        }
+
+        @AfterClass
+        fun afterClass() {
+            testEnvironment.dispose()
+        }
+
+        protected val isWindows: Boolean
+            /**
+             * Check if we are running tests on Windows
+             * 
+             * @return True, if we are running tests on Windows; False, if we are running tests on other
+             * platforms.
+             */
+            get() = com.google.devtools.build.lib.util.OS.WINDOWS == com.google.devtools.build.lib.util.OS.getCurrent()
+    }
 }

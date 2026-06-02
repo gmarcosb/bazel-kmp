@@ -11,51 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+/** Utility methods for Starlark syntax.  */
+object SyntaxUtils {
+    /**
+     * Returns the effective bound for a positive-stride slice operation from a user-supplied integer.
+     * First, if the integer is negative, the length of the sequence is added to it, so an index of -1
+     * represents the last element of the sequence. Then, the integer is "clamped" into the inclusive
+     * interval [0, length].
+     */
+    fun toSliceBound(index: Int, length: Int): Int {
+        var index = index
+        if (index < 0) {
+            index += length
+        }
 
-/** Utility methods for Starlark syntax. */
-public final class SyntaxUtils {
-
-  private SyntaxUtils() {}
-
-  /**
-   * Returns the effective bound for a positive-stride slice operation from a user-supplied integer.
-   * First, if the integer is negative, the length of the sequence is added to it, so an index of -1
-   * represents the last element of the sequence. Then, the integer is "clamped" into the inclusive
-   * interval [0, length].
-   */
-  public static int toSliceBound(int index, int length) {
-    if (index < 0) {
-      index += length;
+        if (index < 0) {
+            return 0
+        } else if (index > length) {
+            return length
+        } else {
+            return index
+        }
     }
 
-    if (index < 0) {
-      return 0;
-    } else if (index > length) {
-      return length;
-    } else {
-      return index;
-    }
-  }
+    /**
+     * Returns the effective bound for a negative-stride slice operation from a user-supplied integer.
+     * First, if the integer is negative, the length of the sequence is added to it, so an index of -1
+     * represents the last element of the sequence. Then, the integer is "clamped" into the inclusive
+     * interval [-1, length - 1].
+     */
+    fun toReverseSliceBound(index: Int, length: Int): Int {
+        var index = index
+        if (index < 0) {
+            index += length
+        }
 
-  /**
-   * Returns the effective bound for a negative-stride slice operation from a user-supplied integer.
-   * First, if the integer is negative, the length of the sequence is added to it, so an index of -1
-   * represents the last element of the sequence. Then, the integer is "clamped" into the inclusive
-   * interval [-1, length - 1].
-   */
-  public static int toReverseSliceBound(int index, int length) {
-    if (index < 0) {
-      index += length;
+        if (index < -1) {
+            return -1
+        } else if (index >= length) {
+            return length - 1
+        } else {
+            return index
+        }
     }
-
-    if (index < -1) {
-      return -1;
-    } else if (index >= length) {
-      return length - 1;
-    } else {
-      return index;
-    }
-  }
 }

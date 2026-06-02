@@ -11,33 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.analysis.ShellConfiguration.Options;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestUtil;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.ShellConfiguration.Options
 
 /**
- * Unit tests for {@link ShellConfiguration}.
+ * Unit tests for [ShellConfiguration].
  */
-@RunWith(JUnit4.class)
-public class ShellConfigurationTest extends BuildViewTestCase {
+@RunWith(JUnit4::class)
+class ShellConfigurationTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun optionsAlsoApplyToHost() {
+        val options: BuildOptions = targetConfig.getOptions().clone()
+        options.get(Options::class.java).setShellExecutable(PathFragment.create("/my/shell/binary"))
 
-  @Test
-  public void optionsAlsoApplyToHost() throws Exception {
-    BuildOptions options = targetConfig.getOptions().clone();
-    options.get(Options.class).setShellExecutable(PathFragment.create("/my/shell/binary"));
-
-    ShellConfiguration.Options execOptions =
-        AnalysisTestUtil.execOptions(options, skyframeExecutor, reporter)
-            .get(ShellConfiguration.Options.class);
-    assertThat(execOptions.getShellExecutable()).isEqualTo(PathFragment.create("/my/shell/binary"));
-  }
+        val execOptions: ShellConfiguration.Options =
+            AnalysisTestUtil.execOptions(options, skyframeExecutor, reporter)
+                .get(ShellConfiguration.Options::class.java)
+        assertThat(execOptions.getShellExecutable()).isEqualTo(PathFragment.create("/my/shell/binary"))
+    }
 }

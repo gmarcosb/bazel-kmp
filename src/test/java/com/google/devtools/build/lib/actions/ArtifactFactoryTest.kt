@@ -11,455 +11,478 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ARTIFACT_OWNER;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.ArtifactRoot.RootType
 
 /**
- * Tests {@link ArtifactFactory}. Also see {@link ArtifactTest} for a test
+ * Tests [ArtifactFactory]. Also see [ArtifactTest] for a test
  * of individual artifacts.
  */
-@RunWith(JUnit4.class)
-public class ArtifactFactoryTest {
+@RunWith(JUnit4::class)
+class ArtifactFactoryTest {
+    private val scratch: Scratch = Scratch()
 
-  private static final RepositoryName MAIN = RepositoryName.MAIN;
+    private var execRoot: Path? = null
+    private var clientRoot: Root? = null
+    private var clientRoRoot: Root? = null
+    private var alienRoot: Root? = null
+    private var outRoot: ArtifactRoot? = null
 
-  private Scratch scratch = new Scratch();
+    private var fooPath: PathFragment? = null
+    private var fooPackage: PackageIdentifier? = null
+    private var fooRelative: PathFragment? = null
 
-  private Path execRoot;
-  private Root clientRoot;
-  private Root clientRoRoot;
-  private Root alienRoot;
-  private ArtifactRoot outRoot;
+    private var barPath: PathFragment? = null
+    private var barPackage: PackageIdentifier? = null
+    private var barRelative: PathFragment? = null
 
-  private PathFragment fooPath;
-  private PackageIdentifier fooPackage;
-  private PathFragment fooRelative;
+    private var alienPath: PathFragment? = null
+    private var alienPackage: PackageIdentifier? = null
+    private var alienRelative: PathFragment? = null
 
-  private PathFragment barPath;
-  private PackageIdentifier barPackage;
-  private PathFragment barRelative;
+    private var artifactFactory: ArtifactFactory? = null
+    private val actionKeyContext: ActionKeyContext = ActionKeyContext()
 
-  private PathFragment alienPath;
-  private PackageIdentifier alienPackage;
-  private PathFragment alienRelative;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createFiles() {
+        execRoot = scratch.dir("/output/workspace")
+        clientRoot = Root.fromPath(scratch.dir("/client/workspace"))
+        clientRoRoot = Root.fromPath(scratch.dir("/client/RO/workspace"))
+        alienRoot = Root.fromPath(scratch.dir("/client/workspace"))
+        outRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out-root", "x", "bin")
 
-  private ArtifactFactory artifactFactory;
-  private final ActionKeyContext actionKeyContext = new ActionKeyContext();
+        fooPath = PathFragment.create("foo")
+        fooPackage = PackageIdentifier.createInMainRepo(fooPath)
+        fooRelative = fooPath.getRelative("foosource.txt")
 
-  @Before
-  public final void createFiles() throws Exception  {
-    execRoot = scratch.dir("/output/workspace");
-    clientRoot = Root.fromPath(scratch.dir("/client/workspace"));
-    clientRoRoot = Root.fromPath(scratch.dir("/client/RO/workspace"));
-    alienRoot = Root.fromPath(scratch.dir("/client/workspace"));
-    outRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out-root", "x", "bin");
+        barPath = PathFragment.create("foo/bar")
+        barPackage = PackageIdentifier.createInMainRepo(barPath)
+        barRelative = barPath.getRelative("barsource.txt")
 
-    fooPath = PathFragment.create("foo");
-    fooPackage = PackageIdentifier.createInMainRepo(fooPath);
-    fooRelative = fooPath.getRelative("foosource.txt");
+        alienPath = PathFragment.create("external/alien")
+        alienPackage = PackageIdentifier.create("alien", alienPath)
+        alienRelative = alienPath.getRelative("alien.txt")
 
-    barPath = PathFragment.create("foo/bar");
-    barPackage = PackageIdentifier.createInMainRepo(barPath);
-    barRelative = barPath.getRelative("barsource.txt");
+        artifactFactory = ArtifactFactory(execRoot.getParentDirectory(), "bazel-out")
+        setupRoots()
+    }
 
-    alienPath = PathFragment.create("external/alien");
-    alienPackage = PackageIdentifier.create("alien", alienPath);
-    alienRelative = alienPath.getRelative("alien.txt");
+    private fun setupRoots() {
+        val packageRootMap: MutableMap<PackageIdentifier?, Root?> = HashMap<PackageIdentifier?, Root?>()
+        packageRootMap.put(fooPackage, clientRoot)
+        packageRootMap.put(barPackage, clientRoRoot)
+        packageRootMap.put(alienPackage, alienRoot)
+        artifactFactory.setPackageRoots({ key: Any? -> packageRootMap.get(key) })
+    }
 
-    artifactFactory = new ArtifactFactory(execRoot.getParentDirectory(), "bazel-out");
-    setupRoots();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetSourceArtifactYieldsSameArtifact() {
+        assertThat(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
+            .isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
+    }
 
-  private void setupRoots() {
-    Map<PackageIdentifier, Root> packageRootMap = new HashMap<>();
-    packageRootMap.put(fooPackage, clientRoot);
-    packageRootMap.put(barPackage, clientRoRoot);
-    packageRootMap.put(alienPackage, alienRoot);
-    artifactFactory.setPackageRoots(packageRootMap::get);
-  }
-
-  @Test
-  public void testGetSourceArtifactYieldsSameArtifact() throws Exception {
-    assertThat(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
-        .isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot));
-  }
-
-  @Test
-  public void testGetSourceArtifactUnnormalized() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetSourceArtifactUnnormalized() {
+        assertThat(
             artifactFactory.getSourceArtifact(
-                PathFragment.create("foo/./foosource.txt"), clientRoot))
-        .isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot));
-  }
+                PathFragment.create("foo/./foosource.txt"), clientRoot
+            )
+        )
+            .isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
+    }
 
-  @Test
-  public void testResolveArtifact_noDerived_simpleSource() throws Exception {
-    assertThat(artifactFactory.resolveSourceArtifact(fooRelative, MAIN))
-        .isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot));
-    assertThat(artifactFactory.resolveSourceArtifact(barRelative, MAIN))
-        .isSameInstanceAs(artifactFactory.getSourceArtifact(barRelative, clientRoRoot));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveArtifact_noDerived_simpleSource() {
+        assertThat(artifactFactory.resolveSourceArtifact(fooRelative, MAIN))
+            .isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
+        assertThat(artifactFactory.resolveSourceArtifact(barRelative, MAIN))
+            .isSameInstanceAs(artifactFactory.getSourceArtifact(barRelative, clientRoRoot))
+    }
 
-  @Test
-  public void testResolveArtifact_inExternalRepo() throws Exception {
-    Artifact a1 = artifactFactory.getSourceArtifact(alienRelative, alienRoot);
-    Artifact a2 = artifactFactory.resolveSourceArtifact(alienRelative, MAIN);
-    assertThat(a1).isSameInstanceAs(a2);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveArtifact_inExternalRepo() {
+        val a1: Artifact? = artifactFactory.getSourceArtifact(alienRelative, alienRoot)
+        val a2: Artifact? = artifactFactory.resolveSourceArtifact(alienRelative, MAIN)
+        assertThat(a1).isSameInstanceAs(a2)
+    }
 
-  @Test
-  public void testResolveArtifact_noDerived_derivedRoot() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveArtifact_noDerived_derivedRoot() {
+        assertThat(
             artifactFactory.resolveSourceArtifact(
-                outRoot.getRoot().getRelative(fooRelative).relativeTo(execRoot), MAIN))
-        .isNull();
-    assertThat(
+                outRoot.getRoot().getRelative(fooRelative).relativeTo(execRoot), MAIN
+            )
+        )
+            .isNull()
+        assertThat(
             artifactFactory.resolveSourceArtifact(
-                outRoot.getRoot().getRelative(barRelative).relativeTo(execRoot), MAIN))
-        .isNull();
-  }
+                outRoot.getRoot().getRelative(barRelative).relativeTo(execRoot), MAIN
+            )
+        )
+            .isNull()
+    }
 
-  @Test
-  public void testResolveArtifact_noDerived_simpleSource_other() throws Exception {
-    Artifact actual = artifactFactory.resolveSourceArtifact(fooRelative, MAIN);
-    assertThat(actual).isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot));
-    actual = artifactFactory.resolveSourceArtifact(barRelative, MAIN);
-    assertThat(actual)
-        .isSameInstanceAs(artifactFactory.getSourceArtifact(barRelative, clientRoRoot));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveArtifact_noDerived_simpleSource_other() {
+        var actual: Artifact? = artifactFactory.resolveSourceArtifact(fooRelative, MAIN)
+        assertThat(actual).isSameInstanceAs(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
+        actual = artifactFactory.resolveSourceArtifact(barRelative, MAIN)
+        assertThat(actual)
+            .isSameInstanceAs(artifactFactory.getSourceArtifact(barRelative, clientRoRoot))
+    }
 
-  @Test
-  public void testResolveArtifactWithUpLevelFailsCleanly() throws Exception {
-    // We need a package in the root directory to make every exec path (even one with up-level
-    // references) be in a package.
-    Map<PackageIdentifier, Root> packageRoots =
-        ImmutableMap.of(PackageIdentifier.createInMainRepo(PathFragment.create("")), clientRoot);
-    artifactFactory.setPackageRoots(packageRoots::get);
-    PathFragment outsideWorkspace = PathFragment.create("../foo");
-    PathFragment insideWorkspace = PathFragment.create("../workspace/foo");
-    assertThat(artifactFactory.resolveSourceArtifact(outsideWorkspace, MAIN)).isNull();
-    assertWithMessage(
-            "Up-level-containing paths that descend into the right workspace aren't allowed")
-        .that(artifactFactory.resolveSourceArtifact(insideWorkspace, MAIN))
-        .isNull();
-    MockPackageRootResolver packageRootResolver = new MockPackageRootResolver();
-    packageRootResolver.setPackageRoots(packageRoots);
-    Map<PathFragment, Artifact> result = new HashMap<>();
-    result.put(insideWorkspace, null);
-    result.put(outsideWorkspace, null);
-    assertThat(
-        artifactFactory.resolveSourceArtifacts(ImmutableList.of(insideWorkspace, outsideWorkspace),
-            packageRootResolver).entrySet()).containsExactlyElementsIn(result.entrySet());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveArtifactWithUpLevelFailsCleanly() {
+        // We need a package in the root directory to make every exec path (even one with up-level
+        // references) be in a package.
+        val packageRoots: MutableMap<PackageIdentifier?, Root?> =
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                PackageIdentifier.createInMainRepo(PathFragment.create("")),
+                clientRoot
+            )
+        artifactFactory.setPackageRoots({ key: Any? -> packageRoots.get(key) })
+        val outsideWorkspace: PathFragment? = PathFragment.create("../foo")
+        val insideWorkspace: PathFragment? = PathFragment.create("../workspace/foo")
+        assertThat(artifactFactory.resolveSourceArtifact(outsideWorkspace, MAIN)).isNull()
+        Truth.assertWithMessage(
+            "Up-level-containing paths that descend into the right workspace aren't allowed"
+        )
+            .that(artifactFactory.resolveSourceArtifact(insideWorkspace, MAIN))
+            .isNull()
+        val packageRootResolver = MockPackageRootResolver()
+        packageRootResolver.setPackageRoots(packageRoots)
+        val result: MutableMap<PathFragment?, Artifact?> = HashMap<PathFragment?, Artifact?>()
+        result.put(insideWorkspace, null)
+        result.put(outsideWorkspace, null)
+        assertThat(
+            artifactFactory.resolveSourceArtifacts(
+                com.google.common.collect.ImmutableList.of<E?>(insideWorkspace, outsideWorkspace),
+                packageRootResolver
+            ).entrySet()
+        ).containsExactlyElementsIn(result.entrySet())
+    }
 
-  @Test
-  public void testClearResetsFactory() {
-    Artifact fooArtifact = artifactFactory.getSourceArtifact(fooRelative, clientRoot);
-    artifactFactory.clear();
-    setupRoots();
-    assertThat(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
-        .isNotSameInstanceAs(fooArtifact);
-  }
+    @org.junit.Test
+    fun testClearResetsFactory() {
+        val fooArtifact: Artifact? = artifactFactory.getSourceArtifact(fooRelative, clientRoot)
+        artifactFactory.clear()
+        setupRoots()
+        assertThat(artifactFactory.getSourceArtifact(fooRelative, clientRoot))
+            .isNotSameInstanceAs(fooArtifact)
+    }
 
-  @Test
-  public void testFindDerivedRoot() throws Exception {
-    assertThat(artifactFactory.isDerivedArtifact(fooRelative)).isFalse();
-    assertThat(artifactFactory.isDerivedArtifact(
-        PathFragment.create("bazel-out/local-fastbuild/bin/foo"))).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFindDerivedRoot() {
+        assertThat(artifactFactory.isDerivedArtifact(fooRelative)).isFalse()
+        assertThat(
+            artifactFactory.isDerivedArtifact(
+                PathFragment.create("bazel-out/local-fastbuild/bin/foo")
+            )
+        ).isTrue()
+    }
 
-  @Test
-  public void testAbsoluteArtifact() throws Exception {
-    Root absoluteRoot = Root.absoluteRoot(scratch.getFileSystem());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAbsoluteArtifact() {
+        val absoluteRoot: Root? = Root.absoluteRoot(scratch.getFileSystem())
 
-    assertThat(
-            artifactFactory.getSourceArtifact(PathFragment.create("foo"), clientRoot).getExecPath())
-        .isEqualTo(PathFragment.create("foo"));
-    assertThat(
+        assertThat(
+            artifactFactory.getSourceArtifact(PathFragment.create("foo"), clientRoot).getExecPath()
+        )
+            .isEqualTo(PathFragment.create("foo"))
+        assertThat(
             artifactFactory
                 .getSourceArtifact(PathFragment.create("/foo"), absoluteRoot)
-                .getExecPath())
-        .isEqualTo(PathFragment.create("/foo"));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> artifactFactory.getSourceArtifact(PathFragment.create("/foo"), clientRoot));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> artifactFactory.getSourceArtifact(PathFragment.create("foo"), absoluteRoot));
-  }
+                .getExecPath()
+        )
+            .isEqualTo(PathFragment.create("/foo"))
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                artifactFactory.getSourceArtifact(
+                    PathFragment.create("/foo"),
+                    clientRoot
+                )
+            })
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                artifactFactory.getSourceArtifact(
+                    PathFragment.create("foo"),
+                    absoluteRoot
+                )
+            })
+    }
 
-  @Test
-  public void testSetGeneratingActionIdempotenceNewActionGraph() throws Exception {
-    Artifact.DerivedArtifact a =
-        artifactFactory.getDerivedArtifact(fooRelative, outRoot, NULL_ARTIFACT_OWNER);
-    Artifact.DerivedArtifact b =
-        artifactFactory.getDerivedArtifact(barRelative, outRoot, NULL_ARTIFACT_OWNER);
-    a.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
-    b.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
-    MutableActionGraph actionGraph = new MapBasedActionGraph(actionKeyContext);
-    Action originalAction = new ActionsTestUtil.NullAction(NULL_ACTION_OWNER, a);
-    actionGraph.registerAction(originalAction);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSetGeneratingActionIdempotenceNewActionGraph() {
+        val a: Artifact.DerivedArtifact =
+            artifactFactory.getDerivedArtifact(fooRelative, outRoot, ActionsTestUtil.Companion.NULL_ARTIFACT_OWNER)
+        val b: Artifact.DerivedArtifact =
+            artifactFactory.getDerivedArtifact(barRelative, outRoot, ActionsTestUtil.Companion.NULL_ARTIFACT_OWNER)
+        a.setGeneratingActionKey(ActionsTestUtil.Companion.NULL_ACTION_LOOKUP_DATA)
+        b.setGeneratingActionKey(ActionsTestUtil.Companion.NULL_ACTION_LOOKUP_DATA)
+        val actionGraph: MutableActionGraph = MapBasedActionGraph(actionKeyContext)
+        val originalAction: Action = NullAction(ActionsTestUtil.Companion.NULL_ACTION_OWNER, a)
+        actionGraph.registerAction(originalAction)
 
-    // Creating a second Action referring to the Artifact should create a conflict.
-    Action action = new ActionsTestUtil.NullAction(NULL_ACTION_OWNER, a, b);
-    ActionConflictException e =
-        assertThrows(ActionConflictException.class, () -> actionGraph.registerAction(action));
-    assertThat(e.getArtifact()).isSameInstanceAs(a);
-    assertThat(actionGraph.getGeneratingAction(a)).isSameInstanceAs(originalAction);
-  }
+        // Creating a second Action referring to the Artifact should create a conflict.
+        val action: Action = NullAction(ActionsTestUtil.Companion.NULL_ACTION_OWNER, a, b)
+        val e: ActionConflictException =
+            org.junit.Assert.assertThrows<T>(
+                ActionConflictException::class.java,
+                org.junit.function.ThrowingRunnable { actionGraph.registerAction(action) })
+        assertThat(e.getArtifact()).isSameInstanceAs(a)
+        assertThat(actionGraph.getGeneratingAction(a)).isSameInstanceAs(originalAction)
+    }
 
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_exactMatch() {
-    artifactFactory.noteAnalysisStarting();
-    Artifact.SourceArtifact original = artifactFactory.getSourceArtifact(fooRelative, clientRoot);
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_exactMatch() {
+        artifactFactory.noteAnalysisStarting()
+        val original: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(fooRelative, clientRoot)
 
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(fooRelative, MAIN);
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(fooRelative, MAIN)
 
-    assertThat(result).containsExactly(original);
-  }
+        Truth.assertThat(result).containsExactly(original)
+    }
 
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_upperCaseLookupFindsLowerCaseArtifact() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment lowerPath = PathFragment.create("foo/foosource.txt");
-    Artifact.SourceArtifact original = artifactFactory.getSourceArtifact(lowerPath, clientRoot);
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_upperCaseLookupFindsLowerCaseArtifact() {
+        artifactFactory.noteAnalysisStarting()
+        val lowerPath: PathFragment? = PathFragment.create("foo/foosource.txt")
+        val original: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(lowerPath, clientRoot)
 
-    PathFragment upperPath = PathFragment.create("foo/FooSource.txt");
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(upperPath, MAIN);
+        val upperPath: PathFragment? = PathFragment.create("foo/FooSource.txt")
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(upperPath, MAIN)
 
-    assertThat(result).containsExactly(original);
-  }
+        Truth.assertThat(result).containsExactly(original)
+    }
 
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_lowerCaseLookupFindsUpperCaseArtifact() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment upperPath = PathFragment.create("foo/FooSource.txt");
-    Artifact.SourceArtifact original = artifactFactory.getSourceArtifact(upperPath, clientRoot);
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_lowerCaseLookupFindsUpperCaseArtifact() {
+        artifactFactory.noteAnalysisStarting()
+        val upperPath: PathFragment? = PathFragment.create("foo/FooSource.txt")
+        val original: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(upperPath, clientRoot)
 
-    PathFragment lowerPath = PathFragment.create("foo/foosource.txt");
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(lowerPath, MAIN);
+        val lowerPath: PathFragment? = PathFragment.create("foo/foosource.txt")
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(lowerPath, MAIN)
 
-    assertThat(result).containsExactly(original);
-  }
+        Truth.assertThat(result).containsExactly(original)
+    }
 
-  @Test
-  public void testGetSourceArtifactDifferentCasings_returnsDifferentArtifacts() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment lower = PathFragment.create("foo/header.h");
-    PathFragment upper = PathFragment.create("foo/Header.h");
-    Artifact.SourceArtifact lowerArtifact = artifactFactory.getSourceArtifact(lower, clientRoot);
-    Artifact.SourceArtifact upperArtifact = artifactFactory.getSourceArtifact(upper, clientRoot);
+    @org.junit.Test
+    fun testGetSourceArtifactDifferentCasings_returnsDifferentArtifacts() {
+        artifactFactory.noteAnalysisStarting()
+        val lower: PathFragment? = PathFragment.create("foo/header.h")
+        val upper: PathFragment? = PathFragment.create("foo/Header.h")
+        val lowerArtifact: Artifact.SourceArtifact = artifactFactory.getSourceArtifact(lower, clientRoot)
+        val upperArtifact: Artifact.SourceArtifact = artifactFactory.getSourceArtifact(upper, clientRoot)
 
-    assertThat(upperArtifact).isNotSameInstanceAs(lowerArtifact);
-    assertThat(lowerArtifact.getExecPath()).isEqualTo(lower);
-    assertThat(upperArtifact.getExecPath()).isEqualTo(upper);
-  }
+        assertThat(upperArtifact).isNotSameInstanceAs(lowerArtifact)
+        assertThat(lowerArtifact.getExecPath()).isEqualTo(lower)
+        assertThat(upperArtifact.getExecPath()).isEqualTo(upper)
+    }
 
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_multipleMatches() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment lower = PathFragment.create("foo/header.h");
-    PathFragment upper = PathFragment.create("foo/Header.h");
-    Artifact.SourceArtifact lowerArtifact = artifactFactory.getSourceArtifact(lower, clientRoot);
-    Artifact.SourceArtifact upperArtifact = artifactFactory.getSourceArtifact(upper, clientRoot);
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_multipleMatches() {
+        artifactFactory.noteAnalysisStarting()
+        val lower: PathFragment? = PathFragment.create("foo/header.h")
+        val upper: PathFragment? = PathFragment.create("foo/Header.h")
+        val lowerArtifact: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(lower, clientRoot)
+        val upperArtifact: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(upper, clientRoot)
 
-    ImmutableList<Artifact.SourceArtifact> resultFromLower =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(lower, MAIN);
-    ImmutableList<Artifact.SourceArtifact> resultFromUpper =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(upper, MAIN);
+        val resultFromLower: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(lower, MAIN)
+        val resultFromUpper: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(upper, MAIN)
 
-    assertThat(resultFromLower).containsExactly(lowerArtifact, upperArtifact);
-    assertThat(resultFromUpper).containsExactly(lowerArtifact, upperArtifact);
-  }
+        Truth.assertThat(resultFromLower).containsExactly(lowerArtifact, upperArtifact)
+        Truth.assertThat(resultFromUpper).containsExactly(lowerArtifact, upperArtifact)
+    }
 
-  @Test
-  public void testCaseInsensitiveLookupWithThreeVariants() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment path1 = PathFragment.create("foo/File.h");
-    PathFragment path2 = PathFragment.create("foo/file.h");
-    PathFragment path3 = PathFragment.create("foo/FILE.h");
-    Artifact.SourceArtifact a1 = artifactFactory.getSourceArtifact(path1, clientRoot);
-    Artifact.SourceArtifact a2 = artifactFactory.getSourceArtifact(path2, clientRoot);
-    Artifact.SourceArtifact a3 = artifactFactory.getSourceArtifact(path3, clientRoot);
+    @org.junit.Test
+    fun testCaseInsensitiveLookupWithThreeVariants() {
+        artifactFactory.noteAnalysisStarting()
+        val path1: PathFragment? = PathFragment.create("foo/File.h")
+        val path2: PathFragment? = PathFragment.create("foo/file.h")
+        val path3: PathFragment? = PathFragment.create("foo/FILE.h")
+        val a1: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(path1, clientRoot)
+        val a2: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(path2, clientRoot)
+        val a3: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(path3, clientRoot)
 
-    assertThat(artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path1, MAIN))
-        .containsExactly(a1, a2, a3);
-    assertThat(artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path2, MAIN))
-        .containsExactly(a1, a2, a3);
-    assertThat(
+        assertThat(artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path1, MAIN))
+            .containsExactly(a1, a2, a3)
+        assertThat(artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path2, MAIN))
+            .containsExactly(a1, a2, a3)
+        assertThat(
             artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(
-                PathFragment.create("foo/fIlE.h"), MAIN))
-        .containsExactly(a1, a2, a3);
-  }
-
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_derivedPathReturnsEmpty() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment derivedPath = PathFragment.create("bazel-out/x/bin/foo/header.h");
-
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(derivedPath, MAIN);
-
-    assertThat(result).isEmpty();
-  }
-
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_staleArtifactRevalidatedViaSourceRoot() {
-    // First build: create an artifact.
-    artifactFactory.noteAnalysisStarting();
-    PathFragment path = PathFragment.create("foo/stale.h");
-    var unused = artifactFactory.getSourceArtifact(path, clientRoot);
-
-    // Second build: the artifact from the first build is invalid in the cache, but the method
-    // falls back to source root resolution which re-validates it.
-    artifactFactory.noteAnalysisStarting();
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path, MAIN);
-
-    assertThat(result).hasSize(1);
-    assertThat(result.get(0).getExecPath()).isEqualTo(path);
-  }
-
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_uplevelReturnsEmpty() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment uplevelPath = PathFragment.create("../outside/header.h");
-
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(uplevelPath, MAIN);
-
-    assertThat(result).isEmpty();
-  }
-
-  @Test
-  public void testResolveSourceArtifactCaseInsensitively_fallbackToSourceRootResolution() {
-    artifactFactory.noteAnalysisStarting();
-    // Path not in cache but resolvable via source roots (foo package exists).
-    PathFragment path = PathFragment.create("foo/brand_new.h");
-
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path, MAIN);
-
-    assertThat(result).hasSize(1);
-    assertThat(result.get(0).getExecPath()).isEqualTo(path);
-  }
-
-  @Test
-  public void testExactLookupStillWorksWithCaseInsensitiveCache() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment lower = PathFragment.create("foo/header.h");
-    Artifact.SourceArtifact lowerArtifact = artifactFactory.getSourceArtifact(lower, clientRoot);
-
-    // Exact-case resolveSourceArtifact should return the correct artifact.
-    assertThat(artifactFactory.resolveSourceArtifact(lower, MAIN)).isSameInstanceAs(lowerArtifact);
-  }
-
-  @Test
-  public void
-      testResolveSourceArtifactCaseInsensitively_staleArtifactWithDifferentCasingRevalidated() {
-    // First build: create an artifact with specific casing.
-    artifactFactory.noteAnalysisStarting();
-    PathFragment originalPath = PathFragment.create("foo/Header.h");
-    Artifact.SourceArtifact original = artifactFactory.getSourceArtifact(originalPath, clientRoot);
-
-    // Second build: the artifact from the first build is stale. Resolve with different casing.
-    artifactFactory.noteAnalysisStarting();
-    PathFragment wrongCasePath = PathFragment.create("foo/header.h");
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(wrongCasePath, MAIN);
-
-    // Should return the original artifact with correct casing, not a new one.
-    assertThat(result).hasSize(1);
-    assertThat(result.get(0).getExecPath()).isEqualTo(originalPath);
-    assertThat(result.get(0)).isSameInstanceAs(original);
-  }
-
-  @Test
-  public void
-      testResolveSourceArtifactCaseInsensitively_multipleStaleArtifactsWithDifferentCasingsRevalidated() {
-    // First build: create artifacts with different casings.
-    artifactFactory.noteAnalysisStarting();
-    PathFragment path1 = PathFragment.create("foo/Header.h");
-    PathFragment path2 = PathFragment.create("foo/HEADER.h");
-    Artifact.SourceArtifact artifact1 = artifactFactory.getSourceArtifact(path1, clientRoot);
-    Artifact.SourceArtifact artifact2 = artifactFactory.getSourceArtifact(path2, clientRoot);
-
-    // Second build: both are stale. Resolve with yet another casing.
-    artifactFactory.noteAnalysisStarting();
-    PathFragment queryCasePath = PathFragment.create("foo/header.h");
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(queryCasePath, MAIN);
-
-    // Both original artifacts should be revalidated and returned.
-    assertThat(result).containsExactly(artifact1, artifact2);
-  }
-
-  @Test
-  public void testClearResetsCaseInsensitiveCache() {
-    artifactFactory.noteAnalysisStarting();
-    PathFragment path = PathFragment.create("foo/header.h");
-    Artifact.SourceArtifact oldArtifact = artifactFactory.getSourceArtifact(path, clientRoot);
-
-    artifactFactory.clear();
-    setupRoots();
-    artifactFactory.noteAnalysisStarting();
-
-    Artifact.SourceArtifact newArtifact = artifactFactory.getSourceArtifact(path, clientRoot);
-    assertThat(newArtifact).isNotSameInstanceAs(oldArtifact);
-    ImmutableList<Artifact.SourceArtifact> result =
-        artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path, MAIN);
-    assertThat(result).containsExactly(newArtifact);
-  }
-
-  private static class MockPackageRootResolver implements PackageRootResolver {
-    private final Map<PathFragment, Root> packageRoots = new HashMap<>();
-
-    public void setPackageRoots(Map<PackageIdentifier, Root> packageRoots) {
-      for (Map.Entry<PackageIdentifier, Root> packageRoot : packageRoots.entrySet()) {
-        this.packageRoots.put(packageRoot.getKey().getPackageFragment(), packageRoot.getValue());
-      }
+                PathFragment.create("foo/fIlE.h"), MAIN
+            )
+        )
+            .containsExactly(a1, a2, a3)
     }
 
-    @Override
-    public Map<PathFragment, Root> findPackageRootsForFiles(Iterable<PathFragment> execPaths) {
-      Map<PathFragment, Root> result = new HashMap<>();
-      for (PathFragment execPath : execPaths) {
-        for (PathFragment dir = execPath.getParentDirectory(); dir != null;
-            dir = dir.getParentDirectory()) {
-          if (packageRoots.get(dir) != null) {
-            result.put(execPath, packageRoots.get(dir));
-          }
-        }
-        if (result.get(execPath) == null) {
-          result.put(execPath, null);
-        }
-      }
-      return result;
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_derivedPathReturnsEmpty() {
+        artifactFactory.noteAnalysisStarting()
+        val derivedPath: PathFragment? = PathFragment.create("bazel-out/x/bin/foo/header.h")
+
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(derivedPath, MAIN)
+
+        Truth.assertThat(result).isEmpty()
     }
-  }
+
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_staleArtifactRevalidatedViaSourceRoot() {
+        // First build: create an artifact.
+        artifactFactory.noteAnalysisStarting()
+        val path: PathFragment? = PathFragment.create("foo/stale.h")
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            artifactFactory.getSourceArtifact(path, clientRoot)
+
+        // Second build: the artifact from the first build is invalid in the cache, but the method
+        // falls back to source root resolution which re-validates it.
+        artifactFactory.noteAnalysisStarting()
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path, MAIN)
+
+        Truth.assertThat(result).hasSize(1)
+        assertThat(result.get(0).getExecPath()).isEqualTo(path)
+    }
+
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_uplevelReturnsEmpty() {
+        artifactFactory.noteAnalysisStarting()
+        val uplevelPath: PathFragment? = PathFragment.create("../outside/header.h")
+
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(uplevelPath, MAIN)
+
+        Truth.assertThat(result).isEmpty()
+    }
+
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_fallbackToSourceRootResolution() {
+        artifactFactory.noteAnalysisStarting()
+        // Path not in cache but resolvable via source roots (foo package exists).
+        val path: PathFragment? = PathFragment.create("foo/brand_new.h")
+
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path, MAIN)
+
+        Truth.assertThat(result).hasSize(1)
+        assertThat(result.get(0).getExecPath()).isEqualTo(path)
+    }
+
+    @org.junit.Test
+    fun testExactLookupStillWorksWithCaseInsensitiveCache() {
+        artifactFactory.noteAnalysisStarting()
+        val lower: PathFragment? = PathFragment.create("foo/header.h")
+        val lowerArtifact: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(lower, clientRoot)
+
+        // Exact-case resolveSourceArtifact should return the correct artifact.
+        assertThat(artifactFactory.resolveSourceArtifact(lower, MAIN)).isSameInstanceAs(lowerArtifact)
+    }
+
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_staleArtifactWithDifferentCasingRevalidated() {
+        // First build: create an artifact with specific casing.
+        artifactFactory.noteAnalysisStarting()
+        val originalPath: PathFragment? = PathFragment.create("foo/Header.h")
+        val original: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(originalPath, clientRoot)
+
+        // Second build: the artifact from the first build is stale. Resolve with different casing.
+        artifactFactory.noteAnalysisStarting()
+        val wrongCasePath: PathFragment? = PathFragment.create("foo/header.h")
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(wrongCasePath, MAIN)
+
+        // Should return the original artifact with correct casing, not a new one.
+        Truth.assertThat(result).hasSize(1)
+        assertThat(result.get(0).getExecPath()).isEqualTo(originalPath)
+        assertThat(result.get(0)).isSameInstanceAs(original)
+    }
+
+    @org.junit.Test
+    fun testResolveSourceArtifactCaseInsensitively_multipleStaleArtifactsWithDifferentCasingsRevalidated() {
+        // First build: create artifacts with different casings.
+        artifactFactory.noteAnalysisStarting()
+        val path1: PathFragment? = PathFragment.create("foo/Header.h")
+        val path2: PathFragment? = PathFragment.create("foo/HEADER.h")
+        val artifact1: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(path1, clientRoot)
+        val artifact2: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(path2, clientRoot)
+
+        // Second build: both are stale. Resolve with yet another casing.
+        artifactFactory.noteAnalysisStarting()
+        val queryCasePath: PathFragment? = PathFragment.create("foo/header.h")
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(queryCasePath, MAIN)
+
+        // Both original artifacts should be revalidated and returned.
+        Truth.assertThat(result).containsExactly(artifact1, artifact2)
+    }
+
+    @org.junit.Test
+    fun testClearResetsCaseInsensitiveCache() {
+        artifactFactory.noteAnalysisStarting()
+        val path: PathFragment? = PathFragment.create("foo/header.h")
+        val oldArtifact: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(path, clientRoot)
+
+        artifactFactory.clear()
+        setupRoots()
+        artifactFactory.noteAnalysisStarting()
+
+        val newArtifact: Artifact.SourceArtifact? = artifactFactory.getSourceArtifact(path, clientRoot)
+        assertThat(newArtifact).isNotSameInstanceAs(oldArtifact)
+        val result: com.google.common.collect.ImmutableList<Artifact.SourceArtifact?>? =
+            artifactFactory.resolveSourceArtifactsAsciiCaseInsensitively(path, MAIN)
+        Truth.assertThat(result).containsExactly(newArtifact)
+    }
+
+    private class MockPackageRootResolver : PackageRootResolver {
+        private val packageRoots: MutableMap<PathFragment?, Root?> = HashMap<PathFragment?, Root?>()
+
+        fun setPackageRoots(packageRoots: MutableMap<PackageIdentifier?, Root?>) {
+            for (packageRoot in packageRoots.entrySet()) {
+                this.packageRoots.put(packageRoot.getKey().getPackageFragment(), packageRoot.getValue())
+            }
+        }
+
+        public override fun findPackageRootsForFiles(execPaths: Iterable<PathFragment>): MutableMap<PathFragment?, Root?> {
+            val result: MutableMap<PathFragment?, Root?> = HashMap<PathFragment?, Root?>()
+            for (execPath in execPaths) {
+                var dir: PathFragment? = execPath.getParentDirectory()
+                while (dir != null
+                ) {
+                    if (packageRoots.get(dir) != null) {
+                        result.put(execPath, packageRoots.get(dir))
+                    }
+                    dir = dir.getParentDirectory()
+                }
+                if (result.get(execPath) == null) {
+                    result.put(execPath, null)
+                }
+            }
+            return result
+        }
+    }
+
+    companion object {
+        private val MAIN: RepositoryName? = RepositoryName.MAIN
+    }
 }

@@ -11,59 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions.util
 
-package com.google.devtools.build.lib.actions.util;
-
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
- * An {@link ActionLookupKey} with a non-hermetic {@link SkyFunctionName} so that its value can be
+ * An [ActionLookupKey] with a non-hermetic [SkyFunctionName] so that its value can be
  * directly injected during tests.
  */
-public final class InjectedActionLookupKey implements ActionLookupKey {
-  public static final SkyFunctionName INJECTED_ACTION_LOOKUP =
-      SkyFunctionName.createNonHermetic("INJECTED_ACTION_LOOKUP");
+class InjectedActionLookupKey(name: String) : ActionLookupKey {
+    private val name: String
 
-  private final String name;
+    init {
+        this.name = name
+    }
 
-  public InjectedActionLookupKey(String name) {
-    this.name = name;
-  }
+    public override fun functionName(): SkyFunctionName? {
+        return INJECTED_ACTION_LOOKUP
+    }
 
-  @Override
-  public SkyFunctionName functionName() {
-    return INJECTED_ACTION_LOOKUP;
-  }
+    public override fun getLabel(): Label {
+        // Makes actions shareable.
+        return Label.parseCanonicalUnchecked("//foo:" + name)
+    }
 
-  @Override
-  public Label getLabel() {
-    // Makes actions shareable.
-    return Label.parseCanonicalUnchecked("//foo:" + name);
-  }
+    public override fun getConfigurationKey(): BuildConfigurationKey? {
+        return null
+    }
 
-  @Nullable
-  @Override
-  public BuildConfigurationKey getConfigurationKey() {
-    return null;
-  }
+    override fun hashCode(): Int {
+        return name.hashCode()
+    }
 
-  @Override
-  public int hashCode() {
-    return name.hashCode();
-  }
+    override fun equals(obj: Any?): Boolean {
+        return obj is InjectedActionLookupKey
+                && obj.name == name
+    }
 
-  @Override
-  public boolean equals(Object obj) {
-    return obj instanceof InjectedActionLookupKey injectedActionLookupKey
-        && injectedActionLookupKey.name.equals(name);
-  }
+    override fun toString(): String {
+        return "InjectedActionLookupKey:" + name
+    }
 
-  @Override
-  public String toString() {
-    return "InjectedActionLookupKey:" + name;
-  }
+    companion object {
+        val INJECTED_ACTION_LOOKUP: SkyFunctionName? = SkyFunctionName.createNonHermetic("INJECTED_ACTION_LOOKUP")
+    }
 }

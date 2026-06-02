@@ -11,125 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.actions;
+package com.google.devtools.build.lib.analysis.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
+import com.google.devtools.build.lib.actions.Action
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.analysis.util.ActionTester;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.util.Collection;
-import java.util.HashSet;
-import org.junit.Before;
+/** Test cases for [FileWriteAction].  */
+abstract class FileWriteActionTestCase : BuildViewTestCase() {
+    private var action: Action? = null
+    private var outputArtifact: Artifact? = null
+    private var output: Path? = null
+    private var executor: Executor? = null
+    protected var context: ActionExecutionContext? = null
 
-/** Test cases for {@link FileWriteAction}. */
-public abstract class FileWriteActionTestCase extends BuildViewTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createAction() {
+        outputArtifact = getBinArtifactWithNoOwner("destination.txt")
+        output = outputArtifact.getPath()
+        output.getParentDirectory().createDirectoryAndParents()
+        action = createAction(ActionsTestUtil.Companion.NULL_ACTION_OWNER, outputArtifact, "Hello World", false)
+    }
 
-  private Action action;
-  private Artifact outputArtifact;
-  private Path output;
-  private Executor executor;
-  protected ActionExecutionContext context;
+    protected abstract fun createAction(
+        actionOwner: ActionOwner?, outputArtifact: Artifact?, data: String?, makeExecutable: Boolean
+    ): Action
 
-  @Before
-  public final void createAction() throws Exception {
-    outputArtifact = getBinArtifactWithNoOwner("destination.txt");
-    output = outputArtifact.getPath();
-    output.getParentDirectory().createDirectoryAndParents();
-    action = createAction(NULL_ACTION_OWNER, outputArtifact, "Hello World", false);
-  }
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createExecutorAndContext() {
+        executor = TestExecutorBuilder(fileSystem, directories).build()
+        context =
+            ActionExecutionContext(
+                executor,  /* inputMetadataProvider= */
+                null,
+                ActionInputPrefetcher.NONE,
+                actionKeyContext,  /* outputMetadataStore= */
+                null,  /* rewindingEnabled= */
+                false,
+                LostInputsCheck.NONE,
+                FileOutErr(),
+                StoredEventHandler(),  /* clientEnv= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* actionFileSystem= */
+                null,
+                DiscoveredModulesPruner.DEFAULT,
+                SyscallCache.NO_CACHE,
+                ThreadStateReceiver.NULL_INSTANCE
+            )
+    }
 
-  protected abstract Action createAction(
-      ActionOwner actionOwner, Artifact outputArtifact, String data, boolean makeExecutable);
+    protected fun checkNoInputsByDefault() {
+        assertThat(action.getInputs().toList()).isEmpty()
+        assertThat(action.getPrimaryInput()).isNull()
+    }
 
-  @Before
-  public final void createExecutorAndContext() throws Exception {
-    executor = new TestExecutorBuilder(fileSystem, directories).build();
-    context =
-        new ActionExecutionContext(
-            executor,
-            /* inputMetadataProvider= */ null,
-            ActionInputPrefetcher.NONE,
-            actionKeyContext,
-            /* outputMetadataStore= */ null,
-            /* rewindingEnabled= */ false,
-            LostInputsCheck.NONE,
-            new FileOutErr(),
-            new StoredEventHandler(),
-            /* clientEnv= */ ImmutableMap.of(),
-            /* actionFileSystem= */ null,
-            DiscoveredModulesPruner.DEFAULT,
-            SyscallCache.NO_CACHE,
-            ThreadStateReceiver.NULL_INSTANCE);
-  }
+    protected fun checkDestinationArtifactIsOutput() {
+        val outputs: MutableCollection<Artifact?> = action.getOutputs()
+        Truth.assertThat(HashSet<Artifact?>(outputs))
+            .isEqualTo(com.google.common.collect.Sets.newHashSet(outputArtifact))
+        assertThat(action.getPrimaryOutput()).isEqualTo(outputArtifact)
+    }
 
-  protected void checkNoInputsByDefault() {
-    assertThat(action.getInputs().toList()).isEmpty();
-    assertThat(action.getPrimaryInput()).isNull();
-  }
+    @Throws(java.lang.Exception::class)
+    protected fun checkCanWriteNonExecutableFile() {
+        val actionResult: ActionResult = action.execute(context)
+        assertThat(actionResult.spawnResults()).isEmpty()
+        val content = String(FileSystemUtils.readContentAsLatin1(output))
+        Truth.assertThat(content).isEqualTo("Hello World")
+        assertThat(output.isExecutable()).isFalse()
+    }
 
-  protected void checkDestinationArtifactIsOutput() {
-    Collection<Artifact> outputs = action.getOutputs();
-    assertThat(new HashSet<>(outputs)).isEqualTo(Sets.newHashSet(outputArtifact));
-    assertThat(action.getPrimaryOutput()).isEqualTo(outputArtifact);
-  }
+    @Throws(java.lang.Exception::class)
+    protected fun checkCanWriteExecutableFile() {
+        val outputArtifact: Artifact = getBinArtifactWithNoOwner("hello")
+        val output: Path = outputArtifact.getPath()
+        val action: Action =
+            createAction(ActionsTestUtil.Companion.NULL_ACTION_OWNER, outputArtifact, "echo 'Hello World'", true)
+        val actionResult: ActionResult = action.execute(context)
+        assertThat(actionResult.spawnResults()).isEmpty()
+        val content = String(FileSystemUtils.readContentAsLatin1(output))
+        Truth.assertThat(content).isEqualTo("echo 'Hello World'")
+        assertThat(output.isExecutable()).isTrue()
+    }
 
-  protected void checkCanWriteNonExecutableFile() throws Exception {
-    ActionResult actionResult = action.execute(context);
-    assertThat(actionResult.spawnResults()).isEmpty();
-    String content = new String(FileSystemUtils.readContentAsLatin1(output));
-    assertThat(content).isEqualTo("Hello World");
-    assertThat(output.isExecutable()).isFalse();
-  }
+    private enum class KeyAttributes {
+        DATA,
+        MAKE_EXECUTABLE
+    }
 
-  protected void checkCanWriteExecutableFile() throws Exception {
-    Artifact outputArtifact = getBinArtifactWithNoOwner("hello");
-    Path output = outputArtifact.getPath();
-    Action action = createAction(NULL_ACTION_OWNER, outputArtifact, "echo 'Hello World'", true);
-    ActionResult actionResult = action.execute(context);
-    assertThat(actionResult.spawnResults()).isEmpty();
-    String content = new String(FileSystemUtils.readContentAsLatin1(output));
-    assertThat(content).isEqualTo("echo 'Hello World'");
-    assertThat(output.isExecutable()).isTrue();
-  }
-
-  private enum KeyAttributes {
-    DATA,
-    MAKE_EXECUTABLE
-  }
-
-  protected void checkComputesConsistentKeys() throws Exception {
-    ActionTester.runTest(
-        KeyAttributes.class,
-        new ActionTester.ActionCombinationFactory<KeyAttributes>() {
-          @Override
-          public Action generate(ImmutableSet<KeyAttributes> attributesToFlip) {
-            return createAction(
-                NULL_ACTION_OWNER,
-                outputArtifact,
-                attributesToFlip.contains(KeyAttributes.DATA) ? "0" : "1",
-                attributesToFlip.contains(KeyAttributes.MAKE_EXECUTABLE));
-          }
-        },
-        actionKeyContext);
-  }
+    @Throws(java.lang.Exception::class)
+    protected fun checkComputesConsistentKeys() {
+        ActionTester.runTest<KeyAttributes?>(
+            com.google.devtools.build.lib.analysis.actions.FileWriteActionTestCase.KeyAttributes::class.java,
+            object : ActionCombinationFactory<KeyAttributes?> {
+                override fun generate(attributesToFlip: com.google.common.collect.ImmutableSet<KeyAttributes?>): Action {
+                    return createAction(
+                        ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                        outputArtifact,
+                        if (attributesToFlip.contains(com.google.devtools.build.lib.analysis.actions.FileWriteActionTestCase.KeyAttributes.DATA)) "0" else "1",
+                        attributesToFlip.contains(com.google.devtools.build.lib.analysis.actions.FileWriteActionTestCase.KeyAttributes.MAKE_EXECUTABLE)
+                    )
+                }
+            },
+            actionKeyContext
+        )
+    }
 }

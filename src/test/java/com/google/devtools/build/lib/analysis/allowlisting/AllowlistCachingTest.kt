@@ -11,53 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.allowlisting
 
-package com.google.devtools.build.lib.analysis.allowlisting;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
-import static org.junit.Assert.assertThrows;
+/** Tests that allowlists are invalidated after change.  */
+@RunWith(JUnit4::class)
+class AllowlistCachingTest : AnalysisCachingTestBase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun addDummyRule() {
+        val builder: ConfiguredRuleClassProvider.Builder = Builder()
+        TestRuleClassProvider.addStandardRules(builder)
+        builder.addRuleDefinition(AllowlistDummyRule.DEFINITION)
+        useRuleClassProvider(builder.build())
+    }
 
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.analysis.util.AnalysisCachingTestBase;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStillCorrectAfterChangesToAllowlist() {
+        scratch.file("allowlist/BUILD", "package_group(name='allowlist', packages=[])")
+        scratch.file("x/BUILD", "rule_with_allowlist(name='x')")
 
-/** Tests that allowlists are invalidated after change. */
-@RunWith(JUnit4.class)
-public final class AllowlistCachingTest extends AnalysisCachingTestBase {
-
-  @Before
-  public void addDummyRule() throws Exception {
-    ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
-    TestRuleClassProvider.addStandardRules(builder);
-    builder.addRuleDefinition(AllowlistDummyRule.DEFINITION);
-    useRuleClassProvider(builder.build());
-  }
-
-  @Test
-  public void testStillCorrectAfterChangesToAllowlist() throws Exception {
-    scratch.file("allowlist/BUILD", "package_group(name='allowlist', packages=[])");
-    scratch.file("x/BUILD", "rule_with_allowlist(name='x')");
-
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//x:x"));
-    assertContainsEvent("Dummy is not available.");
-    eventCollector.clear();
-    reporter.addHandler(failFastHandler);
-    scratch.overwriteFile(
-        "allowlist/BUILD",
-        """
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//x:x") })
+        assertContainsEvent("Dummy is not available.")
+        eventCollector.clear()
+        reporter.addHandler(FoundationTestCase.failFastHandler)
+        scratch.overwriteFile(
+            "allowlist/BUILD",
+            """
         package_group(
             name = "allowlist",
             packages = [
                 "//...",
             ],
         )
-        """);
-    update("//x:x");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        update("//x:x")
+        assertNoEvents()
+    }
 }

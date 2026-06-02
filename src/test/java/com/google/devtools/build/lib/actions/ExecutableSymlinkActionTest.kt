@@ -11,165 +11,153 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.mock;
+import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.DummyExecutor;
-import com.google.devtools.build.lib.analysis.actions.SymlinkAction;
-import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationDepsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestFileOutErr;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test cases for [SymlinkAction] when pointing to executables.  */
+@RunWith(JUnit4::class)
+class ExecutableSymlinkActionTest {
+    private val scratch: Scratch = Scratch()
+    private var execRoot: Path? = null
+    private var inputRoot: ArtifactRoot? = null
+    private var outputRoot: ArtifactRoot? = null
+    var outErr: TestFileOutErr? = null
+    private var executor: Executor? = null
+    private val actionKeyContext: ActionKeyContext = ActionKeyContext()
 
-/** Test cases for {@link SymlinkAction} when pointing to executables. */
-@RunWith(JUnit4.class)
-public class ExecutableSymlinkActionTest {
-  private Scratch scratch = new Scratch();
-  private Path execRoot;
-  private ArtifactRoot inputRoot;
-  private ArtifactRoot outputRoot;
-  TestFileOutErr outErr;
-  private Executor executor;
-  private final ActionKeyContext actionKeyContext = new ActionKeyContext();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createExecutor() {
+        val inputDir: Path = scratch.dir("/in")
+        execRoot = scratch.getFileSystem().getPath("/")
+        inputRoot =
+            ArtifactRoot.asDerivedRoot(
+                execRoot, RootType.OUTPUT, inputDir.relativeTo(execRoot).getPathString()
+            )
+        val outSegment = "out"
+        execRoot.getChild(outSegment).createDirectoryAndParents()
+        outputRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, outSegment)
+        outErr = TestFileOutErr()
+        executor = com.google.devtools.build.lib.actions.util.DummyExecutor(scratch.getFileSystem(), inputDir)
+    }
 
-  @Before
-  public final void createExecutor() throws Exception  {
-    final Path inputDir = scratch.dir("/in");
-    execRoot = scratch.getFileSystem().getPath("/");
-    inputRoot =
-        ArtifactRoot.asDerivedRoot(
-            execRoot, RootType.OUTPUT, inputDir.relativeTo(execRoot).getPathString());
-    String outSegment = "out";
-    execRoot.getChild(outSegment).createDirectoryAndParents();
-    outputRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, outSegment);
-    outErr = new TestFileOutErr();
-    executor = new DummyExecutor(scratch.getFileSystem(), inputDir);
-  }
-
-  private ActionExecutionContext createContext(InputMetadataProvider inputMetadataProvider) {
-    return new ActionExecutionContext(
-        executor,
-        inputMetadataProvider,
-        ActionInputPrefetcher.NONE,
-        actionKeyContext,
-        mock(OutputMetadataStore.class),
-        /* rewindingEnabled= */ false,
+    private fun createContext(inputMetadataProvider: InputMetadataProvider?): ActionExecutionContext {
+        return ActionExecutionContext(
+            executor,
+            inputMetadataProvider,
+            ActionInputPrefetcher.NONE,
+            actionKeyContext,
+            < T > mock < T ? > (OutputMetadataStore::class.java),  /* rewindingEnabled= */
+        false,
         LostInputsCheck.NONE,
-        outErr,
-        /* eventHandler= */ null,
-        /* clientEnv= */ ImmutableMap.of(),
-        /* actionFileSystem= */ null,
+        outErr,  /* eventHandler= */
+        null,  /* clientEnv= */
+        com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* actionFileSystem= */
+        null,
         DiscoveredModulesPruner.DEFAULT,
         SyscallCache.NO_CACHE,
-        ThreadStateReceiver.NULL_INSTANCE);
-  }
+        ThreadStateReceiver.NULL_INSTANCE)
+    }
 
-  @Test
-  public void testSimple() throws Exception {
-    Path inputFile = inputRoot.getRoot().getRelative("some-file");
-    Path outputFile = outputRoot.getRoot().getRelative("some-output");
-    FileSystemUtils.createEmptyFile(inputFile);
-    inputFile.setExecutable(/*executable=*/true);
-    Artifact input = ActionsTestUtil.createArtifact(inputRoot, inputFile);
-    Artifact output = ActionsTestUtil.createArtifact(outputRoot, outputFile);
-    SymlinkAction action = SymlinkAction.toExecutable(NULL_ACTION_OWNER, input, output, "progress");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimple() {
+        val inputFile: Path = inputRoot.getRoot().getRelative("some-file")
+        val outputFile: Path = outputRoot.getRoot().getRelative("some-output")
+        FileSystemUtils.createEmptyFile(inputFile)
+        inputFile.setExecutable( /*executable=*/true)
+        val input: Artifact? = ActionsTestUtil.Companion.createArtifact(inputRoot, inputFile)
+        val output: Artifact? = ActionsTestUtil.Companion.createArtifact(outputRoot, outputFile)
+        val action: SymlinkAction =
+            SymlinkAction.toExecutable(ActionsTestUtil.Companion.NULL_ACTION_OWNER, input, output, "progress")
 
-    FakeActionInputFileCache inputMetadataProvider = new FakeActionInputFileCache();
-    inputMetadataProvider.put(input, FileArtifactValue.createForTesting(input));
+        val inputMetadataProvider: com.google.devtools.build.lib.exec.util.FakeActionInputFileCache =
+            com.google.devtools.build.lib.exec.util.FakeActionInputFileCache()
+        inputMetadataProvider.put(input, FileArtifactValue.createForTesting(input))
 
-    ActionResult actionResult = action.execute(createContext(inputMetadataProvider));
-    assertThat(actionResult.spawnResults()).isEmpty();
-    assertThat(outputFile.resolveSymbolicLinks()).isEqualTo(inputFile);
-  }
+        val actionResult: ActionResult = action.execute(createContext(inputMetadataProvider))
+        assertThat(actionResult.spawnResults()).isEmpty()
+        assertThat(outputFile.resolveSymbolicLinks()).isEqualTo(inputFile)
+    }
 
-  @Test
-  public void testFailIfInputIsNotAFile() throws Exception {
-    Path dir = inputRoot.getRoot().getRelative("some-dir");
-    dir.createDirectoryAndParents();
-    Artifact input = ActionsTestUtil.createArtifact(inputRoot, dir);
-    Artifact output =
-        ActionsTestUtil.createArtifact(outputRoot, outputRoot.getRoot().getRelative("some-output"));
-    SymlinkAction action = SymlinkAction.toExecutable(NULL_ACTION_OWNER, input, output, "progress");
-    FakeActionInputFileCache inputMetadataProvider = new FakeActionInputFileCache();
-    inputMetadataProvider.put(input, FileArtifactValue.createForTesting(input));
-    ActionExecutionException e =
-        assertThrows(
-            ActionExecutionException.class,
-            () -> action.execute(createContext(inputMetadataProvider)));
-    assertThat(e).hasMessageThat().contains("'in/some-dir' is not a file");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailIfInputIsNotAFile() {
+        val dir: Path = inputRoot.getRoot().getRelative("some-dir")
+        dir.createDirectoryAndParents()
+        val input: Artifact? = ActionsTestUtil.Companion.createArtifact(inputRoot, dir)
+        val output: Artifact? =
+            createArtifact(outputRoot, outputRoot.getRoot().getRelative("some-output"))
+        val action: SymlinkAction =
+            SymlinkAction.toExecutable(ActionsTestUtil.Companion.NULL_ACTION_OWNER, input, output, "progress")
+        val inputMetadataProvider: com.google.devtools.build.lib.exec.util.FakeActionInputFileCache =
+            com.google.devtools.build.lib.exec.util.FakeActionInputFileCache()
+        inputMetadataProvider.put(input, FileArtifactValue.createForTesting(input))
+        val e: ActionExecutionException? =
+            org.junit.Assert.assertThrows<T?>(
+                ActionExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { action.execute(createContext(inputMetadataProvider)) })
+        assertThat(e).hasMessageThat().contains("'in/some-dir' is not a file")
+    }
 
-  @Test
-  public void testFailIfInputIsNotExecutable() throws Exception {
-    Path file = inputRoot.getRoot().getRelative("some-file");
-    FileSystemUtils.createEmptyFile(file);
-    file.setExecutable(/*executable=*/false);
-    Artifact input = ActionsTestUtil.createArtifact(inputRoot, file);
-    Artifact output =
-        ActionsTestUtil.createArtifact(outputRoot, outputRoot.getRoot().getRelative("some-output"));
-    SymlinkAction action = SymlinkAction.toExecutable(NULL_ACTION_OWNER, input, output, "progress");
-    FakeActionInputFileCache inputMetadataProvider = new FakeActionInputFileCache();
-    inputMetadataProvider.put(input, FileArtifactValue.createForTesting(input));
-    ActionExecutionException e =
-        assertThrows(
-            ActionExecutionException.class,
-            () -> action.execute(createContext(inputMetadataProvider)));
-    String want = "'in/some-file' is not executable";
-      String got = e.getMessage();
-    assertWithMessage("got %s, want %s", got, want).that(got.contains(want)).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailIfInputIsNotExecutable() {
+        val file: Path = inputRoot.getRoot().getRelative("some-file")
+        FileSystemUtils.createEmptyFile(file)
+        file.setExecutable( /*executable=*/false)
+        val input: Artifact? = ActionsTestUtil.Companion.createArtifact(inputRoot, file)
+        val output: Artifact? =
+            createArtifact(outputRoot, outputRoot.getRoot().getRelative("some-output"))
+        val action: SymlinkAction =
+            SymlinkAction.toExecutable(ActionsTestUtil.Companion.NULL_ACTION_OWNER, input, output, "progress")
+        val inputMetadataProvider: com.google.devtools.build.lib.exec.util.FakeActionInputFileCache =
+            com.google.devtools.build.lib.exec.util.FakeActionInputFileCache()
+        inputMetadataProvider.put(input, FileArtifactValue.createForTesting(input))
+        val e: ActionExecutionException =
+            org.junit.Assert.assertThrows<T>(
+                ActionExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { action.execute(createContext(inputMetadataProvider)) })
+        val want = "'in/some-file' is not executable"
+        val got: String = e.getMessage()
+        Truth.assertWithMessage("got %s, want %s", got, want).that(got.contains(want)).isTrue()
+    }
 
-  @Test
-  public void testCodec() throws Exception {
-    Path file = inputRoot.getRoot().getRelative("some-file");
-    FileSystemUtils.createEmptyFile(file);
-    file.setExecutable(/*executable=*/ false);
-    Artifact.DerivedArtifact input =
-        (Artifact.DerivedArtifact) ActionsTestUtil.createArtifact(inputRoot, file);
-    input.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
-    Artifact.DerivedArtifact output =
-        (Artifact.DerivedArtifact)
-            ActionsTestUtil.createArtifact(
-                outputRoot, outputRoot.getRoot().getRelative("some-output"));
-    output.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
-    SymlinkAction action = SymlinkAction.toExecutable(NULL_ACTION_OWNER, input, output, "progress");
-    new SerializationTester(action)
-        .addDependency(FileSystem.class, scratch.getFileSystem())
-        .addDependency(
-            Root.RootCodecDependencies.class,
-            new Root.RootCodecDependencies(Root.absoluteRoot(scratch.getFileSystem())))
-        .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
-        .setVerificationFunction(
-            (in, out) -> {
-              SymlinkAction inAction = (SymlinkAction) in;
-              SymlinkAction outAction = (SymlinkAction) out;
-              assertThat(inAction.getPrimaryInput().getFilename())
-                  .isEqualTo(outAction.getPrimaryInput().getFilename());
-              assertThat(inAction.getPrimaryOutput().getFilename())
-                  .isEqualTo(outAction.getPrimaryOutput().getFilename());
-              assertThat(inAction.getOwner()).isEqualTo(outAction.getOwner());
-              assertThat(inAction.getProgressMessage()).isEqualTo(outAction.getProgressMessage());
-            })
-        .runTests();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val file: Path = inputRoot.getRoot().getRelative("some-file")
+        FileSystemUtils.createEmptyFile(file)
+        file.setExecutable( /*executable=*/false)
+        val input: Artifact.DerivedArtifact =
+            ActionsTestUtil.Companion.createArtifact(inputRoot, file) as Artifact.DerivedArtifact
+        input.setGeneratingActionKey(ActionsTestUtil.Companion.NULL_ACTION_LOOKUP_DATA)
+        val output: Artifact.DerivedArtifact =
+            createArtifact(
+                outputRoot, outputRoot.getRoot().getRelative("some-output")
+            ) as Artifact.DerivedArtifact
+        output.setGeneratingActionKey(ActionsTestUtil.Companion.NULL_ACTION_LOOKUP_DATA)
+        val action: SymlinkAction? =
+            SymlinkAction.toExecutable(ActionsTestUtil.Companion.NULL_ACTION_OWNER, input, output, "progress")
+        SerializationTester(action)
+            .addDependency(FileSystem::class.java, scratch.getFileSystem())
+            .addDependency(
+                Root.RootCodecDependencies::class.java,
+                RootCodecDependencies(Root.absoluteRoot(scratch.getFileSystem()))
+            )
+            .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
+            .setVerificationFunction(
+                { `in`, out ->
+                    val inAction: SymlinkAction = `in` as SymlinkAction
+                    val outAction: SymlinkAction = out as SymlinkAction
+                    assertThat(inAction.getPrimaryInput().getFilename())
+                        .isEqualTo(outAction.getPrimaryInput().getFilename())
+                    assertThat(inAction.getPrimaryOutput().getFilename())
+                        .isEqualTo(outAction.getPrimaryOutput().getFilename())
+                    assertThat(inAction.getOwner()).isEqualTo(outAction.getOwner())
+                    assertThat(inAction.getProgressMessage()).isEqualTo(outAction.getProgressMessage())
+                })
+            .runTests()
+    }
 }

@@ -11,130 +11,103 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark
 
-package com.google.devtools.build.lib.analysis.starlark;
+import com.google.devtools.build.lib.analysis.starlark.StarlarkSubrule.getRuleAttrName
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.analysis.starlark.StarlarkSubrule.getRuleAttrName;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-import static org.junit.Assert.assertThrows;
+@RunWith(JUnit4::class)
+class StarlarkSubruleTest : BuildViewTestCase() {
+    private val ev: BazelEvaluationTestCase = BazelEvaluationTestCase("//subrule_testing:label")
+    private val evOutsideAllowlist: BazelEvaluationTestCase = BazelEvaluationTestCase("//foo:bar")
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.actions.FileWriteAction;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory.TransitionType;
-import com.google.devtools.build.lib.analysis.platform.ToolchainInfo;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.AttributeTransitionData;
-import com.google.devtools.build.lib.packages.AttributeValueSource;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.rules.java.JavaToolchainProvider;
-import com.google.devtools.build.lib.starlark.util.BazelEvaluationTestCase;
-import com.google.devtools.build.lib.starlarkbuildapi.StarlarkSubruleApi;
-import com.google.devtools.build.lib.starlarkbuildapi.config.ConfigurationTransitionApi;
-import com.google.devtools.build.lib.starlarkbuildapi.cpp.CppConfigurationApi;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import net.starlark.java.eval.BuiltinFunction;
-import net.starlark.java.eval.Sequence;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleFunctionSymbol_notVisibleInBUILD() {
+        scratch.file("foo/BUILD", "subrule")
 
-@RunWith(JUnit4.class)
-public class StarlarkSubruleTest extends BuildViewTestCase {
+        checkLoadingPhaseError("//foo", "'subrule' is not defined")
+    }
 
-  private final BazelEvaluationTestCase ev = new BazelEvaluationTestCase("//subrule_testing:label");
-  private final BazelEvaluationTestCase evOutsideAllowlist =
-      new BazelEvaluationTestCase("//foo:bar");
+    @org.junit.Test // checks that 'subrule' symbol visibility in bzl files, not whether it's callable
+    @Throws(java.lang.Exception::class)
+    fun testSubruleFunctionSymbol_isVisibleInBzl() {
+        val subruleFunction: Any? = ev.eval("subrule")
 
-  @Test
-  public void testSubruleFunctionSymbol_notVisibleInBUILD() throws Exception {
-    scratch.file("foo/BUILD", "subrule");
+        assertNoEvents()
+        Truth.assertThat(subruleFunction).isNotNull()
+        Truth.assertThat(subruleFunction).isInstanceOf(BuiltinFunction::class.java)
+    }
 
-    checkLoadingPhaseError("//foo", "'subrule' is not defined");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleInstantiation_inAllowlistedPackage_succeeds() {
+        val subrule: Any? = ev.eval("subrule(implementation = lambda : 0 )")
 
-  @Test
-  // checks that 'subrule' symbol visibility in bzl files, not whether it's callable
-  public void testSubruleFunctionSymbol_isVisibleInBzl() throws Exception {
-    Object subruleFunction = ev.eval("subrule");
+        Truth.assertThat(subrule).isNotNull()
+        Truth.assertThat(subrule).isInstanceOf(StarlarkSubruleApi::class.java)
+    }
 
-    assertNoEvents();
-    assertThat(subruleFunction).isNotNull();
-    assertThat(subruleFunction).isInstanceOf(BuiltinFunction.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_isCallableOnlyFromRuleOrAspectImplementation() {
+        ev.execAndExport("x = subrule(implementation = lambda : 'dummy result')")
 
-  @Test
-  public void testSubruleInstantiation_inAllowlistedPackage_succeeds() throws Exception {
-    Object subrule = ev.eval("subrule(implementation = lambda : 0 )");
+        ev.checkEvalErrorContains("x can only be called from a rule or aspect implementation", "x()")
+    }
 
-    assertThat(subrule).isNotNull();
-    assertThat(subrule).isInstanceOf(StarlarkSubruleApi.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_isCallableOnlyAfterExport() {
+        ev.checkEvalErrorContains(
+            "Invalid subrule hasn't been exported by a bzl file",
+            "unexported = [subrule(implementation = lambda: None)]",
+            "unexported[0]()"
+        )
+    }
 
-  @Test
-  public void testSubrule_isCallableOnlyFromRuleOrAspectImplementation() throws Exception {
-    ev.execAndExport("x = subrule(implementation = lambda : 'dummy result')");
-
-    ev.checkEvalErrorContains("x can only be called from a rule or aspect implementation", "x()");
-  }
-
-  @Test
-  public void testSubrule_isCallableOnlyAfterExport() throws Exception {
-    ev.checkEvalErrorContains(
-        "Invalid subrule hasn't been exported by a bzl file",
-        "unexported = [subrule(implementation = lambda: None)]",
-        "unexported[0]()");
-  }
-
-  @Test
-  public void testSubrule_ruleMustDeclareSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_ruleMustDeclareSubrule() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         _my_subrule = subrule(implementation = lambda: "")
 
         def _rule_impl(ctx):
             _my_subrule()
 
         my_rule = rule(implementation = _rule_impl)
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "Error in _my_subrule: rule 'my_rule' must declare '_my_subrule' in" + " 'subrules'");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "Error in _my_subrule: rule 'my_rule' must declare '_my_subrule' in" + " 'subrules'"
+            )
+    }
 
-  @Test
-  public void testSubrule_attrLengthLimitAppliedOnUserDefinedName() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_attrLengthLimitAppliedOnUserDefinedName() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         _my_subrule = subrule(
           implementation = lambda ctx: "dummy rule result",
           attrs = {
@@ -143,33 +116,41 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
         )
 
         my_rule = rule(implementation = lambda ctx: [], subrules = [_my_subrule])
+        
         """
-            .formatted("a".repeat(130)));
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+                .trimIndent()
+                .formatted("a".repeat(130))
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
         cc_binary(name = "bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getTarget("//subrule_testing:foo") })
 
-    assertThat(error).hasMessageThat().contains("name is too long (131 > 128)");
-  }
+        Truth.assertThat(error).hasMessageThat().contains("name is too long (131 > 128)")
+    }
 
-  @Test
-  public void testSubrule_attrLengthLimitIgnoresBzlLabel() throws Exception {
-    // deserialized package does not have a reference to subrules
-    initializeSkyframeExecutor(/* doPackageLoadingChecks= */ false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_attrLengthLimitIgnoresBzlLabel() {
+        // deserialized package does not have a reference to subrules
+        initializeSkyframeExecutor( /* doPackageLoadingChecks= */false)
 
-    String longPackageName = "a".repeat(130);
-    scratch.file("subrule_testing/%s/BUILD".formatted(longPackageName));
-    scratch.file(
-        "subrule_testing/%s/myrule.bzl".formatted(longPackageName),
-        """
+        val longPackageName: String = "a".repeat(130)
+        scratch.file("subrule_testing/%s/BUILD".formatted(longPackageName))
+        scratch.file(
+            "subrule_testing/%s/myrule.bzl".formatted(longPackageName),
+            """
         _my_subrule = subrule(
           implementation = lambda ctx: "dummy rule result",
           attrs = {
@@ -178,101 +159,118 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
         )
 
         my_rule = rule(implementation = lambda ctx: [], subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("//subrule_testing/%s:myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
         cc_binary(name = "bar")
+        
         """
-            .formatted(longPackageName));
+                .trimIndent()
+                .formatted(longPackageName)
+        )
 
-    getTarget("//subrule_testing:foo");
+        getTarget("//subrule_testing:foo")
 
-    assertNoEvents();
-  }
+        assertNoEvents()
+    }
 
-  @Test
-  public void testSubrule_childAndParentSubrules() throws Exception {
-    scratch.file(
-        "subrule_testing/parent.bzl",
-        "_parent_subrule = subrule(implementation = lambda ctx: None)",
-        "def _rule_impl(ctx):",
-        "  _parent_subrule()",
-        "parent_rule = rule(implementation = _rule_impl, extendable = True, subrules ="
-            + " [_parent_subrule])");
-    scratch.file(
-        "subrule_testing/child.bzl",
-        "load('parent.bzl', 'parent_rule')",
-        "_child_subrule = subrule(implementation = lambda ctx: None)",
-        "def _rule_impl(ctx):",
-        "  ctx.super()",
-        "  _child_subrule()",
-        "child_rule = rule(implementation = _rule_impl, parent = parent_rule, subrules ="
-            + " [_child_subrule])");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_childAndParentSubrules() {
+        scratch.file(
+            "subrule_testing/parent.bzl",
+            "_parent_subrule = subrule(implementation = lambda ctx: None)",
+            "def _rule_impl(ctx):",
+            "  _parent_subrule()",
+            "parent_rule = rule(implementation = _rule_impl, extendable = True, subrules ="
+                    + " [_parent_subrule])"
+        )
+        scratch.file(
+            "subrule_testing/child.bzl",
+            "load('parent.bzl', 'parent_rule')",
+            "_child_subrule = subrule(implementation = lambda ctx: None)",
+            "def _rule_impl(ctx):",
+            "  ctx.super()",
+            "  _child_subrule()",
+            "child_rule = rule(implementation = _rule_impl, parent = parent_rule, subrules ="
+                    + " [_child_subrule])"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("child.bzl", "child_rule")
 
         child_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//subrule_testing:foo");
+        getConfiguredTarget("//subrule_testing:foo")
 
-    assertNoEvents();
-  }
+        assertNoEvents()
+    }
 
-  @Test
-  public void testSubrule_childAndParent_canUseTheSameSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/parent.bzl",
-        "parent_subrule = subrule(",
-        "  implementation = lambda ctx, _tool: None,",
-        "  attrs = {'_tool': attr.label(default = ':tool')}",
-        ")",
-        "def _rule_impl(ctx):",
-        "  parent_subrule()",
-        "parent_rule = rule(implementation = _rule_impl, extendable = True, subrules ="
-            + " [parent_subrule])");
-    scratch.file(
-        "subrule_testing/child.bzl",
-        "load('parent.bzl', 'parent_rule', 'parent_subrule')",
-        "def _rule_impl(ctx):",
-        "  ctx.super()",
-        "  parent_subrule()",
-        "child_rule = rule(implementation = _rule_impl, parent = parent_rule, subrules ="
-            + " [parent_subrule])");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_childAndParent_canUseTheSameSubrule() {
+        scratch.file(
+            "subrule_testing/parent.bzl",
+            "parent_subrule = subrule(",
+            "  implementation = lambda ctx, _tool: None,",
+            "  attrs = {'_tool': attr.label(default = ':tool')}",
+            ")",
+            "def _rule_impl(ctx):",
+            "  parent_subrule()",
+            "parent_rule = rule(implementation = _rule_impl, extendable = True, subrules ="
+                    + " [parent_subrule])"
+        )
+        scratch.file(
+            "subrule_testing/child.bzl",
+            "load('parent.bzl', 'parent_rule', 'parent_subrule')",
+            "def _rule_impl(ctx):",
+            "  ctx.super()",
+            "  parent_subrule()",
+            "child_rule = rule(implementation = _rule_impl, parent = parent_rule, subrules ="
+                    + " [parent_subrule])"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("child.bzl", "child_rule")
 
         child_rule(name = "foo")
 
         filegroup(name = "tool")
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//subrule_testing:foo");
+        getConfiguredTarget("//subrule_testing:foo")
 
-    assertNoEvents();
-  }
+        assertNoEvents()
+    }
 
-  @Test
-  public void testSubrule_childCantUseParentsSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/parent.bzl",
-        "parent_subrule = subrule(implementation = lambda ctx: None)",
-        "def _rule_impl(ctx):",
-        "  parent_subrule()",
-        "parent_rule = rule(implementation = _rule_impl, extendable = True, subrules ="
-            + " [parent_subrule])");
-    scratch.file(
-        "subrule_testing/child.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_childCantUseParentsSubrule() {
+        scratch.file(
+            "subrule_testing/parent.bzl",
+            "parent_subrule = subrule(implementation = lambda ctx: None)",
+            "def _rule_impl(ctx):",
+            "  parent_subrule()",
+            "parent_rule = rule(implementation = _rule_impl, extendable = True, subrules ="
+                    + " [parent_subrule])"
+        )
+        scratch.file(
+            "subrule_testing/child.bzl",
+            """
         load("parent.bzl", "parent_rule", "parent_subrule")
 
         _child_subrule = subrule(implementation = lambda ctx: None)
@@ -282,67 +280,84 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             parent_subrule()
 
         child_rule = rule(implementation = _rule_impl, parent = parent_rule)
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("child.bzl", "child_rule")
 
         child_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "Error in parent_subrule: rule 'child_rule' must declare 'parent_subrule' in"
-                + " 'subrules'");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "Error in parent_subrule: rule 'child_rule' must declare 'parent_subrule' in"
+                        + " 'subrules'"
+            )
+    }
 
-  @Test
-  public void testSubrule_parentCantUseChildsSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/parent.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_parentCantUseChildsSubrule() {
+        scratch.file(
+            "subrule_testing/parent.bzl",
+            """
         my_subrule = subrule(implementation = lambda ctx: None)
 
         def _rule_impl(ctx):
             my_subrule()
 
         parent_rule = rule(implementation = _rule_impl, extendable = True)
-        """);
-    scratch.file(
-        "subrule_testing/child.bzl",
-        "load('parent.bzl', 'parent_rule', 'my_subrule')",
-        "def _rule_impl(ctx):",
-        "  ctx.super()",
-        "  my_subrule()",
-        "child_rule = rule(implementation = _rule_impl, parent = parent_rule, subrules ="
-            + " [my_subrule])");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/child.bzl",
+            "load('parent.bzl', 'parent_rule', 'my_subrule')",
+            "def _rule_impl(ctx):",
+            "  ctx.super()",
+            "  my_subrule()",
+            "child_rule = rule(implementation = _rule_impl, parent = parent_rule, subrules ="
+                    + " [my_subrule])"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("child.bzl", "child_rule")
 
         child_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "Error in my_subrule: rule 'parent_rule' must declare 'my_subrule' in 'subrules'");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "Error in my_subrule: rule 'parent_rule' must declare 'my_subrule' in 'subrules'"
+            )
+    }
 
-  @Test
-  public void testSubrule_aspectMustDeclareSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_aspectMustDeclareSubrule() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         _my_subrule = subrule(implementation = lambda ctx: "dummy aspect result")
 
         def _aspect_impl(ctx, target):
@@ -354,10 +369,12 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             implementation = lambda ctx: [],
             attrs = {"dep": attr.label(mandatory = True, aspects = [_my_aspect])},
         )
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         load("myrule.bzl", "my_rule")
 
@@ -367,23 +384,29 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             name = "foo",
             dep = "bar",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "Error in _my_subrule: aspect '//subrule_testing:myrule.bzl%_my_aspect' must"
-                + " declare '_my_subrule' in 'subrules'");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "Error in _my_subrule: aspect '//subrule_testing:myrule.bzl%_my_aspect' must"
+                        + " declare '_my_subrule' in 'subrules'"
+            )
+    }
 
-  @Test
-  public void testSubruleCallingUndeclaredSibling_fails() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleCallingUndeclaredSibling_fails() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule1_impl(ctx):
             return "result from subrule1"
 
@@ -401,57 +424,71 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return [MyInfo(result = res)]
 
         my_rule = rule(_rule_impl, subrules = [_my_subrule2, _my_subrule1])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error).isNotNull();
-    assertThat(error)
-        .hasMessageThat()
-        .contains("subrule _my_subrule2 must declare _my_subrule1 in 'subrules'");
-  }
+        Truth.assertThat(error).isNotNull()
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains("subrule _my_subrule2 must declare _my_subrule1 in 'subrules'")
+    }
 
-  @Test
-  public void testSubrule_implementationMustAcceptSubruleContext() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_implementationMustAcceptSubruleContext() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         _my_subrule = subrule(implementation = lambda: "")
 
         def _rule_impl(ctx):
             _my_subrule()
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains("Error: lambda() does not accept positional arguments, but got 1");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains("Error: lambda() does not accept positional arguments, but got 1")
+    }
 
-  @Test
-  public void testSubrule_isCallableFromRule() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_isCallableFromRule() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         _my_subrule = subrule(implementation = lambda ctx: "dummy rule result")
 
         MyInfo = provider()
@@ -461,27 +498,32 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl provider =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo");
+        val provider: StructImpl =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
 
-    assertThat(provider).isNotNull();
-    assertThat(provider.getValue("result")).isEqualTo("dummy rule result");
-  }
+        assertThat(provider).isNotNull()
+        assertThat(provider.getValue("result")).isEqualTo("dummy rule result")
+    }
 
-  @Test
-  public void testSubrule_isCallableFromAspect() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_isCallableFromAspect() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         _my_subrule = subrule(implementation = lambda ctx: "dummy aspect result")
 
         MyInfo = provider()
@@ -496,10 +538,12 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             implementation = lambda ctx: [ctx.attr.dep[MyInfo]],
             attrs = {"dep": attr.label(mandatory = True, aspects = [_my_aspect])},
         )
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         load("myrule.bzl", "my_rule")
 
@@ -509,20 +553,23 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             name = "foo",
             dep = "bar",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl provider =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo");
+        val provider: StructImpl =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
 
-    assertThat(provider).isNotNull();
-    assertThat(provider.getValue("result")).isEqualTo("dummy aspect result");
-  }
+        assertThat(provider).isNotNull()
+        assertThat(provider.getValue("result")).isEqualTo("dummy aspect result")
+    }
 
-  @Test
-  public void testSubrule_subruleContextExposesRuleLabel() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_subruleContextExposesRuleLabel() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             return "called in: " + str(ctx.label)
 
@@ -535,27 +582,32 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl provider =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo");
+        val provider: StructImpl =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
 
-    assertThat(provider).isNotNull();
-    assertThat(provider.getValue("result")).isEqualTo("called in: @@//subrule_testing:foo");
-  }
+        assertThat(provider).isNotNull()
+        assertThat(provider.getValue("result")).isEqualTo("called in: @@//subrule_testing:foo")
+    }
 
-  @Test
-  public void testSubrule_subruleContextExposesActionsApi() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrule_subruleContextExposesActionsApi() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             out = ctx.actions.declare_file(ctx.label.name + ".out")
             ctx.actions.write(out, "subrule file content")
@@ -570,31 +622,35 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact artifact =
-        (Artifact)
+        val artifact: Artifact =
             getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-                .getValue("result");
+                .getValue("result") as Artifact
 
-    assertThat(artifact).isNotNull();
-    assertThat(artifact.getFilename()).isEqualTo("foo.out");
-    assertThat(((FileWriteAction) getGeneratingAction(artifact)).getFileContents())
-        .isEqualTo("subrule file content");
-  }
+        assertThat(artifact).isNotNull()
+        assertThat(artifact.getFilename()).isEqualTo("foo.out")
+        assertThat((getGeneratingAction(artifact) as FileWriteAction).getFileContents())
+            .isEqualTo("subrule file content")
+    }
 
-  @Test
-  public void testSubruleActions_run_doesNotAllowSettingToolchain() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleActions_run_doesNotAllowSettingToolchain() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             out = ctx.actions.declare_file(ctx.label.name + ".out")
             ctx.actions.run(toolchain = "foo", executable = "/path/to/tool", outputs = [out])
@@ -607,26 +663,33 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             _my_subrule()
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error).hasMessageThat().contains("'toolchain' may not be specified in subrules");
-  }
+        Truth.assertThat(error).hasMessageThat().contains("'toolchain' may not be specified in subrules")
+    }
 
-  @Test
-  public void testSubruleActions_run_doesNotAllowSettingExecGroup() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleActions_run_doesNotAllowSettingExecGroup() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             out = ctx.actions.declare_file(ctx.label.name + ".out")
             ctx.actions.run(exec_group = "foo", executable = "/path/to/tool", outputs = [out])
@@ -639,26 +702,33 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             _my_subrule()
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error).hasMessageThat().contains("'exec_group' may not be specified in subrules");
-  }
+        Truth.assertThat(error).hasMessageThat().contains("'exec_group' may not be specified in subrules")
+    }
 
-  @Test
-  public void testSubruleContext_cannotBeUsedOutsideImplementationFunction() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleContext_cannotBeUsedOutsideImplementationFunction() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             return ctx
 
@@ -669,30 +739,38 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             subrule_ctx.label
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "Error: cannot access field or method 'label' of subrule context outside of its own"
-                + " implementation function");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "Error: cannot access field or method 'label' of subrule context outside of its own"
+                        + " implementation function"
+            )
+    }
 
-  @Test
-  public void testRuleContext_cannotBeUsedInSubruleImplementation() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRuleContext_cannotBeUsedInSubruleImplementation() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, rule_ctx):
             rule_ctx.label
 
@@ -702,107 +780,125 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             subrule_ctx = _my_subrule(ctx)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "Error: cannot access field or method 'label' of rule context for"
-                + " '//subrule_testing:foo' outside of its own rule implementation function");
-  }
-
-  @Test
-  public void testSubruleAttrs_publicAttributesAreNotPermitted() throws Exception {
-    ev.checkEvalErrorContains(
-        "illegal attribute name 'foo': subrules may only define private attributes",
-        "subrule(implementation = lambda: None, attrs = {'foo': attr.string()})");
-  }
-
-  @Test
-  public void testSubruleAttrs_computedDefaultsAreNotPermitted() throws Exception {
-    ev.checkEvalErrorContains(
-        "for attribute '_foo': subrules cannot define computed defaults.",
-        "subrule(",
-        "  implementation = lambda: None,",
-        "  attrs = {'_foo': attr.label(default = lambda: '')}",
-        ")");
-  }
-
-  @Test
-  public void testSubruleAttrs_onlyLabelsOrLabelListsPermitted() throws Exception {
-    ev.checkEvalErrorContains(
-        "bad type for attribute '_foo': subrule attributes may only be label or lists of labels.",
-        "subrule(",
-        "  implementation = lambda: None,",
-        "  attrs = {'_foo': attr.int()}",
-        ")");
-  }
-
-  @Test
-  public void testSubruleAttrs_attributeMustHaveDefaultValue() throws Exception {
-    ev.checkEvalErrorContains(
-        "for attribute '_foo': no default value specified",
-        "subrule(",
-        "  implementation = lambda: None,",
-        "  attrs = {'_foo': attr.label()}",
-        ")");
-  }
-
-  @Test
-  public void testSubruleAttrs_cannotHaveStarlarkTransitions() throws Exception {
-    ev.checkEvalErrorContains(
-        "bad cfg for attribute '_foo': subrules may only have target/exec attributes.",
-        "my_transition = transition(implementation = lambda: None, inputs = [], outputs = [])",
-        "_my_subrule = subrule(",
-        "  implementation = lambda: None,",
-        "  attrs = {'_foo': attr.label(cfg = my_transition)}",
-        ")");
-  }
-
-  /**
-   * A test-only transition used to test native transitions on subrules. Must implement {@link
-   * ConfigurationTransitionApi} so that it is allowed by {@code rule}.
-   */
-  private static final class NativeTransition
-      implements TransitionFactory<AttributeTransitionData>, ConfigurationTransitionApi {
-    @Override
-    public ConfigurationTransition create(AttributeTransitionData data) {
-      return null;
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "Error: cannot access field or method 'label' of rule context for"
+                        + " '//subrule_testing:foo' outside of its own rule implementation function"
+            )
     }
 
-    @Override
-    public TransitionType transitionType() {
-      return TransitionType.ATTRIBUTE;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_publicAttributesAreNotPermitted() {
+        ev.checkEvalErrorContains(
+            "illegal attribute name 'foo': subrules may only define private attributes",
+            "subrule(implementation = lambda: None, attrs = {'foo': attr.string()})"
+        )
     }
-  }
 
-  @Test
-  public void testSubruleAttrs_cannotHaveNativeTransitions() throws Exception {
-    ev.update("native_transition", new NativeTransition());
-    ev.checkEvalErrorContains(
-        "bad cfg for attribute '_foo': subrules may only have target/exec attributes.",
-        "_my_subrule = subrule(",
-        "  implementation = lambda: None,",
-        "  attrs = {'_foo': attr.label(cfg = native_transition)}",
-        ")");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_computedDefaultsAreNotPermitted() {
+        ev.checkEvalErrorContains(
+            "for attribute '_foo': subrules cannot define computed defaults.",
+            "subrule(",
+            "  implementation = lambda: None,",
+            "  attrs = {'_foo': attr.label(default = lambda: '')}",
+            ")"
+        )
+    }
 
-  @Test
-  public void testSubruleAttrs_notVisibleInRuleCtx() throws Exception {
-    scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_onlyLabelsOrLabelListsPermitted() {
+        ev.checkEvalErrorContains(
+            "bad type for attribute '_foo': subrule attributes may only be label or lists of labels.",
+            "subrule(",
+            "  implementation = lambda: None,",
+            "  attrs = {'_foo': attr.int()}",
+            ")"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_attributeMustHaveDefaultValue() {
+        ev.checkEvalErrorContains(
+            "for attribute '_foo': no default value specified",
+            "subrule(",
+            "  implementation = lambda: None,",
+            "  attrs = {'_foo': attr.label()}",
+            ")"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_cannotHaveStarlarkTransitions() {
+        ev.checkEvalErrorContains(
+            "bad cfg for attribute '_foo': subrules may only have target/exec attributes.",
+            "my_transition = transition(implementation = lambda: None, inputs = [], outputs = [])",
+            "_my_subrule = subrule(",
+            "  implementation = lambda: None,",
+            "  attrs = {'_foo': attr.label(cfg = my_transition)}",
+            ")"
+        )
+    }
+
+    /**
+     * A test-only transition used to test native transitions on subrules. Must implement [ ] so that it is allowed by `rule`.
+     */
+    private class NativeTransition
+
+        : TransitionFactory<AttributeTransitionData?>, ConfigurationTransitionApi {
+        public override fun create(data: AttributeTransitionData?): ConfigurationTransition? {
+            return null
+        }
+
+        public override fun transitionType(): TransitionType {
+            return TransitionType.ATTRIBUTE
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_cannotHaveNativeTransitions() {
+        ev.update("native_transition", NativeTransition())
+        ev.checkEvalErrorContains(
+            "bad cfg for attribute '_foo': subrules may only have target/exec attributes.",
+            "_my_subrule = subrule(",
+            "  implementation = lambda: None,",
+            "  attrs = {'_foo': attr.label(cfg = native_transition)}",
+            ")"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_notVisibleInRuleCtx() {
+        scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             return
 
@@ -817,48 +913,55 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ImmutableList<String> ruleClassAttributes =
-        getRuleContext(getConfiguredTarget("//subrule_testing:foo"))
-            .getRule()
-            .getRuleClassObject()
-            .getAttributeProvider()
-            .getAttributes()
-            .stream()
-            .map(Attribute::getName)
-            .collect(toImmutableList());
-    ImmutableList<String> attributesVisibleToStarlark =
-        Sequence.cast(
+        val ruleClassAttributes: com.google.common.collect.ImmutableList<String?>? =
+            getRuleContext(getConfiguredTarget("//subrule_testing:foo"))
+                .getRule()
+                .getRuleClassObject()
+                .getAttributeProvider()
+                .getAttributes()
+                .stream()
+                .map(Attribute::getName)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        val attributesVisibleToStarlark: com.google.common.collect.ImmutableList<String?>? =
+            net.starlark.java.eval.Sequence.cast<T?>(
                 getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
                     .getValue("result"),
-                String.class,
-                "")
-            .getImmutableList();
-    String ruleAttrName =
-        getRuleAttrName(
-            Label.parseCanonical("//subrule_testing:myrule.bzl"),
-            "_my_subrule",
-            "_foo",
-            AttributeValueSource.DIRECT);
+                String::class.java,
+                ""
+            )
+                .getImmutableList()
+        val ruleAttrName: String? =
+            getRuleAttrName(
+                Label.parseCanonical("//subrule_testing:myrule.bzl"),
+                "_my_subrule",
+                "_foo",
+                AttributeValueSource.DIRECT
+            )
 
-    assertThat(ruleClassAttributes).contains(ruleAttrName);
-    assertThat(attributesVisibleToStarlark).doesNotContain(ruleAttrName);
-  }
+        Truth.assertThat(ruleClassAttributes).contains(ruleAttrName)
+        Truth.assertThat(attributesVisibleToStarlark).doesNotContain(ruleAttrName)
+    }
 
-  @Test
-  public void testSubruleAttrs_notVisibleInAspectCtx() throws Exception {
-    scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_notVisibleInAspectCtx() {
+        scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         _my_subrule = subrule(
             implementation = lambda: None,
             attrs = {"_foo": attr.label(default = "//default")},
@@ -878,47 +981,54 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             implementation = _rule_impl,
             attrs = {"dep": attr.label(aspects = [my_aspect])},
         )
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(
             name = "foo",
             dep = "//default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ImmutableList<String> attributesVisibleToStarlark =
-        Sequence.cast(
+        val attributesVisibleToStarlark: com.google.common.collect.ImmutableList<String?>? =
+            net.starlark.java.eval.Sequence.cast<T?>(
                 getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
                     .getValue("result"),
-                String.class,
-                "")
-            .getImmutableList();
-    ImmutableMap<String, Attribute> aspectAttributes =
-        ((AspectValue) getAspect("//subrule_testing:myrule.bzl%my_aspect"))
-            .getAspect()
-            .getDefinition()
-            .getAttributes();
-    String ruleAttrName =
-        getRuleAttrName(
-            Label.parseCanonical("//subrule_testing:myrule.bzl"),
-            "_my_subrule",
-            "_foo",
-            AttributeValueSource.DIRECT);
+                String::class.java,
+                ""
+            )
+                .getImmutableList()
+        val aspectAttributes: com.google.common.collect.ImmutableMap<String?, Attribute?>? =
+            (getAspect("//subrule_testing:myrule.bzl%my_aspect") as AspectValue)
+                .getAspect()
+                .getDefinition()
+                .getAttributes()
+        val ruleAttrName: String? =
+            getRuleAttrName(
+                Label.parseCanonical("//subrule_testing:myrule.bzl"),
+                "_my_subrule",
+                "_foo",
+                AttributeValueSource.DIRECT
+            )
 
-    assertThat(aspectAttributes).containsKey(ruleAttrName);
-    assertThat(attributesVisibleToStarlark).doesNotContain(ruleAttrName);
-  }
+        Truth.assertThat(aspectAttributes).containsKey(ruleAttrName)
+        Truth.assertThat(attributesVisibleToStarlark).doesNotContain(ruleAttrName)
+    }
 
-  @Test
-  public void testSubruleAttrs_overridingImplicitAttributeValueFails() throws Exception {
-    scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_overridingImplicitAttributeValueFails() {
+        scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, _foo):
             return
 
@@ -932,34 +1042,42 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return []
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "Error in _my_subrule: got invalid named argument: '_foo' is an implicit dependency and"
-                + " cannot be overridden");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "Error in _my_subrule: got invalid named argument: '_foo' is an implicit dependency and"
+                        + " cannot be overridden"
+            )
+    }
 
-  @Test
-  public void testSubruleAttrs_implicitLabelDepsAreResolvedToTargets_inRule() throws Exception {
-    scratch.file(
-        "some/pkg/BUILD",
-        //
-        "genrule(name = 'tool', cmd = '', outs = ['tool.exe'])");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_implicitLabelDepsAreResolvedToTargets_inRule() {
+        scratch.file(
+            "some/pkg/BUILD",  //
+            "genrule(name = 'tool', cmd = '', outs = ['tool.exe'])"
+        )
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, _tool):
             return _tool
 
@@ -975,33 +1093,38 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl provider =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo");
+        val provider: StructImpl =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
 
-    assertThat(provider).isNotNull();
-    Object value = provider.getValue("result");
-    assertThat(value).isInstanceOf(ConfiguredTarget.class);
-    assertThat(((ConfiguredTarget) value).getLabel().toString()).isEqualTo("//some/pkg:tool");
-  }
+        assertThat(provider).isNotNull()
+        val value: Any = provider.getValue("result")
+        Truth.assertThat(value).isInstanceOf(ConfiguredTarget::class.java)
+        assertThat((value as ConfiguredTarget).getLabel().toString()).isEqualTo("//some/pkg:tool")
+    }
 
-  @Test
-  public void testSubruleAttrs_implicitLabelDepsAreResolvedToTargets_inAspect() throws Exception {
-    scratch.file(
-        "some/pkg/BUILD",
-        //
-        "genrule(name = 'tool', cmd = '', outs = ['tool.exe'])");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_implicitLabelDepsAreResolvedToTargets_inAspect() {
+        scratch.file(
+            "some/pkg/BUILD",  //
+            "genrule(name = 'tool', cmd = '', outs = ['tool.exe'])"
+        )
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, _tool):
             return _tool
 
@@ -1022,33 +1145,38 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             implementation = lambda ctx: [ctx.attr.dep[MyInfo]],
             attrs = {"dep": attr.label(mandatory = True, aspects = [_my_aspect])},
         )
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
         filegroup(name = 'bar')
         my_rule(name = "foo", dep = ":bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl provider =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo");
+        val provider: StructImpl =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
 
-    assertThat(provider).isNotNull();
-    Object value = provider.getValue("result");
-    assertThat(value).isInstanceOf(ConfiguredTarget.class);
-    assertThat(((ConfiguredTarget) value).getLabel().toString()).isEqualTo("//some/pkg:tool");
-  }
+        assertThat(provider).isNotNull()
+        val value: Any = provider.getValue("result")
+        Truth.assertThat(value).isInstanceOf(ConfiguredTarget::class.java)
+        assertThat((value as ConfiguredTarget).getLabel().toString()).isEqualTo("//some/pkg:tool")
+    }
 
-  @Test
-  public void testSubruleAttrs_singleFileLabelAttributesAreResolvedToFile() throws Exception {
-    scratch.file(
-        "some/pkg/BUILD",
-        //
-        "genrule(name = 'tool', cmd = '', outs = ['tool.exe'])");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_singleFileLabelAttributesAreResolvedToFile() {
+        scratch.file(
+            "some/pkg/BUILD",  //
+            "genrule(name = 'tool', cmd = '', outs = ['tool.exe'])"
+        )
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, _tool):
             return _tool
 
@@ -1064,36 +1192,42 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl provider =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo");
+        val provider: StructImpl =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
 
-    assertThat(provider).isNotNull();
-    Object value = provider.getValue("result");
-    assertThat(value).isInstanceOf(Artifact.class);
-    assertThat(((Artifact) value).getRootRelativePathString()).isEqualTo("some/pkg/tool.exe");
-  }
+        assertThat(provider).isNotNull()
+        val value: Any = provider.getValue("result")
+        Truth.assertThat(value).isInstanceOf(Artifact::class.java)
+        assertThat((value as Artifact).getRootRelativePathString()).isEqualTo("some/pkg/tool.exe")
+    }
 
-  @Test
-  public void testSubruleAttr_executableAttrIsPassedAsFilesToRun() throws Exception {
-    scratch.file(
-        "my/BUILD",
-        //
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttr_executableAttrIsPassedAsFilesToRun() {
+        scratch.file(
+            "my/BUILD",  //
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         cc_binary(name = 'tool')
-        """);
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, _tool):
             return _tool
 
@@ -1109,35 +1243,42 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Object result =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("result");
+        val result: Any =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("result")
 
-    assertThat(result).isInstanceOf(FilesToRunProvider.class);
-    assertThat(((FilesToRunProvider) result).getExecutable().getRootRelativePathString())
-        .isEqualTo("my/tool");
-  }
+        Truth.assertThat(result).isInstanceOf(FilesToRunProvider::class.java)
+        assertThat((result as FilesToRunProvider).getExecutable().getRootRelativePathString())
+            .isEqualTo("my/tool")
+    }
 
-  @Test
-  public void testSubruleAction_executableMustBeFilesToRunProvider() throws Exception {
-    scratch.file(
-        "my/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAction_executableMustBeFilesToRunProvider() {
+        scratch.file(
+            "my/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         cc_binary(name = 'tool')
-        """);
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, _tool):
             out = ctx.actions.declare_file(ctx.label.name + ".out")
             ctx.actions.run(executable = _tool.executable, outputs = [out])
@@ -1155,35 +1296,43 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains("Error in run: for 'executable', expected FilesToRunProvider, got File");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains("Error in run: for 'executable', expected FilesToRunProvider, got File")
+    }
 
-  @Test
-  public void testSubruleAttrs_lateBoundDefaultsAreResolved() throws Exception {
-    scratch.file(
-        "my/BUILD",
-        //
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleAttrs_lateBoundDefaultsAreResolved() {
+        scratch.file(
+            "my/BUILD",  //
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         cc_binary(name = 'tool')
-        """);
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx, _tool):
             return _tool
 
@@ -1201,185 +1350,208 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(implementation = _rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
-    // TODO: b/293304174 - use a custom fragment instead of coverage
-    useConfiguration("--collect_code_coverage", "--coverage_output_generator=//my:tool");
+        
+        """.trimIndent()
+        )
+        // TODO: b/293304174 - use a custom fragment instead of coverage
+        useConfiguration("--collect_code_coverage", "--coverage_output_generator=//my:tool")
 
-    StructImpl provider =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo");
+        val provider: StructImpl =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
 
-    assertThat(provider).isNotNull();
-    Object value = provider.getValue("result");
-    assertThat(value).isInstanceOf(ConfiguredTarget.class);
-    assertThat(((ConfiguredTarget) value).getLabel().toString()).isEqualTo("//my:tool");
-  }
+        assertThat(provider).isNotNull()
+        val value: Any = provider.getValue("result")
+        Truth.assertThat(value).isInstanceOf(ConfiguredTarget::class.java)
+        assertThat((value as ConfiguredTarget).getLabel().toString()).isEqualTo("//my:tool")
+    }
 
-  @Test
-  public void testSubruleToolchains_cannotRequireMoreThanOne() throws Exception {
-    ev.checkEvalErrorContains(
-        "subrules may require at most 1 toolchain",
-        "_my_subrule = subrule(",
-        "  implementation = lambda: None,",
-        "  toolchains = ['//t1', '//t2'],",
-        ")");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleToolchains_cannotRequireMoreThanOne() {
+        ev.checkEvalErrorContains(
+            "subrules may require at most 1 toolchain",
+            "_my_subrule = subrule(",
+            "  implementation = lambda: None,",
+            "  toolchains = ['//t1', '//t2'],",
+            ")"
+        )
+    }
 
-  @Test
-  public void testSubruleToolchains_cannotAccessUnrequestedToolchain() throws Exception {
-    useConfiguration("--incompatible_auto_exec_groups");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        "def _subrule_impl(ctx):",
-        "  ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
-        "_my_subrule = subrule(",
-        "  implementation = _subrule_impl,",
-        ")",
-        "",
-        "def _rule_impl(ctx):",
-        "  _my_subrule()",
-        "",
-        "my_rule = rule(",
-        "  implementation = _rule_impl,",
-        "  subrules = [_my_subrule],",
-        ")");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleToolchains_cannotAccessUnrequestedToolchain() {
+        useConfiguration("--incompatible_auto_exec_groups")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            "def _subrule_impl(ctx):",
+            "  ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
+            "_my_subrule = subrule(",
+            "  implementation = _subrule_impl,",
+            ")",
+            "",
+            "def _rule_impl(ctx):",
+            "  _my_subrule()",
+            "",
+            "my_rule = rule(",
+            "  implementation = _rule_impl,",
+            "  subrules = [_my_subrule],",
+            ")"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(
-        TestConstants.JAVA_TOOLCHAIN_TYPE + " was requested but only types [] are configured",
-        AssertionError.class,
-        () -> getConfiguredTarget("//subrule_testing:foo"));
-  }
+        org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            TestConstants.JAVA_TOOLCHAIN_TYPE + " was requested but only types [] are configured",
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
+    }
 
-  @Test
-  public void testSubruleToolchains_cannotAccessToolchainFromRule() throws Exception {
-    useConfiguration("--incompatible_auto_exec_groups");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        "def _subrule_impl(ctx):",
-        "  ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
-        "_my_subrule = subrule(",
-        "  implementation = _subrule_impl,",
-        ")",
-        "",
-        "def _rule_impl(ctx):",
-        "  _my_subrule()",
-        "",
-        "my_rule = rule(",
-        "  implementation = _rule_impl,",
-        "  subrules = [_my_subrule],",
-        "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
-        ")");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleToolchains_cannotAccessToolchainFromRule() {
+        useConfiguration("--incompatible_auto_exec_groups")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            "def _subrule_impl(ctx):",
+            "  ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
+            "_my_subrule = subrule(",
+            "  implementation = _subrule_impl,",
+            ")",
+            "",
+            "def _rule_impl(ctx):",
+            "  _my_subrule()",
+            "",
+            "my_rule = rule(",
+            "  implementation = _rule_impl,",
+            "  subrules = [_my_subrule],",
+            "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
+            ")"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(
-        TestConstants.JAVA_TOOLCHAIN_TYPE + " was requested but only types [] are configured",
-        AssertionError.class,
-        () -> getConfiguredTarget("//subrule_testing:foo"));
-  }
+        org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            TestConstants.JAVA_TOOLCHAIN_TYPE + " was requested but only types [] are configured",
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
+    }
 
-  @Test
-  public void testSubruleToolchains_requestedToolchainIsResolved_inRule() throws Exception {
-    useConfiguration("--incompatible_auto_exec_groups");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        "def _subrule_impl(ctx):",
-        "  return ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
-        "_my_subrule = subrule(",
-        "  implementation = _subrule_impl,",
-        "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
-        ")",
-        "MyInfo = provider()",
-        "def _rule_impl(ctx):",
-        "  return [MyInfo(result = _my_subrule())]",
-        "",
-        "my_rule = rule(",
-        "  implementation = _rule_impl,",
-        "  subrules = [_my_subrule],",
-        ")");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleToolchains_requestedToolchainIsResolved_inRule() {
+        useConfiguration("--incompatible_auto_exec_groups")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            "def _subrule_impl(ctx):",
+            "  return ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
+            "_my_subrule = subrule(",
+            "  implementation = _subrule_impl,",
+            "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
+            ")",
+            "MyInfo = provider()",
+            "def _rule_impl(ctx):",
+            "  return [MyInfo(result = _my_subrule())]",
+            "",
+            "my_rule = rule(",
+            "  implementation = _rule_impl,",
+            "  subrules = [_my_subrule],",
+            ")"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainInfo toolchainInfo =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("result", ToolchainInfo.class);
+        val toolchainInfo: ToolchainInfo =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("result", ToolchainInfo::class.java)
 
-    assertThat(toolchainInfo).isNotNull();
-    assertThat(toolchainInfo.getValue("java", StarlarkInfo.class).getProvider().getKey())
-        .isEqualTo(JavaToolchainProvider.PROVIDER.getKey());
-  }
+        assertThat(toolchainInfo).isNotNull()
+        assertThat(toolchainInfo.getValue("java", StarlarkInfo::class.java).getProvider().getKey())
+            .isEqualTo(JavaToolchainProvider.PROVIDER.getKey())
+    }
 
-  @Test
-  public void testSubruleToolchains_requstedToolchainIsResolved_inAspect() throws Exception {
-    useConfiguration("--incompatible_auto_exec_groups");
-    scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        "def _subrule_impl(ctx):",
-        "  return ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
-        "_my_subrule = subrule(",
-        "  implementation = _subrule_impl,",
-        "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
-        ")",
-        "MyInfo=provider()",
-        "def _aspect_impl(target, ctx):",
-        "  return MyInfo(result = _my_subrule())",
-        "my_aspect = aspect(implementation = _aspect_impl, subrules = [_my_subrule])",
-        "def _rule_impl(ctx):",
-        "  return ctx.attr.dep[MyInfo]",
-        "my_rule = rule(",
-        "  implementation = _rule_impl,",
-        "  attrs = {'dep' : attr.label(aspects = [my_aspect])}",
-        ")");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleToolchains_requstedToolchainIsResolved_inAspect() {
+        useConfiguration("--incompatible_auto_exec_groups")
+        scratch.file("default/BUILD", "genrule(name = 'default', outs = ['a'], cmd = '')")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            "def _subrule_impl(ctx):",
+            "  return ctx.toolchains['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "']",
+            "_my_subrule = subrule(",
+            "  implementation = _subrule_impl,",
+            "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
+            ")",
+            "MyInfo=provider()",
+            "def _aspect_impl(target, ctx):",
+            "  return MyInfo(result = _my_subrule())",
+            "my_aspect = aspect(implementation = _aspect_impl, subrules = [_my_subrule])",
+            "def _rule_impl(ctx):",
+            "  return ctx.attr.dep[MyInfo]",
+            "my_rule = rule(",
+            "  implementation = _rule_impl,",
+            "  attrs = {'dep' : attr.label(aspects = [my_aspect])}",
+            ")"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(
             name = "foo",
             dep = "//default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainInfo toolchainInfo =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("result", ToolchainInfo.class);
+        val toolchainInfo: ToolchainInfo =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("result", ToolchainInfo::class.java)
 
-    assertThat(toolchainInfo).isNotNull();
-    assertThat(toolchainInfo.getValue("java", StarlarkInfo.class).getProvider().getKey())
-        .isEqualTo(JavaToolchainProvider.PROVIDER.getKey());
-  }
+        assertThat(toolchainInfo).isNotNull()
+        assertThat(toolchainInfo.getValue("java", StarlarkInfo::class.java).getProvider().getKey())
+            .isEqualTo(JavaToolchainProvider.PROVIDER.getKey())
+    }
 
-  @Test
-  public void testSubruleToolchains_noToolchainIsSuppliedToAction() throws Exception {
-    useConfiguration("--incompatible_auto_exec_groups");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleToolchains_noToolchainIsSuppliedToAction() {
+        useConfiguration("--incompatible_auto_exec_groups")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             out = ctx.actions.declare_file(ctx.label.name + ".out")
             ctx.actions.run(outputs = [out], executable = "/bin/ls", tools = [depset()])
@@ -1396,63 +1568,72 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             implementation = _rule_impl,
             subrules = [_my_subrule],
         )
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//subrule_testing:foo");
-    Action action = getGeneratingAction(target, "subrule_testing/foo.out");
+        val target: ConfiguredTarget? = getConfiguredTarget("//subrule_testing:foo")
+        val action: Action = getGeneratingAction(target, "subrule_testing/foo.out")
 
-    assertThat(action).isNotNull();
-    assertThat(action.getOwner()).isEqualTo(getRuleContext(target).getActionOwner());
-  }
+        assertThat(action).isNotNull()
+        assertThat(action.getOwner()).isEqualTo(getRuleContext(target).getActionOwner())
+    }
 
-  @Test
-  public void testSubruleToolchains_requestedToolchainIsSuppliedToAction() throws Exception {
-    useConfiguration("--incompatible_auto_exec_groups");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        "def _subrule_impl(ctx):",
-        "  out = ctx.actions.declare_file(ctx.label.name + '.out')",
-        "  ctx.actions.run(outputs = [out], executable = '/bin/ls', tools = [depset()])",
-        "  return out",
-        "_my_subrule = subrule(",
-        "  implementation = _subrule_impl,",
-        "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
-        ")",
-        "def _rule_impl(ctx):",
-        "  return [DefaultInfo(files = depset([_my_subrule()]))]",
-        "",
-        "my_rule = rule(",
-        "  implementation = _rule_impl,",
-        "  subrules = [_my_subrule],",
-        ")");
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleToolchains_requestedToolchainIsSuppliedToAction() {
+        useConfiguration("--incompatible_auto_exec_groups")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            "def _subrule_impl(ctx):",
+            "  out = ctx.actions.declare_file(ctx.label.name + '.out')",
+            "  ctx.actions.run(outputs = [out], executable = '/bin/ls', tools = [depset()])",
+            "  return out",
+            "_my_subrule = subrule(",
+            "  implementation = _subrule_impl,",
+            "  toolchains = ['" + TestConstants.JAVA_TOOLCHAIN_TYPE + "'],",
+            ")",
+            "def _rule_impl(ctx):",
+            "  return [DefaultInfo(files = depset([_my_subrule()]))]",
+            "",
+            "my_rule = rule(",
+            "  implementation = _rule_impl,",
+            "  subrules = [_my_subrule],",
+            ")"
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//subrule_testing:foo");
-    Action action = getGeneratingAction(target, "subrule_testing/foo.out");
+        val target: ConfiguredTarget? = getConfiguredTarget("//subrule_testing:foo")
+        val action: Action = getGeneratingAction(target, "subrule_testing/foo.out")
 
-    assertThat(action).isNotNull();
-    assertThat(action.getOwner())
-        .isEqualTo(getRuleContext(target).getActionOwner(TestConstants.JAVA_TOOLCHAIN_TYPE));
-  }
+        assertThat(action).isNotNull()
+        assertThat(action.getOwner())
+            .isEqualTo(getRuleContext(target).getActionOwner(TestConstants.JAVA_TOOLCHAIN_TYPE))
+    }
 
-  @Test
-  public void testSubruleFragments_errorForInvalidFragments() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleFragments_errorForInvalidFragments() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             return ctx.fragments.foobar
 
@@ -1467,30 +1648,38 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(_rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError assertionError =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val assertionError: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(assertionError)
-        .hasMessageThat()
-        .contains(
-            "There is no configuration fragment named 'foobar'. Available fragments: 'java',"
-                + " 'cpp'");
-  }
+        Truth.assertThat(assertionError)
+            .hasMessageThat()
+            .contains(
+                "There is no configuration fragment named 'foobar'. Available fragments: 'java',"
+                        + " 'cpp'"
+            )
+    }
 
-  @Test
-  public void testSubruleFragments_onlyDeclaredFragmentsAreVisible() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleFragments_onlyDeclaredFragmentsAreVisible() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             return dir(ctx.fragments)
 
@@ -1505,31 +1694,37 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(_rule_impl, subrules = [_my_subrule], fragments = ["java"])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Sequence<String> fragments =
-        Sequence.cast(
-            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-                .getValue("result"),
-            String.class,
-            "ctx.fragments");
+        val fragments: net.starlark.java.eval.Sequence<String?>? =
+            net.starlark.java.eval.Sequence.cast<T?>(
+                getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                    .getValue("result"),
+                String::class.java,
+                "ctx.fragments"
+            )
 
-    assertThat(fragments).isNotNull();
-    assertThat(fragments).containsExactly("cpp", "python");
-  }
+        Truth.assertThat(fragments).isNotNull()
+        Truth.assertThat(fragments).containsExactly("cpp", "python")
+    }
 
-  @Test
-  public void testSubruleFragments_ruleCannotAccessSubruleFragments() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleFragments_ruleCannotAccessSubruleFragments() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             pass
 
@@ -1543,28 +1738,35 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return []
 
         my_rule = rule(_rule_impl, subrules = [_my_subrule])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError assertionError =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val assertionError: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(assertionError)
-        .hasMessageThat()
-        .contains("my_rule has to declare 'cpp' as a required fragment in order to access it");
-  }
+        Truth.assertThat(assertionError)
+            .hasMessageThat()
+            .contains("my_rule has to declare 'cpp' as a required fragment in order to access it")
+    }
 
-  @Test
-  public void testSubruleFragments_canAccessDeclaredFragments() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleFragments_canAccessDeclaredFragments() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             return ctx.fragments.cpp
 
@@ -1579,27 +1781,32 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(_rule_impl, subrules = [_my_subrule], fragments = ["java"])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    CppConfigurationApi<?> fragment =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("result", CppConfigurationApi.class);
+        val fragment: CppConfigurationApi<*>? =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("result", CppConfigurationApi::class.java)
 
-    assertThat(fragment).isNotNull();
-  }
+        Truth.assertThat(fragment).isNotNull()
+    }
 
-  @Test
-  public void testSubruleFragments_mustDeclareFragmentsIfAccessed() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubruleFragments_mustDeclareFragmentsIfAccessed() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _subrule_impl(ctx):
             ctx.fragments.java
 
@@ -1613,28 +1820,35 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return []
 
         my_rule = rule(_rule_impl, subrules = [_my_subrule], fragments = ["java"])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError assertionError =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val assertionError: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(assertionError)
-        .hasMessageThat()
-        .contains("_my_subrule has to declare 'java' as a required fragment in order to access it");
-  }
+        Truth.assertThat(assertionError)
+            .hasMessageThat()
+            .contains("_my_subrule has to declare 'java' as a required fragment in order to access it")
+    }
 
-  @Test
-  public void testTransitiveSubrules_subruleMustDeclareCalledSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveSubrules_subruleMustDeclareCalledSubrule() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _A_impl(ctx):
             return "from subruleA"
 
@@ -1649,28 +1863,35 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             res = _B()
 
         my_rule = rule(_rule_impl, subrules = [_B])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError assertionError =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val assertionError: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(assertionError)
-        .hasMessageThat()
-        .contains("Error in _A: subrule _B must declare _A in 'subrules'");
-  }
+        Truth.assertThat(assertionError)
+            .hasMessageThat()
+            .contains("Error in _A: subrule _B must declare _A in 'subrules'")
+    }
 
-  @Test
-  public void testTransitiveSubrules_ruleCannotCallUndeclaredTransitiveSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveSubrules_ruleCannotCallUndeclaredTransitiveSubrule() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _A_impl(ctx):
             return "from subruleA"
 
@@ -1685,28 +1906,35 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             _A()
 
         my_rule = rule(_rule_impl, subrules = [_B])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError assertionError =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val assertionError: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(assertionError)
-        .hasMessageThat()
-        .contains("rule 'my_rule' must declare '_A' in 'subrules'");
-  }
+        Truth.assertThat(assertionError)
+            .hasMessageThat()
+            .contains("rule 'my_rule' must declare '_A' in 'subrules'")
+    }
 
-  @Test
-  public void testTransitiveSubrules_subruleCanCallDeclaredSubrule() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveSubrules_subruleCanCallDeclaredSubrule() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _A_impl(ctx):
             return "from subruleA"
 
@@ -1724,28 +1952,33 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(_rule_impl, subrules = [_B])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    String result =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("result", String.class);
+        val result: String? =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("result", String::class.java)
 
-    assertThat(result).isEqualTo("from subruleA");
-  }
+        Truth.assertThat(result).isEqualTo("from subruleA")
+    }
 
-  @Test
-  public void testTransitiveSubrules_arbitrarilyLongTransitiveChainsAreResolved() throws Exception {
-    scratch.file("a/BUILD", "genrule(name = 'tool', cmd = '', outs = ['tool.out'])");
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveSubrules_arbitrarilyLongTransitiveChainsAreResolved() {
+        scratch.file("a/BUILD", "genrule(name = 'tool', cmd = '', outs = ['tool.out'])")
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _A_impl(ctx, _tool):
             return "tool name: " + _tool.label.name
 
@@ -1760,28 +1993,32 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = _D())
 
         my_rule = rule(_rule_impl, subrules = [_D])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    String result =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("result", String.class);
+        val result: String? =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("result", String::class.java)
 
-    assertThat(result).isEqualTo("tool name: tool");
-  }
+        Truth.assertThat(result).isEqualTo("tool name: tool")
+    }
 
-  @Test
-  public void testTransitiveSubrules_ruleAndSubruleCanHaveCommonSubruleDependency()
-      throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveSubrules_ruleAndSubruleCanHaveCommonSubruleDependency() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _A_impl(ctx):
             return "from subruleA"
 
@@ -1801,31 +2038,36 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(resA = resA, resB = resB)
 
         my_rule = rule(_rule_impl, subrules = [_A, _B])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    String resA =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("resA", String.class);
-    String resB =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("resB", String.class);
+        val resA: String? =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("resA", String::class.java)
+        val resB: String? =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("resB", String::class.java)
 
-    assertThat(resA).isEqualTo("from subruleA");
-    assertThat(resB).isEqualTo("from subruleB");
-  }
+        Truth.assertThat(resA).isEqualTo("from subruleA")
+        Truth.assertThat(resB).isEqualTo("from subruleB")
+    }
 
-  @Test
-  public void testTransitiveSubrules_callerSubruleCtxIsLocked() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveSubrules_callerSubruleCtxIsLocked() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _A_impl(ctx, ctxB):
             return ctxB.label
 
@@ -1843,30 +2085,38 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(_rule_impl, subrules = [_B])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//subrule_testing:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//subrule_testing:foo") })
 
-    assertThat(error)
-        .hasMessageThat()
-        .contains(
-            "cannot access field or method 'label' of subrule context outside of its own"
-                + " implementation function");
-  }
+        Truth.assertThat(error)
+            .hasMessageThat()
+            .contains(
+                "cannot access field or method 'label' of subrule context outside of its own"
+                        + " implementation function"
+            )
+    }
 
-  @Test
-  public void testTransitiveSubrules_callerSubruleCtxIsUnlockedUponResumption() throws Exception {
-    scratch.file(
-        "subrule_testing/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveSubrules_callerSubruleCtxIsUnlockedUponResumption() {
+        scratch.file(
+            "subrule_testing/myrule.bzl",
+            """
         def _A_impl(ctx):
             return "from A"
 
@@ -1885,60 +2135,71 @@ public class StarlarkSubruleTest extends BuildViewTestCase {
             return MyInfo(result = res)
 
         my_rule = rule(_rule_impl, subrules = [_B])
-        """);
-    scratch.file(
-        "subrule_testing/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "subrule_testing/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    String result =
-        getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
-            .getValue("result", String.class);
+        val result: String? =
+            getProvider("//subrule_testing:foo", "//subrule_testing:myrule.bzl", "MyInfo")
+                .getValue("result", String::class.java)
 
-    assertThat(result).isEqualTo("from B: foo");
-  }
+        Truth.assertThat(result).isEqualTo("from B: foo")
+    }
 
-  @Test
-  public void testSubrulesParamForRule_isPrivateAPI() throws Exception {
-    setBuildLanguageOptions("--noexperimental_rule_extension_api");
-    scratch.file(
-        "foo/myrule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrulesParamForRule_isPrivateAPI() {
+        setBuildLanguageOptions("--noexperimental_rule_extension_api")
+        scratch.file(
+            "foo/myrule.bzl",
+            """
         def _impl(ctx):
             pass
         my_subrule = subrule(implementation = _impl)
         my_rule = rule(_impl, subrules = [my_subrule])
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("myrule.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    reporter.addHandler(ev.getEventCollector());
-    getConfiguredTarget("//foo");
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        reporter.addHandler(ev.getEventCollector())
+        getConfiguredTarget("//foo")
 
-    ev.assertContainsError("Non-allowlisted attempt to use subrules.");
-  }
+        ev.assertContainsError("Non-allowlisted attempt to use subrules.")
+    }
 
-  @Test
-  public void testSubrulesParamForAspect_isPrivateAPI() throws Exception {
-    evOutsideAllowlist.setSemantics("--noexperimental_rule_extension_api");
-    evOutsideAllowlist.checkEvalErrorContains(
-        "'//foo:bar' cannot use private API", "aspect(implementation = lambda: 0, subrules = [1])");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubrulesParamForAspect_isPrivateAPI() {
+        evOutsideAllowlist.setSemantics("--noexperimental_rule_extension_api")
+        evOutsideAllowlist.checkEvalErrorContains(
+            "'//foo:bar' cannot use private API", "aspect(implementation = lambda: 0, subrules = [1])"
+        )
+    }
 
-  private StructImpl getProvider(String targetLabel, String providerLabel, String providerName)
-      throws LabelSyntaxException {
-    ConfiguredTarget target = getConfiguredTarget(targetLabel);
-    Provider.Key key =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical(providerLabel)), providerName);
-    return (StructImpl) target.get(key);
-  }
+    @Throws(LabelSyntaxException::class)
+    private fun getProvider(targetLabel: String?, providerLabel: String?, providerName: String?): StructImpl {
+        val target: ConfiguredTarget? = getConfiguredTarget(targetLabel)
+        val key: Provider.Key =
+            Key(keyForBuild(Label.parseCanonical(providerLabel)), providerName)
+        return target.get(key) as StructImpl
+    }
 }

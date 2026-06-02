@@ -11,88 +11,83 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import java.util.ArrayList;
+import kotlin.collections.ArrayList
 
-/** Syntax node for a string literal. */
-public final class StringLiteral extends Expression {
+/** Syntax node for a string literal.  */
+class StringLiteral internal constructor(locs: FileLocations?, startOffset: Int, value: String?, endOffset: Int) :
+    Expression(locs, Kind.STRING_LITERAL) {
+    // See skyframe.serialization.StringLiteralCodec for custom serialization logic.
+    private val startOffset: Int
+    @kotlin.jvm.JvmField
+    private val value: String?
+    private val endOffset: Int
 
-  // See skyframe.serialization.StringLiteralCodec for custom serialization logic.
-
-  private final int startOffset;
-  private final String value;
-  private final int endOffset;
-
-  StringLiteral(FileLocations locs, int startOffset, String value, int endOffset) {
-    super(locs, Kind.STRING_LITERAL);
-    this.startOffset = startOffset;
-    this.value = value;
-    this.endOffset = endOffset;
-  }
-
-  /** Returns the value denoted by the string literal */
-  public String getValue() {
-    return value;
-  }
-
-  public Location getLocation() {
-    return locs.getLocation(startOffset);
-  }
-
-  @Override
-  public int getStartOffset() {
-    return startOffset;
-  }
-
-  @Override
-  public int getEndOffset() {
-    // TODO(adonovan): when we switch to compilation,
-    // making syntax trees ephemeral, we can afford to
-    // record the raw literal. This becomes:
-    //   return startOffset + raw.length().
-    return endOffset;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
-
-  // -- hooks to support Skyframe serialization without creating a dependency --
-
-  /** Returns an opaque serializable object that may be passed to {@link #fromSerialization}. */
-  public Object getFileLocations() {
-    return locs;
-  }
-
-  /**
-   * Returns the value denoted by the Starlark string literal within s.
-   *
-   * @throws IllegalArgumentException if s does not contain a valid string literal.
-   */
-  // TODO(bazel-team): We should in principle have an overload that allows non-default FileOptions.
-  // But currently no FileOptions affect the behavior of this method, except to possibly make it
-  // throw IAE on non-ASCII data.
-  public static String unquote(String s) {
-    // TODO(adonovan): once we have byte compilation, make this function
-    // independent of the Lexer, which should only validate string literals
-    // but not unquote them. Clients (e.g. the compiler) can unquote on demand.
-    ArrayList<SyntaxError> errors = new ArrayList<>();
-    Lexer lexer = new Lexer(ParserInput.fromLines(s), errors, FileOptions.DEFAULT);
-    lexer.nextToken();
-    if (!errors.isEmpty()) {
-      throw new IllegalArgumentException(errors.get(0).message());
+    init {
+        this.startOffset = startOffset
+        this.value = value
+        this.endOffset = endOffset
     }
-    if (lexer.start != 0 || lexer.end != s.length() || lexer.kind != TokenKind.STRING) {
-      throw new IllegalArgumentException("invalid syntax");
-    }
-    return (String) lexer.value;
-  }
 
-  /** Constructs a StringLiteral from its serialized components. */
-  public static StringLiteral fromSerialization(
-      Object fileLocations, int startOffset, String value, int endOffset) {
-    return new StringLiteral((FileLocations) fileLocations, startOffset, value, endOffset);
-  }
+    /** Returns the value denoted by the string literal  */
+    fun getValue(): String? {
+        return value
+    }
+
+    fun getLocation(): Location {
+        return locs.getLocation(startOffset)
+    }
+
+    override fun getStartOffset(): Int {
+        return startOffset
+    }
+
+    override fun getEndOffset(): Int {
+        // TODO(adonovan): when we switch to compilation,
+        // making syntax trees ephemeral, we can afford to
+        // record the raw literal. This becomes:
+        //   return startOffset + raw.length().
+        return endOffset
+    }
+
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
+
+    // -- hooks to support Skyframe serialization without creating a dependency --
+    /** Returns an opaque serializable object that may be passed to [.fromSerialization].  */
+    fun getFileLocations(): Any {
+        return locs
+    }
+
+    companion object {
+        /**
+         * Returns the value denoted by the Starlark string literal within s.
+         * 
+         * @throws IllegalArgumentException if s does not contain a valid string literal.
+         */
+        // TODO(bazel-team): We should in principle have an overload that allows non-default FileOptions.
+        // But currently no FileOptions affect the behavior of this method, except to possibly make it
+        // throw IAE on non-ASCII data.
+        @kotlin.jvm.JvmStatic
+        fun unquote(s: String): String? {
+            // TODO(adonovan): once we have byte compilation, make this function
+            // independent of the Lexer, which should only validate string literals
+            // but not unquote them. Clients (e.g. the compiler) can unquote on demand.
+            val errors = ArrayList<SyntaxError?>()
+            val lexer = Lexer(ParserInput.Companion.fromLines(s), errors, FileOptions.Companion.DEFAULT)
+            lexer.nextToken()
+            require(errors.isEmpty()) { errors.get(0)!!.message() }
+            require(!(lexer.start != 0 || lexer.end != s.length() || lexer.kind != TokenKind.STRING)) { "invalid syntax" }
+            return lexer.value as String?
+        }
+
+        /** Constructs a StringLiteral from its serialized components.  */
+        fun fromSerialization(
+            fileLocations: Any?, startOffset: Int, value: String?, endOffset: Int
+        ): StringLiteral {
+            return StringLiteral(fileLocations as FileLocations?, startOffset, value, endOffset)
+        }
+    }
 }

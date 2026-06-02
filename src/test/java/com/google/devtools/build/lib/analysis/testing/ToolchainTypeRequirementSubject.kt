@@ -11,51 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.testing;
+package com.google.devtools.build.lib.analysis.testing
 
-import static com.google.common.truth.Truth.assertAbout;
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement
 
-import com.google.common.truth.ComparableSubject;
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.cmdline.Label;
+/** A Truth [Subject] for [ToolchainTypeRequirement].  */
+class ToolchainTypeRequirementSubject protected constructor(
+    failureMetadata: FailureMetadata?,
+    subject: ToolchainTypeRequirement
+) : Subject(failureMetadata, subject) {
+    // Instance fields.
+    private val actual: ToolchainTypeRequirement
 
-/** A Truth {@link Subject} for {@link ToolchainTypeRequirement}. */
-public class ToolchainTypeRequirementSubject extends Subject {
-  // Static data.
+    init {
+        this.actual = subject
+    }
 
-  /** Entry point for test assertions related to {@link ToolchainTypeRequirement}. */
-  public static ToolchainTypeRequirementSubject assertThat(
-      ToolchainTypeRequirement toolchainTypeRequirement) {
-    return assertAbout(ToolchainTypeRequirementSubject::new).that(toolchainTypeRequirement);
-  }
+    fun toolchainType(): ComparableSubject<Label?>? {
+        return check("toolchainType").that(actual.toolchainType())
+    }
 
-  /** Static method for getting the subject factory (for use with assertAbout()). */
-  public static Subject.Factory<ToolchainTypeRequirementSubject, ToolchainTypeRequirement>
-      toolchainTypeRequirements() {
-    return ToolchainTypeRequirementSubject::new;
-  }
+    val isMandatory: Unit
+        get() {
+            check("mandatory").that(actual.mandatory()).isTrue()
+        }
 
-  // Instance fields.
+    val isOptional: Unit
+        get() {
+            check("mandatory").that(actual.mandatory()).isFalse()
+        }
 
-  private final ToolchainTypeRequirement actual;
+    companion object {
+        // Static data.
+        /** Entry point for test assertions related to [ToolchainTypeRequirement].  */
+        fun assertThat(
+            toolchainTypeRequirement: ToolchainTypeRequirement?
+        ): ToolchainTypeRequirementSubject? {
+            return Truth.assertAbout<ToolchainTypeRequirementSubject?, ToolchainTypeRequirement?>(Subject.Factory { failureMetadata: FailureMetadata?, subject: ToolchainTypeRequirement? ->
+                ToolchainTypeRequirementSubject(
+                    failureMetadata,
+                    subject
+                )
+            }).that(toolchainTypeRequirement)
+        }
 
-  protected ToolchainTypeRequirementSubject(
-      FailureMetadata failureMetadata, ToolchainTypeRequirement subject) {
-    super(failureMetadata, subject);
-    this.actual = subject;
-  }
-
-  public ComparableSubject<Label> toolchainType() {
-    return check("toolchainType").that(actual.toolchainType());
-  }
-
-  public void isMandatory() {
-    check("mandatory").that(actual.mandatory()).isTrue();
-  }
-
-  public void isOptional() {
-    check("mandatory").that(actual.mandatory()).isFalse();
-  }
+        /** Static method for getting the subject factory (for use with assertAbout()).  */
+        fun toolchainTypeRequirements(): Factory<ToolchainTypeRequirementSubject?, ToolchainTypeRequirement?> {
+            return Subject.Factory { failureMetadata: FailureMetadata?, subject: ToolchainTypeRequirement? ->
+                ToolchainTypeRequirementSubject(
+                    failureMetadata,
+                    subject
+                )
+            }
+        }
+    }
 }

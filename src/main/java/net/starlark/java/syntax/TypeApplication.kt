@@ -11,62 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
+/** Syntax node for a type application expression.  */
+class TypeApplication internal constructor(
+    locs: FileLocations?,
+    constructor: Identifier?,
+    arguments: ImmutableList<Expression?>,
+    rbracketOffset: Int
+) : Expression(locs, Kind.TYPE_APPLICATION) {
+    private val constructor: Identifier
+    private val arguments: ImmutableList<Expression?>
+    private val rbracketOffset: Int
 
-/** Syntax node for a type application expression. */
-public final class TypeApplication extends Expression {
+    init {
+        this.constructor = Preconditions.checkNotNull<Identifier>(constructor)
+        this.arguments = arguments
+        this.rbracketOffset = rbracketOffset
+    }
 
-  private final Identifier constructor;
-  private final ImmutableList<Expression> arguments;
-  private final int rbracketOffset;
+    /** Returns the type constructor.  */
+    fun getConstructor(): Identifier {
+        return this.constructor
+    }
 
-  TypeApplication(
-      FileLocations locs,
-      Identifier constructor,
-      ImmutableList<Expression> arguments,
-      int rbracketOffset) {
-    super(locs, Kind.TYPE_APPLICATION);
-    this.constructor = Preconditions.checkNotNull(constructor);
-    this.arguments = arguments;
-    this.rbracketOffset = rbracketOffset;
-  }
+    /** Returns the type arguments.  */
+    fun getArguments(): ImmutableList<Expression?> {
+        return arguments
+    }
 
-  /** Returns the type constructor. */
-  public Identifier getConstructor() {
-    return this.constructor;
-  }
+    override fun getStartOffset(): Int {
+        return constructor.getStartOffset()
+    }
 
-  /** Returns the type arguments. */
-  public ImmutableList<Expression> getArguments() {
-    return arguments;
-  }
+    override fun getEndOffset(): Int {
+        return rbracketOffset + 1
+    }
 
-  @Override
-  public int getStartOffset() {
-    return constructor.getStartOffset();
-  }
+    override fun toString(): String {
+        val buf = StringBuilder()
+        buf.append(constructor)
+        buf.append('[')
+        ListExpression.Companion.appendNodes(buf, arguments)
+        buf.append(']')
+        return buf.toString()
+    }
 
-  @Override
-  public int getEndOffset() {
-    return rbracketOffset + 1;
-  }
-
-  @Override
-  public String toString() {
-    StringBuilder buf = new StringBuilder();
-    buf.append(constructor);
-    buf.append('[');
-    ListExpression.appendNodes(buf, arguments);
-    buf.append(']');
-    return buf.toString();
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

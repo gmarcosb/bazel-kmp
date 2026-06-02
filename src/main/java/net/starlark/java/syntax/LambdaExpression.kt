@@ -11,60 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
 
-/** A LambdaExpression ({@code lambda params: body}) denotes an anonymous function. */
-public final class LambdaExpression extends Expression {
+/** A LambdaExpression (`lambda params: body`) denotes an anonymous function.  */
+class LambdaExpression internal constructor(
+    locs: FileLocations?,
+    lambdaOffset: Int,
+    parameters: ImmutableList<Parameter?>?,
+    body: Expression?
+) : Expression(locs, Kind.LAMBDA) {
+    private val lambdaOffset: Int // offset of 'lambda' token
+    @kotlin.jvm.JvmField
+    private val parameters: ImmutableList<Parameter?>
+    @kotlin.jvm.JvmField
+    private val body: Expression
 
-  private final int lambdaOffset; // offset of 'lambda' token
-  private final ImmutableList<Parameter> parameters;
-  private final Expression body;
+    // set by resolver
+    @kotlin.jvm.JvmField
+    private var resolved: Resolver.Function? = null
 
-  // set by resolver
-  @Nullable private Resolver.Function resolved;
+    init {
+        this.lambdaOffset = lambdaOffset
+        this.parameters = Preconditions.checkNotNull<ImmutableList<Parameter?>>(parameters)
+        this.body = Preconditions.checkNotNull<Expression>(body)
+    }
 
-  LambdaExpression(
-      FileLocations locs, int lambdaOffset, ImmutableList<Parameter> parameters, Expression body) {
-    super(locs, Kind.LAMBDA);
-    this.lambdaOffset = lambdaOffset;
-    this.parameters = Preconditions.checkNotNull(parameters);
-    this.body = Preconditions.checkNotNull(body);
-  }
+    fun getParameters(): ImmutableList<Parameter?> {
+        return parameters
+    }
 
-  public ImmutableList<Parameter> getParameters() {
-    return parameters;
-  }
+    fun getBody(): Expression {
+        return body
+    }
 
-  public Expression getBody() {
-    return body;
-  }
+    /** Returns information about the resolved function. Set by the resolver.  */
+    fun getResolvedFunction(): Resolver.Function? {
+        return resolved
+    }
 
-  /** Returns information about the resolved function. Set by the resolver. */
-  @Nullable
-  public Resolver.Function getResolvedFunction() {
-    return resolved;
-  }
+    fun setResolvedFunction(resolved: Resolver.Function?) {
+        this.resolved = resolved
+    }
 
-  void setResolvedFunction(Resolver.Function resolved) {
-    this.resolved = resolved;
-  }
+    override fun getStartOffset(): Int {
+        return lambdaOffset
+    }
 
-  @Override
-  public int getStartOffset() {
-    return lambdaOffset;
-  }
+    override fun getEndOffset(): Int {
+        return body.getEndOffset()
+    }
 
-  @Override
-  public int getEndOffset() {
-    return body.getEndOffset();
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

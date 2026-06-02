@@ -11,36 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.platform.PlatformValue;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import com.google.devtools.common.options.OptionsParsingException;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.analysis.platform.PlatformValue
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
 
 /**
- * Tests of {@link PlatformProducer}.
- *
- * <p>Implicitly provides test coverage for {@link
- * com.google.devtools.build.lib.analysis.platform.PlatformFunction}.
+ * Tests of [PlatformProducer].
+ * 
+ * 
+ * Implicitly provides test coverage for [ ].
  */
-@RunWith(JUnit4.class)
-public final class PlatformProducerTest extends ProducerTestCase {
-
-  @Test
-  public void basicLookup() throws Exception {
-    scratch.overwriteFile(
-        "lookup/BUILD",
-        """
+@RunWith(JUnit4::class)
+class PlatformProducerTest : ProducerTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun basicLookup() {
+        scratch.overwriteFile(
+            "lookup/BUILD",
+            """
         constraint_setting(name = "setting1")
 
         constraint_value(
@@ -53,22 +45,25 @@ public final class PlatformProducerTest extends ProducerTestCase {
             constraint_values = [":value1"],
             flags = ["--cpu=fast"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Label platformLabel = Label.parseCanonicalUnchecked("//lookup:basic");
-    PlatformValue result = fetch(platformLabel, /* flagAliasMappings= */ ImmutableMap.of());
+        val platformLabel: Label? = Label.parseCanonicalUnchecked("//lookup:basic")
+        val result: PlatformValue = fetch(platformLabel,  /* flagAliasMappings= */ImmutableMap.of<String?, Label?>())
 
-    assertThat(result).isNotNull();
-    assertThat(result.platformInfo().label()).isEqualTo(platformLabel);
-    assertThat(result.parsedFlags().get().parsingResult().canonicalize())
-        .containsExactly("--cpu=fast");
-  }
+        assertThat(result).isNotNull()
+        assertThat(result.platformInfo().label()).isEqualTo(platformLabel)
+        assertThat(result.parsedFlags().get().parsingResult().canonicalize())
+            .containsExactly("--cpu=fast")
+    }
 
-  @Test
-  public void alias() throws Exception {
-    scratch.overwriteFile(
-        "lookup/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun alias() {
+        scratch.overwriteFile(
+            "lookup/BUILD",
+            """
         constraint_setting(name = "setting1")
 
         constraint_value(
@@ -86,62 +81,73 @@ public final class PlatformProducerTest extends ProducerTestCase {
             name = "alias",
             actual = ":basic",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Label platformLabel = Label.parseCanonicalUnchecked("//lookup:alias");
-    PlatformValue result = fetch(platformLabel, /* flagAliasMappings= */ ImmutableMap.of());
+        val platformLabel: Label? = Label.parseCanonicalUnchecked("//lookup:alias")
+        val result: PlatformValue = fetch(platformLabel,  /* flagAliasMappings= */ImmutableMap.of<String?, Label?>())
 
-    assertThat(result).isNotNull();
-    assertThat(result.platformInfo().label())
-        .isEqualTo(Label.parseCanonicalUnchecked("//lookup:basic"));
-    assertThat(result.parsedFlags().get().parsingResult().canonicalize())
-        .containsExactly("--cpu=fast");
-  }
+        assertThat(result).isNotNull()
+        assertThat(result.platformInfo().label())
+            .isEqualTo(Label.parseCanonicalUnchecked("//lookup:basic"))
+        assertThat(result.parsedFlags().get().parsingResult().canonicalize())
+            .containsExactly("--cpu=fast")
+    }
 
-  @Test
-  public void invalidPlatformError() throws Exception {
-    scratch.overwriteFile(
-        "lookup/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun invalidPlatformError() {
+        scratch.overwriteFile(
+            "lookup/BUILD",
+            """
         filegroup(
             name = "basic",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Label platformLabel = Label.parseCanonicalUnchecked("//lookup:basic");
-    assertThrows(
-        InvalidPlatformException.class,
-        () -> fetch(platformLabel, /* flagAliasMappings= */ ImmutableMap.of()));
-  }
+        val platformLabel: Label? = Label.parseCanonicalUnchecked("//lookup:basic")
+        Assert.assertThrows<T?>(
+            InvalidPlatformException::class.java,
+            ThrowingRunnable { fetch(platformLabel,  /* flagAliasMappings= */ImmutableMap.of<String?, Label?>()) })
+    }
 
-  @Test
-  public void optionsParsingError() throws Exception {
-    scratch.overwriteFile(
-        "lookup/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun optionsParsingError() {
+        scratch.overwriteFile(
+            "lookup/BUILD",
+            """
         platform(
             name = "basic",
             flags = ["--//starlark:flag=does_not_exist"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Label platformLabel = Label.parseCanonicalUnchecked("//lookup:basic");
-    assertThrows(
-        OptionsParsingException.class,
-        () -> fetch(platformLabel, /* flagAliasMappings= */ ImmutableMap.of()));
-  }
+        val platformLabel: Label? = Label.parseCanonicalUnchecked("//lookup:basic")
+        Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            ThrowingRunnable { fetch(platformLabel,  /* flagAliasMappings= */ImmutableMap.of<String?, Label?>()) })
+    }
 
-  @Test
-  public void flagAliasUsesCanonicalFlag() throws Exception {
-    scratch.overwriteFile(
-        "starlark/flags.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun flagAliasUsesCanonicalFlag() {
+        scratch.overwriteFile(
+            "starlark/flags.bzl",
+            """
         string_flag = rule(implementation = lambda ctx: [], build_setting = config.string(flag = True))
         bool_flag = rule(implementation = lambda ctx: [], build_setting = config.bool(flag = True))
-        """);
-    scratch.overwriteFile(
-        "starlark/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "starlark/BUILD",
+            """
         load("//starlark:flags.bzl", "string_flag", "bool_flag")
         string_flag(
             name = "actual1",
@@ -156,10 +162,13 @@ public final class PlatformProducerTest extends ProducerTestCase {
             build_setting_default = True,
         )
 
-        """);
-    scratch.overwriteFile(
-        "lookup/BUILD",
-        """
+        
+
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "lookup/BUILD",
+            """
         constraint_setting(name = "setting1")
         constraint_value(
             name = "value1",
@@ -175,63 +184,65 @@ public final class PlatformProducerTest extends ProducerTestCase {
                 "--compilation_mode=opt",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    PlatformValue result =
-        fetch(
-            Label.parseCanonicalUnchecked("//lookup:basic"),
-            /* flagAliasMappings= */ ImmutableMap.of(
-                "aliasname1", Label.parseCanonicalUnchecked("//starlark:actual1"),
-                "aliasname2", Label.parseCanonicalUnchecked("//starlark:actual2"),
-                "aliasname3", Label.parseCanonicalUnchecked("//starlark:actual3")));
+        val result: PlatformValue =
+            fetch(
+                Label.parseCanonicalUnchecked("//lookup:basic"),  /* flagAliasMappings= */
+                ImmutableMap.of<K?, V?>(
+                    "aliasname1", Label.parseCanonicalUnchecked("//starlark:actual1"),
+                    "aliasname2", Label.parseCanonicalUnchecked("//starlark:actual2"),
+                    "aliasname3", Label.parseCanonicalUnchecked("//starlark:actual3")
+                )
+            )
 
-    // Native flags:
-    assertThat(result.parsedFlags().get().parsingResult().canonicalize())
-        .containsExactly("--compilation_mode=opt");
-    // Starlark flags:
-    assertThat(result.parsedFlags().get().parsingResult().getStarlarkOptions())
-        .containsExactly(
-            "//starlark:actual1", "fast", "//starlark:actual2", true, "//starlark:actual3", false);
-  }
-
-  private PlatformValue fetch(Label platformLabel, ImmutableMap<String, Label> flagAliasMappings)
-      throws InvalidPlatformException, OptionsParsingException, InterruptedException {
-    PlatformInfoSink sink = new PlatformInfoSink();
-    PlatformProducer producer =
-        new PlatformProducer(platformLabel, flagAliasMappings, sink, StateMachine.DONE);
-    boolean success = executeProducer(producer);
-    if (sink.platformValue != null) {
-      assertThat(success).isTrue();
-      return sink.platformValue;
-    } else {
-      assertThat(success).isFalse(); // Error comes from a Skyframe dep.
-      if (sink.platformInfoError != null) {
-        throw sink.platformInfoError;
-      } else {
-        throw sink.optionsParsingError;
-      }
-    }
-  }
-
-  /** Receiver for platform info from {@link PlatformProducer}. */
-  private static class PlatformInfoSink implements PlatformProducer.ResultSink {
-    @Nullable private PlatformValue platformValue = null;
-    @Nullable private InvalidPlatformException platformInfoError = null;
-    @Nullable private OptionsParsingException optionsParsingError = null;
-
-    @Override
-    public void acceptPlatformValue(PlatformValue value) {
-      this.platformValue = value;
+        // Native flags:
+        assertThat(result.parsedFlags().get().parsingResult().canonicalize())
+            .containsExactly("--compilation_mode=opt")
+        // Starlark flags:
+        assertThat(result.parsedFlags().get().parsingResult().getStarlarkOptions())
+            .containsExactly(
+                "//starlark:actual1", "fast", "//starlark:actual2", true, "//starlark:actual3", false
+            )
     }
 
-    @Override
-    public void acceptPlatformInfoError(InvalidPlatformException error) {
-      this.platformInfoError = error;
+    @Throws(InvalidPlatformException::class, OptionsParsingException::class, InterruptedException::class)
+    private fun fetch(platformLabel: Label?, flagAliasMappings: ImmutableMap<String?, Label?>?): PlatformValue {
+        val sink = PlatformInfoSink()
+        val producer: PlatformProducer =
+            PlatformProducer(platformLabel, flagAliasMappings, sink, StateMachine.DONE)
+        val success = executeProducer(producer)
+        if (sink.platformValue != null) {
+            Truth.assertThat(success).isTrue()
+            return sink.platformValue
+        } else {
+            Truth.assertThat(success).isFalse() // Error comes from a Skyframe dep.
+            if (sink.platformInfoError != null) {
+                throw sink.platformInfoError
+            } else {
+                throw sink.optionsParsingError
+            }
+        }
     }
 
-    @Override
-    public void acceptOptionsParsingError(OptionsParsingException error) {
-      this.optionsParsingError = error;
+    /** Receiver for platform info from [PlatformProducer].  */
+    private class PlatformInfoSink : PlatformProducer.ResultSink {
+        private var platformValue: PlatformValue? = null
+        private var platformInfoError: InvalidPlatformException? = null
+        private var optionsParsingError: OptionsParsingException? = null
+
+        public override fun acceptPlatformValue(value: PlatformValue?) {
+            this.platformValue = value
+        }
+
+        public override fun acceptPlatformInfoError(error: InvalidPlatformException?) {
+            this.platformInfoError = error
+        }
+
+        public override fun acceptOptionsParsingError(error: OptionsParsingException?) {
+            this.optionsParsingError = error
+        }
     }
-  }
 }

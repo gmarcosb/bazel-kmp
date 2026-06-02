@@ -11,61 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsClass;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
 /**
  * Rule and configuration class definitions for testing late-bound split attributes.
  */
-public class LateBoundSplitUtil {
-  /** A custom {@link FragmentOptions} with the option to be split. */
-  @OptionsClass
-  public abstract static class TestOptions extends FragmentOptions { // public for options loader
+object LateBoundSplitUtil {
+    /**
+     * A custom rule that requires [TestFragment].
+     */
+    val RULE_WITH_TEST_FRAGMENT: RuleDefinition = MockRule {
+        MockRule.Companion.define(
+            "rule_with_test_fragment",
+            MockRuleCustomBehavior { builder: RuleClass.Builder?, env: RuleDefinitionEnvironment? ->
+                builder.requiresConfigurationFragments(
+                    TestFragment::class.java
+                )
+            })
+    } as MockRule
 
-    @Option(
-        name = "foo",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "")
-    public abstract String getFooFlag();
-
-    public abstract void setFooFlag(String value);
-  }
-
-  /** The {@link Fragment} that contains the options. */
-  @RequiresOptions(options = {TestOptions.class})
-  public static final class TestFragment extends Fragment {
-    private final BuildOptions buildOptions;
-
-    public TestFragment(BuildOptions buildOptions) {
-      this.buildOptions = buildOptions;
+    /** Returns the [TestOptions] from the given configuration.  */
+    fun getOptions(config: BuildConfigurationValue): TestOptions {
+        return config.getOptions().get(TestOptions::class.java)
     }
-    // Getter required to satisfy AutoCodec.
-    public BuildOptions getBuildOptions() {
-      return buildOptions;
+
+    /** A custom [FragmentOptions] with the option to be split.  */
+    @OptionsClass
+    abstract class TestOptions : FragmentOptions() {
+        @get:com.google.devtools.common.options.Option(
+            name = "foo",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = ""
+        )
+        abstract var fooFlag: String?
     }
-  }
 
-  /**
-   * A custom rule that requires {@link TestFragment}.
-   */
-  static final RuleDefinition RULE_WITH_TEST_FRAGMENT = (MockRule) () -> MockRule.define(
-      "rule_with_test_fragment",
-      (builder, env) -> builder.requiresConfigurationFragments(TestFragment.class));
+    /** The [Fragment] that contains the options.  */
+    @RequiresOptions(options = [TestOptions::class])
+    class TestFragment(buildOptions: BuildOptions?) : Fragment() {
+        private val buildOptions: BuildOptions?
 
-  /** Returns the {@link TestOptions} from the given configuration. */
-  static TestOptions getOptions(BuildConfigurationValue config) {
-    return config.getOptions().get(TestOptions.class);
-  }
+        init {
+            this.buildOptions = buildOptions
+        }
+
+        // Getter required to satisfy AutoCodec.
+        fun getBuildOptions(): BuildOptions? {
+            return buildOptions
+        }
+    }
 }

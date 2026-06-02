@@ -11,24 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.PathFragment
 
 /**
  * Tests for the Util helper class.
  */
-@RunWith(JUnit4.class)
-public class UtilTest {
-
-  @Test
-  public void testContainsHyphen() throws Exception {
-    assertThat(Util.containsHyphen(PathFragment.create("foo/bar/with-hyphen"))).isTrue();
-    assertThat(Util.containsHyphen(PathFragment.create("foo/bar/no/hyphen"))).isFalse();
-  }
+@RunWith(JUnit4::class)
+class UtilTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testContainsHyphen() {
+        assertThat(Util.containsHyphen(PathFragment.create("foo/bar/with-hyphen"))).isTrue()
+        assertThat(Util.containsHyphen(PathFragment.create("foo/bar/no/hyphen"))).isFalse()
+    }
 }

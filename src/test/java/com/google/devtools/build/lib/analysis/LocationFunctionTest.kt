@@ -11,154 +11,165 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.analysis.LocationExpander.LocationFunction
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Unit tests for [LocationExpander.LocationFunction].  */
+@RunWith(JUnit4::class)
+class LocationFunctionTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun absoluteAndRelativeLabels() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", false).add("//foo", "/exec/src/bar").build()
+        assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("src/bar")
+        assertThat(func.apply(":foo", RepositoryMapping.EMPTY, null)).isEqualTo("src/bar")
+        assertThat(func.apply("foo", RepositoryMapping.EMPTY, null)).isEqualTo("src/bar")
+    }
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.LocationExpander.LocationFunction;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun pathUnderExecRootUsesDotSlash() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", false).add("//foo", "/exec/bar").build()
+        assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("./bar")
+    }
 
-/** Unit tests for {@link LocationExpander.LocationFunction}. */
-@RunWith(JUnit4.class)
-public class LocationFunctionTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noSuchLabel() {
+        val func: LocationFunction = LocationFunctionBuilder("//foo", false).build()
+        val expected: java.lang.IllegalStateException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable { func.apply("//bar", RepositoryMapping.EMPTY, null) })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .isEqualTo(
+                "label '//bar:bar' in $(location) expression is not a declared prerequisite of this "
+                        + "rule"
+            )
+    }
 
-  @Test
-  public void absoluteAndRelativeLabels() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", false).add("//foo", "/exec/src/bar").build();
-    assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("src/bar");
-    assertThat(func.apply(":foo", RepositoryMapping.EMPTY, null)).isEqualTo("src/bar");
-    assertThat(func.apply("foo", RepositoryMapping.EMPTY, null)).isEqualTo("src/bar");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun emptyList() {
+        val func: LocationFunction = LocationFunctionBuilder("//foo", false).add("//foo").build()
+        val expected: java.lang.IllegalStateException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable { func.apply("//foo", RepositoryMapping.EMPTY, null) })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .isEqualTo("label '//foo:foo' in $(location) expression expands to no files")
+    }
 
-  @Test
-  public void pathUnderExecRootUsesDotSlash() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", false).add("//foo", "/exec/bar").build();
-    assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("./bar");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun tooMany() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", false).add("//foo", "/exec/1", "/exec/2").build()
+        val expected: java.lang.IllegalStateException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable { func.apply("//foo", RepositoryMapping.EMPTY, null) })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .isEqualTo(
+                ("label '//foo:foo' in $(location) expression expands to more than one file, "
+                        + "please use $(locations //foo:foo) instead.  Files (at most 5 shown) are: "
+                        + "[./1, ./2]")
+            )
+    }
 
-  @Test
-  public void noSuchLabel() throws Exception {
-    LocationFunction func = new LocationFunctionBuilder("//foo", false).build();
-    IllegalStateException expected =
-        assertThrows(
-            IllegalStateException.class, () -> func.apply("//bar", RepositoryMapping.EMPTY, null));
-    assertThat(expected)
-        .hasMessageThat()
-        .isEqualTo(
-            "label '//bar:bar' in $(location) expression is not a declared prerequisite of this "
-                + "rule");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noSuchLabelMultiple() {
+        val func: LocationFunction = LocationFunctionBuilder("//foo", true).build()
+        val expected: java.lang.IllegalStateException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable { func.apply("//bar", RepositoryMapping.EMPTY, null) })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .isEqualTo(
+                "label '//bar:bar' in $(locations) expression is not a declared prerequisite of this "
+                        + "rule"
+            )
+    }
 
-  @Test
-  public void emptyList() throws Exception {
-    LocationFunction func = new LocationFunctionBuilder("//foo", false).add("//foo").build();
-    IllegalStateException expected =
-        assertThrows(
-            IllegalStateException.class, () -> func.apply("//foo", RepositoryMapping.EMPTY, null));
-    assertThat(expected)
-        .hasMessageThat()
-        .isEqualTo("label '//foo:foo' in $(location) expression expands to no files");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun fileWithSpace() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", false).add("//foo", "/exec/file/with space").build()
+        assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("'file/with space'")
+    }
 
-  @Test
-  public void tooMany() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", false).add("//foo", "/exec/1", "/exec/2").build();
-    IllegalStateException expected =
-        assertThrows(
-            IllegalStateException.class, () -> func.apply("//foo", RepositoryMapping.EMPTY, null));
-    assertThat(expected)
-        .hasMessageThat()
-        .isEqualTo(
-            "label '//foo:foo' in $(location) expression expands to more than one file, "
-                + "please use $(locations //foo:foo) instead.  Files (at most 5 shown) are: "
-                + "[./1, ./2]");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleFiles() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", true)
+                .add("//foo", "/exec/foo/bar", "/exec/out/foo/foobar")
+                .build()
+        assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("foo/bar foo/foobar")
+    }
 
-  @Test
-  public void noSuchLabelMultiple() throws Exception {
-    LocationFunction func = new LocationFunctionBuilder("//foo", true).build();
-    IllegalStateException expected =
-        assertThrows(
-            IllegalStateException.class, () -> func.apply("//bar", RepositoryMapping.EMPTY, null));
-    assertThat(expected)
-        .hasMessageThat()
-        .isEqualTo(
-            "label '//bar:bar' in $(locations) expression is not a declared prerequisite of this "
-                + "rule");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun filesWithSpace() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", true)
+                .add("//foo", "/exec/file/with space", "/exec/file/with spaces ")
+                .build()
+        assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null))
+            .isEqualTo("'file/with space' 'file/with spaces '")
+    }
 
-  @Test
-  public void fileWithSpace() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", false).add("//foo", "/exec/file/with space").build();
-    assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("'file/with space'");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execPath() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", true)
+                .setPathType(LocationFunction.PathType.EXEC)
+                .add("//foo", "/exec/bar", "/exec/out/foobar")
+                .build()
+        assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("./bar out/foobar")
+    }
 
-  @Test
-  public void multipleFiles() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", true)
-            .add("//foo", "/exec/foo/bar", "/exec/out/foo/foobar")
-            .build();
-    assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("foo/bar foo/foobar");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun rlocationPath() {
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", true)
+                .setPathType(LocationFunction.PathType.RLOCATION)
+                .add("//foo", "/exec/bar", "/exec/out/foobar")
+                .build()
+        assertThat(func.apply("//foo", RepositoryMapping.EMPTY, "workspace"))
+            .isEqualTo("workspace/bar workspace/foobar")
+    }
 
-  @Test
-  public void filesWithSpace() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", true)
-            .add("//foo", "/exec/file/with space", "/exec/file/with spaces ")
-            .build();
-    assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null))
-        .isEqualTo("'file/with space' 'file/with spaces '");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun locationFunctionWithMappingReplace() {
+        val b: RepositoryName = RepositoryName.create("b")
+        val repositoryMapping: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(com.google.common.collect.ImmutableMap.of<K?, V?>("a", b), RepositoryName.MAIN)
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", false).add("@b//foo", "/exec/src/bar").build()
+        assertThat(func.apply("@a//foo", repositoryMapping, null)).isEqualTo("src/bar")
+    }
 
-  @Test
-  public void execPath() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", true)
-            .setPathType(LocationFunction.PathType.EXEC)
-            .add("//foo", "/exec/bar", "/exec/out/foobar")
-            .build();
-    assertThat(func.apply("//foo", RepositoryMapping.EMPTY, null)).isEqualTo("./bar out/foobar");
-  }
-
-  @Test
-  public void rlocationPath() throws Exception {
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", true)
-            .setPathType(LocationFunction.PathType.RLOCATION)
-            .add("//foo", "/exec/bar", "/exec/out/foobar")
-            .build();
-    assertThat(func.apply("//foo", RepositoryMapping.EMPTY, "workspace"))
-        .isEqualTo("workspace/bar workspace/foobar");
-  }
-
-  @Test
-  public void locationFunctionWithMappingReplace() throws Exception {
-    RepositoryName b = RepositoryName.create("b");
-    var repositoryMapping = RepositoryMapping.create(ImmutableMap.of("a", b), RepositoryName.MAIN);
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", false).add("@b//foo", "/exec/src/bar").build();
-    assertThat(func.apply("@a//foo", repositoryMapping, null)).isEqualTo("src/bar");
-  }
-
-  @Test
-  public void locationFunctionWithMappingIgnoreRepo() throws Exception {
-    RepositoryName b = RepositoryName.create("b");
-    var repositoryMapping = RepositoryMapping.create(ImmutableMap.of("a", b), RepositoryName.MAIN);
-    LocationFunction func =
-        new LocationFunctionBuilder("//foo", false).add("@@potato//foo", "/exec/src/bar").build();
-    assertThat(func.apply("@@potato//foo", repositoryMapping, null)).isEqualTo("src/bar");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun locationFunctionWithMappingIgnoreRepo() {
+        val b: RepositoryName = RepositoryName.create("b")
+        val repositoryMapping: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(com.google.common.collect.ImmutableMap.of<K?, V?>("a", b), RepositoryName.MAIN)
+        val func: LocationFunction =
+            LocationFunctionBuilder("//foo", false).add("@@potato//foo", "/exec/src/bar").build()
+        assertThat(func.apply("@@potato//foo", repositoryMapping, null)).isEqualTo("src/bar")
+    }
 }

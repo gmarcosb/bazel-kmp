@@ -11,35 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+/** Syntax node for a statement consisting of an expression evaluated for effect.  */
+class ExpressionStatement internal constructor(locs: FileLocations?, expression: Expression) :
+    Statement(locs, Kind.EXPRESSION) {
+    @kotlin.jvm.JvmField
+    val expression: Expression
 
-/** Syntax node for a statement consisting of an expression evaluated for effect. */
-public final class ExpressionStatement extends Statement {
+    init {
+        this.expression = expression
+    }
 
-  private final Expression expression;
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 
-  ExpressionStatement(FileLocations locs, Expression expression) {
-    super(locs, Kind.EXPRESSION);
-    this.expression = expression;
-  }
+    override fun getStartOffset(): Int {
+        return expression.getStartOffset()
+    }
 
-  public Expression getExpression() {
-    return expression;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
-
-  @Override
-  public int getStartOffset() {
-    return expression.getStartOffset();
-  }
-
-  @Override
-  public int getEndOffset() {
-    return expression.getEndOffset();
-  }
+    override fun getEndOffset(): Int {
+        return expression.getEndOffset()
+    }
 }

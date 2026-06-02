@@ -11,300 +11,371 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config.transitions;
+package com.google.devtools.build.lib.analysis.config.transitions
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.EventKind;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** [ComparingTransition] tests.  */
+@RunWith(JUnit4::class)
+class ComparingTransitionTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun sameOutputs() {
+        val trans1: PatchTransition = PatchTransition { options, eventHandler -> options.underlying() }
+        val trans2: PatchTransition = PatchTransition { options, eventHandler -> options.underlying() }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-/** {@link ComparingTransition} tests. */
-@RunWith(JUnit4.class)
-public final class ComparingTransitionTest extends BuildViewTestCase {
-  @Test
-  public void sameOutputs() throws Exception {
-    PatchTransition trans1 = (options, eventHandler) -> options.underlying();
-    PatchTransition trans2 = (options, eventHandler) -> options.underlying();
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("unique fragments in trans1 mode: none")
+        Truth.assertThat(msg).contains("unique fragments in trans2 mode: none")
+        Truth.assertThat(msg).contains("total option differences: 0")
+    }
 
-    assertThat(msg).contains("unique fragments in trans1 mode: none");
-    assertThat(msg).contains("unique fragments in trans2 mode: none");
-    assertThat(msg).contains("total option differences: 0");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentNativeFlag() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java).setStampBinaries(true)
+                toOptions
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java).setStampBinaries(false)
+                toOptions
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentNativeFlag() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setStampBinaries(true);
-          return toOptions;
-        };
-    PatchTransition trans2 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setStampBinaries(false);
-          return toOptions;
-        };
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 1")
+        Truth.assertThat(msg).contains("CoreOptions stamp: trans1 mode=true, trans2 mode=false")
+    }
 
-    assertThat(msg).contains("total option differences: 1");
-    assertThat(msg).contains("CoreOptions stamp: trans1 mode=true, trans2 mode=false");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentDefineValues() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions
+                    .get(CoreOptions::class.java)
+                    .setCommandLineBuildVariables(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            java.util.Map.entry<K?, V?>(
+                                "myvar",
+                                "1"
+                            )
+                        )
+                    )
+                toOptions
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions
+                    .get(CoreOptions::class.java)
+                    .setCommandLineBuildVariables(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            java.util.Map.entry<K?, V?>(
+                                "myvar",
+                                "2"
+                            )
+                        )
+                    )
+                toOptions
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentDefineValues() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions
-              .get(CoreOptions.class)
-              .setCommandLineBuildVariables(ImmutableList.of(Map.entry("myvar", "1")));
-          return toOptions;
-        };
-    PatchTransition trans2 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions
-              .get(CoreOptions.class)
-              .setCommandLineBuildVariables(ImmutableList.of(Map.entry("myvar", "2")));
-          return toOptions;
-        };
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 1")
+        Truth.assertThat(msg).contains("user-defined define myvar (index 0): trans1 mode=1, trans2 mode=2")
+    }
 
-    assertThat(msg).contains("total option differences: 1");
-    assertThat(msg).contains("user-defined define myvar (index 0): trans1 mode=1, trans2 mode=2");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentDefineOrder() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions
+                    .get(CoreOptions::class.java)
+                    .setCommandLineBuildVariables(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            java.util.Map.entry<K?, V?>("var1", "1"),
+                            java.util.Map.entry<K?, V?>("var2", "2")
+                        )
+                    )
+                toOptions
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions
+                    .get(CoreOptions::class.java)
+                    .setCommandLineBuildVariables(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            java.util.Map.entry<K?, V?>("var2", "2"),
+                            java.util.Map.entry<K?, V?>("var1", "1")
+                        )
+                    )
+                toOptions
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentDefineOrder() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions
-              .get(CoreOptions.class)
-              .setCommandLineBuildVariables(
-                  ImmutableList.of(Map.entry("var1", "1"), Map.entry("var2", "2")));
-          return toOptions;
-        };
-    PatchTransition trans2 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions
-              .get(CoreOptions.class)
-              .setCommandLineBuildVariables(
-                  ImmutableList.of(Map.entry("var2", "2"), Map.entry("var1", "1")));
-          return toOptions;
-        };
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 4")
+        Truth.assertThat(msg).contains("only in trans1 mode: --user-defined define var1 (index 0)=1")
+        Truth.assertThat(msg).contains("only in trans1 mode: --user-defined define var2 (index 1)=2")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined define var2 (index 0)=2")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined define var1 (index 1)=1")
+    }
 
-    assertThat(msg).contains("total option differences: 4");
-    assertThat(msg).contains("only in trans1 mode: --user-defined define var1 (index 0)=1");
-    assertThat(msg).contains("only in trans1 mode: --user-defined define var2 (index 1)=2");
-    assertThat(msg).contains("only in trans2 mode: --user-defined define var2 (index 0)=2");
-    assertThat(msg).contains("only in trans2 mode: --user-defined define var1 (index 1)=1");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentFeaturesValues() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setDefaultFeatures(com.google.common.collect.ImmutableList.of<E?>("a"))
+                toOptions
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setDefaultFeatures(com.google.common.collect.ImmutableList.of<E?>("a", "b"))
+                toOptions
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentFeaturesValues() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setDefaultFeatures(ImmutableList.of("a"));
-          return toOptions;
-        };
-    PatchTransition trans2 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setDefaultFeatures(ImmutableList.of("a", "b"));
-          return toOptions;
-        };
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 1")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined feature b (index 1)")
+    }
 
-    assertThat(msg).contains("total option differences: 1");
-    assertThat(msg).contains("only in trans2 mode: --user-defined feature b (index 1)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentFeaturesOrder() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setDefaultFeatures(com.google.common.collect.ImmutableList.of<E?>("a", "b"))
+                toOptions
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setDefaultFeatures(com.google.common.collect.ImmutableList.of<E?>("b", "a"))
+                toOptions
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentFeaturesOrder() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setDefaultFeatures(ImmutableList.of("a", "b"));
-          return toOptions;
-        };
-    PatchTransition trans2 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setDefaultFeatures(ImmutableList.of("b", "a"));
-          return toOptions;
-        };
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 4")
+        Truth.assertThat(msg).contains("only in trans1 mode: --user-defined feature a (index 0)")
+        Truth.assertThat(msg).contains("only in trans1 mode: --user-defined feature b (index 1)")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined feature b (index 0)")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined feature a (index 1)")
+    }
 
-    assertThat(msg).contains("total option differences: 4");
-    assertThat(msg).contains("only in trans1 mode: --user-defined feature a (index 0)");
-    assertThat(msg).contains("only in trans1 mode: --user-defined feature b (index 1)");
-    assertThat(msg).contains("only in trans2 mode: --user-defined feature b (index 0)");
-    assertThat(msg).contains("only in trans2 mode: --user-defined feature a (index 1)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentHostFeaturesValues() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setHostFeatures(com.google.common.collect.ImmutableList.of<E?>("a"))
+                toOptions
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setHostFeatures(com.google.common.collect.ImmutableList.of<E?>("a", "b"))
+                toOptions
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentHostFeaturesValues() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setHostFeatures(ImmutableList.of("a"));
-          return toOptions;
-        };
-    PatchTransition trans2 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setHostFeatures(ImmutableList.of("a", "b"));
-          return toOptions;
-        };
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 1")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined host feature b (index 1)")
+    }
 
-    assertThat(msg).contains("total option differences: 1");
-    assertThat(msg).contains("only in trans2 mode: --user-defined host feature b (index 1)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentHostFeaturesOrder() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setHostFeatures(com.google.common.collect.ImmutableList.of<E?>("a", "b"))
+                toOptions
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                val toOptions: BuildOptions = options.underlying().clone()
+                toOptions.get(CoreOptions::class.java)
+                    .setHostFeatures(com.google.common.collect.ImmutableList.of<E?>("b", "a"))
+                toOptions
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentHostFeaturesOrder() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setHostFeatures(ImmutableList.of("a", "b"));
-          return toOptions;
-        };
-    PatchTransition trans2 =
-        (options, eventHandler) -> {
-          BuildOptions toOptions = options.underlying().clone();
-          toOptions.get(CoreOptions.class).setHostFeatures(ImmutableList.of("b", "a"));
-          return toOptions;
-        };
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 4")
+        Truth.assertThat(msg).contains("only in trans1 mode: --user-defined host feature a (index 0)")
+        Truth.assertThat(msg).contains("only in trans1 mode: --user-defined host feature b (index 1)")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined host feature b (index 0)")
+        Truth.assertThat(msg).contains("only in trans2 mode: --user-defined host feature a (index 1)")
+    }
 
-    assertThat(msg).contains("total option differences: 4");
-    assertThat(msg).contains("only in trans1 mode: --user-defined host feature a (index 0)");
-    assertThat(msg).contains("only in trans1 mode: --user-defined host feature b (index 1)");
-    assertThat(msg).contains("only in trans2 mode: --user-defined host feature b (index 0)");
-    assertThat(msg).contains("only in trans2 mode: --user-defined host feature a (index 1)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun differentStarlarkFlagValues() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                options.underlying().toBuilder()
+                    .addStarlarkOption(Label.parseCanonicalUnchecked("//foo"), "1")
+                    .build()
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                options.underlying().toBuilder()
+                    .addStarlarkOption(Label.parseCanonicalUnchecked("//foo"), "2")
+                    .build()
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void differentStarlarkFlagValues() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) ->
-            options.underlying().toBuilder()
-                .addStarlarkOption(Label.parseCanonicalUnchecked("//foo"), "1")
-                .build();
-    PatchTransition trans2 =
-        (options, eventHandler) ->
-            options.underlying().toBuilder()
-                .addStarlarkOption(Label.parseCanonicalUnchecked("//foo"), "2")
-                .build();
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
+        Truth.assertThat(msg).contains("total option differences: 1")
+        Truth.assertThat(msg).contains("--user-defined  //foo:foo (index 0): trans1 mode=1, trans2 mode=2")
+    }
 
-    assertThat(msg).contains("total option differences: 1");
-    assertThat(msg).contains("--user-defined  //foo:foo (index 0): trans1 mode=1, trans2 mode=2");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkFlagOrderAutomaticallySorted() {
+        val trans1: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                options.underlying().toBuilder()
+                    .addStarlarkOption(Label.parseCanonicalUnchecked("//a"), "a")
+                    .addStarlarkOption(Label.parseCanonicalUnchecked("//b"), "b")
+                    .build()
+            }
+        val trans2: PatchTransition =
+            PatchTransition { options, eventHandler ->
+                options.underlying().toBuilder()
+                    .addStarlarkOption(Label.parseCanonicalUnchecked("//b"), "b")
+                    .addStarlarkOption(Label.parseCanonicalUnchecked("//a"), "a")
+                    .build()
+            }
+        val fromOptions: BuildOptionsView =
+            BuildOptionsView(
+                targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses()
+            )
 
-  @Test
-  public void starlarkFlagOrderAutomaticallySorted() throws Exception {
-    PatchTransition trans1 =
-        (options, eventHandler) ->
-            options.underlying().toBuilder()
-                .addStarlarkOption(Label.parseCanonicalUnchecked("//a"), "a")
-                .addStarlarkOption(Label.parseCanonicalUnchecked("//b"), "b")
-                .build();
-    PatchTransition trans2 =
-        (options, eventHandler) ->
-            options.underlying().toBuilder()
-                .addStarlarkOption(Label.parseCanonicalUnchecked("//b"), "b")
-                .addStarlarkOption(Label.parseCanonicalUnchecked("//a"), "a")
-                .build();
-    BuildOptionsView fromOptions =
-        new BuildOptionsView(
-            targetConfig.getOptions(), targetConfig.getOptions().getFragmentClasses());
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ComparingTransition(trans1, "trans1", trans2, "trans2", { b -> true })
+                .patch(fromOptions, reporter)
+        val msg: String? =
+            com.google.common.collect.Iterables.getOnlyElement<com.google.devtools.build.lib.events.Event?>(
+                eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+            ).getMessage()
 
-    var unused =
-        new ComparingTransition(trans1, "trans1", trans2, "trans2", b -> true)
-            .patch(fromOptions, reporter);
-    String msg = Iterables.getOnlyElement(eventCollector.filtered(EventKind.INFO)).getMessage();
-
-    assertThat(msg).contains("total option differences: 0");
-  }
+        Truth.assertThat(msg).contains("total option differences: 0")
+    }
 }

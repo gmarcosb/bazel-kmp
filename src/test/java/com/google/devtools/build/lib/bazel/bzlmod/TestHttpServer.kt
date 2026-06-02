@@ -12,76 +12,71 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.repository.downloader.HttpStream.Factory.create
+import com.google.devtools.build.lib.bazel.repository.downloader.ProgressInputStream.Factory.create
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpHandler
+import com.sun.net.httpserver.HttpServer
+import org.junit.rules.ExternalResource
+import java.net.InetSocketAddress
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+/** A fake HTTP server for testing.  */
+class TestHttpServer : ExternalResource {
+    private var server: HttpServer? = null
+    private var authToken: String? = null
 
-import com.google.common.base.Joiner;
-import com.sun.net.httpserver.HttpServer;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.util.List;
-import org.junit.rules.ExternalResource;
+    constructor(authToken: String) {
+        this.authToken = authToken
+    }
 
-/** A fake HTTP server for testing. */
-public class TestHttpServer extends ExternalResource {
-  private static final Joiner JOINER = Joiner.on('\n');
-  private HttpServer server;
-  private String authToken;
+    constructor()
 
-  public TestHttpServer(String authToken) {
-    this.authToken = authToken;
-  }
+    @Throws(Throwable::class)
+    override fun before() {
+        server = HttpServer.create(InetSocketAddress(0), 0)
+    }
 
-  public TestHttpServer() {}
+    override fun after() {
+        server.stop(0)
+    }
 
-  @Override
-  protected void before() throws Throwable {
-    server = HttpServer.create(new InetSocketAddress(0), 0);
-  }
+    fun start() {
+        server.start()
+    }
 
-  @Override
-  protected void after() {
-    server.stop(0);
-  }
+    @kotlin.jvm.JvmOverloads
+    fun serve(path: String?, bytes: ByteArray, useAuth: Boolean = false) {
+        server.createContext(
+            path,
+            HttpHandler { exchange: HttpExchange? ->
+                if (useAuth) {
+                    val tokens: MutableList<String?>? = exchange.getRequestHeaders().get("Authorization")
+                    if (tokens == null || tokens.isEmpty() || (authToken != tokens.get(0))) {
+                        exchange.sendResponseHeaders(401, -1)
+                        return@createContext
+                    }
+                }
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.getResponseBody().use { os ->
+                    os.write(bytes)
+                }
+            })
+    }
 
-  public void start() {
-    server.start();
-  }
+    fun serve(path: String?, vararg lines: String?) {
+        serve(path, JOINER.join(lines).toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+    }
 
-  public void serve(String path, byte[] bytes, boolean useAuth) {
-    server.createContext(
-        path,
-        exchange -> {
-          if (useAuth) {
-            List<String> tokens = exchange.getRequestHeaders().get("Authorization");
-            if (tokens == null || tokens.isEmpty() || !authToken.equals(tokens.get(0))) {
-              exchange.sendResponseHeaders(401, -1);
-              return;
-            }
-          }
-          exchange.sendResponseHeaders(200, bytes.length);
-          try (OutputStream os = exchange.getResponseBody()) {
-            os.write(bytes);
-          }
-        });
-  }
+    fun unserve(path: String?) {
+        server.removeContext(path)
+    }
 
-  public void serve(String path, byte[] bytes) {
-    serve(path, bytes, false);
-  }
+    val url: String?
+        get() = java.net.URI.create("http://[::1]:" + server.getAddress().getPort()).toString()
 
-  public void serve(String path, String... lines) {
-    serve(path, JOINER.join(lines).getBytes(UTF_8));
-  }
-
-  public void unserve(String path) {
-    server.removeContext(path);
-  }
-
-  public String getUrl() {
-    return URI.create("http://[::1]:" + server.getAddress().getPort()).toString();
-  }
+    companion object {
+        private val JOINER: com.google.common.base.Joiner = com.google.common.base.Joiner.on('\n')
+    }
 }

@@ -11,42 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.util.ActionTester;
-import com.google.devtools.build.lib.analysis.util.ActionTester.ActionCombinationFactory;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.vfs.Path;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.Action
 
 /**
  * Tests for the instrumented file manifest creation
  */
-@RunWith(JUnit4.class)
-public class InstrumentedFileManifestActionTest extends AnalysisTestCase {
+@RunWith(JUnit4::class)
+class InstrumentedFileManifestActionTest : AnalysisTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initializeConfiguration() {
+        useConfiguration("--collect_code_coverage")
+    }
 
-  @Before
-  public final void initializeConfiguration() throws Exception {
-    useConfiguration("--collect_code_coverage");
-  }
-
-  /** regression test for b/9607864. */
-  @Test
-  public void testInstrumentedFileManifestConflicts() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    /** regression test for b/9607864.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInstrumentedFileManifestConflicts() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "foo.so",
@@ -57,47 +43,52 @@ public class InstrumentedFileManifestActionTest extends AnalysisTestCase {
             name = "foo",
             srcs = ["Foo.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update("//foo:foo", "//foo:foo.so");
-  }
+        update("//foo:foo", "//foo:foo.so")
+    }
 
-  private Artifact createArtifact(String rootRelativePath) {
-    Path execRoot = outputBase.getRelative("exec");
-    String rootSegment = "out";
-    Path root = execRoot.getRelative(rootSegment);
-    return ActionsTestUtil.createArtifact(
-        ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, rootSegment),
-        root.getRelative(rootRelativePath));
-  }
+    private fun createArtifact(rootRelativePath: String?): Artifact {
+        val execRoot: Path = outputBase.getRelative("exec")
+        val rootSegment = "out"
+        val root: Path = execRoot.getRelative(rootSegment)
+        return ActionsTestUtil.createArtifact(
+            ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, rootSegment),
+            root.getRelative(rootRelativePath)
+        )
+    }
 
-  private enum KeyAttributes {
-    FILE_A,
-    FILE_B
-  }
+    private enum class KeyAttributes {
+        FILE_A,
+        FILE_B
+    }
 
-  /** Regression test for b/28261106. */
-  @Test
-  public void testCacheKey() throws Exception {
-    final Artifact a = createArtifact("foo/a");
-    final Artifact b = createArtifact("foo/b");
-    ActionTester.runTest(
-        KeyAttributes.class,
-        new ActionCombinationFactory<KeyAttributes>() {
-          @Override
-          public Action generate(ImmutableSet<KeyAttributes> attributesToFlip) {
-            NestedSetBuilder<Artifact> files = NestedSetBuilder.stableOrder();
-            if (attributesToFlip.contains(KeyAttributes.FILE_A)) {
-              files.add(a);
-            }
-            if (attributesToFlip.contains(KeyAttributes.FILE_B)) {
-              files.add(b);
-            }
-            Artifact output = createArtifact("foo/manifest");
-            return new InstrumentedFileManifestAction(
-                ActionOwner.SYSTEM_ACTION_OWNER, files.build(), output);
-          }
-        },
-        actionKeyContext);
-  }
+    /** Regression test for b/28261106.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCacheKey() {
+        val a: Artifact = createArtifact("foo/a")
+        val b: Artifact = createArtifact("foo/b")
+        ActionTester.Companion.runTest<KeyAttributes?>(
+            com.google.devtools.build.lib.analysis.test.InstrumentedFileManifestActionTest.KeyAttributes::class.java,
+            object : ActionCombinationFactory<KeyAttributes?> {
+                override fun generate(attributesToFlip: com.google.common.collect.ImmutableSet<KeyAttributes?>): Action? {
+                    val files: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+                    if (attributesToFlip.contains(com.google.devtools.build.lib.analysis.test.InstrumentedFileManifestActionTest.KeyAttributes.FILE_A)) {
+                        files.add(a)
+                    }
+                    if (attributesToFlip.contains(com.google.devtools.build.lib.analysis.test.InstrumentedFileManifestActionTest.KeyAttributes.FILE_B)) {
+                        files.add(b)
+                    }
+                    val output: Artifact = createArtifact("foo/manifest")
+                    return InstrumentedFileManifestAction(
+                        ActionOwner.SYSTEM_ACTION_OWNER, files.build(), output
+                    )
+                }
+            },
+            actionKeyContext
+        )
+    }
 }

@@ -11,178 +11,157 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.starlark;
+package com.google.devtools.build.lib.analysis.starlark
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifactType;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationDepsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SymlinkTargetType;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [UnresolvedSymlinkAction].  */
+@RunWith(JUnit4::class)
+class UnresolvedSymlinkActionTest : BuildViewTestCase() {
+    private var output: Path? = null
+    private var outputArtifact: Artifact.DerivedArtifact? = null
+    private var action: UnresolvedSymlinkAction? = null
 
-/** Tests {@link UnresolvedSymlinkAction}. */
-@RunWith(JUnit4.class)
-public class UnresolvedSymlinkActionTest extends BuildViewTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        val binDir: ArtifactRoot = targetConfig.getBinDirectory(RepositoryName.MAIN)
+        outputArtifact =
+            SpecialArtifact.create(
+                binDir,
+                binDir.getExecPath().getRelative("symlink"),
+                ActionsTestUtil.NULL_ARTIFACT_OWNER,
+                SpecialArtifactType.UNRESOLVED_SYMLINK
+            )
+        outputArtifact.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA)
+        output = outputArtifact.getPath()
+        output.getParentDirectory().createDirectoryAndParents()
+        action =
+            UnresolvedSymlinkAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                "../some/relative/path",
+                SymlinkTargetType.UNSPECIFIED,
+                "Creating unresolved symlink"
+            )
+    }
 
-  private Path output;
-  private Artifact.DerivedArtifact outputArtifact;
-  private UnresolvedSymlinkAction action;
+    @org.junit.Test
+    fun testInputsAreEmpty() {
+        assertThat(action.getInputs().toList()).isEmpty()
+    }
 
-  @Before
-  public final void setUp() throws Exception {
-    ArtifactRoot binDir = targetConfig.getBinDirectory(RepositoryName.MAIN);
-    outputArtifact =
-        SpecialArtifact.create(
-            binDir,
-            binDir.getExecPath().getRelative("symlink"),
-            ActionsTestUtil.NULL_ARTIFACT_OWNER,
-            SpecialArtifactType.UNRESOLVED_SYMLINK);
-    outputArtifact.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
-    output = outputArtifact.getPath();
-    output.getParentDirectory().createDirectoryAndParents();
-    action =
-        UnresolvedSymlinkAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            "../some/relative/path",
-            SymlinkTargetType.UNSPECIFIED,
-            "Creating unresolved symlink");
-  }
+    @org.junit.Test
+    fun testOutputArtifactIsOutput() {
+        assertThat(action.getOutputs()).containsExactly(outputArtifact)
+    }
 
-  @Test
-  public void testInputsAreEmpty() {
-    assertThat(action.getInputs().toList()).isEmpty();
-  }
+    @org.junit.Test
+    fun testTargetAffectsKey() {
+        val action1: UnresolvedSymlinkAction =
+            UnresolvedSymlinkAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                "some/path",
+                SymlinkTargetType.UNSPECIFIED,
+                "Creating unresolved symlink"
+            )
+        val action2: UnresolvedSymlinkAction =
+            UnresolvedSymlinkAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                "some/other/path",
+                SymlinkTargetType.UNSPECIFIED,
+                "Creating unresolved symlink"
+            )
 
-  @Test
-  public void testOutputArtifactIsOutput() {
-    assertThat(action.getOutputs()).containsExactly(outputArtifact);
-  }
+        Truth.assertThat(computeKey(action1)).isNotEqualTo(computeKey(action2))
+    }
 
-  @Test
-  public void testTargetAffectsKey() {
-    UnresolvedSymlinkAction action1 =
-        UnresolvedSymlinkAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            "some/path",
-            SymlinkTargetType.UNSPECIFIED,
-            "Creating unresolved symlink");
-    UnresolvedSymlinkAction action2 =
-        UnresolvedSymlinkAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            "some/other/path",
-            SymlinkTargetType.UNSPECIFIED,
-            "Creating unresolved symlink");
+    @org.junit.Test
+    fun testTargetTypeAffectsKey() {
+        val action1: UnresolvedSymlinkAction =
+            UnresolvedSymlinkAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                "some/path",
+                SymlinkTargetType.UNSPECIFIED,
+                "Creating unresolved symlink"
+            )
+        val action2: UnresolvedSymlinkAction =
+            UnresolvedSymlinkAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                "some/path",
+                SymlinkTargetType.FILE,
+                "Creating unresolved symlink"
+            )
+        val action3: UnresolvedSymlinkAction =
+            UnresolvedSymlinkAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                "some/path",
+                SymlinkTargetType.DIRECTORY,
+                "Creating unresolved symlink"
+            )
 
-    assertThat(computeKey(action1)).isNotEqualTo(computeKey(action2));
-  }
+        Truth.assertThat(computeKey(action1)).isNotEqualTo(computeKey(action2))
+        Truth.assertThat(computeKey(action2)).isNotEqualTo(computeKey(action3))
+    }
 
-  @Test
-  public void testTargetTypeAffectsKey() {
-    UnresolvedSymlinkAction action1 =
-        UnresolvedSymlinkAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            "some/path",
-            SymlinkTargetType.UNSPECIFIED,
-            "Creating unresolved symlink");
-    UnresolvedSymlinkAction action2 =
-        UnresolvedSymlinkAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            "some/path",
-            SymlinkTargetType.FILE,
-            "Creating unresolved symlink");
-    UnresolvedSymlinkAction action3 =
-        UnresolvedSymlinkAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            "some/path",
-            SymlinkTargetType.DIRECTORY,
-            "Creating unresolved symlink");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlink() {
+        val executor: Executor? = TestExecutorBuilder(fileSystem, directories).build()
+        val actionResult: ActionResult =
+            action.execute(
+                ActionExecutionContext(
+                    executor,  /* inputMetadataProvider= */
+                    null,
+                    ActionInputPrefetcher.NONE,
+                    actionKeyContext,  /* outputMetadataStore= */
+                    null,  /* rewindingEnabled= */
+                    false,
+                    LostInputsCheck.NONE,  /* fileOutErr= */
+                    null,
+                    StoredEventHandler(),  /* clientEnv= */
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* actionFileSystem= */
+                    null,
+                    DiscoveredModulesPruner.DEFAULT,
+                    SyscallCache.NO_CACHE,
+                    ThreadStateReceiver.NULL_INSTANCE
+                )
+            )
+        assertThat(actionResult.spawnResults()).isEmpty()
+        assertThat(output.isSymbolicLink()).isTrue()
+        assertThat(output.readSymbolicLink()).isEqualTo(PathFragment.create("../some/relative/path"))
+        assertThat(action.getPrimaryInput()).isNull()
+        assertThat(action.getPrimaryOutput()).isEqualTo(outputArtifact)
+    }
 
-    assertThat(computeKey(action1)).isNotEqualTo(computeKey(action2));
-    assertThat(computeKey(action2)).isNotEqualTo(computeKey(action3));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(action)
+            .addDependency(FileSystem::class.java, scratch.getFileSystem())
+            .addDependency(Root.RootCodecDependencies::class.java, RootCodecDependencies(root))
+            .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
+            .setVerificationFunction(
+                { `in`, out ->
+                    val inAction: UnresolvedSymlinkAction = `in` as UnresolvedSymlinkAction
+                    val outAction: UnresolvedSymlinkAction = out as UnresolvedSymlinkAction
+                    assertThat(inAction.getPrimaryInput()).isEqualTo(outAction.getPrimaryInput())
+                    assertThat(inAction.getPrimaryOutput().getFilename())
+                        .isEqualTo(outAction.getPrimaryOutput().getFilename())
+                    assertThat(inAction.getOwner()).isEqualTo(outAction.getOwner())
+                    assertThat(inAction.getProgressMessage()).isEqualTo(outAction.getProgressMessage())
+                })
+            .runTests()
+    }
 
-  @Test
-  public void testSymlink() throws Exception {
-    Executor executor = new TestExecutorBuilder(fileSystem, directories).build();
-    ActionResult actionResult =
-        action.execute(
-            new ActionExecutionContext(
-                executor,
-                /* inputMetadataProvider= */ null,
-                ActionInputPrefetcher.NONE,
-                actionKeyContext,
-                /* outputMetadataStore= */ null,
-                /* rewindingEnabled= */ false,
-                LostInputsCheck.NONE,
-                /* fileOutErr= */ null,
-                new StoredEventHandler(),
-                /* clientEnv= */ ImmutableMap.of(),
-                /* actionFileSystem= */ null,
-                DiscoveredModulesPruner.DEFAULT,
-                SyscallCache.NO_CACHE,
-                ThreadStateReceiver.NULL_INSTANCE));
-    assertThat(actionResult.spawnResults()).isEmpty();
-    assertThat(output.isSymbolicLink()).isTrue();
-    assertThat(output.readSymbolicLink()).isEqualTo(PathFragment.create("../some/relative/path"));
-    assertThat(action.getPrimaryInput()).isNull();
-    assertThat(action.getPrimaryOutput()).isEqualTo(outputArtifact);
-  }
-
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(action)
-        .addDependency(FileSystem.class, scratch.getFileSystem())
-        .addDependency(Root.RootCodecDependencies.class, new Root.RootCodecDependencies(root))
-        .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
-        .setVerificationFunction(
-            (in, out) -> {
-              UnresolvedSymlinkAction inAction = (UnresolvedSymlinkAction) in;
-              UnresolvedSymlinkAction outAction = (UnresolvedSymlinkAction) out;
-              assertThat(inAction.getPrimaryInput()).isEqualTo(outAction.getPrimaryInput());
-              assertThat(inAction.getPrimaryOutput().getFilename())
-                  .isEqualTo(outAction.getPrimaryOutput().getFilename());
-              assertThat(inAction.getOwner()).isEqualTo(outAction.getOwner());
-              assertThat(inAction.getProgressMessage()).isEqualTo(outAction.getProgressMessage());
-            })
-        .runTests();
-  }
-
-  private String computeKey(UnresolvedSymlinkAction action) {
-    Fingerprint fp = new Fingerprint();
-    action.computeKey(actionKeyContext, /* inputMetadataProvider= */ null, fp);
-    return fp.hexDigestAndReset();
-  }
+    private fun computeKey(action: UnresolvedSymlinkAction): String {
+        val fp: Fingerprint = Fingerprint()
+        action.computeKey(actionKeyContext,  /* inputMetadataProvider= */null, fp)
+        return fp.hexDigestAndReset()
+    }
 }

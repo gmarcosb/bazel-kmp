@@ -11,177 +11,221 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config
 
-package com.google.devtools.build.lib.analysis.config;
+import com.google.devtools.build.lib.analysis.config.ExecutionInfoModifier.Converter
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests [ExecutionInfoModifier].  */
+@RunWith(JUnit4::class)
+class ExecutionInfoModifierTest {
+    private val converter: ExecutionInfoModifier.Converter = Converter()
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.analysis.config.ExecutionInfoModifier.Converter;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests {@link ExecutionInfoModifier}. */
-@RunWith(JUnit4.class)
-public class ExecutionInfoModifierTest {
-
-  private final ExecutionInfoModifier.Converter converter = new Converter();
-
-  @Test
-  public void executionInfoModifier_empty() throws Exception {
-    ExecutionInfoModifier modifier = converter.convert("");
-    assertThat(modifier.matches("Anything")).isFalse();
-  }
-
-  @Test
-  public void executionInfoModifier_singleAdd() throws Exception {
-    ExecutionInfoModifier modifier = converter.convert("Genrule=+x");
-    assertThat(modifier.matches("SomethingElse")).isFalse();
-    assertModifierMatchesAndResults(modifier, "Genrule", ImmutableSet.of("x"));
-  }
-
-  @Test
-  public void executionInfoModifier_singleRemove() throws Exception {
-    ExecutionInfoModifier modifier = converter.convert("Genrule=-x");
-    Map<String, String> info = new HashMap<>();
-    info.put("x", "");
-
-    modifier.apply("Genrule", info);
-
-    assertThat(info).isEmpty();
-  }
-
-  @Test
-  public void executionInfoModifier_multipleExpressions() throws Exception {
-    ExecutionInfoModifier modifier = converter.convert("Genrule=+x,.*=+y,CppCompile=+z");
-    assertModifierMatchesAndResults(modifier, "Genrule", ImmutableSet.of("x", "y"));
-    assertModifierMatchesAndResults(modifier, "CppCompile", ImmutableSet.of("y", "z"));
-    assertModifierMatchesAndResults(modifier, "GenericAction", ImmutableSet.of("y"));
-  }
-
-  @Test
-  public void executionInfoModifier_multipleOptionsAdditive() throws Exception {
-    var modifier1 =
-        converter.convert(
-            "Genrule=+x,CppCompile=-y1,GenericAction=+z,MergeLayers=+t,OtherAction=+o");
-    var modifier2 =
-        converter.convert(
-            "Genrule=-x,CppCompile=+y1,CppCompile=+y2,GenericAction=+z,MergeLayers=+u");
-    var modifier3 = converter.convert(".*=-t");
-
-    var modifiers = ImmutableList.of(modifier1, modifier2, modifier3);
-    assertModifierMatchesAndResults(modifiers, /* additive= */ true, "Genrule", ImmutableSet.of());
-    assertModifierMatchesAndResults(
-        modifiers, /* additive= */ true, "CppCompile", ImmutableSet.of("y1", "y2"));
-    assertModifierMatchesAndResults(
-        modifiers, /* additive= */ true, "GenericAction", ImmutableSet.of("z"));
-    assertModifierMatchesAndResults(
-        modifiers, /* additive= */ true, "MergeLayers", ImmutableSet.of("u"));
-    assertModifierMatchesAndResults(
-        modifiers, /* additive= */ true, "OtherAction", ImmutableSet.of("o"));
-  }
-
-  @Test
-  public void executionInfoModifier_multipleOptionsNonAdditive() throws Exception {
-    var modifier1 =
-        converter.convert(
-            "Genrule=+x,CppCompile=-y1,GenericAction=+z,MergeLayers=+t,OtherAction=+o");
-    var modifier2 =
-        converter.convert(
-            "Genrule=-x,CppCompile=+y1,CppCompile=+y2,GenericAction=+z,MergeLayers=+u");
-    var modifier3 = converter.convert(".*=-t");
-
-    var modifiers1 = ImmutableList.of(modifier1, modifier2);
-
-    assertModifierMatchesAndResults(
-        modifiers1, /* additive= */ false, "Genrule", ImmutableSet.of());
-    assertModifierMatchesAndResults(
-        modifiers1, /* additive= */ false, "CppCompile", ImmutableSet.of("y1", "y2"));
-    assertModifierMatchesAndResults(
-        modifiers1, /* additive= */ false, "GenericAction", ImmutableSet.of("z"));
-    assertModifierMatchesAndResults(
-        modifiers1, /* additive= */ false, "MergeLayers", ImmutableSet.of("u"));
-    assertThat(ExecutionInfoModifier.matches(modifiers1, false, "OtherAction")).isFalse();
-
-    var modifiers2 = ImmutableList.of(modifier1, modifier2, modifier3);
-
-    assertModifierMatchesAndResults(
-        modifiers2, /* additive= */ false, "Genrule", ImmutableSet.of());
-    assertModifierMatchesAndResults(
-        modifiers2, /* additive= */ false, "CppCompile", ImmutableSet.of());
-    assertModifierMatchesAndResults(
-        modifiers2, /* additive= */ false, "GenericAction", ImmutableSet.of());
-    assertModifierMatchesAndResults(
-        modifiers2, /* additive= */ false, "MergeLayers", ImmutableSet.of());
-    assertModifierMatchesAndResults(
-        modifiers2, /* additive= */ false, "OtherAction", ImmutableSet.of());
-  }
-
-  @Test
-  public void executionInfoModifier_invalidFormat_throws() throws Exception {
-    List<String> invalidModifiers =
-        ImmutableList.of("A", "=", "A=", "A=+", "=+", "A=-B,A", "A=B", "A", ",");
-    for (String invalidModifer : invalidModifiers) {
-      assertThrows(OptionsParsingException.class, () -> converter.convert(invalidModifer));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_empty() {
+        val modifier: ExecutionInfoModifier = converter.convert("")
+        assertThat(modifier.matches("Anything")).isFalse()
     }
-  }
 
-  @Test
-  public void executionInfoModifier_invalidFormat_exceptionShowsOffender() throws Exception {
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> converter.convert("A=+1,B=2,C=-3"));
-    assertThat(thrown).hasMessageThat().contains("malformed");
-    assertThat(thrown).hasMessageThat().contains("'B=2'");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_singleAdd() {
+        val modifier: ExecutionInfoModifier = converter.convert("Genrule=+x")
+        assertThat(modifier.matches("SomethingElse")).isFalse()
+        assertModifierMatchesAndResults(modifier, "Genrule", com.google.common.collect.ImmutableSet.of<String?>("x"))
+    }
 
-  @Test
-  public void executionInfoModifier_EqualsTester() throws Exception {
-    new EqualsTester()
-        // base empty
-        .addEqualityGroup(converter.convert(""), converter.convert(""))
-        // base non-empty
-        .addEqualityGroup(converter.convert("A=+B"), converter.convert("A=+B"))
-        // different pattern and key
-        .addEqualityGroup(converter.convert("C=+D"))
-        // different key
-        .addEqualityGroup(converter.convert("A=+D"))
-        // different pattern
-        .addEqualityGroup(converter.convert("C=+B"))
-        // different operation
-        .addEqualityGroup(converter.convert("A=-B"))
-        // more items
-        .addEqualityGroup(converter.convert("A=+B,C=-D"), converter.convert("A=+B,C=-D"))
-        // different order
-        .addEqualityGroup(converter.convert("C=-D,A=+B"))
-        .testEquals();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_singleRemove() {
+        val modifier: ExecutionInfoModifier = converter.convert("Genrule=-x")
+        val info: MutableMap<String?, String?> = HashMap<String?, String?>()
+        info.put("x", "")
 
-  private void assertModifierMatchesAndResults(
-      ExecutionInfoModifier modifier, String mnemonic, Set<String> expectedKeys) {
-    assertModifierMatchesAndResults(
-        ImmutableList.of(modifier), /* additive= */ false, mnemonic, expectedKeys);
-  }
+        modifier.apply("Genrule", info)
 
-  private void assertModifierMatchesAndResults(
-      List<ExecutionInfoModifier> modifiers,
-      boolean additive,
-      String mnemonic,
-      Set<String> expectedKeys) {
-    Map<String, String> copy = new HashMap<>();
-    ExecutionInfoModifier.apply(modifiers, additive, mnemonic, copy);
-    assertThat(ExecutionInfoModifier.matches(modifiers, additive, mnemonic)).isTrue();
-    assertThat(copy)
-        .containsExactlyEntriesIn(
-            expectedKeys.stream().collect(ImmutableMap.toImmutableMap(k -> k, unused -> "")));
-  }
+        Truth.assertThat(info).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_multipleExpressions() {
+        val modifier: ExecutionInfoModifier = converter.convert("Genrule=+x,.*=+y,CppCompile=+z")
+        assertModifierMatchesAndResults(
+            modifier,
+            "Genrule",
+            com.google.common.collect.ImmutableSet.of<String?>("x", "y")
+        )
+        assertModifierMatchesAndResults(
+            modifier,
+            "CppCompile",
+            com.google.common.collect.ImmutableSet.of<String?>("y", "z")
+        )
+        assertModifierMatchesAndResults(
+            modifier,
+            "GenericAction",
+            com.google.common.collect.ImmutableSet.of<String?>("y")
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_multipleOptionsAdditive() {
+        val modifier1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            converter.convert(
+                "Genrule=+x,CppCompile=-y1,GenericAction=+z,MergeLayers=+t,OtherAction=+o"
+            )
+        val modifier2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            converter.convert(
+                "Genrule=-x,CppCompile=+y1,CppCompile=+y2,GenericAction=+z,MergeLayers=+u"
+            )
+        val modifier3: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            converter.convert(".*=-t")
+
+        val modifiers: com.google.common.collect.ImmutableList<Any?> =
+            com.google.common.collect.ImmutableList.of<Any?>(modifier1, modifier2, modifier3)
+        assertModifierMatchesAndResults(
+            modifiers,  /* additive= */
+            true,
+            "Genrule",
+            com.google.common.collect.ImmutableSet.of<String?>()
+        )
+        assertModifierMatchesAndResults(
+            modifiers,  /* additive= */
+            true,
+            "CppCompile",
+            com.google.common.collect.ImmutableSet.of<String?>("y1", "y2")
+        )
+        assertModifierMatchesAndResults(
+            modifiers,  /* additive= */true, "GenericAction", com.google.common.collect.ImmutableSet.of<String?>("z")
+        )
+        assertModifierMatchesAndResults(
+            modifiers,  /* additive= */true, "MergeLayers", com.google.common.collect.ImmutableSet.of<String?>("u")
+        )
+        assertModifierMatchesAndResults(
+            modifiers,  /* additive= */true, "OtherAction", com.google.common.collect.ImmutableSet.of<String?>("o")
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_multipleOptionsNonAdditive() {
+        val modifier1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            converter.convert(
+                "Genrule=+x,CppCompile=-y1,GenericAction=+z,MergeLayers=+t,OtherAction=+o"
+            )
+        val modifier2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            converter.convert(
+                "Genrule=-x,CppCompile=+y1,CppCompile=+y2,GenericAction=+z,MergeLayers=+u"
+            )
+        val modifier3: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            converter.convert(".*=-t")
+
+        val modifiers1: com.google.common.collect.ImmutableList<Any?> =
+            com.google.common.collect.ImmutableList.of<Any?>(modifier1, modifier2)
+
+        assertModifierMatchesAndResults(
+            modifiers1,  /* additive= */false, "Genrule", com.google.common.collect.ImmutableSet.of<String?>()
+        )
+        assertModifierMatchesAndResults(
+            modifiers1,  /* additive= */
+            false,
+            "CppCompile",
+            com.google.common.collect.ImmutableSet.of<String?>("y1", "y2")
+        )
+        assertModifierMatchesAndResults(
+            modifiers1,  /* additive= */false, "GenericAction", com.google.common.collect.ImmutableSet.of<String?>("z")
+        )
+        assertModifierMatchesAndResults(
+            modifiers1,  /* additive= */false, "MergeLayers", com.google.common.collect.ImmutableSet.of<String?>("u")
+        )
+        assertThat(ExecutionInfoModifier.matches(modifiers1, false, "OtherAction")).isFalse()
+
+        val modifiers2: com.google.common.collect.ImmutableList<Any?> =
+            com.google.common.collect.ImmutableList.of<Any?>(modifier1, modifier2, modifier3)
+
+        assertModifierMatchesAndResults(
+            modifiers2,  /* additive= */false, "Genrule", com.google.common.collect.ImmutableSet.of<String?>()
+        )
+        assertModifierMatchesAndResults(
+            modifiers2,  /* additive= */false, "CppCompile", com.google.common.collect.ImmutableSet.of<String?>()
+        )
+        assertModifierMatchesAndResults(
+            modifiers2,  /* additive= */false, "GenericAction", com.google.common.collect.ImmutableSet.of<String?>()
+        )
+        assertModifierMatchesAndResults(
+            modifiers2,  /* additive= */false, "MergeLayers", com.google.common.collect.ImmutableSet.of<String?>()
+        )
+        assertModifierMatchesAndResults(
+            modifiers2,  /* additive= */false, "OtherAction", com.google.common.collect.ImmutableSet.of<String?>()
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_invalidFormat_throws() {
+        val invalidModifiers: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("A", "=", "A=", "A=+", "=+", "A=-B,A", "A=B", "A", ",")
+        for (invalidModifer in invalidModifiers) {
+            org.junit.Assert.assertThrows<T?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { converter.convert(invalidModifer) })
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_invalidFormat_exceptionShowsOffender() {
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { converter.convert("A=+1,B=2,C=-3") })
+        assertThat(thrown).hasMessageThat().contains("malformed")
+        assertThat(thrown).hasMessageThat().contains("'B=2'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionInfoModifier_EqualsTester() {
+        EqualsTester() // base empty
+            .addEqualityGroup(converter.convert(""), converter.convert("")) // base non-empty
+            .addEqualityGroup(converter.convert("A=+B"), converter.convert("A=+B")) // different pattern and key
+            .addEqualityGroup(converter.convert("C=+D")) // different key
+            .addEqualityGroup(converter.convert("A=+D")) // different pattern
+            .addEqualityGroup(converter.convert("C=+B")) // different operation
+            .addEqualityGroup(converter.convert("A=-B")) // more items
+            .addEqualityGroup(converter.convert("A=+B,C=-D"), converter.convert("A=+B,C=-D")) // different order
+            .addEqualityGroup(converter.convert("C=-D,A=+B"))
+            .testEquals()
+    }
+
+    private fun assertModifierMatchesAndResults(
+        modifier: ExecutionInfoModifier, mnemonic: String?, expectedKeys: MutableSet<String?>
+    ) {
+        assertModifierMatchesAndResults(
+            com.google.common.collect.ImmutableList.of<ExecutionInfoModifier?>(modifier),  /* additive= */
+            false,
+            mnemonic,
+            expectedKeys
+        )
+    }
+
+    private fun assertModifierMatchesAndResults(
+        modifiers: MutableList<ExecutionInfoModifier?>?,
+        additive: Boolean,
+        mnemonic: String?,
+        expectedKeys: MutableSet<String?>
+    ) {
+        val copy: MutableMap<String?, String?> = HashMap<String?, String?>()
+        ExecutionInfoModifier.apply(modifiers, additive, mnemonic, copy)
+        assertThat(ExecutionInfoModifier.matches(modifiers, additive, mnemonic)).isTrue()
+        Truth.assertThat(copy)
+            .containsExactlyEntriesIn(
+                expectedKeys.stream().collect(
+                    com.google.common.collect.ImmutableMap.toImmutableMap<String?, String?, String?>(
+                        java.util.function.Function { k: String? -> k },
+                        java.util.function.Function { unused: String? -> "" })
+                )
+            )
+    }
 }

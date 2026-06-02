@@ -11,78 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import java.util.Collection;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
 
 /**
- * Tests verifying appropriate propagation of {@link InterruptedException} during filesystem
+ * Tests verifying appropriate propagation of [InterruptedException] during filesystem
  * operations.
  */
-@RunWith(JUnit4.class)
-public class InterruptedExceptionTest extends AnalysisTestCase {
+@RunWith(JUnit4::class)
+class InterruptedExceptionTest : AnalysisTestCase() {
+    private val mainThread: java.lang.Thread = java.lang.Thread.currentThread()
 
-  private final Thread mainThread = Thread.currentThread();
-
-  @Override
-  protected FileSystem createFileSystem() {
-    return new InMemoryFileSystem(DigestHashFunction.SHA256) {
-      @Override
-      public Collection<Dirent> readdir(PathFragment path, boolean followSymlinks)
-          throws IOException {
-        if (path.toString().contains("causes_interrupt")) {
-          mainThread.interrupt();
+    override fun createFileSystem(): FileSystem? {
+        return object : InMemoryFileSystem(DigestHashFunction.SHA256) {
+            @Throws(IOException::class)
+            public override fun readdir(path: PathFragment, followSymlinks: Boolean): MutableCollection<Dirent?> {
+                if (path.toString().contains("causes_interrupt")) {
+                    mainThread.interrupt()
+                }
+                return super.readdir(path, followSymlinks)
+            }
         }
-        return super.readdir(path, followSymlinks);
-      }
-    };
-  }
+    }
 
-  @Test
-  public void testGlobInterruptedException() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'a', srcs = glob(['**/*']))");
-    scratch.file("a/b/foo.sh", "testfile");
-    scratch.file("a/causes_interrupt/bar.sh", "testfile");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobInterruptedException() {
+        scratch.file(
+            "a/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'a', srcs = glob(['**/*']))"
+        )
+        scratch.file("a/b/foo.sh", "testfile")
+        scratch.file("a/causes_interrupt/bar.sh", "testfile")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    assertThrows(InterruptedException.class, () -> update("//a:a"));
-  }
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//a:a") })
+    }
 
-  @Test
-  public void testStarlarkGlobInterruptedException() throws Exception {
-    scratch.file(
-        "a/gen.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkGlobInterruptedException() {
+        scratch.file(
+            "a/gen.bzl",
+            """
         def gen():
             native.filegroup(name = "a", srcs = native.glob(["**/*"]))
-        """);
-    scratch.file(
-        "a/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "a/BUILD",
+            """
         load("//a:gen.bzl", "gen")
 
         gen()
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("a/b/foo.sh", "testfile");
-    scratch.file("a/causes_interrupt/bar.sh", "testfile");
-    reporter.removeHandler(failFastHandler);
+        scratch.file("a/b/foo.sh", "testfile")
+        scratch.file("a/causes_interrupt/bar.sh", "testfile")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    assertThrows(InterruptedException.class, () -> update("//a:a"));
-  }
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//a:a") })
+    }
 }

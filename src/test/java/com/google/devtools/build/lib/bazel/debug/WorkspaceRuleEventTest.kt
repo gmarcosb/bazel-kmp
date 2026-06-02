@@ -11,42 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.bazel.debug
 
-package com.google.devtools.build.lib.bazel.debug;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos
+import net.starlark.java.syntax.Location
+import org.junit.Test
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests handling of WorkspaceRuleEvent  */
+@RunWith(JUnit4::class)
+class WorkspaceRuleEventTest {
+    @Before
+    fun setUp() {
+    }
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.debug.proto.WorkspaceLogProtos;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import net.starlark.java.syntax.Location;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    fun newExecuteEvent_expectedResult() {
+        // Set up arguments, as a combination of String and StarlarkPath
+        val arguments = ArrayList<String?>()
+        arguments.add("argument 1")
+        arguments.add("dummy string")
 
-/** Tests handling of WorkspaceRuleEvent */
-@RunWith(JUnit4.class)
-public final class WorkspaceRuleEventTest {
+        val commonEnv: MutableMap<String?, String?> = ImmutableMap.of<String?, String?>("key1", "val1", "key3", "val3")
+        val customEnv: MutableMap<String?, String?> =
+            ImmutableMap.of<String?, String?>("key2", "val2!", "key3", "val3!")
 
-  @Before
-  public void setUp() {}
-
-  @Test
-  public void newExecuteEvent_expectedResult() {
-    // Set up arguments, as a combination of String and StarlarkPath
-    ArrayList<String> arguments = new ArrayList<>();
-    arguments.add("argument 1");
-    arguments.add("dummy string");
-
-    Map<String, String> commonEnv = ImmutableMap.of("key1", "val1", "key3", "val3");
-    Map<String, String> customEnv = ImmutableMap.of("key2", "val2!", "key3", "val3!");
-
-    WorkspaceLogProtos.WorkspaceEvent event =
-        WorkspaceRuleEvent.newExecuteEvent(
+        val event: WorkspaceLogProtos.WorkspaceEvent =
+            WorkspaceRuleEvent.newExecuteEvent(
                 arguments,
                 2042,
                 commonEnv,
@@ -54,25 +48,27 @@ public final class WorkspaceRuleEventTest {
                 "outputDir",
                 true,
                 "my_rule",
-                Location.fromFileLineColumn("foo", 10, 20))
-            .getLogEvent();
+                Location.fromFileLineColumn("foo", 10, 20)
+            )
+                .getLogEvent()
 
-    List<String> expectedArgs = Arrays.asList("argument 1", "dummy string");
+        val expectedArgs: MutableList<String?> = mutableListOf<String?>("argument 1", "dummy string")
 
-    Map<String, String> expectedEnv =
-        ImmutableMap.of(
-            "key1", "val1",
-            "key2", "val2!",
-            "key3", "val3!");
+        val expectedEnv: MutableMap<String?, String?> =
+            ImmutableMap.of<String?, String?>(
+                "key1", "val1",
+                "key2", "val2!",
+                "key3", "val3!"
+            )
 
-    assertThat(event.getContext()).isEqualTo("my_rule");
-    assertThat(event.getLocation()).isEqualTo("foo:10:20");
+        assertThat(event.getContext()).isEqualTo("my_rule")
+        assertThat(event.getLocation()).isEqualTo("foo:10:20")
 
-    WorkspaceLogProtos.ExecuteEvent executeEvent = event.getExecuteEvent();
-    assertThat(executeEvent.getTimeoutSeconds()).isEqualTo(2042);
-    assertThat(executeEvent.getQuiet()).isEqualTo(true);
-    assertThat(executeEvent.getOutputDirectory()).isEqualTo("outputDir");
-    assertThat(executeEvent.getArgumentsList()).isEqualTo(expectedArgs);
-    assertThat(executeEvent.getEnvironmentMap()).isEqualTo(expectedEnv);
-  }
+        val executeEvent: WorkspaceLogProtos.ExecuteEvent = event.getExecuteEvent()
+        assertThat(executeEvent.getTimeoutSeconds()).isEqualTo(2042)
+        assertThat(executeEvent.getQuiet()).isEqualTo(true)
+        assertThat(executeEvent.getOutputDirectory()).isEqualTo("outputDir")
+        assertThat(executeEvent.getArgumentsList()).isEqualTo(expectedArgs)
+        assertThat(executeEvent.getEnvironmentMap()).isEqualTo(expectedEnv)
+    }
 }

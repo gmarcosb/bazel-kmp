@@ -11,302 +11,442 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.base.Optional;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link BuildOptionDetails}. */
-@RunWith(JUnit4.class)
-public class BuildOptionDetailsTest {
-  /** Instantiates the given options classes, parsing the given options as well. */
-  public Iterable<FragmentOptions> parseOptions(
-      Iterable<? extends Class<? extends FragmentOptions>> optionsClasses, String... options)
-      throws Exception {
-    OptionsParser optionsParser =
-        OptionsParser.builder().optionsClasses(optionsClasses).allowResidue(false).build();
-    optionsParser.parse(options);
-    ImmutableList.Builder<FragmentOptions> output = new ImmutableList.Builder<>();
-    for (Class<? extends FragmentOptions> optionsClass : optionsClasses) {
-      output.add(optionsParser.getOptions(optionsClass));
-    }
-    return output.build();
-  }
-
-  /** Example converter for working with options with converters. */
-  public static final class Optionalizer extends Converter.Contextless<Optional<String>> {
-    @Override
-    public Optional<String> convert(String input) {
-      if ("".equals(input)) {
-        return Optional.<String>absent();
-      }
-      return Optional.of(input);
+/** Tests for [BuildOptionDetails].  */
+@RunWith(JUnit4::class)
+class BuildOptionDetailsTest {
+    /** Instantiates the given options classes, parsing the given options as well.  */
+    @Throws(java.lang.Exception::class)
+    fun parseOptions(
+        optionsClasses: Iterable<out java.lang.Class<out FragmentOptions?>?>, vararg options: String?
+    ): Iterable<FragmentOptions?> {
+        val optionsParser: OptionsParser =
+            OptionsParser.builder().optionsClasses(optionsClasses).allowResidue(false).build()
+        optionsParser.parse(options)
+        val output: com.google.common.collect.ImmutableList.Builder<FragmentOptions?> =
+            com.google.common.collect.ImmutableList.Builder<FragmentOptions?>()
+        for (optionsClass in optionsClasses) {
+            output.add(optionsParser.getOptions(optionsClass))
+        }
+        return output.build()
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "a string";
+    /** Example converter for working with options with converters.  */
+    class Optionalizer : Contextless<com.google.common.base.Optional<String?>?>() {
+        public override fun convert(input: String): com.google.common.base.Optional<String?> {
+            if ("" == input) {
+                return com.google.common.base.Optional.absent<String?>()
+            }
+            return com.google.common.base.Optional.of<String?>(input)
+        }
+
+        public override fun getTypeDescription(): String {
+            return "a string"
+        }
     }
-  }
 
-  /** Example options class for testing options lookup. */
-  @OptionsClass
-  public abstract static class Options extends FragmentOptions {
-    @Option(
-        name = "boolean_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "true")
-    public abstract boolean getBooleanOption();
+    /** Example options class for testing options lookup.  */
+    @OptionsClass
+    abstract class Options : FragmentOptions() {
+        @Option(
+            name = "boolean_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "true"
+        )
+        abstract fun getBooleanOption(): Boolean
 
-    @Option(
-        name = "convertible_option",
-        converter = Optionalizer.class,
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "")
-    public abstract Optional<String> getConvertibleOption();
+        @Option(
+            name = "convertible_option",
+            converter = Optionalizer::class,
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = ""
+        )
+        abstract fun getConvertibleOption(): com.google.common.base.Optional<String?>?
 
-    @Option(
-        name = "null_default",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract String getNullDefault();
+        @Option(
+            name = "null_default",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract fun getNullDefault(): String?
 
-    @Option(
-        name = "late_bound_default",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract String getLateBoundDefault();
+        @Option(
+            name = "late_bound_default",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract fun getLateBoundDefault(): String?
 
-    @Option(
-        name = "multi_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null",
-        allowMultiple = true)
-    public abstract List<String> getMultiOption();
+        @Option(
+            name = "multi_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null",
+            allowMultiple = true
+        )
+        abstract fun getMultiOption(): MutableList<String?>?
 
-    @Option(
-        name = "internal option",
-        defaultValue = "secret",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        metadataTags = {OptionMetadataTag.INTERNAL})
-    public abstract String getInternalOption();
+        @Option(
+            name = "internal option",
+            defaultValue = "secret",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            metadataTags = [OptionMetadataTag.INTERNAL]
+        )
+        abstract fun getInternalOption(): String?
 
-    @Option(
-        name = "internal multi option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null",
-        metadataTags = {OptionMetadataTag.INTERNAL},
-        allowMultiple = true)
-    public abstract List<String> getInternalMultiOption();
-  }
+        @Option(
+            name = "internal multi option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null",
+            metadataTags = [OptionMetadataTag.INTERNAL],
+            allowMultiple = true
+        )
+        abstract fun getInternalMultiOption(): MutableList<String?>?
+    }
 
-  /** Additional options class for testing options lookup. */
-  @OptionsClass
-  public abstract static class MoreOptions extends FragmentOptions {
-    @Option(
-        name = "other_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "")
-    public abstract String getOtherOption();
-  }
+    /** Additional options class for testing options lookup.  */
+    @OptionsClass
+    abstract class MoreOptions : FragmentOptions() {
+        @Option(
+            name = "other_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = ""
+        )
+        abstract fun getOtherOption(): String?
+    }
 
-  @Test
-  public void getOptionClass_ReturnsClassOfPresentOptions() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionClass("boolean_option")).isEqualTo(Options.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionClass_ReturnsClassOfPresentOptions() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionClass("boolean_option")).isEqualTo(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java)
+    }
 
-  @Test
-  public void getOptionClass_SelectsCorrectClassWhenMultipleArePresent() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(
-            parseOptions(ImmutableList.of(Options.class, MoreOptions.class)));
-    assertThat(details.getOptionClass("boolean_option")).isEqualTo(Options.class);
-    assertThat(details.getOptionClass("other_option")).isEqualTo(MoreOptions.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionClass_SelectsCorrectClassWhenMultipleArePresent() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<out Any?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java,
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.MoreOptions::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionClass("boolean_option")).isEqualTo(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java)
+        assertThat(details.getOptionClass("other_option")).isEqualTo(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.MoreOptions::class.java)
+    }
 
-  @Test
-  public void getOptionClass_ReturnsNullIfOptionsClassIsNotPartOfOptionDetails() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionClass("other_option")).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionClass_ReturnsNullIfOptionsClassIsNotPartOfOptionDetails() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionClass("other_option")).isNull()
+    }
 
-  @Test
-  public void getOptionClass_SelectsCorrectClassEvenWhenValueIsNull() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionClass("null_default")).isEqualTo(Options.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionClass_SelectsCorrectClassEvenWhenValueIsNull() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionClass("null_default")).isEqualTo(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java)
+    }
 
-  @Test
-  public void getOptionClass_ReturnsNullWhenOptionIsUndefined() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionClass("undefined_option")).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionClass_ReturnsNullWhenOptionIsUndefined() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionClass("undefined_option")).isNull()
+    }
 
-  @Test
-  public void getOptionClass_ReturnsNullIfOptionIsInternal() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionClass("internal option")).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionClass_ReturnsNullIfOptionIsInternal() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionClass("internal option")).isNull()
+    }
 
-  @Test
-  public void getOptionValue_ReturnsDefaultValueIfNotSet() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionValue("boolean_option")).isEqualTo(true);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsDefaultValueIfNotSet() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionValue("boolean_option")).isEqualTo(true)
+    }
 
-  @Test
-  public void getOptionValue_ReturnsCommandLineValueIfSet() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(
-            parseOptions(ImmutableList.of(Options.class), "--noboolean_option"));
-    assertThat(details.getOptionValue("boolean_option")).isEqualTo(false);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsCommandLineValueIfSet() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<E?>(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java),
+                    "--noboolean_option"
+                )
+            )
+        assertThat(details.getOptionValue("boolean_option")).isEqualTo(false)
+    }
 
-  @Test
-  public void getOptionValue_ReturnsEmptyListForUnspecifiedMultiOptions() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(
-            parseOptions(ImmutableList.of(Options.class), "--noboolean_option"));
-    assertThat(details.getOptionValue("multi_option")).isEqualTo(ImmutableList.<String>of());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsEmptyListForUnspecifiedMultiOptions() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<E?>(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java),
+                    "--noboolean_option"
+                )
+            )
+        assertThat(details.getOptionValue("multi_option")).isEqualTo(com.google.common.collect.ImmutableList.of<String?>())
+    }
 
-  @Test
-  public void getOptionValue_ReturnsListOfValuesForSpecifiedMultiOptions() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(
-            parseOptions(
-                ImmutableList.of(Options.class),
-                "--multi_option=one",
-                "--multi_option=2",
-                "--multi_option=iii"));
-    assertThat(details.getOptionValue("multi_option"))
-        .isEqualTo(ImmutableList.of("one", "2", "iii"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsListOfValuesForSpecifiedMultiOptions() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java),
+                    "--multi_option=one",
+                    "--multi_option=2",
+                    "--multi_option=iii"
+                )
+            )
+        assertThat(details.getOptionValue("multi_option"))
+            .isEqualTo(com.google.common.collect.ImmutableList.of<String?>("one", "2", "iii"))
+    }
 
-  @Test
-  public void getOptionValue_DrawsValuesFromAllOptionsClasses() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(
-            parseOptions(ImmutableList.of(Options.class, MoreOptions.class), "--other_option=set"));
-    assertThat(details.getOptionValue("other_option")).isEqualTo("set");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_DrawsValuesFromAllOptionsClasses() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java,
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.MoreOptions::class.java
+                    ), "--other_option=set"
+                )
+            )
+        assertThat(details.getOptionValue("other_option")).isEqualTo("set")
+    }
 
-  @Test
-  public void getOptionValue_UsesConvertersIfSpecified() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(
-            parseOptions(ImmutableList.of(Options.class), "--convertible_option=Set"));
-    assertThat(details.getOptionValue("convertible_option")).isEqualTo(Optional.of("Set"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_UsesConvertersIfSpecified() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<E?>(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java),
+                    "--convertible_option=Set"
+                )
+            )
+        assertThat(details.getOptionValue("convertible_option")).isEqualTo(com.google.common.base.Optional.of<String?>("Set"))
+    }
 
-  @Test
-  public void getOptionValue_UsesConvertersForDefaultsIfSpecified() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionValue("convertible_option")).isEqualTo(Optional.<String>absent());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_UsesConvertersForDefaultsIfSpecified() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionValue("convertible_option")).isEqualTo(com.google.common.base.Optional.absent<String?>())
+    }
 
-  @Test
-  public void getOptionValue_ReturnsNullIfOptionIsNotDefined() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionValue("undefined_option")).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsNullIfOptionIsNotDefined() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionValue("undefined_option")).isNull()
+    }
 
-  @Test
-  public void getOptionValue_ReturnsNullIfOptionIsInternal() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionValue("internal option")).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsNullIfOptionIsInternal() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionValue("internal option")).isNull()
+    }
 
-  @Test
-  public void getOptionValue_ReturnsNullIfOptionIsDefinedInNonIncludedOptionsClass()
-      throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionValue("other_option")).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsNullIfOptionIsDefinedInNonIncludedOptionsClass() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionValue("other_option")).isNull()
+    }
 
-  @Test
-  public void getOptionValue_ReturnsNullIfOptionDefaultValueIsNull() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.getOptionValue("null_option")).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getOptionValue_ReturnsNullIfOptionDefaultValueIsNull() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.getOptionValue("null_option")).isNull()
+    }
 
-  @Test
-  public void allowsMultipleValues_ReturnsFalseForUndefinedOption() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.allowsMultipleValues("undefined_option")).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allowsMultipleValues_ReturnsFalseForUndefinedOption() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.allowsMultipleValues("undefined_option")).isFalse()
+    }
 
-  @Test
-  public void allowsMultipleValues_ReturnsFalseForNonMultiOption() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.allowsMultipleValues("boolean_option")).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allowsMultipleValues_ReturnsFalseForNonMultiOption() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.allowsMultipleValues("boolean_option")).isFalse()
+    }
 
-  @Test
-  public void allowsMultipleValues_ReturnsFalseForInternalNonMultiOption() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.allowsMultipleValues("internal option")).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allowsMultipleValues_ReturnsFalseForInternalNonMultiOption() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.allowsMultipleValues("internal option")).isFalse()
+    }
 
-  @Test
-  public void allowsMultipleValues_ReturnsFalseForInternalMultiOption() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.allowsMultipleValues("internal multi option")).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allowsMultipleValues_ReturnsFalseForInternalMultiOption() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.allowsMultipleValues("internal multi option")).isFalse()
+    }
 
-  @Test
-  public void allowsMultipleValues_ReturnsTrueForMultiOption() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptionsForTesting(parseOptions(ImmutableList.of(Options.class)));
-    assertThat(details.allowsMultipleValues("multi_option")).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allowsMultipleValues_ReturnsTrueForMultiOption() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptionsForTesting(
+                parseOptions(
+                    com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(
+                        com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java
+                    )
+                )
+            )
+        assertThat(details.allowsMultipleValues("multi_option")).isTrue()
+    }
 
-  @Test
-  public void starlarkOptions() throws Exception {
-    BuildOptionDetails details =
-        BuildOptionDetails.forOptions(
-            parseOptions(ImmutableList.of(Options.class)),
-            ImmutableMap.of(Label.parseCanonicalUnchecked("//test:setting"), "value"));
-    assertThat(details.getOptionValue(Label.parseCanonicalUnchecked("//test:setting")))
-        .isEqualTo("value");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkOptions() {
+        val details: BuildOptionDetails =
+            BuildOptionDetails.forOptions(
+                parseOptions(com.google.common.collect.ImmutableList.of<java.lang.Class<Options?>?>(com.google.devtools.build.lib.analysis.config.BuildOptionDetailsTest.Options::class.java)),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    Label.parseCanonicalUnchecked("//test:setting"),
+                    "value"
+                )
+            )
+        assertThat(details.getOptionValue(Label.parseCanonicalUnchecked("//test:setting")))
+            .isEqualTo("value")
+    }
 }

@@ -11,48 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.bazel
 
-package com.google.devtools.build.lib.blackbox.bazel;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext;
-import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestEnvironment;
-import com.google.devtools.build.lib.blackbox.framework.PathUtils;
-import com.google.devtools.build.lib.blackbox.framework.ToolsSetup;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorDescriptor.Builder.build
+import com.google.devtools.build.lib.blackbox.bazel.DefaultToolsSetup
+import com.google.devtools.build.lib.blackbox.bazel.RunfilesUtil
+import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext
+import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestEnvironment
+import com.google.devtools.build.lib.blackbox.framework.ToolsSetup
+import com.google.devtools.build.lib.vfs.Path
+import java.nio.file.Path
+import java.util.concurrent.ExecutorService
 
 /**
- * Implementation of {@link BlackBoxTestEnvironment} with the code of initializing Bazel blackbox
+ * Implementation of [BlackBoxTestEnvironment] with the code of initializing Bazel blackbox
  * test environment.
  */
-public class BlackBoxTestEnvironmentImpl extends BlackBoxTestEnvironment {
-  @Override
-  public BlackBoxTestContext prepareEnvironment(
-      String testName, ImmutableList<ToolsSetup> tools, ExecutorService executorService)
-      throws Exception {
-    Path binaryPath = RunfilesUtil.find("io_bazel/src/bazel");
+class BlackBoxTestEnvironmentImpl : BlackBoxTestEnvironment() {
+    @Throws(java.lang.Exception::class)
+    public override fun prepareEnvironment(
+        testName: String?,
+        tools: com.google.common.collect.ImmutableList<ToolsSetup?>?,
+        executorService: ExecutorService?
+    ): BlackBoxTestContext {
+        val binaryPath: Path = RunfilesUtil.find("io_bazel/src/bazel")
 
-    BlackBoxTestContext testContext =
-        new BlackBoxTestContext(
-            testName, "bazel", binaryPath, Collections.emptyMap(), executorService);
-    // Any Bazel command requires that workspace is already set up.
-    testContext.write("MODULE.bazel");
-    Path defaultLockfile = RunfilesUtil.find("io_bazel/src/test/tools/bzlmod/MODULE.bazel.lock");
-    Files.copy(defaultLockfile, testContext.getWorkDir().resolve("MODULE.bazel.lock"));
+        val testContext: BlackBoxTestContext =
+            BlackBoxTestContext(
+                testName, "bazel", binaryPath, mutableMapOf<String?, String?>(), executorService
+            )
+        // Any Bazel command requires that workspace is already set up.
+        testContext.write("MODULE.bazel")
+        val defaultLockfile: Path = RunfilesUtil.find("io_bazel/src/test/tools/bzlmod/MODULE.bazel.lock")
+        java.nio.file.Files.copy(defaultLockfile, testContext.getWorkDir().resolve("MODULE.bazel.lock"))
 
-    List<ToolsSetup> allTools = Lists.newArrayList(new DefaultToolsSetup());
-    allTools.addAll(tools);
-    for (ToolsSetup tool : allTools) {
-      tool.setup(testContext);
+        val allTools: MutableList<ToolsSetup> =
+            com.google.common.collect.Lists.newArrayList<ToolsSetup?>(DefaultToolsSetup())
+        allTools.addAll(tools)
+        for (tool in allTools) {
+            tool.setup(testContext)
+        }
+
+        com.google.devtools.build.lib.blackbox.framework.PathUtils.setTreeWritable(testContext.getWorkDir())
+
+        return testContext
     }
-
-    PathUtils.setTreeWritable(testContext.getWorkDir());
-
-    return testContext;
-  }
 }

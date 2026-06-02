@@ -11,38 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions.util;
+package com.google.devtools.build.lib.actions.util
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.actions.ArtifactOwner;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.Objects;
+import com.google.common.annotations.VisibleForTesting
+import com.google.devtools.build.lib.actions.ArtifactOwner
 
-/** ArtifactOwner wrapper for Labels, for use in tests. */
+/** ArtifactOwner wrapper for Labels, for use in tests.  */
 @VisibleForTesting
-public class LabelArtifactOwner implements ArtifactOwner {
-  private final Label label;
+class LabelArtifactOwner @VisibleForTesting constructor(label: Label?) : ArtifactOwner {
+    private val label: Label?
 
-  @VisibleForTesting
-  public LabelArtifactOwner(Label label) {
-    this.label = label;
-  }
-
-  @Override
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public int hashCode() {
-    return label == null ? super.hashCode() : label.hashCode();
-  }
-
-  @Override
-  public boolean equals(Object that) {
-    if (!(that instanceof LabelArtifactOwner)) {
-      return false;
+    init {
+        this.label = label
     }
-    return Objects.equals(this.label, ((LabelArtifactOwner) that).label);
-  }
+
+    public override fun getLabel(): Label? {
+        return label
+    }
+
+    override fun hashCode(): Int {
+        return if (label == null) super.hashCode() else label.hashCode()
+    }
+
+    override fun equals(that: Any?): Boolean {
+        if (that !is LabelArtifactOwner) {
+            return false
+        }
+        return this.label == that.label
+    }
 }

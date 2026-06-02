@@ -11,231 +11,225 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.util
 
-package com.google.devtools.build.lib.analysis.util;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.util.Arrays;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import java.util.*
 
 /**
  * A writer for a scratch build target and associated source files. Can be parameterized with a rule
  * type for which to write a mock target.
- *
- * <p>For example, the snippet:
- *
- * <pre>{@code
- * new ScratchAttributeWriter(testCase, "cc_library", "//x:x")
- *     .setList("srcs", "a.cc", "b.cc")
- *     .setList("hdrs", "hdr.h")
- *     .write();
- * }</pre>
- *
- * <p>Would create the BUILD file "x/BUILD" with contents:
- *
- * <pre>{@code
- * cc_library(
- *     name = 'x',
- *     srcs = ['a.cc', 'b.cc'],
- *     hdrs = ['hdr.h'],
- * )
- * }</pre>
+ * 
+ * 
+ * For example, the snippet:
+ * 
+ * <pre>`new ScratchAttributeWriter(testCase, "cc_library", "//x:x")     .setList("srcs", "a.cc", "b.cc")     .setList("hdrs", "hdr.h")     .write(); `</pre>
+ * 
+ * 
+ * Would create the BUILD file "x/BUILD" with contents:
+ * 
+ * <pre>`cc_library(     name = 'x',     srcs = ['a.cc', 'b.cc'],     hdrs = ['hdr.h'], ) `</pre>
  */
-public class ScratchAttributeWriter {
+class ScratchAttributeWriter private constructor(
+    testCase: BuildViewTestCase?,
+    buildFilePreamble: String?,
+    ruleName: String?,
+    packageName: String?,
+    targetName: String?
+) {
+    private abstract class ScratchAttribute<T> {
+        protected var attributeName: String? = null
+        protected var attributeValue: T? = null
 
-  private abstract static class ScratchAttribute<T> {
-    protected String attributeName;
-    protected T attributeValue;
-
-    abstract StringBuilder appendLine(StringBuilder builder);
-  }
-
-  /** A plain string attribute. */
-  private static class StringAttribute extends ScratchAttribute<String> {
-    public StringAttribute(String attributeName, String attributeValue) {
-      this.attributeName = attributeName;
-      this.attributeValue = attributeValue;
+        abstract fun appendLine(builder: StringBuilder?): StringBuilder?
     }
 
-    @Override
-    StringBuilder appendLine(StringBuilder builder) {
-      return builder.append(String.format("%s=%s,", attributeName, attributeValue));
-    }
-  }
+    /** A plain string attribute.  */
+    private class StringAttribute(attributeName: String?, attributeValue: String?) : ScratchAttribute<String?>() {
+        init {
+            this.attributeName = attributeName
+            this.attributeValue = attributeValue
+        }
 
-  /** An integer attribute, such as "alwayslink" */
-  private static class IntegerAttribute extends ScratchAttribute<Integer> {
-
-    public IntegerAttribute(String attributeName, Integer attributeValue) {
-      this.attributeName = attributeName;
-      this.attributeValue = attributeValue;
+        override fun appendLine(builder: StringBuilder): StringBuilder {
+            return builder.append(String.format("%s=%s,", attributeName, attributeValue))
+        }
     }
 
-    @Override
-    StringBuilder appendLine(StringBuilder builder) {
-      return builder.append(String.format("%s=%d,", attributeName, attributeValue));
-    }
-  }
+    /** An integer attribute, such as "alwayslink"  */
+    private class IntegerAttribute(attributeName: String?, attributeValue: Int?) : ScratchAttribute<Int?>() {
+        init {
+            this.attributeName = attributeName
+            this.attributeValue = attributeValue
+        }
 
-  /** A list attribute, such as "srcs" */
-  private static class StringListAttribute extends ScratchAttribute<Iterable<String>> {
-
-    public StringListAttribute(String attributeName, Iterable<String> attributeValue) {
-      this.attributeName = attributeName;
-      this.attributeValue = attributeValue;
+        override fun appendLine(builder: StringBuilder): StringBuilder {
+            return builder.append(String.format("%s=%d,", attributeName, attributeValue))
+        }
     }
 
-    @Override
-    StringBuilder appendLine(StringBuilder builder) {
-      builder.append(String.format("%s=[", attributeName));
-      for (String value : attributeValue) {
-        builder.append(String.format("'%s',", value));
-      }
-      builder.append("],");
-      return builder;
+    /** A list attribute, such as "srcs"  */
+    private class StringListAttribute(attributeName: String?, attributeValue: Iterable<String?>?) :
+        ScratchAttribute<Iterable<String?>?>() {
+        init {
+            this.attributeName = attributeName
+            this.attributeValue = attributeValue
+        }
+
+        override fun appendLine(builder: StringBuilder): StringBuilder {
+            builder.append(String.format("%s=[", attributeName))
+            for (value in attributeValue!!) {
+                builder.append(String.format("'%s',", value))
+            }
+            builder.append("],")
+            return builder
+        }
     }
-  }
 
-  /** The name of the package. */
-  private final String packageName;
+    /** The name of the package.  */
+    private val packageName: String
 
-  /** The name of the target. */
-  private final String targetName;
+    /** The name of the target.  */
+    private val targetName: String
 
-  /** The test case for which to write this target. */
-  private final BuildViewTestCase testCase;
+    /** The test case for which to write this target.  */
+    private val testCase: BuildViewTestCase
 
-  /** The name of the rule for this target */
-  private final String ruleName;
+    /** The name of the rule for this target  */
+    private val ruleName: String
 
-  /** An ordered list of the attributes to be written for this scratch target */
-  StringBuilder buildString;
+    /** An ordered list of the attributes to be written for this scratch target  */
+    var buildString: StringBuilder
 
-  /**
-   * Creates a ScratchAttributeWriter for a given test case, package name, and target name. The
-   * provided rule name will determine the type of the target written.
-   */
-  private ScratchAttributeWriter(
-      BuildViewTestCase testCase,
-      String buildFilePreamble,
-      String ruleName,
-      String packageName,
-      String targetName) {
-    this.testCase = checkNotNull(testCase);
-    this.ruleName = checkNotNull(ruleName);
-    this.packageName = checkNotNull(packageName);
-    this.targetName = checkNotNull(targetName);
-    this.buildString =
-        new StringBuilder()
-            .append(buildFilePreamble)
-            .append("\n")
-            .append(String.format("%s(", this.ruleName))
-            .append(String.format("name='%s',", this.targetName));
-  }
-
-  /**
-   * Creates a ScratchAttributeWriter for a given test case and label. The provided rule name will
-   * determine the type of the target written.
-   */
-  public static ScratchAttributeWriter fromLabel(
-      BuildViewTestCase testCase, String ruleName, Label label) {
-    return new ScratchAttributeWriter(
-        testCase, "", ruleName, label.getPackageName(), label.name);
-  }
-
-  /**
-   * Creates a ScratchAttributeWriter for a given test case and label string. The provided rule name
-   * will determine the type of the target written.
-   */
-  public static ScratchAttributeWriter fromLabelString(
-      BuildViewTestCase testCase, String buildFilePreamble, String ruleName, String labelString) {
-    Label label = Label.parseCanonicalUnchecked(labelString);
-    return new ScratchAttributeWriter(
-        testCase, buildFilePreamble, ruleName, label.getPackageName(), label.name);
-  }
-
-  /**
-   * Creates a ScratchAttributeWriter for a given test case and label string. The provided rule name
-   * will determine the type of the target written.
-   */
-  public static ScratchAttributeWriter fromLabelString(
-      BuildViewTestCase testCase, String ruleName, String labelString) {
-    return fromLabel(testCase, ruleName, Label.parseCanonicalUnchecked(labelString));
-  }
-
-  /**
-   * Writes this scratch target to this ScratchAttributeWriter's Scratch instance, and returns the
-   * target in the given configuration.
-   */
-  public ConfiguredTarget write(BuildConfigurationValue config) throws Exception {
-    Scratch scratch = testCase.getScratch();
-
-    buildString.append(")");
-
-    scratch.file(String.format("%s/BUILD", packageName), buildString.toString());
-    return testCase.getConfiguredTarget(String.format("//%s:%s", packageName, targetName), config);
-  }
-
-  /**
-   * Writes this scratch target to this ScratchAttributeWriter's Scratch instance, and returns the
-   * target in the target configuration.
-   */
-  public ConfiguredTarget write() throws Exception {
-    return write(testCase.getTargetConfiguration());
-  }
-
-  private void createSource(String source) throws IOException {
-    testCase.getScratch().file(String.format("%s/%s", packageName, source));
-  }
-
-  /** Sets a string attribute (like ios_application.app_icon) for this target. */
-  @CanIgnoreReturnValue
-  public ScratchAttributeWriter set(String name, String value) {
-    new StringAttribute(name, value).appendLine(this.buildString);
-    return this;
-  }
-
-  /** Sets a list attribute (like cc_library.srcs) for this target. */
-  @CanIgnoreReturnValue
-  public ScratchAttributeWriter setList(String name, Iterable<String> value) {
-    new StringListAttribute(name, value).appendLine(this.buildString);
-    return this;
-  }
-
-  /** Sets a list attribute (like cc_library.srcs) for this target */
-  public ScratchAttributeWriter setList(String name, String... value) {
-    return setList(name, Arrays.asList(value));
-  }
-
-  /**
-   * Sets a list attribute (link cc_library.srcs) for this target. For each string in 'value',
-   * writes an empty file to this writer's package with that name.
-   *
-   * <p>Usually, an analysis-time should not require that referenced files actually be written, in
-   * which case ScratchAttributeWriter#set should be used instead.
-   */
-  public ScratchAttributeWriter setAndCreateFiles(String name, Iterable<String> value)
-      throws IOException {
-    for (String source : value) {
-      createSource(source);
+    /**
+     * Creates a ScratchAttributeWriter for a given test case, package name, and target name. The
+     * provided rule name will determine the type of the target written.
+     */
+    init {
+        this.testCase = Preconditions.checkNotNull<BuildViewTestCase>(testCase)
+        this.ruleName = Preconditions.checkNotNull<String>(ruleName)
+        this.packageName = Preconditions.checkNotNull<String>(packageName)
+        this.targetName = Preconditions.checkNotNull<String>(targetName)
+        this.buildString =
+            StringBuilder()
+                .append(buildFilePreamble)
+                .append("\n")
+                .append(String.format("%s(", this.ruleName))
+                .append(String.format("name='%s',", this.targetName))
     }
-    return setList(name, value);
-  }
 
-  /**
-   * Sets a list attribute (link cc_library.srcs) for this target. For each string in 'value',
-   * writes an empty file to this writer's package with that name.
-   *
-   * <p>Usually, an analysis-time should not require that referenced files actually be written, in
-   * which case ScratchAttributeWriter#set should be used instead.
-   */
-  public ScratchAttributeWriter setAndCreateFiles(String name, String... value) throws IOException {
-    return setAndCreateFiles(name, Arrays.asList(value));
-  }
+    /**
+     * Writes this scratch target to this ScratchAttributeWriter's Scratch instance, and returns the
+     * target in the given configuration.
+     */
+    @Throws(Exception::class)
+    fun write(config: BuildConfigurationValue?): ConfiguredTarget? {
+        val scratch: Scratch = testCase.getScratch()
+
+        buildString.append(")")
+
+        scratch.file(String.format("%s/BUILD", packageName), buildString.toString())
+        return testCase.getConfiguredTarget(String.format("//%s:%s", packageName, targetName), config)
+    }
+
+    /**
+     * Writes this scratch target to this ScratchAttributeWriter's Scratch instance, and returns the
+     * target in the target configuration.
+     */
+    @Throws(Exception::class)
+    fun write(): ConfiguredTarget? {
+        return write(testCase.getTargetConfiguration())
+    }
+
+    @Throws(IOException::class)
+    private fun createSource(source: String?) {
+        testCase.getScratch().file(String.format("%s/%s", packageName, source))
+    }
+
+    /** Sets a string attribute (like ios_application.app_icon) for this target.  */
+    @CanIgnoreReturnValue
+    fun set(name: String?, value: String?): ScratchAttributeWriter {
+        StringAttribute(name, value).appendLine(this.buildString)
+        return this
+    }
+
+    /** Sets a list attribute (like cc_library.srcs) for this target.  */
+    @CanIgnoreReturnValue
+    fun setList(name: String?, value: Iterable<String?>?): ScratchAttributeWriter {
+        StringListAttribute(name, value).appendLine(this.buildString)
+        return this
+    }
+
+    /** Sets a list attribute (like cc_library.srcs) for this target  */
+    fun setList(name: String?, vararg value: String?): ScratchAttributeWriter {
+        return setList(name, Arrays.asList<String?>(*value))
+    }
+
+    /**
+     * Sets a list attribute (link cc_library.srcs) for this target. For each string in 'value',
+     * writes an empty file to this writer's package with that name.
+     * 
+     * 
+     * Usually, an analysis-time should not require that referenced files actually be written, in
+     * which case ScratchAttributeWriter#set should be used instead.
+     */
+    @Throws(IOException::class)
+    fun setAndCreateFiles(name: String?, value: Iterable<String?>): ScratchAttributeWriter {
+        for (source in value) {
+            createSource(source)
+        }
+        return setList(name, value)
+    }
+
+    /**
+     * Sets a list attribute (link cc_library.srcs) for this target. For each string in 'value',
+     * writes an empty file to this writer's package with that name.
+     * 
+     * 
+     * Usually, an analysis-time should not require that referenced files actually be written, in
+     * which case ScratchAttributeWriter#set should be used instead.
+     */
+    @Throws(IOException::class)
+    fun setAndCreateFiles(name: String?, vararg value: String?): ScratchAttributeWriter {
+        return setAndCreateFiles(name, Arrays.asList<String?>(*value))
+    }
+
+    companion object {
+        /**
+         * Creates a ScratchAttributeWriter for a given test case and label. The provided rule name will
+         * determine the type of the target written.
+         */
+        fun fromLabel(
+            testCase: BuildViewTestCase?, ruleName: String?, label: Label
+        ): ScratchAttributeWriter {
+            return ScratchAttributeWriter(
+                testCase, "", ruleName, label.getPackageName(), label.name
+            )
+        }
+
+        /**
+         * Creates a ScratchAttributeWriter for a given test case and label string. The provided rule name
+         * will determine the type of the target written.
+         */
+        fun fromLabelString(
+            testCase: BuildViewTestCase?, buildFilePreamble: String?, ruleName: String?, labelString: String?
+        ): ScratchAttributeWriter {
+            val label: Label = Label.parseCanonicalUnchecked(labelString)
+            return ScratchAttributeWriter(
+                testCase, buildFilePreamble, ruleName, label.getPackageName(), label.name
+            )
+        }
+
+        /**
+         * Creates a ScratchAttributeWriter for a given test case and label string. The provided rule name
+         * will determine the type of the target written.
+         */
+        fun fromLabelString(
+            testCase: BuildViewTestCase?, ruleName: String?, labelString: String?
+        ): ScratchAttributeWriter {
+            return fromLabel(testCase, ruleName, Label.parseCanonicalUnchecked(labelString))
+        }
+    }
 }

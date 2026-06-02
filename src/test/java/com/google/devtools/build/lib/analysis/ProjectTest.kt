@@ -11,232 +11,281 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.ProjectFilesLookupFunction.PROJECT_FILE_NAME;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.skyframe.ProjectFilesLookupFunction.PROJECT_FILE_NAME
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link Project}. */
-@RunWith(JUnit4.class)
-public class ProjectTest extends AnalysisTestCase {
-  @Before
-  public void defineSimpleRule() throws Exception {
-    scratch.file(
-        "foo/defs.bzl",
-        """
+/** Tests for [Project].  */
+@RunWith(JUnit4::class)
+class ProjectTest : AnalysisTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun defineSimpleRule() {
+        scratch.file(
+            "foo/defs.bzl",
+            """
         simple_rule = rule(
             implementation = lambda ctx: [],
             attrs = {},
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void singleTargetNoProjects() throws Exception {
-    scratch.file(
-        "foo/bar/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun singleTargetNoProjects() {
+        scratch.file(
+            "foo/bar/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "s")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(
+        assertThat(
             Project.findProjectFiles(
-                ImmutableList.of(Label.parseCanonical("//foo/bar:s")), skyframeExecutor, reporter))
-        .isEmpty();
-  }
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo/bar:s")),
+                skyframeExecutor,
+                reporter
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void singleTargetProjectInDirectPackage() throws Exception {
-    scratch.file(
-        "foo/bar/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun singleTargetProjectInDirectPackage() {
+        scratch.file(
+            "foo/bar/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "s")
-        """);
-    scratch.file("foo/bar/" + PROJECT_FILE_NAME);
+        
+        """.trimIndent()
+        )
+        scratch.file("foo/bar/" + PROJECT_FILE_NAME)
 
-    assertThat(
+        assertThat(
             Project.findProjectFiles(
-                    ImmutableList.of(Label.parseCanonical("//foo/bar:s")),
-                    skyframeExecutor,
-                    reporter)
-                .asMap())
-        .containsExactly(
-            Label.parseCanonical("//foo/bar:s"),
-            ImmutableList.of(Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME)));
-  }
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo/bar:s")),
+                skyframeExecutor,
+                reporter
+            )
+                .asMap()
+        )
+            .containsExactly(
+                Label.parseCanonical("//foo/bar:s"),
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME))
+            )
+    }
 
-  @Test
-  public void singleTargetProjectInParentPackage() throws Exception {
-    scratch.file(
-        "foo/bar/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun singleTargetProjectInParentPackage() {
+        scratch.file(
+            "foo/bar/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "s")
-        """);
-    scratch.file("foo/BUILD");
-    scratch.file("foo/" + PROJECT_FILE_NAME);
+        
+        """.trimIndent()
+        )
+        scratch.file("foo/BUILD")
+        scratch.file("foo/" + PROJECT_FILE_NAME)
 
-    assertThat(
+        assertThat(
             Project.findProjectFiles(
-                    ImmutableList.of(Label.parseCanonical("//foo/bar:s")),
-                    skyframeExecutor,
-                    reporter)
-                .asMap())
-        .containsExactly(
-            Label.parseCanonical("//foo/bar:s"),
-            ImmutableList.of(Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)));
-  }
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo/bar:s")),
+                skyframeExecutor,
+                reporter
+            )
+                .asMap()
+        )
+            .containsExactly(
+                Label.parseCanonical("//foo/bar:s"),
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo:" + PROJECT_FILE_NAME))
+            )
+    }
 
-  @Test
-  public void singleTargetProjectInBothDirectAndParentPackages() throws Exception {
-    scratch.file(
-        "foo/bar/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun singleTargetProjectInBothDirectAndParentPackages() {
+        scratch.file(
+            "foo/bar/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "s")
-        """);
-    scratch.file("foo/BUILD");
-    scratch.file("foo/" + PROJECT_FILE_NAME);
-    scratch.file("foo/bar/" + PROJECT_FILE_NAME);
+        
+        """.trimIndent()
+        )
+        scratch.file("foo/BUILD")
+        scratch.file("foo/" + PROJECT_FILE_NAME)
+        scratch.file("foo/bar/" + PROJECT_FILE_NAME)
 
-    assertThat(
+        assertThat(
             Project.findProjectFiles(
-                    ImmutableList.of(Label.parseCanonical("//foo/bar:s")),
-                    skyframeExecutor,
-                    reporter)
-                .asMap())
-        .containsExactly(
-            Label.parseCanonical("//foo/bar:s"),
-            ImmutableList.of(
-                Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME),
-                Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)));
-  }
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo/bar:s")),
+                skyframeExecutor,
+                reporter
+            )
+                .asMap()
+        )
+            .containsExactly(
+                Label.parseCanonical("//foo/bar:s"),
+                com.google.common.collect.ImmutableList.of<E?>(
+                    Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME),
+                    Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)
+                )
+            )
+    }
 
-  @Test
-  public void singleTargetProjectInNonPackageParentDir() throws Exception {
-    scratch.file(
-        "foo/bar/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun singleTargetProjectInNonPackageParentDir() {
+        scratch.file(
+            "foo/bar/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "s")
-        """);
-    scratch.file("foo/" + PROJECT_FILE_NAME);
-    scratch.file("foo/bar/" + PROJECT_FILE_NAME);
+        
+        """.trimIndent()
+        )
+        scratch.file("foo/" + PROJECT_FILE_NAME)
+        scratch.file("foo/bar/" + PROJECT_FILE_NAME)
 
-    // Project files don't count if they're in directories without BUILD files.
-    assertThat(
+        // Project files don't count if they're in directories without BUILD files.
+        assertThat(
             Project.findProjectFiles(
-                    ImmutableList.of(Label.parseCanonical("//foo/bar:s")),
-                    skyframeExecutor,
-                    reporter)
-                .asMap())
-        .containsExactly(
-            Label.parseCanonical("//foo/bar:s"),
-            ImmutableList.of(Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME)));
-  }
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo/bar:s")),
+                skyframeExecutor,
+                reporter
+            )
+                .asMap()
+        )
+            .containsExactly(
+                Label.parseCanonical("//foo/bar:s"),
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME))
+            )
+    }
 
-  @Test
-  public void twoTargetsInIndependentPackages() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun twoTargetsInIndependentPackages() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "s")
-        """);
-    scratch.file(
-        "baz/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "baz/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "t")
-        """);
-    scratch.file("foo/" + PROJECT_FILE_NAME);
-    scratch.file("baz/" + PROJECT_FILE_NAME);
+        
+        """.trimIndent()
+        )
+        scratch.file("foo/" + PROJECT_FILE_NAME)
+        scratch.file("baz/" + PROJECT_FILE_NAME)
 
-    assertThat(
+        assertThat(
             Project.findProjectFiles(
-                    ImmutableList.of(
-                        Label.parseCanonical("//foo:s"), Label.parseCanonical("//baz:t")),
-                    skyframeExecutor,
-                    reporter)
-                .asMap())
-        .containsExactly(
-            Label.parseCanonical("//foo:s"),
-            ImmutableList.of(Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)),
-            Label.parseCanonical("//baz:t"),
-            ImmutableList.of(Label.parseCanonical("//baz:" + PROJECT_FILE_NAME)));
-  }
+                com.google.common.collect.ImmutableList.of<E?>(
+                    Label.parseCanonical("//foo:s"), Label.parseCanonical("//baz:t")
+                ),
+                skyframeExecutor,
+                reporter
+            )
+                .asMap()
+        )
+            .containsExactly(
+                Label.parseCanonical("//foo:s"),
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)),
+                Label.parseCanonical("//baz:t"),
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//baz:" + PROJECT_FILE_NAME))
+            )
+    }
 
-  @Test
-  public void twoTargetsInSubPackagesHierarchy() throws Exception {
-    scratch.file(
-        "foo/bar/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun twoTargetsInSubPackagesHierarchy() {
+        scratch.file(
+            "foo/bar/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "child")
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "parent")
-        """);
-    scratch.file("foo/bar/" + PROJECT_FILE_NAME);
-    scratch.file("foo/" + PROJECT_FILE_NAME);
+        
+        """.trimIndent()
+        )
+        scratch.file("foo/bar/" + PROJECT_FILE_NAME)
+        scratch.file("foo/" + PROJECT_FILE_NAME)
 
-    assertThat(
+        assertThat(
             Project.findProjectFiles(
-                    ImmutableList.of(
-                        Label.parseCanonical("//foo:parent"),
-                        Label.parseCanonical("//foo/bar:child")),
-                    skyframeExecutor,
-                    reporter)
-                .asMap())
-        .containsExactly(
-            Label.parseCanonical("//foo:parent"),
-            ImmutableList.of(Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)),
-            Label.parseCanonical("//foo/bar:child"),
-            ImmutableList.of(
-                Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME),
-                Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)));
-  }
+                com.google.common.collect.ImmutableList.of<E?>(
+                    Label.parseCanonical("//foo:parent"),
+                    Label.parseCanonical("//foo/bar:child")
+                ),
+                skyframeExecutor,
+                reporter
+            )
+                .asMap()
+        )
+            .containsExactly(
+                Label.parseCanonical("//foo:parent"),
+                com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)),
+                Label.parseCanonical("//foo/bar:child"),
+                com.google.common.collect.ImmutableList.of<E?>(
+                    Label.parseCanonical("//foo/bar:" + PROJECT_FILE_NAME),
+                    Label.parseCanonical("//foo:" + PROJECT_FILE_NAME)
+                )
+            )
+    }
 
-  @Test
-  public void testInvalidProjectFile() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInvalidProjectFile() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//foo:defs.bzl", "simple_rule")
 
         simple_rule(name = "myrule")
-        """);
-    scratch.dir("foo/" + PROJECT_FILE_NAME);
+        
+        """.trimIndent()
+        )
+        scratch.dir("foo/" + PROJECT_FILE_NAME)
 
-    assertThrows(
-        ProjectResolutionException.class,
-        () ->
-            Project.findProjectFiles(
-                ImmutableList.of(Label.parseCanonical("//foo:myrule")),
-                skyframeExecutor,
-                reporter));
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ProjectResolutionException::class.java,
+            org.junit.function.ThrowingRunnable {
+                Project.findProjectFiles(
+                    com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonical("//foo:myrule")),
+                    skyframeExecutor,
+                    reporter
+                )
+            })
+    }
 }

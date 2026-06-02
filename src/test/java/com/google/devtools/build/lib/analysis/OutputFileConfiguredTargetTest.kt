@@ -11,36 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.analysis.configuredtargets.OutputFileConfiguredTarget
 
-import com.google.devtools.build.lib.analysis.configuredtargets.OutputFileConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestBase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link OutputFileConfiguredTarget}. */
-@RunWith(JUnit4.class)
-public class OutputFileConfiguredTargetTest extends BuildViewTestBase {
-  @Test
-  public void generatingRuleIsCorrect() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+/** Tests for [OutputFileConfiguredTarget].  */
+@RunWith(JUnit4::class)
+class OutputFileConfiguredTargetTest : BuildViewTestBase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun generatingRuleIsCorrect() {
+        scratch.file(
+            "foo/BUILD",
+            """
         genrule(
             name = "generating_rule",
             srcs = [],
             outs = ["generated.source"],
-            cmd = "echo hi > $@",
+            cmd = "echo hi > ${'$'}@",
         )
-        """);
-    update("//foo:generating_rule");
-    OutputFileConfiguredTarget generatedSource =
-        (OutputFileConfiguredTarget)
-            getConfiguredTarget("//foo:generated.source", getExecConfiguration());
-    assertThat(generatedSource.getGeneratingRule())
-        .isSameInstanceAs(getConfiguredTarget("//foo:generating_rule", getExecConfiguration()));
-  }
+        
+        """.trimIndent()
+        )
+        update("//foo:generating_rule")
+        val generatedSource: OutputFileConfiguredTarget? =
+            getConfiguredTarget("//foo:generated.source", getExecConfiguration()) as OutputFileConfiguredTarget?
+        assertThat(generatedSource.getGeneratingRule())
+            .isSameInstanceAs(getConfiguredTarget("//foo:generating_rule", getExecConfiguration()))
+    }
 }

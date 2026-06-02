@@ -11,41 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.util;
+package com.google.devtools.build.lib.analysis.util
 
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.RuleClass;
+import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment
 
 /**
  * Interface for supporting arbitrary custom behavior in mock rule classes.
- *
- * <p>See {@link MockRule} for details and usage instructions.
+ * 
+ * 
+ * See [MockRule] for details and usage instructions.
  */
-public interface MockRuleCustomBehavior {
+interface MockRuleCustomBehavior {
+    /**
+     * Adds custom behavior to a mock rule class.
+     * 
+     * 
+     * It's not necessary to call [RuleClass.Builder.build] here.
+     */
+    fun customize(builder: RuleClass.Builder?, env: RuleDefinitionEnvironment?)
 
-  /**
-   * Adds custom behavior to a mock rule class.
-   *
-   * <p>It's not necessary to call {@link RuleClass.Builder#build} here.
-   */
-  void customize(RuleClass.Builder builder, RuleDefinitionEnvironment env);
+    /**
+     * Predefined behavior that populates a list of attributes.
+     */
+    class CustomAttributes internal constructor(attributes: Iterable<Attribute.Builder<*>?>) : MockRuleCustomBehavior {
+        private val attributes: Iterable<Attribute.Builder<*>?>
 
-  /**
-   * Predefined behavior that populates a list of attributes.
-   */
-  class CustomAttributes implements MockRuleCustomBehavior {
-    private final Iterable<Attribute.Builder<?>> attributes;
+        init {
+            this.attributes = attributes
+        }
 
-    CustomAttributes(Iterable<Attribute.Builder<?>> attributes) {
-      this.attributes = attributes;
+        override fun customize(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?) {
+            for (attribute in attributes) {
+                builder.add(attribute)
+            }
+        }
     }
-
-    @Override
-    public void customize(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-      for (Attribute.Builder<?> attribute : attributes) {
-        builder.add(attribute);
-      }
-    }
-  }
 }

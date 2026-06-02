@@ -11,53 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.starlark
 
-package com.google.devtools.build.lib.bazel.repository.starlark;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit tests for complex functions of [StarlarkPath].  */
+@RunWith(JUnit4::class)
+class StarlarkPathTest {
+    private val ev: BazelEvaluationTestCase = BazelEvaluationTestCase()
+    private val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+    private val wd: Path = FileSystemUtils.getWorkingDirectory(fs)
 
-import com.google.devtools.build.lib.starlark.util.BazelEvaluationTestCase;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    @Throws(Exception::class)
+    fun setup() {
+        ev.update("wd", makePath(wd))
+    }
 
-/** Unit tests for complex functions of {@link StarlarkPath}. */
-@RunWith(JUnit4.class)
-public class StarlarkPathTest {
+    @Test
+    @Throws(Exception::class)
+    fun testStarlarkPathGetChild() {
+        Truth.assertThat(ev.eval("wd.get_child()")).isEqualTo(makePath(wd))
+        Truth.assertThat(ev.eval("wd.get_child('foo')")).isEqualTo(makePath(wd.getChild("foo")))
+        Truth.assertThat(ev.eval("wd.get_child('a','b/c','/d/')"))
+            .isEqualTo(makePath(wd.getRelative("a/b/c/d")))
+    }
 
-  private final BazelEvaluationTestCase ev = new BazelEvaluationTestCase();
-  private final FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  private final Path wd = FileSystemUtils.getWorkingDirectory(fs);
+    @Test
+    @Throws(Exception::class)
+    fun testStarlarkPathStringifications() {
+        Truth.assertThat(ev.eval("repr(wd)"))
+            .isEqualTo(Starlark.repr(wd.toString(), StarlarkSemantics.DEFAULT))
+        Truth.assertThat(ev.eval("str(wd)")).isEqualTo(wd.toString())
+    }
 
-  private static StarlarkPath makePath(Path path) {
-    return new StarlarkPath(/* ctx= */ null, path);
-  }
-
-  @Before
-  public void setup() throws Exception {
-    ev.update("wd", makePath(wd));
-  }
-
-  @Test
-  public void testStarlarkPathGetChild() throws Exception {
-    assertThat(ev.eval("wd.get_child()")).isEqualTo(makePath(wd));
-    assertThat(ev.eval("wd.get_child('foo')")).isEqualTo(makePath(wd.getChild("foo")));
-    assertThat(ev.eval("wd.get_child('a','b/c','/d/')"))
-        .isEqualTo(makePath(wd.getRelative("a/b/c/d")));
-  }
-
-  @Test
-  public void testStarlarkPathStringifications() throws Exception {
-    assertThat(ev.eval("repr(wd)"))
-        .isEqualTo(Starlark.repr(wd.toString(), StarlarkSemantics.DEFAULT));
-    assertThat(ev.eval("str(wd)")).isEqualTo(wd.toString());
-  }
+    companion object {
+        private fun makePath(path: Path): StarlarkPath {
+            return StarlarkPath( /* ctx= */null, path)
+        }
+    }
 }

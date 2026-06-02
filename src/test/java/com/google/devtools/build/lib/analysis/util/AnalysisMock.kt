@@ -11,109 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.util;
+package com.google.devtools.build.lib.analysis.util
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelDepGraphFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelLockFileFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleResolutionFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleFileFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.NonRegistryOverride;
-import com.google.devtools.build.lib.bazel.bzlmod.RegistryFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.RepoSpecFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.SingleExtensionEvalFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.SingleExtensionFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.SingleExtensionUsagesFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsUtil;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionFunction;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionValue;
-import com.google.devtools.build.lib.bazel.repository.RepositoryFetchFunction;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.BazelCompatibilityMode;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.CheckDirectDepsMode;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode;
-import com.google.devtools.build.lib.bazel.repository.cache.LocalRepoContentsCache;
-import com.google.devtools.build.lib.packages.util.LoadingMock;
-import com.google.devtools.build.lib.packages.util.MockCcSupport;
-import com.google.devtools.build.lib.packages.util.MockPythonSupport;
-import com.google.devtools.build.lib.packages.util.MockToolsConfig;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.packages.PackageFactoryBuilderWithSkyframeForTesting;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
+import com.google.common.base.Predicate
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.common.collect.Maps
+import com.google.devtools.build.lib.analysis.BlazeDirectories
+import java.util.*
 
-/** Create a mock client for the analysis phase, as well as a configuration factory. */
-public abstract class AnalysisMock extends LoadingMock {
+/** Create a mock client for the analysis phase, as well as a configuration factory.  */
+abstract class AnalysisMock : LoadingMock() {
+    val productName: String
+        get() = TestConstants.PRODUCT_NAME
 
-  public static AnalysisMock get() {
-    try {
-      Class<?> providerClass = Class.forName(TestConstants.TEST_ANALYSIS_MOCK);
-      Field instanceField = providerClass.getField("INSTANCE");
-      return (AnalysisMock) instanceField.get(null);
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
+    val embeddedTools: ImmutableList<String?>
+        get() = TestConstants.EMBEDDED_TOOLS
+
+    override fun getPackageFactoryBuilderForTesting(
+        directories: BlazeDirectories
+    ): PackageFactoryBuilderWithSkyframeForTesting {
+        return super.getPackageFactoryBuilderForTesting(directories)
+            .setExtraSkyFunctions(getSkyFunctions(directories))
+            .setExtraPrecomputeValues(this.precomputedValues)
     }
-  }
 
-  public static AnalysisMock getAnalysisMockWithoutBuiltinModules() {
-    return new AnalysisMock.Delegate(AnalysisMock.get()) {
-      @Override
-      public ImmutableMap<String, NonRegistryOverride> getBuiltinModules(
-          BlazeDirectories directories) {
-        return ImmutableMap.of();
-      }
-    };
-  }
+    /**
+     * This is called from test setup to create the mock directory layout needed to create the
+     * configuration.
+     */
+    @Throws(IOException::class)
+    fun setupMockClient(mockToolsConfig: MockToolsConfig) {
+        setupMockClientInternal(mockToolsConfig)
+        setupMockTestingRules(mockToolsConfig)
+    }
 
-  @Override
-  public String getProductName() {
-    return TestConstants.PRODUCT_NAME;
-  }
+    @Throws(IOException::class)
+    abstract fun setupMockClientInternal(mockToolsConfig: MockToolsConfig?)
 
-  public ImmutableList<String> getEmbeddedTools() {
-    return TestConstants.EMBEDDED_TOOLS;
-  }
-
-  @Override
-  public PackageFactoryBuilderWithSkyframeForTesting getPackageFactoryBuilderForTesting(
-      BlazeDirectories directories) {
-    return super.getPackageFactoryBuilderForTesting(directories)
-        .setExtraSkyFunctions(getSkyFunctions(directories))
-        .setExtraPrecomputeValues(getPrecomputedValues());
-  }
-
-  /**
-   * This is called from test setup to create the mock directory layout needed to create the
-   * configuration.
-   */
-  public void setupMockClient(MockToolsConfig mockToolsConfig) throws IOException {
-    setupMockClientInternal(mockToolsConfig);
-    setupMockTestingRules(mockToolsConfig);
-  }
-
-  public abstract void setupMockClientInternal(MockToolsConfig mockToolsConfig) throws IOException;
-
-  public void setupMockTestingRules(MockToolsConfig mockToolsConfig) throws IOException {
-    mockToolsConfig.create("test_defs/BUILD");
-    mockToolsConfig.create(
-        "test_defs/foo_library.bzl",
-        """
+    @Throws(IOException::class)
+    fun setupMockTestingRules(mockToolsConfig: MockToolsConfig) {
+        mockToolsConfig.create("test_defs/BUILD")
+        mockToolsConfig.create(
+            "test_defs/foo_library.bzl",
+            """
         def _impl(ctx):
           pass
         foo_library = rule(
@@ -123,10 +65,12 @@ public abstract class AnalysisMock extends LoadingMock {
             "deps": attr.label_list(),
           },
         )
-        """);
-    mockToolsConfig.create(
-        "test_defs/foo_binary.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        mockToolsConfig.create(
+            "test_defs/foo_binary.bzl",
+            """
         def _impl(ctx):
           symlink = ctx.actions.declare_file(ctx.label.name)
           ctx.actions.symlink(output = symlink, target_file = ctx.files.srcs[0],
@@ -143,10 +87,12 @@ public abstract class AnalysisMock extends LoadingMock {
             "data": attr.label_list(allow_files=True),
           },
         )
-        """);
-    mockToolsConfig.create(
-        "test_defs/foo_test.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        mockToolsConfig.create(
+            "test_defs/foo_test.bzl",
+            """
         def _impl(ctx):
           symlink = ctx.actions.declare_file(ctx.label.name)
           ctx.actions.symlink(output = symlink, target_file = ctx.files.srcs[0],
@@ -163,167 +109,217 @@ public abstract class AnalysisMock extends LoadingMock {
             "data": attr.label_list(allow_files=True),
           },
         )
-        """);
-  }
-
-  /** Creates a mock tools repository. */
-  public void setupMockToolsRepository(MockToolsConfig config) throws IOException {
-    // Do nothing by default.
-  }
-
-  public abstract boolean isThisBazel();
-
-  public abstract MockCcSupport ccSupport();
-
-  public abstract AbstractMockJavaSupport javaSupport();
-
-  public abstract MockPythonSupport pySupport();
-
-  public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(BlazeDirectories directories) {
-    return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-        .put(
-            SkyFunctions.REPOSITORY_DIRECTORY,
-            new RepositoryFetchFunction(
-                ImmutableMap::of, ImmutableMap::of, directories, new LocalRepoContentsCache()))
-        .put(RepoDefinitionValue.REPO_DEFINITION, new RepoDefinitionFunction(directories))
-        .put(
-            SkyFunctions.MODULE_FILE,
-            new ModuleFileFunction(
-                createRuleClassProvider().getBazelStarlarkEnvironment(),
-                directories.getWorkspace(),
-                getBuiltinModules(directories)))
-        .put(SkyFunctions.BAZEL_DEP_GRAPH, new BazelDepGraphFunction())
-        .put(
-            SkyFunctions.BAZEL_LOCK_FILE,
-            new BazelLockFileFunction(directories.getWorkspace(), directories.getOutputBase()))
-        .put(SkyFunctions.BAZEL_MODULE_RESOLUTION, new BazelModuleResolutionFunction())
-        .put(SkyFunctions.SINGLE_EXTENSION, new SingleExtensionFunction())
-        .put(
-            SkyFunctions.SINGLE_EXTENSION_EVAL,
-            new SingleExtensionEvalFunction(directories, ImmutableMap::of, ImmutableMap::of))
-        .put(SkyFunctions.SINGLE_EXTENSION_USAGES, new SingleExtensionUsagesFunction())
-        .put(
-            SkyFunctions.REGISTRY,
-            new RegistryFunction(FakeRegistry.DEFAULT_FACTORY, directories.getWorkspace()))
-        .put(SkyFunctions.REPO_SPEC, new RepoSpecFunction())
-        .put(SkyFunctions.YANKED_VERSIONS, new YankedVersionsFunction())
-        .put(
-            SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES,
-            new ModuleExtensionRepoMappingEntriesFunction())
-        .put(
-            SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE,
-            new ClientEnvironmentFunction(new AtomicReference<>(ImmutableMap.of())))
-        .buildOrThrow();
-  }
-
-  public ImmutableList<PrecomputedValue.Injected> getPrecomputedValues() {
-    // PrecomputedValues required by SkyFunctions in getSkyFunctions()
-    return ImmutableList.of(
-        PrecomputedValue.injected(PrecomputedValue.REPO_ENV, ImmutableMap.of()),
-        PrecomputedValue.injected(ModuleFileFunction.MODULE_OVERRIDES, ImmutableMap.of()),
-        PrecomputedValue.injected(RepoDefinitionFunction.REPOSITORY_OVERRIDES, ImmutableMap.of()),
-        PrecomputedValue.injected(RepositoryDirectoryValue.FETCH_DISABLED, false),
-        PrecomputedValue.injected(
-            RepositoryDirectoryValue.FORCE_FETCH, RepositoryDirectoryValue.FORCE_FETCH_DISABLED),
-        PrecomputedValue.injected(RepositoryDirectoryValue.VENDOR_DIRECTORY, Optional.empty()),
-        PrecomputedValue.injected(ModuleFileFunction.REGISTRIES, ImmutableSet.of()),
-        PrecomputedValue.injected(RegistryFunction.MODULE_MIRRORS, ImmutableMap.of()),
-        PrecomputedValue.injected(ModuleFileFunction.IGNORE_DEV_DEPS, false),
-        PrecomputedValue.injected(ModuleFileFunction.INJECTED_REPOSITORIES, ImmutableMap.of()),
-        PrecomputedValue.injected(YankedVersionsUtil.ALLOWED_YANKED_VERSIONS, ImmutableList.of()),
-        PrecomputedValue.injected(
-            BazelModuleResolutionFunction.CHECK_DIRECT_DEPENDENCIES, CheckDirectDepsMode.WARNING),
-        PrecomputedValue.injected(
-            BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE, BazelCompatibilityMode.ERROR),
-        PrecomputedValue.injected(BazelLockFileFunction.LOCKFILE_MODE, LockfileMode.UPDATE));
-  }
-
-  /** Returns the built-in modules. */
-  public abstract ImmutableMap<String, NonRegistryOverride> getBuiltinModules(
-      BlazeDirectories directories);
-
-  public abstract void setupPrelude(MockToolsConfig mockToolsConfig) throws IOException;
-
-  public abstract BlazeModule getBazelRepositoryModule(BlazeDirectories directories);
-
-  /**
-   * Stub class for tests to extend in order to update a small amount of {@link AnalysisMock}
-   * functionality.
-   */
-  public static class Delegate extends AnalysisMock {
-
-    private final AnalysisMock delegate;
-
-    public Delegate(AnalysisMock delegate) {
-      this.delegate = delegate;
+        
+        """.trimIndent()
+        )
     }
 
-    @Override
-    public void setupMockClientInternal(MockToolsConfig mockToolsConfig) throws IOException {
-      delegate.setupMockClientInternal(mockToolsConfig);
+    /** Creates a mock tools repository.  */
+    @Throws(IOException::class)
+    open fun setupMockToolsRepository(config: MockToolsConfig?) {
+        // Do nothing by default.
     }
 
-    @Override
-    public void setupMockToolsRepository(MockToolsConfig config) throws IOException {
-      delegate.setupMockToolsRepository(config);
+    abstract val isThisBazel: Boolean
+
+    abstract fun ccSupport(): MockCcSupport?
+
+    abstract fun javaSupport(): AbstractMockJavaSupport?
+
+    abstract fun pySupport(): MockPythonSupport?
+
+    open fun getSkyFunctions(directories: BlazeDirectories): ImmutableMap<SkyFunctionName?, SkyFunction?>? {
+        return ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+            .put(
+                SkyFunctions.REPOSITORY_DIRECTORY,
+                RepositoryFetchFunction(
+                    ImmutableMap::of, ImmutableMap::of, directories, LocalRepoContentsCache()
+                )
+            )
+            .put(RepoDefinitionValue.REPO_DEFINITION, RepoDefinitionFunction(directories))
+            .put(
+                SkyFunctions.MODULE_FILE,
+                ModuleFileFunction(
+                    createRuleClassProvider().getBazelStarlarkEnvironment(),
+                    directories.getWorkspace(),
+                    getBuiltinModules(directories)
+                )
+            )
+            .put(SkyFunctions.BAZEL_DEP_GRAPH, BazelDepGraphFunction())
+            .put(
+                SkyFunctions.BAZEL_LOCK_FILE,
+                BazelLockFileFunction(directories.getWorkspace(), directories.getOutputBase())
+            )
+            .put(SkyFunctions.BAZEL_MODULE_RESOLUTION, BazelModuleResolutionFunction())
+            .put(SkyFunctions.SINGLE_EXTENSION, SingleExtensionFunction())
+            .put(
+                SkyFunctions.SINGLE_EXTENSION_EVAL,
+                SingleExtensionEvalFunction(directories, ImmutableMap::of, ImmutableMap::of)
+            )
+            .put(SkyFunctions.SINGLE_EXTENSION_USAGES, SingleExtensionUsagesFunction())
+            .put(
+                SkyFunctions.REGISTRY,
+                RegistryFunction(FakeRegistry.Companion.DEFAULT_FACTORY, directories.getWorkspace())
+            )
+            .put(SkyFunctions.REPO_SPEC, RepoSpecFunction())
+            .put(SkyFunctions.YANKED_VERSIONS, YankedVersionsFunction())
+            .put(
+                SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES,
+                ModuleExtensionRepoMappingEntriesFunction()
+            )
+            .put(
+                SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE,
+                ClientEnvironmentFunction(AtomicReference<V?>(ImmutableMap.of<Any?, Any?>()))
+            )
+            .buildOrThrow()
     }
 
-    @Override
-    public ConfiguredRuleClassProvider createRuleClassProvider() {
-      return delegate.createRuleClassProvider();
+    val precomputedValues: ImmutableList<PrecomputedValue.Injected>
+        get() =// PrecomputedValues required by SkyFunctions in getSkyFunctions()
+            ImmutableList.of<E?>(
+                PrecomputedValue.injected(
+                    PrecomputedValue.REPO_ENV,
+                    ImmutableMap.of<K?, V?>()
+                ),
+                PrecomputedValue.injected(
+                    ModuleFileFunction.MODULE_OVERRIDES,
+                    ImmutableMap.of<K?, V?>()
+                ),
+                PrecomputedValue.injected(
+                    RepoDefinitionFunction.REPOSITORY_OVERRIDES,
+                    ImmutableMap.of<K?, V?>()
+                ),
+                PrecomputedValue.injected(RepositoryDirectoryValue.FETCH_DISABLED, false),
+                PrecomputedValue.injected(
+                    RepositoryDirectoryValue.FORCE_FETCH, RepositoryDirectoryValue.FORCE_FETCH_DISABLED
+                ),
+                PrecomputedValue.injected(RepositoryDirectoryValue.VENDOR_DIRECTORY, Optional.empty<T?>()),
+                PrecomputedValue.injected(
+                    ModuleFileFunction.REGISTRIES,
+                    ImmutableSet.of<E?>()
+                ),
+                PrecomputedValue.injected(
+                    RegistryFunction.MODULE_MIRRORS,
+                    ImmutableMap.of<K?, V?>()
+                ),
+                PrecomputedValue.injected(ModuleFileFunction.IGNORE_DEV_DEPS, false),
+                PrecomputedValue.injected(
+                    ModuleFileFunction.INJECTED_REPOSITORIES,
+                    ImmutableMap.of<K?, V?>()
+                ),
+                PrecomputedValue.injected(
+                    YankedVersionsUtil.ALLOWED_YANKED_VERSIONS,
+                    ImmutableList.of<E?>()
+                ),
+                PrecomputedValue.injected(
+                    BazelModuleResolutionFunction.CHECK_DIRECT_DEPENDENCIES, CheckDirectDepsMode.WARNING
+                ),
+                PrecomputedValue.injected(
+                    BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE, BazelCompatibilityMode.ERROR
+                ),
+                PrecomputedValue.injected(BazelLockFileFunction.LOCKFILE_MODE, LockfileMode.UPDATE)
+            )
+
+    /** Returns the built-in modules.  */
+    abstract fun getBuiltinModules(
+        directories: BlazeDirectories?
+    ): ImmutableMap<String?, NonRegistryOverride?>?
+
+    @Throws(IOException::class)
+    abstract fun setupPrelude(mockToolsConfig: MockToolsConfig?)
+
+    abstract fun getBazelRepositoryModule(directories: BlazeDirectories?): BlazeModule?
+
+    /**
+     * Stub class for tests to extend in order to update a small amount of [AnalysisMock]
+     * functionality.
+     */
+    open class Delegate(private val delegate: AnalysisMock) : AnalysisMock() {
+        @Throws(IOException::class)
+        override fun setupMockClientInternal(mockToolsConfig: MockToolsConfig?) {
+            delegate.setupMockClientInternal(mockToolsConfig)
+        }
+
+        @Throws(IOException::class)
+        override fun setupMockToolsRepository(config: MockToolsConfig?) {
+            delegate.setupMockToolsRepository(config)
+        }
+
+        override fun createRuleClassProvider(): ConfiguredRuleClassProvider? {
+            return delegate.createRuleClassProvider()
+        }
+
+        override fun isThisBazel(): Boolean {
+            return delegate.isThisBazel
+        }
+
+        override fun ccSupport(): MockCcSupport? {
+            return delegate.ccSupport()
+        }
+
+        override fun javaSupport(): AbstractMockJavaSupport? {
+            return delegate.javaSupport()
+        }
+
+        override fun pySupport(): MockPythonSupport? {
+            return delegate.pySupport()
+        }
+
+        override fun getSkyFunctions(
+            directories: BlazeDirectories
+        ): ImmutableMap<SkyFunctionName?, SkyFunction?>? {
+            return ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .putAll(
+                    Maps.filterKeys<SkyFunctionName?, SkyFunction?>(
+                        super.getSkyFunctions(directories),
+                        Predicate { fnName: SkyFunctionName? -> !fnName.equals(SkyFunctions.MODULE_FILE) })
+                )
+                .put(
+                    SkyFunctions.MODULE_FILE,
+                    ModuleFileFunction(
+                        createRuleClassProvider().getBazelStarlarkEnvironment(),
+                        directories.getWorkspace(),
+                        getBuiltinModules(directories)
+                    )
+                )
+                .buildOrThrow()
+        }
+
+        override fun getBuiltinModules(
+            directories: BlazeDirectories?
+        ): ImmutableMap<String?, NonRegistryOverride?>? {
+            return delegate.getBuiltinModules(directories)
+        }
+
+        @Throws(IOException::class)
+        override fun setupPrelude(mockToolsConfig: MockToolsConfig?) {
+            delegate.setupPrelude(mockToolsConfig)
+        }
+
+        override fun getBazelRepositoryModule(directories: BlazeDirectories?): BlazeModule? {
+            return delegate.getBazelRepositoryModule(directories)
+        }
     }
 
-    @Override
-    public boolean isThisBazel() {
-      return delegate.isThisBazel();
-    }
+    companion object {
+        fun get(): AnalysisMock? {
+            try {
+                val providerClass = Class.forName(TestConstants.TEST_ANALYSIS_MOCK)
+                val instanceField = providerClass.getField("INSTANCE")
+                return instanceField.get(null) as AnalysisMock?
+            } catch (e: Exception) {
+                throw IllegalStateException(e)
+            }
+        }
 
-    @Override
-    public MockCcSupport ccSupport() {
-      return delegate.ccSupport();
+        val analysisMockWithoutBuiltinModules: AnalysisMock
+            get() = object :
+                Delegate(get()!!) {
+                override fun getBuiltinModules(
+                    directories: BlazeDirectories?
+                ): ImmutableMap<String?, NonRegistryOverride?> {
+                    return ImmutableMap.of<String?, NonRegistryOverride?>()
+                }
+            }
     }
-
-    @Override
-    public AbstractMockJavaSupport javaSupport() {
-      return delegate.javaSupport();
-    }
-
-    @Override
-    public MockPythonSupport pySupport() {
-      return delegate.pySupport();
-    }
-
-    @Override
-    public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(
-        BlazeDirectories directories) {
-      return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-          .putAll(
-              Maps.filterKeys(
-                  super.getSkyFunctions(directories),
-                  fnName -> !fnName.equals(SkyFunctions.MODULE_FILE)))
-          .put(
-              SkyFunctions.MODULE_FILE,
-              new ModuleFileFunction(
-                  createRuleClassProvider().getBazelStarlarkEnvironment(),
-                  directories.getWorkspace(),
-                  getBuiltinModules(directories)))
-          .buildOrThrow();
-    }
-
-    @Override
-    public ImmutableMap<String, NonRegistryOverride> getBuiltinModules(
-        BlazeDirectories directories) {
-      return delegate.getBuiltinModules(directories);
-    }
-
-    @Override
-    public void setupPrelude(MockToolsConfig mockToolsConfig) throws IOException {
-      delegate.setupPrelude(mockToolsConfig);
-    }
-
-    @Override
-    public BlazeModule getBazelRepositoryModule(BlazeDirectories directories) {
-      return delegate.getBazelRepositoryModule(directories);
-    }
-  }
 }

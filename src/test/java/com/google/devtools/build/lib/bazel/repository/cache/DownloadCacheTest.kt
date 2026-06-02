@@ -11,291 +11,291 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.cache
 
-package com.google.devtools.build.lib.bazel.repository.cache;
+import com.google.common.io.BaseEncoding
+import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache.KeyType
+import com.google.devtools.build.lib.clock.JavaClock
+import org.junit.After
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.ExpectedException
+import org.junit.runners.Parameterized
+import java.nio.charset.Charset
+import java.util.concurrent.Future
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.spy;
+/** Tests for [DownloadCache].  */
+@RunWith(Parameterized::class)
+class DownloadCacheTest(digestHashFunction: DigestHashFunction, keyType: KeyType, hash: String?) {
+    @Rule
+    var thrown: ExpectedException = ExpectedException.none()
 
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache.KeyType;
-import com.google.devtools.build.lib.clock.JavaClock;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.bazel.BazelHashFunctions;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+    private var scratch: Scratch? = null
+    private var downloadCache: DownloadCache? = null
+    private var repositoryCachePath: Path? = null
+    private var downloadedFile: Path? = null
 
-/** Tests for {@link DownloadCache}. */
-@RunWith(Parameterized.class)
-public class DownloadCacheTest {
+    private val digestHashFunction: DigestHashFunction
+    private val keyType: KeyType
+    private val hash: String?
 
-  @Rule public ExpectedException thrown = ExpectedException.none();
-
-  private Scratch scratch;
-  private DownloadCache downloadCache;
-  private Path repositoryCachePath;
-  private Path downloadedFile;
-
-  private final DigestHashFunction digestHashFunction;
-  private final KeyType keyType;
-  private final String hash;
-
-  @Parameters
-  public static List<Object[]> getKeyType() {
-    List<Object[]> keyTypes = new ArrayList<>();
-    keyTypes.add(
-        new Object[] {
-          // digestHashFunction
-          DigestHashFunction.SHA256,
-          // keyType
-          KeyType.SHA256,
-          // hash
-          "bfe5ed57e6e323555b379c660aa8d35b70c2f8f07cf03ad6747266495ac13be0",
-          // echo 'contents' | sha256sum
-        });
-    if (TestConstants.BLAKE3_AVAILABLE) {
-      keyTypes.add(
-          new Object[] {
-            // digestHashFunction
-            BazelHashFunctions.BLAKE3,
-            // keyType
-            KeyType.BLAKE3,
-            // hash
-            "54e00265e2516f168096da17059a6109563d9ba64a0b77cdc4b33e44600c2a39",
-            // echo 'contents' | b3sum
-          });
-    }
-    return keyTypes;
-  }
-
-  public DownloadCacheTest(DigestHashFunction digestHashFunction, KeyType keyType, String hash) {
-    this.digestHashFunction = digestHashFunction;
-    this.keyType = keyType;
-    this.hash = hash;
-  }
-
-  @Before
-  public void setUp() throws Exception {
-    scratch = new Scratch("/");
-    repositoryCachePath = scratch.dir("/repository_cache");
-    downloadCache = new DownloadCache();
-    downloadCache.setPath(repositoryCachePath);
-
-    downloadedFile = scratch.file("file.tmp", Charset.defaultCharset(), "contents");
-  }
-
-  @After
-  public void tearDown() throws IOException {
-    repositoryCachePath.deleteTree();
-  }
-
-  @Test
-  public void testNonExistentCacheValue() {
-    String fakeHash = "a".repeat(64);
-    assertThat(downloadCache.exists(fakeHash, keyType)).isFalse();
-  }
-
-  /** Test that the put method correctly stores the downloaded file into the cache. */
-  @Test
-  public void testPutCacheValue() throws Exception {
-    downloadCache.put(hash, downloadedFile, keyType, /* canonicalId= */ null);
-
-    Path cacheEntry = keyType.getCachePath(repositoryCachePath).getChild(hash);
-    Path cacheValue = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME);
-
-    assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
-        .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()));
-  }
-
-  /**
-   * Test that the put method without cache key correctly stores the downloaded file into the cache.
-   */
-  @Test
-  public void testPutCacheValueWithoutHash() throws Exception {
-    String cacheKey = downloadCache.put(downloadedFile, keyType, /* canonicalId= */ null);
-    assertThat(cacheKey).isEqualTo(hash);
-
-    Path cacheEntry = keyType.getCachePath(repositoryCachePath).getChild(hash);
-    Path cacheValue = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME);
-
-    assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
-        .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()));
-  }
-
-  /**
-   * Test that the put method is idempotent, i.e. two successive put calls should not affect the
-   * final state in the cache.
-   */
-  @Test
-  public void testPutCacheValueIdempotent() throws Exception {
-    downloadCache.put(hash, downloadedFile, keyType, /* canonicalId= */ null);
-    downloadCache.put(hash, downloadedFile, keyType, /* canonicalId= */ null);
-
-    Path cacheEntry = keyType.getCachePath(repositoryCachePath).getChild(hash);
-    Path cacheValue = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME);
-
-    assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
-        .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()));
-  }
-
-  /** Test that the put method is safe to call concurrently. */
-  @Test
-  public void testPutCacheValueConcurrent() throws Exception {
-    var exceptions = new ConcurrentLinkedQueue<Throwable>();
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < 100; i++) {
-        var unused =
-            executor.submit(
-                () -> {
-                  try {
-                    downloadCache.put(hash, downloadedFile, keyType, /* canonicalId= */ null);
-                  } catch (Throwable t) {
-                    exceptions.add(t);
-                  }
-                });
-      }
-    }
-    if (!exceptions.isEmpty()) {
-      var combined = new AssertionError("Exceptions occurred during concurrent puts");
-      for (Throwable t : exceptions) {
-        combined.addSuppressed(t);
-      }
-      throw combined;
+    init {
+        this.digestHashFunction = digestHashFunction
+        this.keyType = keyType
+        this.hash = hash
     }
 
-    Path cacheEntry = keyType.getCachePath(repositoryCachePath).getChild(hash);
-    Path cacheValue = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME);
+    @Before
+    @Throws(Exception::class)
+    fun setUp() {
+        scratch = Scratch("/")
+        repositoryCachePath = scratch.dir("/repository_cache")
+        downloadCache = DownloadCache()
+        downloadCache.setPath(repositoryCachePath)
 
-    assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
-        .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()));
-  }
+        downloadedFile = scratch.file("file.tmp", Charset.defaultCharset(), "contents")
+    }
 
-  /** Test that the get method correctly retrieves the cached file from the cache. */
-  @Test
-  public void testGetCacheValue() throws Exception {
-    // Inject file into cache
-    downloadCache.put(hash, downloadedFile, keyType, /* canonicalId= */ null);
+    @After
+    @Throws(IOException::class)
+    fun tearDown() {
+        repositoryCachePath.deleteTree()
+    }
 
-    Path targetDirectory = scratch.dir("/external");
-    Path targetPath = targetDirectory.getChild(downloadedFile.getBaseName());
-    Path actualTargetPath =
-        downloadCache.get(
-            hash, targetPath, keyType, /* canonicalId= */ null, /* mayHardlink= */ true);
+    @Test
+    fun testNonExistentCacheValue() {
+        val fakeHash: String = "a".repeat(64)
+        assertThat(downloadCache.exists(fakeHash, keyType)).isFalse()
+    }
 
-    // Check that the contents are the same.
-    assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
-        .isEqualTo(FileSystemUtils.readContent(actualTargetPath, Charset.defaultCharset()));
+    /** Test that the put method correctly stores the downloaded file into the cache.  */
+    @Test
+    @Throws(Exception::class)
+    fun testPutCacheValue() {
+        downloadCache.put(hash, downloadedFile, keyType,  /* canonicalId= */null)
 
-    // Check that the returned value is stored under outputBaseExternal.
-    assertThat((Object) actualTargetPath).isEqualTo(targetPath);
-  }
+        val cacheEntry: Path = keyType.getCachePath(repositoryCachePath).getChild(hash)
+        val cacheValue: Path? = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME)
 
-  /** Test that the get method retrieves a null if the value is not cached. */
-  @Test
-  public void testGetNullCacheValue() throws Exception {
-    Path targetDirectory = scratch.dir("/external");
-    Path targetPath = targetDirectory.getChild(downloadedFile.getBaseName());
-    Path actualTargetPath =
-        downloadCache.get(
-            hash, targetPath, keyType, /* canonicalId= */ null, /* mayHardlink= */ true);
+        assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
+            .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()))
+    }
 
-    assertThat(actualTargetPath).isNull();
-  }
+    /**
+     * Test that the put method without cache key correctly stores the downloaded file into the cache.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testPutCacheValueWithoutHash() {
+        val cacheKey: String? = downloadCache.put(downloadedFile, keyType,  /* canonicalId= */null)
+        Truth.assertThat(cacheKey).isEqualTo(hash)
 
-  @Test
-  public void testInvalidSha256Throws() throws Exception {
-    String invalidSha = "foo";
-    thrown.expect(IOException.class);
-    thrown.expectMessage("Invalid key \"foo\" of type " + keyType);
-    downloadCache.put(invalidSha, downloadedFile, keyType, /* canonicalId= */ null);
-  }
+        val cacheEntry: Path = keyType.getCachePath(repositoryCachePath).getChild(hash)
+        val cacheValue: Path? = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME)
 
-  @Test
-  public void testPoisonedCache() throws Exception {
-    Path poisonedEntry = keyType.getCachePath(repositoryCachePath).getChild(hash);
-    Path poisonedValue = poisonedEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME);
-    scratch.file(poisonedValue.getPathString(), Charset.defaultCharset(), "poisoned");
+        assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
+            .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()))
+    }
 
-    Path targetDirectory = scratch.dir("/external");
-    Path targetPath = targetDirectory.getChild(downloadedFile.getBaseName());
+    /**
+     * Test that the put method is idempotent, i.e. two successive put calls should not affect the
+     * final state in the cache.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testPutCacheValueIdempotent() {
+        downloadCache.put(hash, downloadedFile, keyType,  /* canonicalId= */null)
+        downloadCache.put(hash, downloadedFile, keyType,  /* canonicalId= */null)
 
-    thrown.expect(IOException.class);
-    thrown.expectMessage("does not match expected");
-    thrown.expectMessage("Please delete the directory");
+        val cacheEntry: Path = keyType.getCachePath(repositoryCachePath).getChild(hash)
+        val cacheValue: Path? = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME)
 
-    downloadCache.get(hash, targetPath, keyType, /* canonicalId= */ null, /* mayHardlink= */ true);
-  }
+        assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
+            .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()))
+    }
 
-  @Test
-  public void testGetChecksum() throws Exception {
-    String actualChecksum = DownloadCache.getChecksum(keyType, downloadedFile);
-    assertThat(actualChecksum).isEqualTo(hash);
-  }
+    /** Test that the put method is safe to call concurrently.  */
+    @Test
+    @Throws(Exception::class)
+    fun testPutCacheValueConcurrent() {
+        val exceptions: ConcurrentLinkedQueue<Throwable> = ConcurrentLinkedQueue<Throwable>()
+        Executors.newVirtualThreadPerTaskExecutor().use { executor ->
+            for (i in 0..99) {
+                val unused: Future<*>? =
+                    executor.submit(
+                        Runnable {
+                            try {
+                                downloadCache.put(hash, downloadedFile, keyType,  /* canonicalId= */null)
+                            } catch (t: Throwable) {
+                                exceptions.add(t)
+                            }
+                        })
+            }
+        }
+        if (!exceptions.isEmpty()) {
+            val combined = AssertionError("Exceptions occurred during concurrent puts")
+            for (t in exceptions) {
+                combined.addSuppressed(t)
+            }
+            throw combined
+        }
 
-  @Test
-  public void testGetChecksumWithFastDigest() throws Exception {
-    var fastDigestChecksum = "cfe5ed57e6e323555b379c660aa8d35b70c2f8f07cf03ad6747266495ac13be0";
-    var fs = new InMemoryFileSystem(new JavaClock(), digestHashFunction);
-    downloadedFile = spy(downloadedFile);
-    doReturn(BaseEncoding.base16().lowerCase().decode(fastDigestChecksum))
-        .when(downloadedFile)
-        .getFastDigest();
-    doReturn(fs).when(downloadedFile).getFileSystem();
+        val cacheEntry: Path = keyType.getCachePath(repositoryCachePath).getChild(hash)
+        val cacheValue: Path? = cacheEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME)
 
-    String actualChecksum = DownloadCache.getChecksum(keyType, downloadedFile);
-    assertThat(actualChecksum).isEqualTo(fastDigestChecksum);
-  }
+        assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
+            .isEqualTo(FileSystemUtils.readContent(cacheValue, Charset.defaultCharset()))
+    }
 
-  @Test
-  public void testAssertFileChecksumPass() throws Exception {
-    DownloadCache.assertFileChecksum(hash, downloadedFile, keyType);
-  }
+    /** Test that the get method correctly retrieves the cached file from the cache.  */
+    @Test
+    @Throws(Exception::class)
+    fun testGetCacheValue() {
+        // Inject file into cache
+        downloadCache.put(hash, downloadedFile, keyType,  /* canonicalId= */null)
 
-  @Test
-  public void testAssertFileChecksumFail() throws Exception {
-    thrown.expect(IOException.class);
-    thrown.expectMessage("does not match expected");
-    DownloadCache.assertFileChecksum(
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        downloadedFile,
-        keyType);
-  }
+        val targetDirectory: Path = scratch.dir("/external")
+        val targetPath: Path? = targetDirectory.getChild(downloadedFile.getBaseName())
+        val actualTargetPath: Path? =
+            downloadCache.get(
+                hash, targetPath, keyType,  /* canonicalId= */null,  /* mayHardlink= */true
+            )
 
-  @Test
-  public void testCanonicalId() throws Exception {
-    downloadCache.put(hash, downloadedFile, keyType, "fooid");
-    Path targetDirectory = scratch.dir("/external");
-    Path targetPath = targetDirectory.getChild(downloadedFile.getBaseName());
+        // Check that the contents are the same.
+        assertThat(FileSystemUtils.readContent(downloadedFile, Charset.defaultCharset()))
+            .isEqualTo(FileSystemUtils.readContent(actualTargetPath, Charset.defaultCharset()))
 
-    Path lookupWithSameId =
-        downloadCache.get(hash, targetPath, keyType, "fooid", /* mayHardlink= */ true);
-    assertThat(lookupWithSameId).isEqualTo(targetPath);
+        // Check that the returned value is stored under outputBaseExternal.
+        Truth.assertThat(actualTargetPath as Any?).isEqualTo(targetPath)
+    }
 
-    Path lookupOtherId =
-        downloadCache.get(hash, targetPath, keyType, "barid", /* mayHardlink= */ true);
-    assertThat(lookupOtherId).isNull();
+    /** Test that the get method retrieves a null if the value is not cached.  */
+    @Test
+    @Throws(Exception::class)
+    fun testGetNullCacheValue() {
+        val targetDirectory: Path = scratch.dir("/external")
+        val targetPath: Path? = targetDirectory.getChild(downloadedFile.getBaseName())
+        val actualTargetPath: Path? =
+            downloadCache.get(
+                hash, targetPath, keyType,  /* canonicalId= */null,  /* mayHardlink= */true
+            )
 
-    Path lookupNoId =
-        downloadCache.get(
-            hash, targetPath, keyType, /* canonicalId= */ null, /* mayHardlink= */ true);
-    assertThat(lookupNoId).isEqualTo(targetPath);
-  }
+        assertThat(actualTargetPath).isNull()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testInvalidSha256Throws() {
+        val invalidSha = "foo"
+        thrown.expect(IOException::class.java)
+        thrown.expectMessage("Invalid key \"foo\" of type " + keyType)
+        downloadCache.put(invalidSha, downloadedFile, keyType,  /* canonicalId= */null)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testPoisonedCache() {
+        val poisonedEntry: Path = keyType.getCachePath(repositoryCachePath).getChild(hash)
+        val poisonedValue: Path = poisonedEntry.getChild(DownloadCache.DEFAULT_CACHE_FILENAME)
+        scratch.file(poisonedValue.getPathString(), Charset.defaultCharset(), "poisoned")
+
+        val targetDirectory: Path = scratch.dir("/external")
+        val targetPath: Path? = targetDirectory.getChild(downloadedFile.getBaseName())
+
+        thrown.expect(IOException::class.java)
+        thrown.expectMessage("does not match expected")
+        thrown.expectMessage("Please delete the directory")
+
+        downloadCache.get(hash, targetPath, keyType,  /* canonicalId= */null,  /* mayHardlink= */true)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testGetChecksum() {
+        val actualChecksum: String? = DownloadCache.getChecksum(keyType, downloadedFile)
+        Truth.assertThat(actualChecksum).isEqualTo(hash)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testGetChecksumWithFastDigest() {
+        val fastDigestChecksum = "cfe5ed57e6e323555b379c660aa8d35b70c2f8f07cf03ad6747266495ac13be0"
+        val fs: InMemoryFileSystem = InMemoryFileSystem(JavaClock(), digestHashFunction)
+        downloadedFile = spy(downloadedFile)
+        Mockito.doReturn(BaseEncoding.base16().lowerCase().decode(fastDigestChecksum))
+            .`when`<Any?>(downloadedFile)
+            .getFastDigest()
+        Mockito.doReturn(fs).`when`<Any?>(downloadedFile).getFileSystem()
+
+        val actualChecksum: String? = DownloadCache.getChecksum(keyType, downloadedFile)
+        Truth.assertThat(actualChecksum).isEqualTo(fastDigestChecksum)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testAssertFileChecksumPass() {
+        DownloadCache.assertFileChecksum(hash, downloadedFile, keyType)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testAssertFileChecksumFail() {
+        thrown.expect(IOException::class.java)
+        thrown.expectMessage("does not match expected")
+        DownloadCache.assertFileChecksum(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            downloadedFile,
+            keyType
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCanonicalId() {
+        downloadCache.put(hash, downloadedFile, keyType, "fooid")
+        val targetDirectory: Path = scratch.dir("/external")
+        val targetPath: Path? = targetDirectory.getChild(downloadedFile.getBaseName())
+
+        val lookupWithSameId: Path? =
+            downloadCache.get(hash, targetPath, keyType, "fooid",  /* mayHardlink= */true)
+        assertThat(lookupWithSameId).isEqualTo(targetPath)
+
+        val lookupOtherId: Path? =
+            downloadCache.get(hash, targetPath, keyType, "barid",  /* mayHardlink= */true)
+        assertThat(lookupOtherId).isNull()
+
+        val lookupNoId: Path? =
+            downloadCache.get(
+                hash, targetPath, keyType,  /* canonicalId= */null,  /* mayHardlink= */true
+            )
+        assertThat(lookupNoId).isEqualTo(targetPath)
+    }
+
+    companion object {
+        @Parameterized.Parameters
+        fun getKeyType(): MutableList<Array<Any?>?> {
+            val keyTypes: MutableList<Array<Any?>?> = ArrayList<Array<Any?>?>()
+            keyTypes.add(
+                arrayOf<Any?>(
+                    // digestHashFunction
+                    DigestHashFunction.SHA256,  // keyType
+                    KeyType.SHA256,  // hash
+                    "bfe5ed57e6e323555b379c660aa8d35b70c2f8f07cf03ad6747266495ac13be0",  // echo 'contents' | sha256sum
+                )
+            )
+            if (TestConstants.BLAKE3_AVAILABLE) {
+                keyTypes.add(
+                    arrayOf<Any?>(
+                        // digestHashFunction
+                        BazelHashFunctions.BLAKE3,  // keyType
+                        KeyType.BLAKE3,  // hash
+                        "54e00265e2516f168096da17059a6109563d9ba64a0b77cdc4b33e44600c2a39",  // echo 'contents' | b3sum
+                    )
+                )
+            }
+            return keyTypes
+        }
+    }
 }

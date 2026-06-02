@@ -11,36 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.rules.java
 
-package com.google.devtools.build.lib.bazel.rules.java;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.PathFragment
+import org.junit.Test
 
 /**
- * Unit tests for {@link BazelJavaSemantics}.
+ * Unit tests for [BazelJavaSemantics].
  */
-@RunWith(JUnit4.class)
-public class BazelJavaSemanticsTest {
-  @Test
-  public void testFindingResources() {
-    BazelJavaSemantics semantics = BazelJavaSemantics.INSTANCE;
-    assertThat(semantics.getDefaultJavaResourcePath(PathFragment.create("x/y/src/main/resources")))
-        .isEqualTo(PathFragment.EMPTY_FRAGMENT);
-    assertThat(
-            semantics.getDefaultJavaResourcePath(PathFragment.create("x/y/src/main/resources/foo")))
-        .isEqualTo(PathFragment.create("foo"));
-    assertThat(
+@RunWith(JUnit4::class)
+class BazelJavaSemanticsTest {
+    @Test
+    fun testFindingResources() {
+        val semantics = BazelJavaSemantics.INSTANCE
+        assertThat(semantics.getDefaultJavaResourcePath(PathFragment.create("x/y/src/main/resources")))
+            .isEqualTo(PathFragment.EMPTY_FRAGMENT)
+        assertThat(
+            semantics.getDefaultJavaResourcePath(PathFragment.create("x/y/src/main/resources/foo"))
+        )
+            .isEqualTo(PathFragment.create("foo"))
+        assertThat(
             semantics.getDefaultJavaResourcePath(
-                PathFragment.create("java/x/y/src/main/resources/foo")))
-        .isEqualTo(PathFragment.create("foo"));
-    assertThat(semantics.getDefaultJavaResourcePath(PathFragment.create("java/foo/java/bar")))
-        .isEqualTo(PathFragment.create("foo/java/bar"));
-    assertThat(semantics.getDefaultJavaResourcePath(PathFragment.create("javatests/foo/java/bar")))
-        .isEqualTo(PathFragment.create("foo/java/bar"));
-  }
+                PathFragment.create("java/x/y/src/main/resources/foo")
+            )
+        )
+            .isEqualTo(PathFragment.create("foo"))
+        assertThat(semantics.getDefaultJavaResourcePath(PathFragment.create("java/foo/java/bar")))
+            .isEqualTo(PathFragment.create("foo/java/bar"))
+        assertThat(semantics.getDefaultJavaResourcePath(PathFragment.create("javatests/foo/java/bar")))
+            .isEqualTo(PathFragment.create("foo/java/bar"))
+    }
 }

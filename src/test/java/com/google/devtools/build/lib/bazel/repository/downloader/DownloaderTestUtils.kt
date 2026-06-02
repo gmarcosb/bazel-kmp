@@ -11,25 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
+import com.google.common.base.Joiner
+import com.google.common.io.ByteStreams
+import java.io.ByteArrayInputStream
+import java.io.IOException
+import java.net.Socket
+import java.nio.charset.StandardCharsets
+import javax.annotation.WillNotClose
 
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-
-import com.google.common.base.Joiner;
-import com.google.common.io.ByteStreams;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.net.Socket;
-import javax.annotation.WillNotClose;
-
-final class DownloaderTestUtils {
-
-  static void sendLines(@WillNotClose Socket socket, String... data) throws IOException {
-    ByteStreams.copy(
-        new ByteArrayInputStream(Joiner.on("\r\n").join(data).getBytes(ISO_8859_1)),
-        socket.getOutputStream());
-  }
-
-  private DownloaderTestUtils() {}
+internal object DownloaderTestUtils {
+    @Throws(IOException::class)
+    fun sendLines(@WillNotClose socket: Socket, vararg data: String?) {
+        ByteStreams.copy(
+            ByteArrayInputStream(Joiner.on("\r\n").join(data).toByteArray(StandardCharsets.ISO_8859_1)),
+            socket.getOutputStream()
+        )
+    }
 }

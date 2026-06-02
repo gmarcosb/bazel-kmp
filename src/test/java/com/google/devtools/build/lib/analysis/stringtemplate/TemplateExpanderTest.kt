@@ -11,232 +11,247 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.stringtemplate;
+package com.google.devtools.build.lib.analysis.stringtemplate
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
-
-import com.google.common.collect.ImmutableSet;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Function;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.collect.ImmutableSet
+import com.google.common.truth.Truth
+import org.junit.Assert
+import org.junit.Before
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.function.Function
+import kotlin.collections.HashMap
+import kotlin.collections.MutableMap
 
 /**
- * Unit tests for the {@link TemplateExpander}.
+ * Unit tests for the [TemplateExpander].
  */
-@RunWith(JUnit4.class)
-public class TemplateExpanderTest {
-  private static final class TemplateContextImpl implements TemplateContext {
-    private final Map<String, String> vars = new HashMap<>();
-    private final Map<String, Function<String, String>> functions = new HashMap<>();
+@RunWith(JUnit4::class)
+class TemplateExpanderTest {
+    private class TemplateContextImpl : TemplateContext {
+        private val vars: MutableMap<String?, String?> = HashMap<String?, String?>()
+        private val functions: MutableMap<String?, Function<String?, String?>?> =
+            HashMap<String?, Function<String?, String?>?>()
 
-    @Override
-    public String lookupVariable(String name)
-        throws ExpansionException {
-      // Not a Make variable. Let the shell handle the expansion.
-      if (name.startsWith("$")) {
-        return name;
-      }
-      if (!vars.containsKey(name)) {
-        throw new ExpansionException(String.format("$(%s) not defined", name));
-      }
-      return vars.get(name);
+        @Throws(ExpansionException::class)
+        override fun lookupVariable(name: String): String? {
+            // Not a Make variable. Let the shell handle the expansion.
+            if (name.startsWith("$")) {
+                return name
+            }
+            if (!vars.containsKey(name)) {
+                throw ExpansionException(String.format("$(%s) not defined", name))
+            }
+            return vars.get(name)
+        }
+
+        @Throws(ExpansionException::class)
+        override fun lookupFunction(name: String?, param: String?): String? {
+            if (!functions.containsKey(name)) {
+                throw ExpansionException(String.format("$(%s) not defined", name))
+            }
+            return functions.get(name)!!.apply(param)
+        }
     }
 
-    @Override
-    public String lookupFunction(String name, String param) throws ExpansionException {
-      if (!functions.containsKey(name)) {
-        throw new ExpansionException(String.format("$(%s) not defined", name));
-      }
-      return functions.get(name).apply(param);
+    private var context: TemplateContextImpl? = null
+
+    @Before
+    @Throws(Exception::class)
+    fun createContext() {
+        context = TemplateContextImpl()
     }
-  }
 
-  private TemplateContextImpl context;
-
-  @Before
-  public final void createContext() throws Exception  {
-    context = new TemplateContextImpl();
-  }
-
-  private Expansion expand(String value) throws ExpansionException, InterruptedException {
-    return TemplateExpander.expand(value, context);
-  }
-
-  private String expandSingleVariable(String value)
-      throws ExpansionException, InterruptedException {
-    return TemplateExpander.expandSingleVariable(value, context);
-  }
-
-  private ExpansionException expansionFailure(String cmd) throws InterruptedException {
-    try {
-      expand(cmd);
-      fail("Expansion of " + cmd + " didn't fail as expected");
-      throw new AssertionError();
-    } catch (ExpansionException e) {
-      return e;
+    @Throws(ExpansionException::class, InterruptedException::class)
+    private fun expand(value: String): Expansion {
+        return TemplateExpander.expand(value, context!!)
     }
-  }
 
-  @Test
-  public void testVariableExpansion() throws Exception {
-    context.vars.put("SRCS", "src1 src2");
-    context.vars.put("<", "src1");
-    context.vars.put("OUTS", "out1 out2");
-    context.vars.put("@", "out1");
-    context.vars.put("^", "src1 src2 dep1 dep2");
-    context.vars.put("@D", "outdir");
-    context.vars.put("BINDIR", "bindir");
-    context.vars.put("CUSTOMVAR", "custom val");
+    @Throws(ExpansionException::class, InterruptedException::class)
+    private fun expandSingleVariable(value: String?): String {
+        return TemplateExpander.expandSingleVariable(value!!, context!!)!!
+    }
 
-    assertThat(expand("$(SRCS)")).isEqualTo(Expansion.create("src1 src2", ImmutableSet.of("SRCS")));
-    assertThat(expand("$<")).isEqualTo(Expansion.create("src1", ImmutableSet.of("<")));
-    assertThat(expand("$(OUTS)")).isEqualTo(Expansion.create("out1 out2", ImmutableSet.of("OUTS")));
-    assertThat(expand("$(@)")).isEqualTo(Expansion.create("out1", ImmutableSet.of("@")));
-    assertThat(expand("$@")).isEqualTo(Expansion.create("out1", ImmutableSet.of("@")));
-    assertThat(expand("$@,")).isEqualTo(Expansion.create("out1,", ImmutableSet.of("@")));
-    assertThat(expand("$(CUSTOMVAR)"))
-        .isEqualTo(Expansion.create("custom val", ImmutableSet.of("CUSTOMVAR")));
+    @Throws(InterruptedException::class)
+    private fun expansionFailure(cmd: String): ExpansionException {
+        try {
+            expand(cmd)
+            Assert.fail("Expansion of " + cmd + " didn't fail as expected")
+            throw AssertionError()
+        } catch (e: ExpansionException) {
+            return e
+        }
+    }
 
-    assertThat(expand("$(SRCS) $(OUTS)"))
-        .isEqualTo(Expansion.create("src1 src2 out1 out2", ImmutableSet.of("SRCS", "OUTS")));
+    @Test
+    @Throws(Exception::class)
+    fun testVariableExpansion() {
+        context.vars.put("SRCS", "src1 src2")
+        context.vars.put("<", "src1")
+        context.vars.put("OUTS", "out1 out2")
+        context.vars.put("@", "out1")
+        context.vars.put("^", "src1 src2 dep1 dep2")
+        context.vars.put("@D", "outdir")
+        context.vars.put("BINDIR", "bindir")
+        context.vars.put("CUSTOMVAR", "custom val")
 
-    assertThat(expand("cmd")).isEqualTo(Expansion.create("cmd", ImmutableSet.of()));
-    assertThat(expand("cmd $(SRCS),"))
-        .isEqualTo(Expansion.create("cmd src1 src2,", ImmutableSet.of("SRCS")));
-    assertThat(expand("label1 $(SRCS),"))
-        .isEqualTo(Expansion.create("label1 src1 src2,", ImmutableSet.of("SRCS")));
-    assertThat(expand(":label1 $(SRCS),"))
-        .isEqualTo(Expansion.create(":label1 src1 src2,", ImmutableSet.of("SRCS")));
-  }
+        Truth.assertThat(expand("$(SRCS)")).isEqualTo(Expansion.create("src1 src2", ImmutableSet.of<E?>("SRCS")))
+        Truth.assertThat(expand("$<")).isEqualTo(Expansion.create("src1", ImmutableSet.of<E?>("<")))
+        Truth.assertThat(expand("$(OUTS)")).isEqualTo(Expansion.create("out1 out2", ImmutableSet.of<E?>("OUTS")))
+        Truth.assertThat(expand("$(@)")).isEqualTo(Expansion.create("out1", ImmutableSet.of<E?>("@")))
+        Truth.assertThat(expand("$@")).isEqualTo(Expansion.create("out1", ImmutableSet.of<E?>("@")))
+        Truth.assertThat(expand("$@,")).isEqualTo(Expansion.create("out1,", ImmutableSet.of<E?>("@")))
+        Truth.assertThat(expand("$(CUSTOMVAR)"))
+            .isEqualTo(Expansion.create("custom val", ImmutableSet.of<E?>("CUSTOMVAR")))
 
-  @Test
-  public void testUndefinedVariableExpansion() throws Exception {
-    assertThat(expansionFailure("$(foo)"))
-        .hasMessageThat().isEqualTo("$(foo) not defined");
-  }
+        Truth.assertThat(expand("$(SRCS) $(OUTS)"))
+            .isEqualTo(Expansion.create("src1 src2 out1 out2", ImmutableSet.of<E?>("SRCS", "OUTS")))
 
-  @Test
-  public void testFunctionExpansion() throws Exception {
-    context.functions.put("foo", (String p) -> "FOO(" + p + ")");
-    context.vars.put("bar", "bar");
+        Truth.assertThat(expand("cmd")).isEqualTo(Expansion.create("cmd", ImmutableSet.of<E?>()))
+        Truth.assertThat(expand("cmd $(SRCS),"))
+            .isEqualTo(Expansion.create("cmd src1 src2,", ImmutableSet.of<E?>("SRCS")))
+        Truth.assertThat(expand("label1 $(SRCS),"))
+            .isEqualTo(Expansion.create("label1 src1 src2,", ImmutableSet.of<E?>("SRCS")))
+        Truth.assertThat(expand(":label1 $(SRCS),"))
+            .isEqualTo(Expansion.create(":label1 src1 src2,", ImmutableSet.of<E?>("SRCS")))
+    }
 
-    assertThat(expand("$(foo baz)"))
-        .isEqualTo(Expansion.create("FOO(baz)", ImmutableSet.of("foo")));
-    assertThat(expand("$(bar) $(foo baz)"))
-        .isEqualTo(Expansion.create("bar FOO(baz)", ImmutableSet.of("bar", "foo")));
-    assertThat(expand("xyz$(foo baz)zyx"))
-        .isEqualTo(Expansion.create("xyzFOO(baz)zyx", ImmutableSet.of("foo")));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testUndefinedVariableExpansion() {
+        Truth.assertThat(expansionFailure("$(foo)"))
+            .hasMessageThat().isEqualTo("$(foo) not defined")
+    }
 
-  @Test
-  public void testFunctionExpansionThrows() throws Exception {
-    ExpansionException e =
-        assertThrows(
-            ExpansionException.class,
-            () ->
-                TemplateExpander.expand(
-                    "$(foo baz)",
-                    new TemplateContext() {
-                      @Override
-                      public String lookupVariable(String name) throws ExpansionException {
-                        throw new ExpansionException(name);
-                      }
+    @Test
+    @Throws(Exception::class)
+    fun testFunctionExpansion() {
+        context.functions.put("foo", Function { p: String? -> "FOO(" + p + ")" })
+        context.vars.put("bar", "bar")
 
-                      @Override
-                      public String lookupFunction(String name, String param)
-                          throws ExpansionException {
-                        throw new ExpansionException(name + "(" + param + ")");
-                      }
-                    }));
-    assertThat(e).hasMessageThat().isEqualTo("foo(baz)");
-  }
+        Truth.assertThat(expand("$(foo baz)"))
+            .isEqualTo(Expansion.create("FOO(baz)", ImmutableSet.of<E?>("foo")))
+        Truth.assertThat(expand("$(bar) $(foo baz)"))
+            .isEqualTo(Expansion.create("bar FOO(baz)", ImmutableSet.of<E?>("bar", "foo")))
+        Truth.assertThat(expand("xyz$(foo baz)zyx"))
+            .isEqualTo(Expansion.create("xyzFOO(baz)zyx", ImmutableSet.of<E?>("foo")))
+    }
 
-  @Test
-  public void testUndefinedFunctionExpansion() throws Exception {
-    // Note: $(location x) is considered an undefined variable;
-    assertThat(expansionFailure("$(location label1), $(SRCS),"))
-        .hasMessageThat().isEqualTo("$(location) not defined");
-    assertThat(expansionFailure("$(basename file)"))
-        .hasMessageThat().isEqualTo("$(basename) not defined");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFunctionExpansionThrows() {
+        val e =
+            Assert.assertThrows<ExpansionException?>(
+                ExpansionException::class.java,
+                ThrowingRunnable {
+                    TemplateExpander.expand(
+                        "$(foo baz)",
+                        object : TemplateContext() {
+                            @Throws(ExpansionException::class)
+                            override fun lookupVariable(name: String?): String? {
+                                throw ExpansionException(name)
+                            }
 
-  @Test
-  public void testRecursiveExpansion() throws Exception {
-    // Expansion is recursive: $(recursive) -> $(SRCS) -> "src1 src2"
-    context.vars.put("SRCS", "src1 src2");
-    context.vars.put("recursive", "$(SRCS)");
-    assertThat(expand("$(recursive)"))
-        .isEqualTo(Expansion.create("src1 src2", ImmutableSet.of("recursive", "SRCS")));
-  }
+                            @Throws(ExpansionException::class)
+                            override fun lookupFunction(name: String?, param: String?): String? {
+                                throw ExpansionException(name + "(" + param + ")")
+                            }
+                        })
+                })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("foo(baz)")
+    }
 
-  @Test
-  public void testRecursiveExpansionDoesNotSpanExpansionBoundaries() throws Exception {
-    // Recursion does not span expansion boundaries:
-    // $(recur2a)$(recur2b) --> "$" + "(SRCS)"  --/--> "src1 src2"
-    context.vars.put("SRCS", "src1 src2");
-    context.vars.put("recur2a", "$$");
-    context.vars.put("recur2b", "(SRCS)");
-    assertThat(expand("$(recur2a)$(recur2b)"))
-        .isEqualTo(Expansion.create("$(SRCS)", ImmutableSet.of("recur2a", "recur2b")));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testUndefinedFunctionExpansion() {
+        // Note: $(location x) is considered an undefined variable;
+        Truth.assertThat(expansionFailure("$(location label1), $(SRCS),"))
+            .hasMessageThat().isEqualTo("$(location) not defined")
+        Truth.assertThat(expansionFailure("$(basename file)"))
+            .hasMessageThat().isEqualTo("$(basename) not defined")
+    }
 
-  @Test
-  public void testSelfInfiniteExpansionFailsGracefully() throws Exception {
-    context.vars.put("infinite", "$(infinite)");
-    assertThat(expansionFailure("$(infinite)")).hasMessageThat()
-        .isEqualTo("potentially unbounded recursion during expansion of '$(infinite)'");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testRecursiveExpansion() {
+        // Expansion is recursive: $(recursive) -> $(SRCS) -> "src1 src2"
+        context.vars.put("SRCS", "src1 src2")
+        context.vars.put("recursive", "$(SRCS)")
+        Truth.assertThat(expand("$(recursive)"))
+            .isEqualTo(Expansion.create("src1 src2", ImmutableSet.of<E?>("recursive", "SRCS")))
+    }
 
-  @Test
-  public void testMutuallyInfiniteExpansionFailsGracefully() throws Exception {
-    context.vars.put("black", "$(white)");
-    context.vars.put("white", "$(black)");
-    assertThat(expansionFailure("$(white) is the new $(black)")).hasMessageThat()
-        .isEqualTo("potentially unbounded recursion during expansion of '$(black)'");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testRecursiveExpansionDoesNotSpanExpansionBoundaries() {
+        // Recursion does not span expansion boundaries:
+        // $(recur2a)$(recur2b) --> "$" + "(SRCS)"  --/--> "src1 src2"
+        context.vars.put("SRCS", "src1 src2")
+        context.vars.put("recur2a", "$$")
+        context.vars.put("recur2b", "(SRCS)")
+        Truth.assertThat(expand("$(recur2a)$(recur2b)"))
+            .isEqualTo(Expansion.create("$(SRCS)", ImmutableSet.of<E?>("recur2a", "recur2b")))
+    }
 
-  @Test
-  public void testErrors() throws Exception {
-    assertThat(expansionFailure("$(SRCS")).hasMessageThat()
-        .isEqualTo("unterminated variable reference");
-    assertThat(expansionFailure("$")).hasMessageThat().isEqualTo("unterminated $");
+    @Test
+    @Throws(Exception::class)
+    fun testSelfInfiniteExpansionFailsGracefully() {
+        context.vars.put("infinite", "$(infinite)")
+        Truth.assertThat(expansionFailure("$(infinite)")).hasMessageThat()
+            .isEqualTo("potentially unbounded recursion during expansion of '$(infinite)'")
+    }
 
-    String suffix = "instead for \"Make\" variables, or escape the '$' as '$$' if you intended "
-        + "this for the shell";
-    assertThat(expansionFailure("for file in a b c;do echo $file;done")).hasMessageThat()
-        .isEqualTo("'$file' syntax is not supported; use '$(file)' " + suffix);
-    assertThat(expansionFailure("${file%:.*8}")).hasMessageThat()
-        .isEqualTo("'${file%:.*8}' syntax is not supported; use '$(file%:.*8)' " + suffix);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testMutuallyInfiniteExpansionFailsGracefully() {
+        context.vars.put("black", "$(white)")
+        context.vars.put("white", "$(black)")
+        Truth.assertThat(expansionFailure("$(white) is the new $(black)")).hasMessageThat()
+            .isEqualTo("potentially unbounded recursion during expansion of '$(black)'")
+    }
 
-  @Test
-  public void testDollarDollar() throws Exception {
-    assertThat(expand("for file in a b c;do echo $$file;done"))
-        .isEqualTo(Expansion.create("for file in a b c;do echo $file;done", ImmutableSet.of()));
-    assertThat(expand("$${file%:.*8}"))
-        .isEqualTo(Expansion.create("${file%:.*8}", ImmutableSet.of()));
-    assertThat(expand("$$(basename file)"))
-        .isEqualTo(Expansion.create("$(basename file)", ImmutableSet.of()));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testErrors() {
+        Truth.assertThat(expansionFailure("$(SRCS")).hasMessageThat()
+            .isEqualTo("unterminated variable reference")
+        Truth.assertThat(expansionFailure("$")).hasMessageThat().isEqualTo("unterminated $")
 
-  // Regression test: check that the parameter is trimmed before expanding.
-  @Test
-  public void testFunctionExpansionIsTrimmed() throws Exception {
-    context.functions.put("foo", (String p) -> "FOO(" + p + ")");
-    assertThat(expand("$(foo  baz )"))
-        .isEqualTo(Expansion.create("FOO(baz)", ImmutableSet.of("foo")));
-  }
+        val suffix = ("instead for \"Make\" variables, or escape the '$' as '$$' if you intended "
+                + "this for the shell")
+        Truth.assertThat(expansionFailure("for file in a b c;do echo \$file;done")).hasMessageThat()
+            .isEqualTo("'\$file' syntax is not supported; use '$(file)' " + suffix)
+        Truth.assertThat(expansionFailure("\${file%:.*8}")).hasMessageThat()
+            .isEqualTo("'\${file%:.*8}' syntax is not supported; use '$(file%:.*8)' " + suffix)
+    }
 
-  @Test
-  public void testExpandSingleVariable() throws Exception {
-    context.vars.put("SINGLE", "val1 val2");
-    assertThat(expandSingleVariable("$(SINGLE)")).isEqualTo("val1 val2");
-    assertThat(expandSingleVariable("foo $(SINGLE)")).isNull();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testDollarDollar() {
+        Truth.assertThat(expand("for file in a b c;do echo $\$file;done"))
+            .isEqualTo(Expansion.create("for file in a b c;do echo \$file;done", ImmutableSet.of<E?>()))
+        Truth.assertThat(expand("$\${file%:.*8}"))
+            .isEqualTo(Expansion.create("\${file%:.*8}", ImmutableSet.of<E?>()))
+        Truth.assertThat(expand("$$(basename file)"))
+            .isEqualTo(Expansion.create("$(basename file)", ImmutableSet.of<E?>()))
+    }
+
+    // Regression test: check that the parameter is trimmed before expanding.
+    @Test
+    @Throws(Exception::class)
+    fun testFunctionExpansionIsTrimmed() {
+        context.functions.put("foo", Function { p: String? -> "FOO(" + p + ")" })
+        Truth.assertThat(expand("$(foo  baz )"))
+            .isEqualTo(Expansion.create("FOO(baz)", ImmutableSet.of<E?>("foo")))
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testExpandSingleVariable() {
+        context.vars.put("SINGLE", "val1 val2")
+        Truth.assertThat(expandSingleVariable("$(SINGLE)")).isEqualTo("val1 val2")
+        Truth.assertThat(expandSingleVariable("foo $(SINGLE)")).isNull()
+    }
 }

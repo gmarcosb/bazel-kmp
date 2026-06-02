@@ -11,47 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import javax.annotation.Nullable;
+/** A syntax node for return statements.  */
+class ReturnStatement internal constructor(locs: FileLocations?, returnOffset: Int, result: Expression?) :
+    Statement(locs, Kind.RETURN) {
+    private val returnOffset: Int
+    @kotlin.jvm.JvmField
+    private val result: Expression?
 
-/** A syntax node for return statements. */
-public final class ReturnStatement extends Statement {
+    init {
+        this.returnOffset = returnOffset
+        this.result = result
+    }
 
-  private final int returnOffset;
-  @Nullable private final Expression result;
+    fun getResult(): Expression? {
+        return result
+    }
 
-  ReturnStatement(FileLocations locs, int returnOffset, @Nullable Expression result) {
-    super(locs, Kind.RETURN);
-    this.returnOffset = returnOffset;
-    this.result = result;
-  }
+    override fun getStartOffset(): Int {
+        return returnOffset
+    }
 
-  /**
-   * Returns a new return statement that returns expr. It is provided only for use by the evaluator,
-   * and will be removed when it switches to a compiled representation.
-   */
-  static ReturnStatement make(Expression expr) {
-    return new ReturnStatement(expr.locs, expr.getStartOffset(), expr);
-  }
+    override fun getEndOffset(): Int {
+        return if (result != null) result.getEndOffset() else returnOffset + "return".length()
+    }
 
-  @Nullable
-  public Expression getResult() {
-    return result;
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 
-  @Override
-  public int getStartOffset() {
-    return returnOffset;
-  }
-
-  @Override
-  public int getEndOffset() {
-    return result != null ? result.getEndOffset() : returnOffset + "return".length();
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    companion object {
+        /**
+         * Returns a new return statement that returns expr. It is provided only for use by the evaluator,
+         * and will be removed when it switches to a compiled representation.
+         */
+        fun make(expr: Expression): ReturnStatement {
+            return ReturnStatement(expr.locs, expr.getStartOffset(), expr)
+        }
+    }
 }

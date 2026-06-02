@@ -11,83 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.collect.ImmutableList;
-import java.util.List;
+import com.google.common.collect.ImmutableList
 
-/** Syntax node for dict expressions. */
-public final class DictExpression extends Expression {
+/** Syntax node for dict expressions.  */
+class DictExpression internal constructor(
+    locs: FileLocations?,
+    lbraceOffset: Int,
+    entries: MutableList<Entry?>,
+    rbraceOffset: Int
+) : Expression(locs, Kind.DICT_EXPR) {
+    /** A key/value pair in a dict expression or comprehension.  */
+    class Entry internal constructor(locs: FileLocations?, key: Expression, colonOffset: Int, value: Expression) :
+        Node(locs) {
+        @kotlin.jvm.JvmField
+        val key: Expression
+        private val colonOffset: Int
+        @kotlin.jvm.JvmField
+        val value: Expression
 
-  /** A key/value pair in a dict expression or comprehension. */
-  public static final class Entry extends Node {
+        init {
+            this.key = key
+            this.colonOffset = colonOffset
+            this.value = value
+        }
 
-    private final Expression key;
-    private final int colonOffset;
-    private final Expression value;
+        override fun getStartOffset(): Int {
+            return key.getStartOffset()
+        }
 
-    Entry(FileLocations locs, Expression key, int colonOffset, Expression value) {
-      super(locs);
-      this.key = key;
-      this.colonOffset = colonOffset;
-      this.value = value;
+        override fun getEndOffset(): Int {
+            return value.getEndOffset()
+        }
+
+        val colonLocation: Location
+            get() = locs.getLocation(colonOffset)
+
+        override fun accept(visitor: NodeVisitor) {
+            visitor.visit(this)
+        }
     }
 
-    public Expression getKey() {
-      return key;
+    private val lbraceOffset: Int
+    @kotlin.jvm.JvmField
+    val entries: ImmutableList<Entry?>
+    private val rbraceOffset: Int
+
+    init {
+        this.lbraceOffset = lbraceOffset
+        this.entries = ImmutableList.copyOf<Entry?>(entries)
+        this.rbraceOffset = rbraceOffset
     }
 
-    public Expression getValue() {
-      return value;
+    override fun getStartOffset(): Int {
+        return lbraceOffset
     }
 
-    @Override
-    public int getStartOffset() {
-      return key.getStartOffset();
+    override fun getEndOffset(): Int {
+        return rbraceOffset + 1
     }
 
-    @Override
-    public int getEndOffset() {
-      return value.getEndOffset();
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
     }
-
-    public Location getColonLocation() {
-      return locs.getLocation(colonOffset);
-    }
-
-    @Override
-    public void accept(NodeVisitor visitor) {
-      visitor.visit(this);
-    }
-  }
-
-  private final int lbraceOffset;
-  private final ImmutableList<Entry> entries;
-  private final int rbraceOffset;
-
-  DictExpression(FileLocations locs, int lbraceOffset, List<Entry> entries, int rbraceOffset) {
-    super(locs, Kind.DICT_EXPR);
-    this.lbraceOffset = lbraceOffset;
-    this.entries = ImmutableList.copyOf(entries);
-    this.rbraceOffset = rbraceOffset;
-  }
-
-  @Override
-  public int getStartOffset() {
-    return lbraceOffset;
-  }
-
-  @Override
-  public int getEndOffset() {
-    return rbraceOffset + 1;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
-
-  public ImmutableList<Entry> getEntries() {
-    return entries;
-  }
 }

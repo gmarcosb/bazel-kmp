@@ -11,57 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
 /**
- * An index expression ({@code obj[field]}). Not to be confused with a slice expression ({@code
- * obj[from:to]}). The object may be either a sequence or an associative mapping (most commonly
+ * An index expression (`obj[field]`). Not to be confused with a slice expression (`obj[from:to]`). The object may be either a sequence or an associative mapping (most commonly
  * lists and dictionaries).
  */
-public final class IndexExpression extends Expression {
+class IndexExpression internal constructor(
+    locs: FileLocations?,
+    `object`: Expression,
+    lbracketOffset: Int,
+    key: Expression?,
+    rbracketOffset: Int
+) : Expression(locs, Kind.INDEX) {
+    @kotlin.jvm.JvmField
+    private val `object`: Expression
+    private val lbracketOffset: Int
+    @kotlin.jvm.JvmField
+    private val key: Expression?
+    private val rbracketOffset: Int
 
-  private final Expression object;
-  private final int lbracketOffset;
-  private final Expression key;
-  private final int rbracketOffset;
+    init {
+        this.`object` = `object`
+        this.lbracketOffset = lbracketOffset
+        this.key = key
+        this.rbracketOffset = rbracketOffset
+    }
 
-  IndexExpression(
-      FileLocations locs,
-      Expression object,
-      int lbracketOffset,
-      Expression key,
-      int rbracketOffset) {
-    super(locs, Kind.INDEX);
-    this.object = object;
-    this.lbracketOffset = lbracketOffset;
-    this.key = key;
-    this.rbracketOffset = rbracketOffset;
-  }
+    fun getObject(): Expression {
+        return `object`
+    }
 
-  public Expression getObject() {
-    return object;
-  }
+    fun getKey(): Expression? {
+        return key
+    }
 
-  public Expression getKey() {
-    return key;
-  }
+    override fun getStartOffset(): Int {
+        return `object`.getStartOffset()
+    }
 
-  @Override
-  public int getStartOffset() {
-    return object.getStartOffset();
-  }
+    override fun getEndOffset(): Int {
+        return rbracketOffset + 1
+    }
 
-  @Override
-  public int getEndOffset() {
-    return rbracketOffset + 1;
-  }
+    fun getLbracketLocation(): Location {
+        return locs.getLocation(lbracketOffset)
+    }
 
-  public Location getLbracketLocation() {
-    return locs.getLocation(lbracketOffset);
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

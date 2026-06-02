@@ -12,478 +12,566 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.analysis.BlazeVersionInfo
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static org.junit.Assert.fail;
+/** Tests for [BazelModuleResolutionFunction].  */
+@RunWith(JUnit4::class)
+class BazelModuleResolutionFunctionTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBazelInvalidCompatibility() {
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        scratch.overwriteFile(
+            "MODULE.bazel", "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0dd'])"
+        )
+        invalidatePackages(false)
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.BlazeVersionInfo;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.BazelCompatibilityMode;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-/** Tests for {@link BazelModuleResolutionFunction}. */
-@RunWith(JUnit4.class)
-public class BazelModuleResolutionFunctionTest extends BuildViewTestCase {
+        assertThat(result.hasError()).isTrue()
+        assertContainsEvent("invalid version argument '>5.1.0dd'")
+    }
 
-  @Test
-  public void testBazelInvalidCompatibility() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.overwriteFile(
-        "MODULE.bazel", "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0dd'])");
-    invalidatePackages(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleBazelCompatibilityFailure() {
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.4'])"
+        )
+        invalidatePackages(false)
 
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        setBlazeVersion("5.1.4")
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    assertThat(result.hasError()).isTrue();
-    assertContainsEvent("invalid version argument '>5.1.0dd'");
-  }
+        assertThat(result.hasError()).isTrue()
+        assertContainsEvent(
+            "Bazel version 5.1.4 is not compatible with module \"<root>\" (bazel_compatibility:"
+                    + " [>5.1.0, <5.1.4])"
+        )
+    }
 
-  @Test
-  public void testSimpleBazelCompatibilityFailure() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.4'])");
-    invalidatePackages(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBazelCompatibilityWarning() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.4'])"
+        )
+        skyframeExecutor.injectExtraPrecomputedValues(
+            com.google.common.collect.ImmutableList.of<E?>(
+                PrecomputedValue.injected(
+                    BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE,
+                    BazelCompatibilityMode.WARNING
+                )
+            )
+        )
+        invalidatePackages(false)
 
-    setBlazeVersion("5.1.4");
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        setBlazeVersion("5.1.4")
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    assertThat(result.hasError()).isTrue();
-    assertContainsEvent(
-        "Bazel version 5.1.4 is not compatible with module \"<root>\" (bazel_compatibility:"
-            + " [>5.1.0, <5.1.4])");
-  }
+        assertThat(result.hasError()).isFalse()
+        assertContainsEvent(
+            "Bazel version 5.1.4 is not compatible with module \"<root>\" (bazel_compatibility:"
+                    + " [>5.1.0, <5.1.4])"
+        )
+    }
 
-  @Test
-  public void testBazelCompatibilityWarning() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.4'])");
-    skyframeExecutor.injectExtraPrecomputedValues(
-        ImmutableList.of(
-            PrecomputedValue.injected(
-                BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE,
-                BazelCompatibilityMode.WARNING)));
-    invalidatePackages(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisablingBazelCompatibility() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.4'])"
+        )
+        skyframeExecutor.injectExtraPrecomputedValues(
+            com.google.common.collect.ImmutableList.of<E?>(
+                PrecomputedValue.injected(
+                    BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE,
+                    BazelCompatibilityMode.OFF
+                )
+            )
+        )
+        invalidatePackages(false)
 
-    setBlazeVersion("5.1.4");
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        setBlazeVersion("5.1.4")
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    assertThat(result.hasError()).isFalse();
-    assertContainsEvent(
-        "Bazel version 5.1.4 is not compatible with module \"<root>\" (bazel_compatibility:"
-            + " [>5.1.0, <5.1.4])");
-  }
+        assertThat(result.hasError()).isFalse()
+        assertDoesNotContainEvent(
+            "Bazel version 5.1.4 is not compatible with module \"<root>\" (bazel_compatibility:"
+                    + " [>5.1.0, <5.1.4])"
+        )
+    }
 
-  @Test
-  public void testDisablingBazelCompatibility() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.4'])");
-    skyframeExecutor.injectExtraPrecomputedValues(
-        ImmutableList.of(
-            PrecomputedValue.injected(
-                BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE,
-                BazelCompatibilityMode.OFF)));
-    invalidatePackages(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBazelCompatibilitySuccess() {
+        setupModulesForCompatibility()
 
-    setBlazeVersion("5.1.4");
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        setBlazeVersion("5.1.4-pre.20220421.3")
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
+        assertThat(result.hasError()).isFalse()
+    }
 
-    assertThat(result.hasError()).isFalse();
-    assertDoesNotContainEvent(
-        "Bazel version 5.1.4 is not compatible with module \"<root>\" (bazel_compatibility:"
-            + " [>5.1.0, <5.1.4])");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBazelCompatibilityFailure() {
+        setupModulesForCompatibility()
 
-  @Test
-  public void testBazelCompatibilitySuccess() throws Exception {
-    setupModulesForCompatibility();
+        setBlazeVersion("5.1.5rc444")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    setBlazeVersion("5.1.4-pre.20220421.3");
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
-    assertThat(result.hasError()).isFalse();
-  }
+        assertThat(result.hasError()).isTrue()
+        assertContainsEvent(
+            "Bazel version 5.1.5rc444 is not compatible with module \"b@1.0\" (bazel_compatibility:"
+                    + " [<=5.1.4, -5.1.2])"
+        )
+    }
 
-  @Test
-  public void testBazelCompatibilityFailure() throws Exception {
-    setupModulesForCompatibility();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRcIsCompatibleWithReleaseRequirement() {
+        scratch.overwriteFile(
+            "MODULE.bazel", "module(name='mod', version='1.0', bazel_compatibility=['>=6.4.0'])"
+        )
+        invalidatePackages(false)
 
-    setBlazeVersion("5.1.5rc444");
-    reporter.removeHandler(failFastHandler);
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        setBlazeVersion("6.4.0rc1")
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    assertThat(result.hasError()).isTrue();
-    assertContainsEvent(
-        "Bazel version 5.1.5rc444 is not compatible with module \"b@1.0\" (bazel_compatibility:"
-            + " [<=5.1.4, -5.1.2])");
-  }
+        assertThat(result.hasError()).isFalse()
+    }
 
-  @Test
-  public void testRcIsCompatibleWithReleaseRequirement() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel", "module(name='mod', version='1.0', bazel_compatibility=['>=6.4.0'])");
-    invalidatePackages(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPrereleaseIsNotCompatibleWithReleaseRequirement() {
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        scratch.overwriteFile(
+            "MODULE.bazel", "module(name='mod', version='1.0', bazel_compatibility=['>=6.4.0'])"
+        )
+        invalidatePackages(false)
 
-    setBlazeVersion("6.4.0rc1");
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        setBlazeVersion("6.4.0-pre-1")
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    assertThat(result.hasError()).isFalse();
-  }
+        assertThat(result.hasError()).isTrue()
+        assertContainsEvent(
+            "Bazel version 6.4.0-pre-1 is not compatible with module \"<root>\" (bazel_compatibility:"
+                    + " [>=6.4.0])"
+        )
+    }
 
-  @Test
-  public void testPrereleaseIsNotCompatibleWithReleaseRequirement() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.overwriteFile(
-        "MODULE.bazel", "module(name='mod', version='1.0', bazel_compatibility=['>=6.4.0'])");
-    invalidatePackages(false);
+    private fun setBlazeVersion(version: String) {
+        BlazeVersionInfo.setBuildInfoForTesting(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                BlazeVersionInfo.BUILD_LABEL,
+                version
+            )
+        )
+    }
 
-    setBlazeVersion("6.4.0-pre-1");
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
-
-    assertThat(result.hasError()).isTrue();
-    assertContainsEvent(
-        "Bazel version 6.4.0-pre-1 is not compatible with module \"<root>\" (bazel_compatibility:"
-            + " [>=6.4.0])");
-  }
-
-  private void setBlazeVersion(String version) {
-    BlazeVersionInfo.setBuildInfoForTesting(ImmutableMap.of(BlazeVersionInfo.BUILD_LABEL, version));
-  }
-
-  private void setupModulesForCompatibility() throws Exception {
-    /* Root depends on "a" which depends on "b"
+    @Throws(java.lang.Exception::class)
+    private fun setupModulesForCompatibility() {
+        /* Root depends on "a" which depends on "b"
        The only versions that would work with root, a and b compatibility constrains are between
        -not including- 5.1.2 and 5.1.4.
        Ex: 5.1.3rc44, 5.1.3, 5.1.4-pre22.44
     */
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.6'])",
-        "bazel_dep(name = 'a', version = '1.0')");
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='mod', version='1.0', bazel_compatibility=['>5.1.0', '<5.1.6'])",
+            "bazel_dep(name = 'a', version = '1.0')"
+        )
 
-    registry
-        .addModule(
-            createModuleKey("a", "1.0"),
-            "module(name='a', version='1.0', bazel_compatibility=['>=5.1.2', '-5.1.4']);",
-            "bazel_dep(name='b', version='1.0')")
-        .addModule(
-            createModuleKey("b", "1.0"),
-            "module(name='b', version='1.0', bazel_compatibility=['<=5.1.4', '-5.1.2']);");
-    invalidatePackages(false);
-  }
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("a", "1.0"),
+                "module(name='a', version='1.0', bazel_compatibility=['>=5.1.2', '-5.1.4']);",
+                "bazel_dep(name='b', version='1.0')"
+            )
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.0"),
+                "module(name='b', version='1.0', bazel_compatibility=['<=5.1.4', '-5.1.2']);"
+            )
+        invalidatePackages(false)
+    }
 
-  @Test
-  public void testYankedVersionCheckSuccess() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    setupModulesForYankedVersion();
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testYankedVersionCheckSuccess() {
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        setupModulesForYankedVersion()
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().toString())
-        .contains(
+        assertThat(result.hasError()).isTrue()
+        com.google.common.truth.Subject.contains(
             "Yanked version detected in your resolved dependency graph: b@1.0, for the reason: 1.0"
-                + " is a bad version!");
-  }
+                    + " is a bad version!"
+        )
+    }
 
-  @Test
-  public void testYankedVersionCheckIgnoredByAll() throws Exception {
-    skyframeExecutor.injectExtraPrecomputedValues(
-        ImmutableList.of(
-            PrecomputedValue.injected(
-                YankedVersionsUtil.ALLOWED_YANKED_VERSIONS, ImmutableList.of("all"))));
-    setupModulesForYankedVersion();
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
-    assertThat(result.hasError()).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testYankedVersionCheckIgnoredByAll() {
+        skyframeExecutor.injectExtraPrecomputedValues(
+            com.google.common.collect.ImmutableList.of<E?>(
+                PrecomputedValue.injected(
+                    YankedVersionsUtil.ALLOWED_YANKED_VERSIONS, com.google.common.collect.ImmutableList.of<E?>("all")
+                )
+            )
+        )
+        setupModulesForYankedVersion()
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
+        assertThat(result.hasError()).isFalse()
+    }
 
-  @Test
-  public void testYankedVersionCheckIgnoredBySpecific() throws Exception {
-    skyframeExecutor.injectExtraPrecomputedValues(
-        ImmutableList.of(
-            PrecomputedValue.injected(
-                YankedVersionsUtil.ALLOWED_YANKED_VERSIONS, ImmutableList.of("b@1.0"))));
-    setupModulesForYankedVersion();
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
-    assertThat(result.hasError()).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testYankedVersionCheckIgnoredBySpecific() {
+        skyframeExecutor.injectExtraPrecomputedValues(
+            com.google.common.collect.ImmutableList.of<E?>(
+                PrecomputedValue.injected(
+                    YankedVersionsUtil.ALLOWED_YANKED_VERSIONS, com.google.common.collect.ImmutableList.of<E?>("b@1.0")
+                )
+            )
+        )
+        setupModulesForYankedVersion()
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
+        assertThat(result.hasError()).isFalse()
+    }
 
-  @Test
-  public void testBadYankedVersionFormat() throws Exception {
-    skyframeExecutor.injectExtraPrecomputedValues(
-        ImmutableList.of(
-            PrecomputedValue.injected(
-                YankedVersionsUtil.ALLOWED_YANKED_VERSIONS, ImmutableList.of("b+1.0"))));
-    setupModulesForYankedVersion();
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().toString())
-        .contains(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBadYankedVersionFormat() {
+        skyframeExecutor.injectExtraPrecomputedValues(
+            com.google.common.collect.ImmutableList.of<E?>(
+                PrecomputedValue.injected(
+                    YankedVersionsUtil.ALLOWED_YANKED_VERSIONS, com.google.common.collect.ImmutableList.of<E?>("b+1.0")
+                )
+            )
+        )
+        setupModulesForYankedVersion()
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
+        assertThat(result.hasError()).isTrue()
+        com.google.common.truth.Subject.contains(
             "Parsing command line flag --allow_yanked_versions=b+1.0 failed, module versions must"
-                + " be of the form '<module name>@<version>'");
-  }
+                    + " be of the form '<module name>@<version>'"
+        )
+    }
 
-  private void setupModulesForYankedVersion() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='mod', version='1.0')",
-        "bazel_dep(name = 'a', version = '1.0')");
+    @Throws(java.lang.Exception::class)
+    private fun setupModulesForYankedVersion() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='mod', version='1.0')",
+            "bazel_dep(name = 'a', version = '1.0')"
+        )
 
-    registry
-        .addModule(
-            createModuleKey("a", "1.0"),
-            "module(name='a', version='1.0');",
-            "bazel_dep(name='b', version='1.0')")
-        .addModule(createModuleKey("b", "1.0"), "module(name='b', version='1.0');")
-        .addYankedVersion("b", ImmutableMap.of(Version.parse("1.0"), "1.0 is a bad version!"));
-    invalidatePackages(false);
-  }
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("a", "1.0"),
+                "module(name='a', version='1.0');",
+                "bazel_dep(name='b', version='1.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("b", "1.0"), "module(name='b', version='1.0');")
+            .addYankedVersion(
+                "b",
+                com.google.common.collect.ImmutableMap.of<K?, V?>(Version.parse("1.0"), "1.0 is a bad version!")
+            )
+        invalidatePackages(false)
+    }
 
-  @Test
-  public void overrideOnNonexistentModule() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='mod', version='1.0')",
-        "bazel_dep(name = 'a', version = '1.0')",
-        "bazel_dep(name = 'b', version = '1.1')",
-        "local_path_override(module_name='d', path='whatevs')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun overrideOnNonexistentModule() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='mod', version='1.0')",
+            "bazel_dep(name = 'a', version = '1.0')",
+            "bazel_dep(name = 'b', version = '1.1')",
+            "local_path_override(module_name='d', path='whatevs')"
+        )
 
-    registry
-        .addModule(
-            createModuleKey("a", "1.0"),
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("a", "1.0"),
+                "module(name='a', version='1.0')",
+                "bazel_dep(name='b', version='1.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("c", "1.0"), "module(name='c', version='1.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("c", "1.1"), "module(name='c', version='1.1')")
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.0"),
+                "module(name='b', version='1.0')",
+                "bazel_dep(name='c', version='1.1')"
+            )
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.1"),
+                "module(name='b', version='1.1')",
+                "bazel_dep(name='c', version='1.0')"
+            )
+        invalidatePackages(false)
+
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
+
+        assertThat(result.hasError()).isTrue()
+        com.google.common.truth.Subject.contains("the root module specifies overrides on nonexistent module(s): d")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPrintBehavior() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            "module(name='mod', version='1.0')",
+            "print('hello from root module')",
+            "bazel_dep(name = 'a', version = '1.0')",
+            "bazel_dep(name = 'b', version = '1.1')",
+            "single_version_override(module_name = 'b', version = '1.1')",
+            "local_path_override(module_name='a', path='a')"
+        )
+        scratch.file(
+            "a/MODULE.bazel",
             "module(name='a', version='1.0')",
-            "bazel_dep(name='b', version='1.0')")
-        .addModule(createModuleKey("c", "1.0"), "module(name='c', version='1.0')")
-        .addModule(createModuleKey("c", "1.1"), "module(name='c', version='1.1')")
-        .addModule(
-            createModuleKey("b", "1.0"),
-            "module(name='b', version='1.0')",
-            "bazel_dep(name='c', version='1.1')")
-        .addModule(
-            createModuleKey("b", "1.1"),
-            "module(name='b', version='1.1')",
-            "bazel_dep(name='c', version='1.0')");
-    invalidatePackages(false);
+            "print('hello from overridden a')",
+            "bazel_dep(name='b', version='1.0')"
+        )
 
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("a", "1.0"),
+                "module(name='a', version='1.0')",
+                "print('hello from a@1.0')",
+                "bazel_dep(name='b', version='1.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("c", "1.0"), "module(name='c', version='1.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("c", "1.1"), "module(name='c', version='1.1')")
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.0"),
+                "module(name='b', version='1.0')",
+                "bazel_dep(name='c', version='1.1')",
+                "print('hello from b@1.0')"
+            )
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.1"),
+                "module(name='b', version='1.1')",
+                "bazel_dep(name='c', version='1.0')",
+                "print('hello from b@1.1')"
+            )
+        invalidatePackages(false)
 
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().toString())
-        .contains("the root module specifies overrides on nonexistent module(s): d");
-  }
+        SkyframeExecutorTestUtils.evaluate<T?>(
+            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+        )
 
-  @Test
-  public void testPrintBehavior() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        "module(name='mod', version='1.0')",
-        "print('hello from root module')",
-        "bazel_dep(name = 'a', version = '1.0')",
-        "bazel_dep(name = 'b', version = '1.1')",
-        "single_version_override(module_name = 'b', version = '1.1')",
-        "local_path_override(module_name='a', path='a')");
-    scratch.file(
-        "a/MODULE.bazel",
-        "module(name='a', version='1.0')",
-        "print('hello from overridden a')",
-        "bazel_dep(name='b', version='1.0')");
+        assertContainsEvent("hello from root module")
+        assertContainsEvent("hello from overridden a")
+        assertDoesNotContainEvent("hello from a@1.0")
+        assertDoesNotContainEvent("hello from b@1.0")
+        assertDoesNotContainEvent("hello from b@1.1")
+    }
 
-    registry
-        .addModule(
-            createModuleKey("a", "1.0"),
-            "module(name='a', version='1.0')",
-            "print('hello from a@1.0')",
-            "bazel_dep(name='b', version='1.0')")
-        .addModule(createModuleKey("c", "1.0"), "module(name='c', version='1.0')")
-        .addModule(createModuleKey("c", "1.1"), "module(name='c', version='1.1')")
-        .addModule(
-            createModuleKey("b", "1.0"),
-            "module(name='b', version='1.0')",
-            "bazel_dep(name='c', version='1.1')",
-            "print('hello from b@1.0')")
-        .addModule(
-            createModuleKey("b", "1.1"),
-            "module(name='b', version='1.1')",
-            "bazel_dep(name='c', version='1.0')",
-            "print('hello from b@1.1')");
-    invalidatePackages(false);
-
-    SkyframeExecutorTestUtils.evaluate(
-        skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
-
-    assertContainsEvent("hello from root module");
-    assertContainsEvent("hello from overridden a");
-    assertDoesNotContainEvent("hello from a@1.0");
-    assertDoesNotContainEvent("hello from b@1.0");
-    assertDoesNotContainEvent("hello from b@1.1");
-  }
-
-  @Test
-  public void nodep_unfulfilled() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nodep_unfulfilled() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            """
         bazel_dep(name='b',version='1.0')
         bazel_dep(name='c',version='1.0',repo_name=None)
-        """);
+        
+        """.trimIndent()
+        )
 
-    registry
-        .addModule(
-            createModuleKey("b", "1.0"),
-            "module(name='b', version='1.0');bazel_dep(name='d', version='1.0')")
-        .addModule(
-            createModuleKey("c", "1.0"),
-            "module(name='c', version='1.0');bazel_dep(name='d',version='1.1')")
-        .addModule(createModuleKey("d", "1.0"), "module(name='d', version='1.0')")
-        .addModule(createModuleKey("d", "1.1"), "module(name='d', version='1.1')");
-    invalidatePackages(false);
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.0"),
+                "module(name='b', version='1.0');bazel_dep(name='d', version='1.0')"
+            )
+            .addModule(
+                BzlmodTestUtil.createModuleKey("c", "1.0"),
+                "module(name='c', version='1.0');bazel_dep(name='d',version='1.1')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("d", "1.0"), "module(name='d', version='1.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("d", "1.1"), "module(name='d', version='1.1')")
+        invalidatePackages(false)
 
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val depGraph: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph()
+        assertThat(depGraph).doesNotContainKey(BzlmodTestUtil.createModuleKey("c", "1.0"))
+        assertThat(depGraph.get(BzlmodTestUtil.createModuleKey("b", "1.0")).getDeps().get("d").version())
+            .isEqualTo(Version.parse("1.0"))
     }
-    var depGraph = result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph();
-    assertThat(depGraph).doesNotContainKey(createModuleKey("c", "1.0"));
-    assertThat(depGraph.get(createModuleKey("b", "1.0")).getDeps().get("d").version())
-        .isEqualTo(Version.parse("1.0"));
-  }
 
-  @Test
-  public void nodep_fulfilled() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nodep_fulfilled() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            """
         bazel_dep(name='b',version='1.0')
         bazel_dep(name='c',version='1.0')
-        """);
+        
+        """.trimIndent()
+        )
 
-    registry
-        .addModule(
-            createModuleKey("b", "1.0"),
-            "module(name='b', version='1.0');bazel_dep(name='d', version='1.0')")
-        .addModule(
-            createModuleKey("c", "1.0"),
-            "module(name='c', version='1.0');bazel_dep(name='d',version='1.1',repo_name=None)")
-        .addModule(createModuleKey("d", "1.0"), "module(name='d', version='1.0')")
-        .addModule(createModuleKey("d", "1.1"), "module(name='d', version='1.1')");
-    invalidatePackages(false);
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.0"),
+                "module(name='b', version='1.0');bazel_dep(name='d', version='1.0')"
+            )
+            .addModule(
+                BzlmodTestUtil.createModuleKey("c", "1.0"),
+                "module(name='c', version='1.0');bazel_dep(name='d',version='1.1',repo_name=None)"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("d", "1.0"), "module(name='d', version='1.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("d", "1.1"), "module(name='d', version='1.1')")
+        invalidatePackages(false)
 
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val depGraph: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph()
+        assertThat(depGraph).containsKey(BzlmodTestUtil.createModuleKey("d", "1.1"))
+        assertThat(depGraph.get(BzlmodTestUtil.createModuleKey("b", "1.0")).getDeps().get("d").version())
+            .isEqualTo(Version.parse("1.1"))
+        assertThat(depGraph.get(BzlmodTestUtil.createModuleKey("c", "1.0")).getDeps()).doesNotContainKey("d")
     }
-    var depGraph = result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph();
-    assertThat(depGraph).containsKey(createModuleKey("d", "1.1"));
-    assertThat(depGraph.get(createModuleKey("b", "1.0")).getDeps().get("d").version())
-        .isEqualTo(Version.parse("1.1"));
-    assertThat(depGraph.get(createModuleKey("c", "1.0")).getDeps()).doesNotContainKey("d");
-  }
 
-  @Test
-  public void nodep_fulfilledDevDep() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nodep_fulfilledDevDep() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            """
         bazel_dep(name='b',version='1.0')
         bazel_dep(name='c',version='1.1',dev_dependency=True)
-        """);
+        
+        """.trimIndent()
+        )
 
-    registry
-        .addModule(
-            createModuleKey("b", "1.0"),
-            "module(name='b', version='1.0');bazel_dep(name='c', version='1.0')")
-        .addModule(createModuleKey("c", "1.0"), "module(name='c', version='1.0')")
-        .addModule(createModuleKey("c", "1.1"), "module(name='c', version='1.1')");
-    invalidatePackages(false);
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.0"),
+                "module(name='b', version='1.0');bazel_dep(name='c', version='1.0')"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("c", "1.0"), "module(name='c', version='1.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("c", "1.1"), "module(name='c', version='1.1')")
+        invalidatePackages(false)
 
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val depGraph: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph()
+        assertThat(depGraph).containsKey(BzlmodTestUtil.createModuleKey("c", "1.1"))
+        assertThat(depGraph.get(BzlmodTestUtil.createModuleKey("b", "1.0")).getDeps().get("c").version())
+            .isEqualTo(Version.parse("1.1"))
     }
-    var depGraph = result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph();
-    assertThat(depGraph).containsKey(createModuleKey("c", "1.1"));
-    assertThat(depGraph.get(createModuleKey("b", "1.0")).getDeps().get("c").version())
-        .isEqualTo(Version.parse("1.1"));
-  }
 
-  @Test
-  public void nodep_wouldBeFulfilledIfNonDevDep() throws Exception {
-    scratch.overwriteFile(
-        "MODULE.bazel",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nodep_wouldBeFulfilledIfNonDevDep() {
+        scratch.overwriteFile(
+            "MODULE.bazel",
+            """
         bazel_dep(name='b',version='1.0')
         bazel_dep(name='c',version='1.0')
-        """);
+        
+        """.trimIndent()
+        )
 
-    registry
-        .addModule(
-            createModuleKey("b", "1.0"),
-            "module(name='b', version='1.0');bazel_dep(name='d', version='1.0')")
-        .addModule(
-            createModuleKey("c", "1.0"),
-            "module(name='c', version='1.0')",
-            "bazel_dep(name='d',version='1.1',repo_name=None,dev_dependency=True)")
-        .addModule(createModuleKey("d", "1.0"), "module(name='d', version='1.0')")
-        .addModule(createModuleKey("d", "1.1"), "module(name='d', version='1.1')");
-    invalidatePackages(false);
+        registry
+            .addModule(
+                BzlmodTestUtil.createModuleKey("b", "1.0"),
+                "module(name='b', version='1.0');bazel_dep(name='d', version='1.0')"
+            )
+            .addModule(
+                BzlmodTestUtil.createModuleKey("c", "1.0"),
+                "module(name='c', version='1.0')",
+                "bazel_dep(name='d',version='1.1',repo_name=None,dev_dependency=True)"
+            )
+            .addModule(BzlmodTestUtil.createModuleKey("d", "1.0"), "module(name='d', version='1.0')")
+            .addModule(BzlmodTestUtil.createModuleKey("d", "1.1"), "module(name='d', version='1.1')")
+        invalidatePackages(false)
 
-    EvaluationResult<BazelModuleResolutionValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter);
+        val result: EvaluationResult<BazelModuleResolutionValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, BazelModuleResolutionValue.KEY, false, reporter
+            )
 
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val depGraph: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph()
+        assertThat(depGraph).doesNotContainKey(BzlmodTestUtil.createModuleKey("d", "1.1"))
+        assertThat(depGraph.get(BzlmodTestUtil.createModuleKey("b", "1.0")).getDeps().get("d").version())
+            .isEqualTo(Version.parse("1.0"))
+        assertThat(depGraph.get(BzlmodTestUtil.createModuleKey("c", "1.0")).getDeps()).doesNotContainKey("d")
     }
-    var depGraph = result.get(BazelModuleResolutionValue.KEY).getResolvedDepGraph();
-    assertThat(depGraph).doesNotContainKey(createModuleKey("d", "1.1"));
-    assertThat(depGraph.get(createModuleKey("b", "1.0")).getDeps().get("d").version())
-        .isEqualTo(Version.parse("1.0"));
-    assertThat(depGraph.get(createModuleKey("c", "1.0")).getDeps()).doesNotContainKey("d");
-  }
 }

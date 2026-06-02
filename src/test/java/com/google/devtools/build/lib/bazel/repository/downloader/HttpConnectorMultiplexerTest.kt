@@ -11,216 +11,245 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
+import com.google.common.base.Function
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.io.ByteStreams
+import com.google.devtools.build.lib.authandtls.StaticCredentials
+import com.google.devtools.build.lib.events.EventHandler
+import org.junit.Assert
+import org.junit.Rule
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.rules.Timeout
+import java.net.URI
+import java.net.URLConnection
+import java.nio.charset.StandardCharsets
+import java.util.*
 
-import static com.google.common.io.ByteStreams.toByteArray;
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.same;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+/** Unit tests for [HttpConnectorMultiplexer].  */
+@RunWith(JUnit4::class)
+class HttpConnectorMultiplexerTest {
+    @Rule
+    val globalTimeout: Timeout = Timeout.seconds(10)
 
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.authandtls.StaticCredentials;
-import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache.KeyType;
-import com.google.devtools.build.lib.bazel.repository.downloader.RetryingInputStream.Reconnector;
-import com.google.devtools.build.lib.events.EventHandler;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.net.URI;
-import java.net.URLConnection;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private val stream = HttpStream(ByteArrayInputStream(TEST_DATA), TEST_URL)
+    private val connector: HttpConnector = Mockito.mock<HttpConnector>(HttpConnector::class.java)
+    private val connection: URLConnection? = Mockito.mock<URLConnection?>(URLConnection::class.java)
+    private val eventHandler: EventHandler = Mockito.mock<EventHandler>(EventHandler::class.java)
+    private val streamFactory: HttpStream.Factory = Mockito.mock<HttpStream.Factory>(HttpStream.Factory::class.java)
+    private val multiplexer = HttpConnectorMultiplexer(eventHandler, connector, streamFactory)
 
-/** Unit tests for {@link HttpConnectorMultiplexer}. */
-@RunWith(JUnit4.class)
-@SuppressWarnings("unchecked")
-public class HttpConnectorMultiplexerTest {
-
-  private static final URI TEST_URL = URI.create("http://test.example");
-  private static final byte[] TEST_DATA = "test_data".getBytes(UTF_8);
-
-  private static Optional<Checksum> makeChecksum(String string) {
-    try {
-      return Optional.of(Checksum.fromString(KeyType.SHA256, string));
-    } catch (Checksum.InvalidChecksumException e) {
-      throw new IllegalStateException(e);
+    @Before
+    @Throws(Exception::class)
+    fun before() {
+        Mockito.`when`<URLConnection?>(
+            connector.connect(
+                ArgumentMatchers.eq<URI?>(TEST_URL), ArgumentMatchers.any<Function<*, *>?>(
+                    Function::class.java
+                )
+            )
+        ).thenReturn(connection)
+        Mockito.`when`<HttpStream>(
+            streamFactory.create(
+                ArgumentMatchers.same<URLConnection?>(connection),
+                ArgumentMatchers.any<URI?>(URI::class.java),
+                ArgumentMatchers.any<Optional<*>?>(Optional::class.java),
+                ArgumentMatchers.any<Reconnector?>(Reconnector::class.java),
+                ArgumentMatchers.any<Optional<*>?>(Optional::class.java)
+            )
+        )
+            .thenReturn(stream)
     }
-  }
 
-  private static final Optional<Checksum> DUMMY_CHECKSUM =
-      makeChecksum("abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd");
+    @Test
+    @Throws(Exception::class)
+    fun ftpUrl_throwsIae() {
+        Assert.assertThrows<IllegalArgumentException?>(
+            IllegalArgumentException::class.java,
+            ThrowingRunnable { multiplexer.connect(URI.create("ftp://lol.example"), Optional.empty<Checksum?>()) })
+    }
 
-  @Rule public final Timeout globalTimeout = Timeout.seconds(10);
+    @Test
+    @Throws(Exception::class)
+    fun threadIsInterrupted_throwsIeProntoAndDoesNothingElse() {
+        val wasInterrupted: AtomicBoolean = AtomicBoolean(true)
+        val task =
+            Thread(
+                object : Runnable {
+                    override fun run() {
+                        Thread.currentThread().interrupt()
+                        try {
+                            val unused =
+                                multiplexer.connect(URI.create("http://lol.example"), Optional.empty<Checksum?>())
+                        } catch (ignored: InterruptedIOException) {
+                            return
+                        } catch (ignored: Exception) {
+                            // ignored
+                        }
+                        wasInterrupted.set(false)
+                    }
+                })
+        task.start()
+        task.join()
+        Truth.assertThat(wasInterrupted.get()).isTrue()
+        Mockito.verifyNoInteractions(connector)
+    }
 
-  private final HttpStream stream = new HttpStream(new ByteArrayInputStream(TEST_DATA), TEST_URL);
-  private final HttpConnector connector = mock(HttpConnector.class);
-  private final URLConnection connection = mock(URLConnection.class);
-  private final EventHandler eventHandler = mock(EventHandler.class);
-  private final HttpStream.Factory streamFactory = mock(HttpStream.Factory.class);
-  private final HttpConnectorMultiplexer multiplexer =
-      new HttpConnectorMultiplexer(eventHandler, connector, streamFactory);
+    @Test
+    @Throws(Exception::class)
+    fun success() {
+        Truth.assertThat(ByteStreams.toByteArray(multiplexer.connect(TEST_URL, DUMMY_CHECKSUM))).isEqualTo(TEST_DATA)
+        Mockito.verify<HttpConnector?>(connector).connect(
+            ArgumentMatchers.eq<URI?>(TEST_URL), ArgumentMatchers.any<Function<*, *>?>(
+                Function::class.java
+            )
+        )
+        Mockito.verify<HttpStream.Factory?>(streamFactory)
+            .create(
+                ArgumentMatchers.any<URLConnection?>(URLConnection::class.java),
+                ArgumentMatchers.any<URI?>(URI::class.java),
+                ArgumentMatchers.eq<Optional<Checksum?>?>(DUMMY_CHECKSUM),
+                ArgumentMatchers.any<Reconnector?>(Reconnector::class.java),
+                ArgumentMatchers.any<Optional<*>?>(Optional::class.java)
+            )
+        Mockito.verifyNoMoreInteractions(connector, streamFactory)
+    }
 
-  @Before
-  public void before() throws Exception {
-    when(connector.connect(eq(TEST_URL), any(Function.class))).thenReturn(connection);
-    when(streamFactory.create(
-            same(connection),
-            any(URI.class),
-            any(Optional.class),
-            any(Reconnector.class),
-            any(Optional.class)))
-        .thenReturn(stream);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun failure() {
+        Mockito.`when`<URLConnection?>(
+            connector.connect(
+                ArgumentMatchers.any<URI?>(URI::class.java), ArgumentMatchers.any<Function<*, *>?>(
+                    Function::class.java
+                )
+            )
+        ).thenThrow(IOException("oops"))
+        val e: IOException? =
+            Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                ThrowingRunnable { multiplexer.connect(TEST_URL, Optional.empty<Checksum?>()) })
+        Truth.assertThat(e).hasMessageThat().contains("oops")
+        Mockito.verify<HttpConnector?>(connector).connect(
+            ArgumentMatchers.any<URI?>(URI::class.java), ArgumentMatchers.any<Function<*, *>?>(
+                Function::class.java
+            )
+        )
+        Mockito.verifyNoMoreInteractions(connector, streamFactory)
+    }
 
-  @Test
-  public void ftpUrl_throwsIae() throws Exception {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> multiplexer.connect(URI.create("ftp://lol.example"), Optional.empty()));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testHeaderComputationFunction() {
+        val baseHeaders =
+            ImmutableMap.of<String?, MutableList<String?>?>(
+                "Accept-Encoding",
+                ImmutableList.of<String?>("gzip"),
+                "User-Agent",
+                ImmutableList.of<String?>("Bazel/testing")
+            )
+        val additionalHeaders =
+            ImmutableMap.of<URI?, MutableMap<String?, MutableList<String?>?>?>(
+                URI("http://hosting.example.com/user/foo/file.txt"),
+                ImmutableMap.of<String?, MutableList<String?>?>(
+                    "Authentication",
+                    ImmutableList.of<String?>("Zm9vOmZvb3NlY3JldA==")
+                )
+            )
 
-  @Test
-  public void threadIsInterrupted_throwsIeProntoAndDoesNothingElse() throws Exception {
-    final AtomicBoolean wasInterrupted = new AtomicBoolean(true);
-    Thread task =
-        new Thread(
-            new Runnable() {
-              @Override
-              public void run() {
-                Thread.currentThread().interrupt();
-                try {
-                  var unused =
-                      multiplexer.connect(URI.create("http://lol.example"), Optional.empty());
-                } catch (InterruptedIOException ignored) {
-                  return;
-                } catch (Exception ignored) {
-                  // ignored
-                }
-                wasInterrupted.set(false);
-              }
-            });
-    task.start();
-    task.join();
-    assertThat(wasInterrupted.get()).isTrue();
-    verifyNoInteractions(connector);
-  }
+        val headerFunction =
+            HttpConnectorMultiplexer.getHeaderFunction(
+                baseHeaders, StaticCredentials(additionalHeaders), eventHandler
+            )
 
-  @Test
-  public void success() throws Exception {
-    assertThat(toByteArray(multiplexer.connect(TEST_URL, DUMMY_CHECKSUM))).isEqualTo(TEST_DATA);
-    verify(connector).connect(eq(TEST_URL), any(Function.class));
-    verify(streamFactory)
-        .create(
-            any(URLConnection.class),
-            any(URI.class),
-            eq(DUMMY_CHECKSUM),
-            any(Reconnector.class),
-            any(Optional.class));
-    verifyNoMoreInteractions(connector, streamFactory);
-  }
+        // Unrelated URL
+        Truth.assertThat(headerFunction.apply(URI.create("http://example.org/some/path/file.txt")))
+            .containsExactly(
+                "Accept-Encoding",
+                ImmutableList.of<String?>("gzip"),
+                "User-Agent",
+                ImmutableList.of<String?>("Bazel/testing")
+            )
 
-  @Test
-  public void failure() throws Exception {
-    when(connector.connect(any(URI.class), any(Function.class))).thenThrow(new IOException("oops"));
-    IOException e =
-        assertThrows(IOException.class, () -> multiplexer.connect(TEST_URL, Optional.empty()));
-    assertThat(e).hasMessageThat().contains("oops");
-    verify(connector).connect(any(URI.class), any(Function.class));
-    verifyNoMoreInteractions(connector, streamFactory);
-  }
+        // With auth headers
+        Truth.assertThat(headerFunction.apply(URI.create("http://hosting.example.com/user/foo/file.txt")))
+            .containsExactly(
+                "Accept-Encoding",
+                ImmutableList.of<String?>("gzip"),
+                "User-Agent",
+                ImmutableList.of<String?>("Bazel/testing"),
+                "Authentication",
+                ImmutableList.of<String?>("Zm9vOmZvb3NlY3JldA==")
+            )
 
-  @Test
-  public void testHeaderComputationFunction() throws Exception {
-    ImmutableMap<String, List<String>> baseHeaders =
-        ImmutableMap.of(
-            "Accept-Encoding",
-            ImmutableList.of("gzip"),
-            "User-Agent",
-            ImmutableList.of("Bazel/testing"));
-    ImmutableMap<URI, Map<String, List<String>>> additionalHeaders =
-        ImmutableMap.of(
-            new URI("http://hosting.example.com/user/foo/file.txt"),
-            ImmutableMap.of("Authentication", ImmutableList.of("Zm9vOmZvb3NlY3JldA==")));
-
-    Function<URI, ImmutableMap<String, List<String>>> headerFunction =
-        HttpConnectorMultiplexer.getHeaderFunction(
-            baseHeaders, new StaticCredentials(additionalHeaders), eventHandler);
-
-    // Unrelated URL
-    assertThat(headerFunction.apply(URI.create("http://example.org/some/path/file.txt")))
-        .containsExactly(
-            "Accept-Encoding",
-            ImmutableList.of("gzip"),
-            "User-Agent",
-            ImmutableList.of("Bazel/testing"));
-
-    // With auth headers
-    assertThat(headerFunction.apply(URI.create("http://hosting.example.com/user/foo/file.txt")))
-        .containsExactly(
-            "Accept-Encoding",
-            ImmutableList.of("gzip"),
-            "User-Agent",
-            ImmutableList.of("Bazel/testing"),
-            "Authentication",
-            ImmutableList.of("Zm9vOmZvb3NlY3JldA=="));
-
-    // Other hosts
-    assertThat(headerFunction.apply(URI.create("http://hosting2.example.com/user/foo/file.txt")))
-        .containsExactly(
-            "Accept-Encoding",
-            ImmutableList.of("gzip"),
-            "User-Agent",
-            ImmutableList.of("Bazel/testing"));
-    assertThat(headerFunction.apply(URI.create("http://sub.hosting.example.com/user/foo/file.txt")))
-        .containsExactly(
-            "Accept-Encoding",
-            ImmutableList.of("gzip"),
-            "User-Agent",
-            ImmutableList.of("Bazel/testing"));
-    assertThat(headerFunction.apply(URI.create("http://example.com/user/foo/file.txt")))
-        .containsExactly(
-            "Accept-Encoding",
-            ImmutableList.of("gzip"),
-            "User-Agent",
-            ImmutableList.of("Bazel/testing"));
-    assertThat(
+        // Other hosts
+        Truth.assertThat(headerFunction.apply(URI.create("http://hosting2.example.com/user/foo/file.txt")))
+            .containsExactly(
+                "Accept-Encoding",
+                ImmutableList.of<String?>("gzip"),
+                "User-Agent",
+                ImmutableList.of<String?>("Bazel/testing")
+            )
+        Truth.assertThat(headerFunction.apply(URI.create("http://sub.hosting.example.com/user/foo/file.txt")))
+            .containsExactly(
+                "Accept-Encoding",
+                ImmutableList.of<String?>("gzip"),
+                "User-Agent",
+                ImmutableList.of<String?>("Bazel/testing")
+            )
+        Truth.assertThat(headerFunction.apply(URI.create("http://example.com/user/foo/file.txt")))
+            .containsExactly(
+                "Accept-Encoding",
+                ImmutableList.of<String?>("gzip"),
+                "User-Agent",
+                ImmutableList.of<String?>("Bazel/testing")
+            )
+        Truth.assertThat(
             headerFunction.apply(
-                URI.create("http://hosting.example.com.evil.example/user/foo/file.txt")))
-        .containsExactly(
-            "Accept-Encoding",
-            ImmutableList.of("gzip"),
-            "User-Agent",
-            ImmutableList.of("Bazel/testing"));
+                URI.create("http://hosting.example.com.evil.example/user/foo/file.txt")
+            )
+        )
+            .containsExactly(
+                "Accept-Encoding",
+                ImmutableList.of<String?>("gzip"),
+                "User-Agent",
+                ImmutableList.of<String?>("Bazel/testing")
+            )
 
-    // Verify that URL-specific headers overwrite
-    ImmutableMap<String, List<String>> annonAuth =
-        ImmutableMap.of("Authentication", ImmutableList.of("YW5vbnltb3VzOmZvb0BleGFtcGxlLm9yZw=="));
-    Function<URI, ImmutableMap<String, List<String>>> combinedHeaders =
-        HttpConnectorMultiplexer.getHeaderFunction(
-            annonAuth, new StaticCredentials(additionalHeaders), eventHandler);
-    assertThat(combinedHeaders.apply(URI.create("http://hosting.example.com/user/foo/file.txt")))
-        .containsExactly("Authentication", ImmutableList.of("Zm9vOmZvb3NlY3JldA=="));
-    assertThat(combinedHeaders.apply(URI.create("http://unreleated.example.org/user/foo/file.txt")))
-        .containsExactly(
-            "Authentication", ImmutableList.of("YW5vbnltb3VzOmZvb0BleGFtcGxlLm9yZw=="));
-  }
+        // Verify that URL-specific headers overwrite
+        val annonAuth =
+            ImmutableMap.of<String?, MutableList<String?>?>(
+                "Authentication",
+                ImmutableList.of<String?>("YW5vbnltb3VzOmZvb0BleGFtcGxlLm9yZw==")
+            )
+        val combinedHeaders =
+            HttpConnectorMultiplexer.getHeaderFunction(
+                annonAuth, StaticCredentials(additionalHeaders), eventHandler
+            )
+        Truth.assertThat(combinedHeaders.apply(URI.create("http://hosting.example.com/user/foo/file.txt")))
+            .containsExactly("Authentication", ImmutableList.of<String?>("Zm9vOmZvb3NlY3JldA=="))
+        Truth.assertThat(combinedHeaders.apply(URI.create("http://unreleated.example.org/user/foo/file.txt")))
+            .containsExactly(
+                "Authentication", ImmutableList.of<String?>("YW5vbnltb3VzOmZvb0BleGFtcGxlLm9yZw==")
+            )
+    }
+
+    companion object {
+        private val TEST_URL: URI = URI.create("http://test.example")
+        private val TEST_DATA: ByteArray = "test_data".toByteArray(StandardCharsets.UTF_8)
+
+        private fun makeChecksum(string: String?): Optional<Checksum?> {
+            try {
+                return Optional.of<T?>(Checksum.fromString(KeyType.SHA256, string!!))
+            } catch (e: InvalidChecksumException) {
+                throw IllegalStateException(e)
+            }
+        }
+
+        private val DUMMY_CHECKSUM: Optional<Checksum?> =
+            makeChecksum("abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd")
+    }
 }

@@ -11,33 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark.annotations.processor.optiontestsources
 
-package com.google.devtools.build.lib.analysis.starlark.annotations.processor.optiontestsources;
+import com.google.devtools.build.docgen.annot.DocCategory
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.starlark.annotations.StarlarkConfigurationField;
-import com.google.devtools.build.lib.cmdline.Label;
-import net.starlark.java.annot.StarlarkBuiltin;
-
-/** A test case of StarlarkConfigurationFieldProcessorTest. */
-public class GoldenConfigurationFieldThroughApi extends Fragment implements ApiInterface {
-
-  /**
-   * Returns the label of the xcode_config rule to use for resolving the host system xcode version.
-   */
-  @StarlarkConfigurationField(
-      name = "some_field",
-      doc = "Documentation ",
-      defaultLabel = "defaultLabel",
-      defaultInToolRepository = true)
-  public Label getXcodeConfigLabel() {
-    return null;
-  }
+/** A test case of StarlarkConfigurationFieldProcessorTest.  */
+class GoldenConfigurationFieldThroughApi : Fragment(), ApiInterface {
+    @get:StarlarkConfigurationField(
+        name = "some_field",
+        doc = "Documentation ",
+        defaultLabel = "defaultLabel",
+        defaultInToolRepository = true
+    )
+    val xcodeConfigLabel: Label?
+        /**
+         * Returns the label of the xcode_config rule to use for resolving the host system xcode version.
+         */
+        get() = null
 }
 
 @StarlarkBuiltin(
     name = "module_name",
     doc = "A fake configuration fragment for a test.",
-    category = DocCategory.CONFIGURATION_FRAGMENT)
-interface ApiInterface {}
+    category = DocCategory.CONFIGURATION_FRAGMENT
+)
+internal interface ApiInterface 

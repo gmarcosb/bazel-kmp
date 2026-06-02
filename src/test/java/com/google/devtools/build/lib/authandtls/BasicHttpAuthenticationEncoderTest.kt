@@ -11,75 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.authandtls;
+package com.google.devtools.build.lib.authandtls
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.util.StringEncoding
 
-import com.google.devtools.build.lib.util.StringEncoding;
-import java.util.Base64;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [BasicHttpAuthenticationEncoder].  */
+@RunWith(JUnit4::class)
+class BasicHttpAuthenticationEncoderTest {
+    @org.junit.Test
+    fun encode_normalUsernamePassword_outputExpected() {
+        val message: String? = BasicHttpAuthenticationEncoder.encode("Aladdin", "open sesame")
+        Truth.assertThat(message).isEqualTo("Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==")
+    }
 
-/** Tests for {@link BasicHttpAuthenticationEncoder}. */
-@RunWith(JUnit4.class)
-public class BasicHttpAuthenticationEncoderTest {
+    @org.junit.Test
+    fun encode_normalUsernamePassword_canBeDecoded() {
+        val message: String = BasicHttpAuthenticationEncoder.encode("Aladdin", "open sesame")
 
-  private static String[] decode(String message) {
-    String base64EncodedMessage = message.substring(6);
-    String usernameAndPassword =
-        new String(Base64.getDecoder().decode(base64EncodedMessage), UTF_8);
-    return usernameAndPassword.split(":", 2);
-  }
+        val usernameAndPassword = decode(message)
+        Truth.assertThat(usernameAndPassword[0]).isEqualTo("Aladdin")
+        Truth.assertThat(usernameAndPassword[1]).isEqualTo("open sesame")
+    }
 
-  @Test
-  public void encode_normalUsernamePassword_outputExpected() {
-    String message = BasicHttpAuthenticationEncoder.encode("Aladdin", "open sesame");
-    assertThat(message).isEqualTo("Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
-  }
+    @org.junit.Test
+    fun encode_usernameContainsColon_canBeDecoded() {
+        val message: String = BasicHttpAuthenticationEncoder.encode("foo:user", "foopass")
 
-  @Test
-  public void encode_normalUsernamePassword_canBeDecoded() {
-    String message = BasicHttpAuthenticationEncoder.encode("Aladdin", "open sesame");
+        val usernameAndPassword = decode(message)
+        Truth.assertThat(usernameAndPassword[0]).isEqualTo("foo")
+        Truth.assertThat(usernameAndPassword[1]).isEqualTo("user:foopass")
+    }
 
-    String[] usernameAndPassword = decode(message);
-    assertThat(usernameAndPassword[0]).isEqualTo("Aladdin");
-    assertThat(usernameAndPassword[1]).isEqualTo("open sesame");
-  }
+    @org.junit.Test
+    fun encode_emptyUsername_outputExpected() {
+        val message: String? = BasicHttpAuthenticationEncoder.encode("", "foopass")
+        Truth.assertThat(message).isEqualTo("Basic OmZvb3Bhc3M=")
+    }
 
-  @Test
-  public void encode_usernameContainsColon_canBeDecoded() {
-    String message = BasicHttpAuthenticationEncoder.encode("foo:user", "foopass");
+    @org.junit.Test
+    fun encode_emptyPassword_outputExpected() {
+        val message: String? = BasicHttpAuthenticationEncoder.encode("foouser", "")
+        Truth.assertThat(message).isEqualTo("Basic Zm9vdXNlcjo=")
+    }
 
-    String[] usernameAndPassword = decode(message);
-    assertThat(usernameAndPassword[0]).isEqualTo("foo");
-    assertThat(usernameAndPassword[1]).isEqualTo("user:foopass");
-  }
+    @org.junit.Test
+    fun encode_emptyUsernamePassword_outputExpected() {
+        val message: String? = BasicHttpAuthenticationEncoder.encode("", "")
+        Truth.assertThat(message).isEqualTo("Basic Og==")
+    }
 
-  @Test
-  public void encode_emptyUsername_outputExpected() {
-    String message = BasicHttpAuthenticationEncoder.encode("", "foopass");
-    assertThat(message).isEqualTo("Basic OmZvb3Bhc3M=");
-  }
+    @org.junit.Test
+    fun encode_specialCharacterUtf8_outputExpected() {
+        val message: String? =
+            BasicHttpAuthenticationEncoder.encode(
+                "test", StringEncoding.unicodeToInternal("123\u00A3")
+            )
+        Truth.assertThat(message).isEqualTo("Basic dGVzdDoxMjPCow==")
+    }
 
-  @Test
-  public void encode_emptyPassword_outputExpected() {
-    String message = BasicHttpAuthenticationEncoder.encode("foouser", "");
-    assertThat(message).isEqualTo("Basic Zm9vdXNlcjo=");
-  }
-
-  @Test
-  public void encode_emptyUsernamePassword_outputExpected() {
-    String message = BasicHttpAuthenticationEncoder.encode("", "");
-    assertThat(message).isEqualTo("Basic Og==");
-  }
-
-  @Test
-  public void encode_specialCharacterUtf8_outputExpected() {
-    String message =
-        BasicHttpAuthenticationEncoder.encode(
-            "test", StringEncoding.unicodeToInternal("123\u00A3"));
-    assertThat(message).isEqualTo("Basic dGVzdDoxMjPCow==");
-  }
+    companion object {
+        private fun decode(message: String): Array<String?> {
+            val base64EncodedMessage: String = message.substring(6)
+            val usernameAndPassword = String(
+                java.util.Base64.getDecoder().decode(base64EncodedMessage),
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+            return usernameAndPassword.split(":".toRegex(), limit = 2).toTypedArray()
+        }
+    }
 }

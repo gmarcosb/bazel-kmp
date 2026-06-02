@@ -11,115 +11,132 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.ResourceSet.ResourceSetConverter
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ResourceSet.ResourceSetConverter;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ResourceSet].  */
+@RunWith(JUnit4::class)
+class ResourceSetTest {
+    private var converter: ResourceSetConverter? = null
 
-/** Tests for {@link ResourceSet}. */
-@RunWith(JUnit4.class)
-public class ResourceSetTest {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createConverter() {
+        converter = ResourceSetConverter()
+    }
 
-  private ResourceSetConverter converter;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConverterParsesExpectedFormat() {
+        val resources: ResourceSet = converter.convert("1,0.5,2")
+        assertThat(resources.getMemoryMb()).isWithin(0.01).of(1.0)
+        assertThat(resources.getCpuUsage()).isWithin(0.01).of(0.5)
+        assertThat(resources.getLocalTestCount()).isEqualTo(java.lang.Integer.MAX_VALUE)
+    }
 
-  @Before
-  public final void createConverter() throws Exception  {
-    converter = new ResourceSetConverter();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConverterThrowsWhenGivenInsufficientInputs() {
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable { converter.convert("0,0,") })
+    }
 
-  @Test
-  public void testConverterParsesExpectedFormat() throws Exception {
-    ResourceSet resources = converter.convert("1,0.5,2");
-    assertThat(resources.getMemoryMb()).isWithin(0.01).of(1.0);
-    assertThat(resources.getCpuUsage()).isWithin(0.01).of(0.5);
-    assertThat(resources.getLocalTestCount()).isEqualTo(Integer.MAX_VALUE);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConverterThrowsWhenGivenTooManyInputs() {
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable { converter.convert("0,0,0,") })
+    }
 
-  @Test
-  public void testConverterThrowsWhenGivenInsufficientInputs() throws Exception {
-    assertThrows(OptionsParsingException.class, () -> converter.convert("0,0,"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConverterThrowsWhenGivenNegativeInputs() {
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable { converter.convert("-1,0,0") })
+    }
 
-  @Test
-  public void testConverterThrowsWhenGivenTooManyInputs() throws Exception {
-    assertThrows(OptionsParsingException.class, () -> converter.convert("0,0,0,"));
-  }
+    @org.junit.Test
+    fun withResourceOverrides_noArgs_returnsSameInstance() {
+        val base: ResourceSet = ResourceSet.createWithRamCpu(100, 1)
+        assertThat(base.withResourceOverrides()).isSameInstanceAs(base)
+    }
 
-  @Test
-  public void testConverterThrowsWhenGivenNegativeInputs() throws Exception {
-    assertThrows(OptionsParsingException.class, () -> converter.convert("-1,0,0"));
-  }
+    @org.junit.Test
+    fun withResourceOverrides_allEmpty_returnsSameInstance() {
+        val base: ResourceSet = ResourceSet.createWithRamCpu(100, 1)
+        assertThat(
+            base.withResourceOverrides(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        )
+            .isSameInstanceAs(base)
+    }
 
-  @Test
-  public void withResourceOverrides_noArgs_returnsSameInstance() {
-    ResourceSet base = ResourceSet.createWithRamCpu(100, 1);
-    assertThat(base.withResourceOverrides()).isSameInstanceAs(base);
-  }
+    @org.junit.Test
+    fun withResourceOverrides_overridesExistingResource() {
+        val base: ResourceSet = ResourceSet.createWithRamCpu(100, 1)
+        val result: ResourceSet =
+            base.withResourceOverrides(com.google.common.collect.ImmutableMap.of<K?, V?>("cpu", 4.0))
+        assertThat(result.getCpuUsage()).isEqualTo(4.0)
+        assertThat(result.getMemoryMb()).isEqualTo(100.0)
+    }
 
-  @Test
-  public void withResourceOverrides_allEmpty_returnsSameInstance() {
-    ResourceSet base = ResourceSet.createWithRamCpu(100, 1);
-    assertThat(base.withResourceOverrides(ImmutableMap.of(), ImmutableMap.of()))
-        .isSameInstanceAs(base);
-  }
+    @org.junit.Test
+    fun withResourceOverrides_addsNewResource() {
+        val base: ResourceSet = ResourceSet.createWithRamCpu(100, 1)
+        val result: ResourceSet =
+            base.withResourceOverrides(com.google.common.collect.ImmutableMap.of<K?, V?>("gpu", 2.0))
+        assertThat(result.get("gpu")).isEqualTo(2.0)
+        assertThat(result.getCpuUsage()).isEqualTo(1.0)
+        assertThat(result.getMemoryMb()).isEqualTo(100.0)
+    }
 
-  @Test
-  public void withResourceOverrides_overridesExistingResource() {
-    ResourceSet base = ResourceSet.createWithRamCpu(100, 1);
-    ResourceSet result = base.withResourceOverrides(ImmutableMap.of("cpu", 4.0));
-    assertThat(result.getCpuUsage()).isEqualTo(4.0);
-    assertThat(result.getMemoryMb()).isEqualTo(100.0);
-  }
+    @org.junit.Test
+    fun withResourceOverrides_laterOverrideWins() {
+        val base: ResourceSet = ResourceSet.createWithRamCpu(100, 1)
+        val result: ResourceSet =
+            base.withResourceOverrides(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("cpu", 2.0),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("cpu", 8.0)
+            )
+        assertThat(result.getCpuUsage()).isEqualTo(8.0)
+    }
 
-  @Test
-  public void withResourceOverrides_addsNewResource() {
-    ResourceSet base = ResourceSet.createWithRamCpu(100, 1);
-    ResourceSet result = base.withResourceOverrides(ImmutableMap.of("gpu", 2.0));
-    assertThat(result.get("gpu")).isEqualTo(2.0);
-    assertThat(result.getCpuUsage()).isEqualTo(1.0);
-    assertThat(result.getMemoryMb()).isEqualTo(100.0);
-  }
+    @org.junit.Test
+    fun withResourceOverrides_mergesAcrossOverrides() {
+        val base: ResourceSet = ResourceSet.createWithRamCpu(100, 1)
+        val result: ResourceSet =
+            base.withResourceOverrides(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("cpu", 4.0, "gpu", 1.0),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("memory", 2000.0)
+            )
+        assertThat(result.getCpuUsage()).isEqualTo(4.0)
+        assertThat(result.getMemoryMb()).isEqualTo(2000.0)
+        assertThat(result.get("gpu")).isEqualTo(1.0)
+    }
 
-  @Test
-  public void withResourceOverrides_laterOverrideWins() {
-    ResourceSet base = ResourceSet.createWithRamCpu(100, 1);
-    ResourceSet result =
-        base.withResourceOverrides(ImmutableMap.of("cpu", 2.0), ImmutableMap.of("cpu", 8.0));
-    assertThat(result.getCpuUsage()).isEqualTo(8.0);
-  }
+    @org.junit.Test
+    fun withResourceOverrides_preservesLocalTestCount() {
+        val base: ResourceSet = ResourceSet.create(100, 1, 5)
+        val result: ResourceSet =
+            base.withResourceOverrides(com.google.common.collect.ImmutableMap.of<K?, V?>("cpu", 4.0))
+        assertThat(result.getLocalTestCount()).isEqualTo(5)
+    }
 
-  @Test
-  public void withResourceOverrides_mergesAcrossOverrides() {
-    ResourceSet base = ResourceSet.createWithRamCpu(100, 1);
-    ResourceSet result =
-        base.withResourceOverrides(
-            ImmutableMap.of("cpu", 4.0, "gpu", 1.0), ImmutableMap.of("memory", 2000.0));
-    assertThat(result.getCpuUsage()).isEqualTo(4.0);
-    assertThat(result.getMemoryMb()).isEqualTo(2000.0);
-    assertThat(result.get("gpu")).isEqualTo(1.0);
-  }
-
-  @Test
-  public void withResourceOverrides_preservesLocalTestCount() {
-    ResourceSet base = ResourceSet.create(100, 1, 5);
-    ResourceSet result = base.withResourceOverrides(ImmutableMap.of("cpu", 4.0));
-    assertThat(result.getLocalTestCount()).isEqualTo(5);
-  }
-
-  @Test
-  public void withResourceOverrides_skipsEmptyAmongNonEmpty() {
-    ResourceSet base = ResourceSet.createWithRamCpu(100, 1);
-    ResourceSet result =
-        base.withResourceOverrides(
-            ImmutableMap.of(), ImmutableMap.of("cpu", 4.0), ImmutableMap.of());
-    assertThat(result.getCpuUsage()).isEqualTo(4.0);
-  }
+    @org.junit.Test
+    fun withResourceOverrides_skipsEmptyAmongNonEmpty() {
+        val base: ResourceSet = ResourceSet.createWithRamCpu(100, 1)
+        val result: ResourceSet =
+            base.withResourceOverrides(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("cpu", 4.0),
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        assertThat(result.getCpuUsage()).isEqualTo(4.0)
+    }
 }

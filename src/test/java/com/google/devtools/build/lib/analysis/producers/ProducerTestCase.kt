@@ -11,51 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import com.google.devtools.build.skyframe.state.StateMachineEvaluatorForTesting;
+import com.google.devtools.build.lib.skyframe.SkyframeExecutor
 
-/** Base class for tests of producers. */
-public abstract class ProducerTestCase extends BuildViewTestCase {
-  @Override
-  protected void useConfiguration(String... args) throws Exception {
-    // Do nothing, some of the producers under test are used in standard configuration creation.
-  }
-
-  /**
-   * Use a {@link StateMachineEvaluatorForTesting} to drive the given {@link StateMachine} until it
-   * finishes (with a result or an error). Results should be retrieved from whatever result sink the
-   * {@link StateMachine} is designed for.
-   *
-   * @return {@code true} on success
-   */
-  public boolean executeProducer(StateMachine producer) throws InterruptedException {
-    EvaluationContext context =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(true)
-            .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
-            .setEventHandler(reporter)
-            .build();
-    try {
-      getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(true);
-      EvaluationResult<SkyValue> result =
-          StateMachineEvaluatorForTesting.run(
-              producer, getSkyframeExecutor().getEvaluator(), context);
-      if (result != null) {
-        if (result.hasError() && !result.getError().getCycleInfo().isEmpty()) {
-          throw new IllegalStateException("Cycle detected: " + result.getError().getCycleInfo());
-        }
-        return !result.hasError();
-      }
-    } finally {
-      getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(false);
+/** Base class for tests of producers.  */
+abstract class ProducerTestCase : BuildViewTestCase() {
+    @Throws(Exception::class)
+    override fun useConfiguration(vararg args: String?) {
+        // Do nothing, some of the producers under test are used in standard configuration creation.
     }
-    return true;
-  }
+
+    /**
+     * Use a [StateMachineEvaluatorForTesting] to drive the given [StateMachine] until it
+     * finishes (with a result or an error). Results should be retrieved from whatever result sink the
+     * [StateMachine] is designed for.
+     * 
+     * @return `true` on success
+     */
+    @Throws(InterruptedException::class)
+    fun executeProducer(producer: StateMachine?): Boolean {
+        val context: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(true)
+                .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
+                .setEventHandler(reporter)
+                .build()
+        try {
+            getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(true)
+            val result: EvaluationResult<SkyValue?>? =
+                StateMachineEvaluatorForTesting.run(
+                    producer, getSkyframeExecutor().getEvaluator(), context
+                )
+            if (result != null) {
+                check(
+                    !(result.hasError() && !result.getError().getCycleInfo().isEmpty())
+                ) { "Cycle detected: " + result.getError().getCycleInfo() }
+                return !result.hasError()
+            }
+        } finally {
+            getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(false)
+        }
+        return true
+    }
 }

@@ -12,71 +12,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [RegistryFactory].  */
+@RunWith(JUnit4::class)
+class RegistryFactoryTest {
+    @org.junit.Test
+    fun badSchemes() {
+        val registryFactory: RegistryFactory =
+            RegistryFactoryImpl(com.google.common.base.Suppliers.ofInstance<T?>(com.google.common.collect.ImmutableMap.of<Any?, Any?>()))
+        var exception: Throwable? =
+            org.junit.Assert.assertThrows<URISyntaxException?>(
+                URISyntaxException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    registryFactory.createRegistry(
+                        "/home/www",
+                        LockfileMode.UPDATE,
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        java.util.Optional.empty<T?>(),
+                        com.google.common.collect.ImmutableSet.of<E?>()
+                    )
+                })
+        Truth.assertThat(exception).hasMessageThat().contains("Registry URL has no scheme")
+        exception =
+            org.junit.Assert.assertThrows<URISyntaxException?>(
+                URISyntaxException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    registryFactory.createRegistry(
+                        "foo://bar",
+                        LockfileMode.UPDATE,
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        java.util.Optional.empty<T?>(),
+                        com.google.common.collect.ImmutableSet.of<E?>()
+                    )
+                })
+        Truth.assertThat(exception).hasMessageThat().contains("Unrecognized registry URL protocol")
+    }
 
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode;
-import java.net.URISyntaxException;
-import java.util.Optional;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link RegistryFactory}. */
-@RunWith(JUnit4.class)
-public class RegistryFactoryTest {
-
-  @Test
-  public void badSchemes() {
-    RegistryFactory registryFactory =
-        new RegistryFactoryImpl(Suppliers.ofInstance(ImmutableMap.of()));
-    Throwable exception =
-        assertThrows(
-            URISyntaxException.class,
-            () ->
-                registryFactory.createRegistry(
-                    "/home/www",
-                    LockfileMode.UPDATE,
-                    ImmutableMap.of(),
-                    ImmutableMap.of(),
-                    Optional.empty(),
-                    ImmutableSet.of()));
-    assertThat(exception).hasMessageThat().contains("Registry URL has no scheme");
-    exception =
-        assertThrows(
-            URISyntaxException.class,
-            () ->
-                registryFactory.createRegistry(
-                    "foo://bar",
-                    LockfileMode.UPDATE,
-                    ImmutableMap.of(),
-                    ImmutableMap.of(),
-                    Optional.empty(),
-                    ImmutableSet.of()));
-    assertThat(exception).hasMessageThat().contains("Unrecognized registry URL protocol");
-  }
-
-  @Test
-  public void badPath() {
-    RegistryFactory registryFactory =
-        new RegistryFactoryImpl(Suppliers.ofInstance(ImmutableMap.of()));
-    Throwable exception =
-        assertThrows(
-            URISyntaxException.class,
-            () ->
-                registryFactory.createRegistry(
-                    "file:c:/path/to/workspace/registry",
-                    LockfileMode.UPDATE,
-                    ImmutableMap.of(),
-                    ImmutableMap.of(),
-                    Optional.empty(),
-                    ImmutableSet.of()));
-    assertThat(exception).hasMessageThat().contains("Registry URL path is not valid");
-  }
+    @org.junit.Test
+    fun badPath() {
+        val registryFactory: RegistryFactory =
+            RegistryFactoryImpl(com.google.common.base.Suppliers.ofInstance<T?>(com.google.common.collect.ImmutableMap.of<Any?, Any?>()))
+        val exception: Throwable? =
+            org.junit.Assert.assertThrows<URISyntaxException?>(
+                URISyntaxException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    registryFactory.createRegistry(
+                        "file:c:/path/to/workspace/registry",
+                        LockfileMode.UPDATE,
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        java.util.Optional.empty<T?>(),
+                        com.google.common.collect.ImmutableSet.of<E?>()
+                    )
+                })
+        Truth.assertThat(exception).hasMessageThat().contains("Registry URL path is not valid")
+    }
 }

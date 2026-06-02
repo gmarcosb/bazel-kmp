@@ -138,7 +138,7 @@ public class TypeTaggerTest {
     new NodeVisitor() {
       @Override
       public void visit(DefStatement def) {
-        if (def.getIdentifier().getName().equals(name)) {
+        if (def.identifier.name.equals(name)) {
           functions.add(def.getResolvedFunction());
         }
         super.visit(def);
@@ -472,7 +472,7 @@ public class TypeTaggerTest {
             lambda x: lambda y: 123
             """);
     stmt = getFirstStatement(ExpressionStatement.class, result.file());
-    type = result.getType((LambdaExpression) ((LambdaExpression) stmt.getExpression()).getBody());
+    type = result.getType((LambdaExpression) ((LambdaExpression) stmt.expression).getBody());
 
     assertThat(type).isNotNull();
   }
@@ -556,7 +556,7 @@ public class TypeTaggerTest {
     var stmt = getFirstStatement(DefStatement.class, result.file());
     ArrayList<StarlarkType> bindingTypes = new ArrayList<>();
     for (var param : stmt.getParameters()) {
-      bindingTypes.add(result.getType(param.getIdentifier()));
+      bindingTypes.add(result.getType(param.identifier));
     }
 
     assertThat(bindingTypes)
@@ -575,7 +575,7 @@ public class TypeTaggerTest {
     var lambda = (LambdaExpression) stmt.getExpression();
     ArrayList<StarlarkType> bindingTypes = new ArrayList<>();
     for (var param : lambda.getParameters()) {
-      bindingTypes.add(result.getType(param.getIdentifier()));
+      bindingTypes.add(result.getType(param.identifier));
     }
 
     assertThat(bindingTypes).containsExactly(Types.ANY, Types.ANY).inOrder();
@@ -697,7 +697,7 @@ public class TypeTaggerTest {
     Result result = tagFile("load('//x:x.bzl', local_t = 'typed', local_u = 'untyped')");
     LoadStatement loadStmt = getFirstStatement(LoadStatement.class, result.file());
 
-    assertThat(loadStmt.getBindings().stream().map(b -> result.getType(b.getLocalName())))
+    assertThat(loadStmt.bindings.stream().map(b -> result.getType(b.localName)))
         .containsExactly(Types.INT, Types.ANY)
         .inOrder();
   }

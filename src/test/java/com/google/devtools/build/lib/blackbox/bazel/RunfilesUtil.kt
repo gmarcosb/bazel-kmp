@@ -11,25 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.bazel
 
-package com.google.devtools.build.lib.blackbox.bazel;
+import com.google.devtools.build.lib.bazel.repository.downloader.HttpStream.Factory.create
+import com.google.devtools.build.lib.bazel.repository.downloader.ProgressInputStream.Factory.create
+import com.google.devtools.build.lib.vfs.Path
+import com.google.devtools.build.runfiles.Runfiles
+import java.io.IOException
+import java.nio.file.Path
+import java.nio.file.Paths
 
-import com.google.devtools.build.runfiles.Runfiles;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
-/** Runfiles utilities for the black box tests initialization */
-public class RunfilesUtil {
-
-  /**
-   * Find a runtime location of a path
-   *
-   * @param path input path
-   * @return runtime location as a {@link Path}
-   * @throws IOException in case Runfiles can not access manifest or file system
-   */
-  static Path find(String path) throws IOException {
-    return Paths.get(Runfiles.create().rlocation(path));
-  }
+/** Runfiles utilities for the black box tests initialization  */
+object RunfilesUtil {
+    /**
+     * Find a runtime location of a path
+     * 
+     * @param path input path
+     * @return runtime location as a [Path]
+     * @throws IOException in case Runfiles can not access manifest or file system
+     */
+    @Throws(IOException::class)
+    fun find(path: String): Path? {
+        return Paths.get(Runfiles.create().rlocation(path))
+    }
 }

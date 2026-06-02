@@ -11,31 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark.annotations.processor.optiontestsources
 
-package com.google.devtools.build.lib.analysis.starlark.annotations.processor.optiontestsources;
+import com.google.devtools.build.docgen.annot.DocCategory
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.starlark.annotations.StarlarkConfigurationField;
-import com.google.devtools.build.lib.cmdline.Label;
-import net.starlark.java.annot.StarlarkBuiltin;
-
-/** A test case of StarlarkConfigurationFieldProcessorTest. */
+/** A test case of StarlarkConfigurationFieldProcessorTest.  */
 @StarlarkBuiltin(
     name = "module_name",
     doc = "A fake configuration fragment for a test.",
-    category = DocCategory.CONFIGURATION_FRAGMENT)
-public class MethodThrowsException extends Fragment {
-
-  /**
-   * Returns the label of the xcode_config rule to use for resolving the host system xcode version.
-   */
-  @StarlarkConfigurationField(
-      name = "some_field",
-      doc = "Documentation ",
-      defaultLabel = "defaultLabel",
-      defaultInToolRepository = true)
-  public Label getXcodeConfigLabel() throws IllegalArgumentException {
-    return null;
-  }
+    category = DocCategory.CONFIGURATION_FRAGMENT
+)
+class MethodThrowsException : Fragment() {
+    @get:Throws(java.lang.IllegalArgumentException::class)
+    @get:StarlarkConfigurationField(
+        name = "some_field",
+        doc = "Documentation ",
+        defaultLabel = "defaultLabel",
+        defaultInToolRepository = true
+    )
+    val xcodeConfigLabel: Label?
+        /**
+         * Returns the label of the xcode_config rule to use for resolving the host system xcode version.
+         */
+        get() = null
 }

@@ -11,68 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.HashMap
 
-import static com.google.common.truth.Truth.assertThat;
+/** [ActionEnvironment]Test  */
+@RunWith(JUnit4::class)
+class ActionEnvironmentTest {
+    @org.junit.Test
+    fun compoundEnvOrdering() {
+        val env1: ActionEnvironment =
+            ActionEnvironment.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("FOO", "foo1", "BAR", "bar"),
+                com.google.common.collect.ImmutableSet.of<E?>("baz")
+            )
+        // entries added by env2 override the existing entries
+        val env2: ActionEnvironment =
+            env1.withAdditionalFixedVariables(com.google.common.collect.ImmutableMap.of<K?, V?>("FOO", "foo2"))
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        assertThat(env1.getFixedEnv()).containsExactly("FOO", "foo1", "BAR", "bar")
+        assertThat(env1.getInheritedEnv()).containsExactly("baz")
 
-/** {@link ActionEnvironment}Test */
-@RunWith(JUnit4.class)
-public final class ActionEnvironmentTest {
+        assertThat(env2.getFixedEnv()).containsExactly("FOO", "foo2", "BAR", "bar")
+        assertThat(env2.getInheritedEnv()).containsExactly("baz")
+    }
 
-  @Test
-  public void compoundEnvOrdering() {
-    ActionEnvironment env1 =
-        ActionEnvironment.create(
-            ImmutableMap.of("FOO", "foo1", "BAR", "bar"), ImmutableSet.of("baz"));
-    // entries added by env2 override the existing entries
-    ActionEnvironment env2 = env1.withAdditionalFixedVariables(ImmutableMap.of("FOO", "foo2"));
+    @org.junit.Test
+    fun fixedInheritedInteraction() {
+        val env: ActionEnvironment =
+            ActionEnvironment.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("FIXED_ONLY", "fixed"),
+                com.google.common.collect.ImmutableSet.of<E?>("INHERITED_ONLY", "FIXED_AND_INHERITED")
+            )
+                .withAdditionalFixedVariables(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "FIXED_AND_INHERITED",
+                        "fixed"
+                    )
+                )
+        val clientEnv: MutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>(
+                "INHERITED_ONLY",
+                "inherited",
+                "FIXED_AND_INHERITED",
+                "inherited"
+            )
+        val result: MutableMap<String?, String?> = HashMap<String?, String?>()
+        env.resolve(result, clientEnv)
 
-    assertThat(env1.getFixedEnv()).containsExactly("FOO", "foo1", "BAR", "bar");
-    assertThat(env1.getInheritedEnv()).containsExactly("baz");
+        Truth.assertThat(result)
+            .containsExactly(
+                "FIXED_ONLY",
+                "fixed",
+                "FIXED_AND_INHERITED",
+                "inherited",
+                "INHERITED_ONLY",
+                "inherited"
+            )
+    }
 
-    assertThat(env2.getFixedEnv()).containsExactly("FOO", "foo2", "BAR", "bar");
-    assertThat(env2.getInheritedEnv()).containsExactly("baz");
-  }
+    @org.junit.Test
+    fun emptyEnvironmentInterning() {
+        val emptyEnvironment: ActionEnvironment? =
+            ActionEnvironment.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableSet.of<E?>()
+            )
+        assertThat(emptyEnvironment).isSameInstanceAs(ActionEnvironment.EMPTY)
 
-  @Test
-  public void fixedInheritedInteraction() {
-    ActionEnvironment env =
-        ActionEnvironment.create(
-                ImmutableMap.of("FIXED_ONLY", "fixed"),
-                ImmutableSet.of("INHERITED_ONLY", "FIXED_AND_INHERITED"))
-            .withAdditionalFixedVariables(ImmutableMap.of("FIXED_AND_INHERITED", "fixed"));
-    Map<String, String> clientEnv =
-        ImmutableMap.of("INHERITED_ONLY", "inherited", "FIXED_AND_INHERITED", "inherited");
-    Map<String, String> result = new HashMap<>();
-    env.resolve(result, clientEnv);
-
-    assertThat(result)
-        .containsExactly(
-            "FIXED_ONLY",
-            "fixed",
-            "FIXED_AND_INHERITED",
-            "inherited",
-            "INHERITED_ONLY",
-            "inherited");
-  }
-
-  @Test
-  public void emptyEnvironmentInterning() {
-    ActionEnvironment emptyEnvironment =
-        ActionEnvironment.create(ImmutableMap.of(), ImmutableSet.of());
-    assertThat(emptyEnvironment).isSameInstanceAs(ActionEnvironment.EMPTY);
-
-    ActionEnvironment base =
-        ActionEnvironment.create(ImmutableMap.of("FOO", "foo1"), ImmutableSet.of("baz"));
-    assertThat(base.withAdditionalFixedVariables(ImmutableMap.of())).isSameInstanceAs(base);
-  }
+        val base: ActionEnvironment =
+            ActionEnvironment.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("FOO", "foo1"),
+                com.google.common.collect.ImmutableSet.of<E?>("baz")
+            )
+        assertThat(base.withAdditionalFixedVariables(com.google.common.collect.ImmutableMap.of<K?, V?>())).isSameInstanceAs(
+            base
+        )
+    }
 }

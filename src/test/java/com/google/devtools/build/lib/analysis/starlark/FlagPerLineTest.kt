@@ -11,170 +11,180 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark
 
-package com.google.devtools.build.lib.analysis.starlark;
-
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.io.CharStreams;
-import com.google.devtools.build.lib.actions.ParameterFile;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStreamReader;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkThread;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.ParameterFile
 
 /**
- * Checks the result of each variant {@code Args.add*} call, in flag_per_line format. Note, writes
+ * Checks the result of each variant `Args.add*` call, in flag_per_line format. Note, writes
  * the
  */
-@RunWith(JUnit4.class)
-public class FlagPerLineTest extends BuildViewTestCase {
+@RunWith(JUnit4::class)
+class FlagPerLineTest : BuildViewTestCase() {
+    // Initially empty, with "flag_per_line" format.
+    private var args: Args? = null
+    private val mutability: Mutability? = Mutability.create()
+    private var thread: StarlarkThread? = null
 
-  // Initially empty, with "flag_per_line" format.
-  private Args args;
-  private final Mutability mutability = Mutability.create();
-  private StarlarkThread thread;
-
-  @Before
-  public void initArgs() throws Exception {
-    args = Args.newArgs(mutability, getStarlarkSemantics());
-    args.setParamFileFormat("flag_per_line");
-    thread = StarlarkThread.createTransient(mutability, getStarlarkSemantics());
-  }
-
-  @Test
-  public void add_noname() throws Exception {
-    args.addArgument("--foo", Starlark.UNBOUND, /* format= */ Starlark.NONE, thread);
-    expectLines("--foo");
-  }
-
-  @Test
-  public void add_name() throws Exception {
-    args.addArgument("--foo", "bar", /* format= */ Starlark.NONE, thread);
-    expectLines("--foo=bar");
-  }
-
-  @Test
-  public void add_all_noname() throws Exception {
-    args.addAll(
-        /* argNameOrValue= */ "", // ignored
-        /* values= */ StarlarkList.of(null, "--foo", "bar", "baz"),
-        /* mapEach= */ Starlark.NONE,
-        /* formatEach= */ Starlark.NONE,
-        /* beforeEach= */ Starlark.NONE,
-        /* omitIfEmpty= */ true, // the default
-        /* uniquify= */ false,
-        /* expandDirectories= */ false,
-        /* terminateWith= */ Starlark.NONE,
-        /* allowClosure= */ false,
-        thread);
-    // Absl would reject this line, but it's what we generate.
-    expectLines("--foo bar baz");
-  }
-
-  @Test
-  public void add_all_name() throws Exception {
-    args.addAll(
-        /* argNameOrValue= */ "--foo",
-        /* values= */ StarlarkList.of(null, "bar", "baz"),
-        /* mapEach= */ Starlark.NONE,
-        /* formatEach= */ Starlark.NONE,
-        /* beforeEach= */ Starlark.NONE,
-        /* omitIfEmpty= */ true, // the default
-        /* uniquify= */ false,
-        /* expandDirectories= */ false,
-        /* terminateWith= */ Starlark.NONE,
-        /* allowClosure= */ false,
-        thread);
-    // Absl interprets this as a single value "bar baz" for the flag "--foo",
-    // which is probably not what was intended.
-    expectLines("--foo=bar baz");
-  }
-
-  @Test
-  public void add_joined_noname() throws Exception {
-    args.addJoined(
-        /* argNameOrValue= */ "", // ignored
-        /* values= */ StarlarkList.of(null, "--foo", "bar", "baz"),
-        /* joinWith= */ ",",
-        /* mapEach= */ Starlark.NONE,
-        /* formatEach= */ Starlark.NONE,
-        /* formatJoined= */ Starlark.NONE,
-        /* omitIfEmpty= */ true, // the default
-        /* uniquify= */ false,
-        /* expandDirectories= */ false,
-        /* allowClosure= */ false,
-        thread);
-    // Absl would reject this line, but it's what we generate.
-    expectLines("--foo,bar,baz");
-  }
-
-  @Test
-  public void add_joined_name() throws Exception {
-    args.addJoined(
-        /* argNameOrValue= */ "--foo",
-        /* values= */ StarlarkList.of(null, "bar", "baz", "woof"),
-        /* joinWith= */ ",",
-        /* mapEach= */ Starlark.NONE,
-        /* formatEach= */ Starlark.NONE,
-        /* formatJoined= */ Starlark.NONE,
-        /* omitIfEmpty= */ true,
-        /* uniquify= */ false,
-        /* expandDirectories= */ false,
-        /* allowClosure= */ false,
-        thread);
-    expectLines("--foo=bar,baz,woof");
-  }
-
-  /** Tests that an add_all (empty and omitted) following two adds works. */
-  @Test
-  public void args_combinedOmittedAddAllAndAdd() throws Exception {
-    args.addAll(
-        /* argNameOrValue= */ "", // ignored
-        /* values= */ StarlarkList.of(null),
-        /* mapEach= */ Starlark.NONE,
-        /* formatEach= */ Starlark.NONE,
-        /* beforeEach= */ Starlark.NONE,
-        /* omitIfEmpty= */ true, // the default
-        /* uniquify= */ false,
-        /* expandDirectories= */ false,
-        /* terminateWith= */ Starlark.NONE,
-        /* allowClosure= */ false,
-        thread);
-    args.addArgument("--foo1", "bar", /* format= */ Starlark.NONE, thread);
-    args.addArgument("--foo2", "bar", /* format= */ Starlark.NONE, thread);
-
-    expectLines("--foo1=bar", "--foo2=bar");
-  }
-
-  private void expectLines(String... lines) throws Exception {
-    assertThat(toParamFile(args)).containsExactly((Object[]) lines).inOrder();
-  }
-
-  /** Writes out the Args using ParameterFile, returns the output broken down as lines. */
-  private static ImmutableList<String> toParamFile(Args args) throws Exception {
-    byte[] bytes;
-    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-      ParameterFile.writeParameterFile(
-          outputStream,
-          args.build(() -> RepositoryMapping.EMPTY).arguments(),
-              args.parameterFileType);
-      bytes = outputStream.toByteArray();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initArgs() {
+        args = Args.newArgs(mutability, getStarlarkSemantics())
+        args.setParamFileFormat("flag_per_line")
+        thread = StarlarkThread.createTransient(mutability, getStarlarkSemantics())
     }
-    try (ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
-        InputStreamReader reader = new InputStreamReader(inputStream, UTF_8)) {
-      return ImmutableList.copyOf(CharStreams.readLines(reader));
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun add_noname() {
+        args.addArgument("--foo", Starlark.UNBOUND,  /* format= */Starlark.NONE, thread)
+        expectLines("--foo")
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun add_name() {
+        args.addArgument("--foo", "bar",  /* format= */Starlark.NONE, thread)
+        expectLines("--foo=bar")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun add_all_noname() {
+        args.addAll( /* argNameOrValue= */
+            "",  // ignored
+            /* values= */
+            StarlarkList.of<T?>(null, "--foo", "bar", "baz"),  /* mapEach= */
+            Starlark.NONE,  /* formatEach= */
+            Starlark.NONE,  /* beforeEach= */
+            Starlark.NONE,  /* omitIfEmpty= */
+            true,  // the default
+            /* uniquify= */
+            false,  /* expandDirectories= */
+            false,  /* terminateWith= */
+            Starlark.NONE,  /* allowClosure= */
+            false,
+            thread
+        )
+        // Absl would reject this line, but it's what we generate.
+        expectLines("--foo bar baz")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun add_all_name() {
+        args.addAll( /* argNameOrValue= */
+            "--foo",  /* values= */
+            StarlarkList.of<T?>(null, "bar", "baz"),  /* mapEach= */
+            Starlark.NONE,  /* formatEach= */
+            Starlark.NONE,  /* beforeEach= */
+            Starlark.NONE,  /* omitIfEmpty= */
+            true,  // the default
+            /* uniquify= */
+            false,  /* expandDirectories= */
+            false,  /* terminateWith= */
+            Starlark.NONE,  /* allowClosure= */
+            false,
+            thread
+        )
+        // Absl interprets this as a single value "bar baz" for the flag "--foo",
+        // which is probably not what was intended.
+        expectLines("--foo=bar baz")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun add_joined_noname() {
+        args.addJoined( /* argNameOrValue= */
+            "",  // ignored
+            /* values= */
+            StarlarkList.of<T?>(null, "--foo", "bar", "baz"),  /* joinWith= */
+            ",",  /* mapEach= */
+            Starlark.NONE,  /* formatEach= */
+            Starlark.NONE,  /* formatJoined= */
+            Starlark.NONE,  /* omitIfEmpty= */
+            true,  // the default
+            /* uniquify= */
+            false,  /* expandDirectories= */
+            false,  /* allowClosure= */
+            false,
+            thread
+        )
+        // Absl would reject this line, but it's what we generate.
+        expectLines("--foo,bar,baz")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun add_joined_name() {
+        args.addJoined( /* argNameOrValue= */
+            "--foo",  /* values= */
+            StarlarkList.of<T?>(null, "bar", "baz", "woof"),  /* joinWith= */
+            ",",  /* mapEach= */
+            Starlark.NONE,  /* formatEach= */
+            Starlark.NONE,  /* formatJoined= */
+            Starlark.NONE,  /* omitIfEmpty= */
+            true,  /* uniquify= */
+            false,  /* expandDirectories= */
+            false,  /* allowClosure= */
+            false,
+            thread
+        )
+        expectLines("--foo=bar,baz,woof")
+    }
+
+    /** Tests that an add_all (empty and omitted) following two adds works.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun args_combinedOmittedAddAllAndAdd() {
+        args.addAll( /* argNameOrValue= */
+            "",  // ignored
+            /* values= */
+            StarlarkList.of<T?>(null),  /* mapEach= */
+            Starlark.NONE,  /* formatEach= */
+            Starlark.NONE,  /* beforeEach= */
+            Starlark.NONE,  /* omitIfEmpty= */
+            true,  // the default
+            /* uniquify= */
+            false,  /* expandDirectories= */
+            false,  /* terminateWith= */
+            Starlark.NONE,  /* allowClosure= */
+            false,
+            thread
+        )
+        args.addArgument("--foo1", "bar",  /* format= */Starlark.NONE, thread)
+        args.addArgument("--foo2", "bar",  /* format= */Starlark.NONE, thread)
+
+        expectLines("--foo1=bar", "--foo2=bar")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun expectLines(vararg lines: String?) {
+        Truth.assertThat(toParamFile(args)).containsExactly(*lines as Array<Any?>?).inOrder()
+    }
+
+    companion object {
+        /** Writes out the Args using ParameterFile, returns the output broken down as lines.  */
+        @Throws(java.lang.Exception::class)
+        private fun toParamFile(args: Args): com.google.common.collect.ImmutableList<String?> {
+            val bytes: ByteArray
+            java.io.ByteArrayOutputStream().use { outputStream ->
+                ParameterFile.writeParameterFile(
+                    outputStream,
+                    args.build({ RepositoryMapping.EMPTY }).arguments(),
+                    args.parameterFileType
+                )
+                bytes = outputStream.toByteArray()
+            }
+            ByteArrayInputStream(bytes).use { inputStream ->
+                java.io.InputStreamReader(inputStream, java.nio.charset.StandardCharsets.UTF_8).use { reader ->
+                    return com.google.common.collect.ImmutableList.copyOf<String?>(
+                        com.google.common.io.CharStreams.readLines(
+                            reader
+                        )
+                    )
+                }
+            }
+        }
+    }
 }

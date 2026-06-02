@@ -11,122 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.util
 
-package com.google.devtools.build.lib.analysis.util;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.actions.ActionKeyContext
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.analysis.Runfiles;
-import com.google.devtools.build.lib.analysis.SymlinkEntry;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.RunfileSymlinksMode;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.SortedMap;
-import javax.annotation.Nullable;
-
-/** {@link RunfilesTree} implementation wrapping a single {@link Runfiles} directory mapping. */
+/** [RunfilesTree] implementation wrapping a single [Runfiles] directory mapping.  */
 @AutoCodec
-public final class FakeRunfilesTree implements RunfilesTree {
+class FakeRunfilesTree @AutoCodec.Instantiator constructor(
+    runfilesDir: PathFragment,
+    runfiles: Runfiles?,
+    repoMappingManifest: Artifact?,
+    runfileSymlinksMode: RunfileSymlinksMode?,
+    buildRunfileLinks: Boolean
+) : RunfilesTree {
+    private val runfilesDir: PathFragment
+    private val runfiles: Runfiles
+    private val repoMappingManifest: Artifact?
+    private val runfileSymlinksMode: RunfileSymlinksMode?
+    val isBuildRunfileLinks: Boolean
 
-  private final PathFragment runfilesDir;
-  private final Runfiles runfiles;
-  @Nullable private final Artifact repoMappingManifest;
-  private final RunfileSymlinksMode runfileSymlinksMode;
-  private final boolean buildRunfileLinks;
+    /**
+     * Create an instance mapping `runfiles` to `runfilesDir`.
+     * 
+     * @param runfilesDir the desired runfiles directory. Should be relative.
+     * @param runfiles the runfiles for runilesDir.
+     * @param runfileSymlinksMode how to create runfile symlinks
+     * @param buildRunfileLinks whether runfile symlinks should be created during the build
+     */
+    init {
+        Preconditions.checkArgument(!runfilesDir.isAbsolute())
+        this.runfilesDir = Preconditions.checkNotNull<PathFragment>(runfilesDir)
+        this.runfiles = Preconditions.checkNotNull<Runfiles>(runfiles)
+        this.repoMappingManifest = repoMappingManifest
+        this.runfileSymlinksMode = runfileSymlinksMode
+        this.isBuildRunfileLinks = buildRunfileLinks
+    }
 
-  /**
-   * Create an instance mapping {@code runfiles} to {@code runfilesDir}.
-   *
-   * @param runfilesDir the desired runfiles directory. Should be relative.
-   * @param runfiles the runfiles for runilesDir.
-   * @param runfileSymlinksMode how to create runfile symlinks
-   * @param buildRunfileLinks whether runfile symlinks should be created during the build
-   */
-  @AutoCodec.Instantiator
-  public FakeRunfilesTree(
-      PathFragment runfilesDir,
-      Runfiles runfiles,
-      @Nullable Artifact repoMappingManifest,
-      RunfileSymlinksMode runfileSymlinksMode,
-      boolean buildRunfileLinks) {
-    checkArgument(!runfilesDir.isAbsolute());
-    this.runfilesDir = checkNotNull(runfilesDir);
-    this.runfiles = checkNotNull(runfiles);
-    this.repoMappingManifest = repoMappingManifest;
-    this.runfileSymlinksMode = runfileSymlinksMode;
-    this.buildRunfileLinks = buildRunfileLinks;
-  }
+    val artifacts: NestedSet<Artifact?>
+        get() = runfiles.getAllArtifacts()
 
-  @Override
-  public NestedSet<Artifact> getArtifacts() {
-    return runfiles.getAllArtifacts();
-  }
+    val execPath: PathFragment
+        get() = runfilesDir
 
-  @Override
-  public PathFragment getExecPath() {
-    return runfilesDir;
-  }
+    val mapping: SortedMap<PathFragment?, Artifact?>
+        get() = runfiles.getRunfilesInputs(repoMappingManifest)
 
-  @Override
-  public SortedMap<PathFragment, Artifact> getMapping() {
-    return runfiles.getRunfilesInputs(repoMappingManifest);
-  }
+    val symlinksMode: RunfileSymlinksMode?
+        get() = runfileSymlinksMode
 
-  @Override
-  public RunfileSymlinksMode getSymlinksMode() {
-    return runfileSymlinksMode;
-  }
+    val workspaceName: String
+        get() = runfiles.getPrefix()
 
-  @Override
-  public boolean isBuildRunfileLinks() {
-    return buildRunfileLinks;
-  }
+    val artifactsAtCanonicalLocationsForLogging: NestedSet<Artifact?>
+        get() = runfiles.getArtifacts()
 
-  @Override
-  public String getWorkspaceName() {
-    return runfiles.getPrefix();
-  }
+    val emptyFilenamesForLogging: Iterable<PathFragment>
+        get() = runfiles.getEmptyFilenames()
 
-  @Override
-  public NestedSet<Artifact> getArtifactsAtCanonicalLocationsForLogging() {
-    return runfiles.getArtifacts();
-  }
+    val symlinksForLogging: NestedSet<SymlinkEntry?>
+        get() = runfiles.getSymlinks()
 
-  @Override
-  public Iterable<PathFragment> getEmptyFilenamesForLogging() {
-    return runfiles.getEmptyFilenames();
-  }
+    val rootSymlinksForLogging: NestedSet<SymlinkEntry?>
+        get() = runfiles.getRootSymlinks()
 
-  @Override
-  public NestedSet<SymlinkEntry> getSymlinksForLogging() {
-    return runfiles.getSymlinks();
-  }
+    val repoMappingManifestForLogging: Artifact?
+        get() = repoMappingManifest
 
-  @Override
-  public NestedSet<SymlinkEntry> getRootSymlinksForLogging() {
-    return runfiles.getRootSymlinks();
-  }
+    val isMappingCached: Boolean
+        get() = false
 
-  @Nullable
-  @Override
-  public Artifact getRepoMappingManifestForLogging() {
-    return repoMappingManifest;
-  }
-
-  @Override
-  public boolean isMappingCached() {
-    return false;
-  }
-
-  @Override
-  public void fingerprint(
-      ActionKeyContext actionKeyContext, Fingerprint fp, boolean digestAbsolutePaths) {
-    runfiles.fingerprint(actionKeyContext, fp, digestAbsolutePaths);
-  }
+    public override fun fingerprint(
+        actionKeyContext: ActionKeyContext?, fp: Fingerprint?, digestAbsolutePaths: Boolean
+    ) {
+        runfiles.fingerprint(actionKeyContext, fp, digestAbsolutePaths)
+    }
 }

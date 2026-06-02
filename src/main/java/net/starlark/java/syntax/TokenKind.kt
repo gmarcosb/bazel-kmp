@@ -11,119 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+/** A TokenKind represents the kind of a lexical token.  */
+enum class TokenKind(name: String) {
+    AMPERSAND("&"),
+    AMPERSAND_EQUALS("&="),
+    AND("and"),
+    AS("as"),
+    ASSERT("assert"),
+    BREAK("break"),
+    CARET("^"),
+    CARET_EQUALS("^="),
 
-/** A TokenKind represents the kind of a lexical token. */
-public enum TokenKind {
-  AMPERSAND("&"),
-  AMPERSAND_EQUALS("&="),
-  AND("and"),
-  AS("as"),
-  ASSERT("assert"),
-  BREAK("break"),
-  CARET("^"),
-  CARET_EQUALS("^="),
-  /** Emitted only if --experimental_starlark_type_syntax is enabled. */
-  CAST("cast"),
-  CLASS("class"),
-  COLON(":"),
-  COMMA(","),
-  CONTINUE("continue"),
-  DEF("def"),
-  DEL("del"),
-  /**
-   * A multiline block of Sphinx autodoc-style doc comments. Implicitly includes terminating
-   * newline.
-   */
-  DOC_COMMENT_BLOCK("#:"),
-  /**
-   * Inline trailing doc comment which was preceded by non-whitespace tokens on the same line.
-   * Doesn't include terminating newline.
-   */
-  DOC_COMMENT_TRAILING("trailing #: "),
-  DOT("."),
-  ELIF("elif"),
-  /** Valid only in type expressions. */
-  ELLIPSIS("..."),
-  ELSE("else"),
-  EOF("EOF"),
-  EQUALS("="),
-  EQUALS_EQUALS("=="),
-  EXCEPT("except"),
-  FINALLY("finally"),
-  FLOAT("float literal"),
-  FOR("for"),
-  FROM("from"),
-  GLOBAL("global"),
-  GREATER(">"),
-  GREATER_EQUALS(">="),
-  GREATER_GREATER(">>"),
-  GREATER_GREATER_EQUALS(">>="),
-  IDENTIFIER("identifier"),
-  IF("if"),
-  ILLEGAL("illegal character"),
-  IMPORT("import"),
-  IN("in"),
-  INDENT("indent"),
-  INT("integer literal"),
-  IS("is"),
-  /** Emitted only if --experimental_starlark_type_syntax is enabled. */
-  ISINSTANCE("isinstance"),
-  LAMBDA("lambda"),
-  LBRACE("{"),
-  LBRACKET("["),
-  LESS("<"),
-  LESS_EQUALS("<="),
-  LESS_LESS("<<"),
-  LESS_LESS_EQUALS("<<="),
-  LOAD("load"),
-  LPAREN("("),
-  MINUS("-"),
-  MINUS_EQUALS("-="),
-  NEWLINE("newline"),
-  NONLOCAL("nonlocal"),
-  NOT("not"),
-  NOT_EQUALS("!="),
-  NOT_IN("not in"),
-  OR("or"),
-  OUTDENT("outdent"),
-  PASS("pass"),
-  PERCENT("%"),
-  PERCENT_EQUALS("%="),
-  PIPE("|"),
-  PIPE_EQUALS("|="),
-  PLUS("+"),
-  PLUS_EQUALS("+="),
-  RAISE("raise"),
-  RARROW("->"),
-  RBRACE("}"),
-  RBRACKET("]"),
-  RETURN("return"),
-  RPAREN(")"),
-  SEMI(";"),
-  SLASH("/"),
-  SLASH_EQUALS("/="),
-  SLASH_SLASH("//"),
-  SLASH_SLASH_EQUALS("//="),
-  STAR("*"),
-  STAR_EQUALS("*="),
-  STAR_STAR("**"),
-  STRING("string literal"),
-  TILDE("~"),
-  TRY("try"),
-  WHILE("while"),
-  WITH("with"),
-  YIELD("yield");
+    /** Emitted only if --experimental_starlark_type_syntax is enabled.  */
+    CAST("cast"),
+    CLASS("class"),
+    COLON(":"),
+    COMMA(","),
+    CONTINUE("continue"),
+    DEF("def"),
+    DEL("del"),
 
-  private final String name;
+    /**
+     * A multiline block of Sphinx autodoc-style doc comments. Implicitly includes terminating
+     * newline.
+     */
+    DOC_COMMENT_BLOCK("#:"),
 
-  private TokenKind(String name) {
-    this.name = name;
-  }
+    /**
+     * Inline trailing doc comment which was preceded by non-whitespace tokens on the same line.
+     * Doesn't include terminating newline.
+     */
+    DOC_COMMENT_TRAILING("trailing #: "),
+    DOT("."),
+    ELIF("elif"),
 
-  @Override
-  public String toString() {
-    return name;
-  }
+    /** Valid only in type expressions.  */
+    ELLIPSIS("..."),
+    ELSE("else"),
+    EOF("EOF"),
+    EQUALS("="),
+    EQUALS_EQUALS("=="),
+    EXCEPT("except"),
+    FINALLY("finally"),
+    FLOAT("float literal"),
+    FOR("for"),
+    FROM("from"),
+    GLOBAL("global"),
+    GREATER(">"),
+    GREATER_EQUALS(">="),
+    GREATER_GREATER(">>"),
+    GREATER_GREATER_EQUALS(">>="),
+    IDENTIFIER("identifier"),
+    IF("if"),
+    ILLEGAL("illegal character"),
+    IMPORT("import"),
+    IN("in"),
+    INDENT("indent"),
+    INT("integer literal"),
+    IS("is"),
+
+    /** Emitted only if --experimental_starlark_type_syntax is enabled.  */
+    ISINSTANCE("isinstance"),
+    LAMBDA("lambda"),
+    LBRACE("{"),
+    LBRACKET("["),
+    LESS("<"),
+    LESS_EQUALS("<="),
+    LESS_LESS("<<"),
+    LESS_LESS_EQUALS("<<="),
+    LOAD("load"),
+    LPAREN("("),
+    MINUS("-"),
+    MINUS_EQUALS("-="),
+    NEWLINE("newline"),
+    NONLOCAL("nonlocal"),
+    NOT("not"),
+    NOT_EQUALS("!="),
+    NOT_IN("not in"),
+    OR("or"),
+    OUTDENT("outdent"),
+    PASS("pass"),
+    PERCENT("%"),
+    PERCENT_EQUALS("%="),
+    PIPE("|"),
+    PIPE_EQUALS("|="),
+    PLUS("+"),
+    PLUS_EQUALS("+="),
+    RAISE("raise"),
+    RARROW("->"),
+    RBRACE("}"),
+    RBRACKET("]"),
+    RETURN("return"),
+    RPAREN(")"),
+    SEMI(";"),
+    SLASH("/"),
+    SLASH_EQUALS("/="),
+    SLASH_SLASH("//"),
+    SLASH_SLASH_EQUALS("//="),
+    STAR("*"),
+    STAR_EQUALS("*="),
+    STAR_STAR("**"),
+    STRING("string literal"),
+    TILDE("~"),
+    TRY("try"),
+    WHILE("while"),
+    WITH("with"),
+    YIELD("yield");
+
+    private val name: String?
+
+    init {
+        this.name = name
+    }
+
+    override fun toString(): String {
+        return name!!
+    }
 }

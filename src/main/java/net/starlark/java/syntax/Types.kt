@@ -11,1634 +11,1577 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static java.util.stream.Collectors.joining;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import javax.annotation.Nullable;
+import com.google.auto.value.AutoValue
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableCollection
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import java.lang.String
+import java.util.function.BiFunction
+import java.util.function.Function
+import java.util.function.Predicate
+import java.util.stream.Collectors
+import kotlin.Any
+import kotlin.Boolean
+import kotlin.Int
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
+import kotlin.toString
 
 /**
  * Definitions of types.
- *
- * <p><code>
- *   t1, t2 ::= None | bool | int | float | str | object
- *           | t1|t2 | list[t1]
- * </code>
+ * 
+ * 
+ * `
+ * t1, t2 ::= None | bool | int | float | str | object
+ * | t1|t2 | list[t1]
+` * 
  */
-public final class Types {
-
-  // TODO(ilist@): constructed types should probably be interned. In some cases it might help
-  // to precompute and memoize StarlarkTypes.getSupertypes.
-
-  /**
-   * The Dynamic type of gradual typing; compatible with any other type, but not related by
-   * subtyping to any other type.
-   */
-  public static final StarlarkType ANY = new AnyType();
-
-  /** The top type of the type hierarchy. */
-  public static final StarlarkType OBJECT = new ObjectType();
-
-  /** The bottom type of the type hierarchy. */
-  public static final StarlarkType NEVER = new NeverType();
-
-  // Primitive types
-  public static final StarlarkType NONE = new NoneType();
-
-  public static final StarlarkType BOOL = new BoolType();
-  public static final StarlarkType INT = new IntType();
-  public static final StarlarkType FLOAT = new FloatType();
-  public static final StarlarkType STR = new StrType();
-
-  // A frequently-used union `int | float`.
-  public static final UnionType NUMERIC = (UnionType) union(INT, FLOAT);
-  // A frequently-used empty tuple type.
-  public static final FixedLengthTupleType EMPTY_TUPLE = tuple(ImmutableList.of());
-  // A frequently-used arbitrary collection.
-  public static final CollectionType COLLECTION_OF_ANY = collection(ANY);
-  // A frequently-used arbitrary struct
-  public static final StructType STRUCT_OF_ANY = partialStruct(ImmutableMap.of());
-
-  // A frequently used function without parameters, that returns Any.
-  public static final CallableType NO_PARAMS_CALLABLE =
-      callable(ImmutableList.of(), ImmutableList.of(), 0, 0, ImmutableSet.of(), null, null, ANY);
-
-  public static final TypeConstructor ANY_CONSTRUCTOR = wrapType("Any", ANY);
-  public static final TypeConstructor OBJECT_CONSTRUCTOR = wrapType("object", OBJECT);
-  public static final TypeConstructor NONE_CONSTRUCTOR = wrapType("None", NONE);
-  public static final TypeConstructor BOOL_CONSTRUCTOR = wrapType("bool", BOOL);
-  public static final TypeConstructor INT_CONSTRUCTOR = wrapType("int", INT);
-  public static final TypeConstructor FLOAT_CONSTRUCTOR = wrapType("float", FLOAT);
-  public static final TypeConstructor STR_CONSTRUCTOR = wrapType("str", STR);
-  public static final TypeConstructor LIST_CONSTRUCTOR = wrapTypeConstructor("list", Types::list);
-  public static final TypeConstructor DICT_CONSTRUCTOR = wrapTypeConstructor("dict", Types::dict);
-  public static final TypeConstructor SET_CONSTRUCTOR = wrapTypeConstructor("set", Types::set);
-  public static final TypeConstructor TUPLE_CONSTRUCTOR = wrapTupleConstructor();
-  public static final TypeConstructor COLLECTION_CONSTRUCTOR =
-      wrapTypeConstructor("Collection", Types::collection);
-  public static final TypeConstructor SEQUENCE_CONSTRUCTOR =
-      wrapTypeConstructor("Sequence", Types::sequence);
-  public static final TypeConstructor MAPPING_CONSTRUCTOR =
-      wrapTypeConstructor("Mapping", Types::mapping);
-  public static final TypeConstructor STRUCT_CONSTRUCTOR = wrapStructConstructor();
-
-  private Types() {} // uninstantiable
-
-  public static final ImmutableMap<String, TypeConstructor> TYPE_UNIVERSE = makeTypeUniverse();
-
-  // Note that STRUCT_CONSTRUCTOR is not in the type universe; applications are responsible for
-  // adding it if needed.
-  private static ImmutableMap<String, TypeConstructor> makeTypeUniverse() {
-    ImmutableMap.Builder<String, TypeConstructor> env = ImmutableMap.builder();
-    env //
-        .put("Any", ANY_CONSTRUCTOR)
-        .put("object", OBJECT_CONSTRUCTOR)
-        .put("None", NONE_CONSTRUCTOR)
-        .put("bool", BOOL_CONSTRUCTOR)
-        .put("int", INT_CONSTRUCTOR)
-        .put("float", FLOAT_CONSTRUCTOR)
-        .put("str", STR_CONSTRUCTOR)
-        .put("list", LIST_CONSTRUCTOR)
-        .put("dict", DICT_CONSTRUCTOR)
-        .put("set", SET_CONSTRUCTOR)
-        .put("tuple", TUPLE_CONSTRUCTOR)
-        .put("Collection", COLLECTION_CONSTRUCTOR)
-        .put("Sequence", SEQUENCE_CONSTRUCTOR)
-        .put("Mapping", MAPPING_CONSTRUCTOR);
-    return env.buildOrThrow();
-  }
-
-  // hashCode and equals implementation is a workaround for serialization code that may duplicate
-  // otherwise singletons
-  private static final class AnyType extends StarlarkType {
-    // Singleton.
-    private AnyType() {}
-
-    @Override
-    public String toString() {
-      return "Any";
-    }
-
-    @Override
-    public int hashCode() {
-      return AnyType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof AnyType;
-    }
-
-    @Override
-    public StarlarkType getField(String name, TypeContext context) {
-      return ANY;
-    }
-
-    // TODO: #27370 - we may want to infer a more precise type when one of the operands is non-Any.
-    // (For example, we could infer that int % Any is int | float; on the other hand, Any % int
-    // could also be a string, since % is also a string substitution operator.) Requires a registry
-    // of which types (including those of application-defined net.starlark.java.eval.HasBinary
-    // values) support which binary operators. This would also imply that the inferred type of
-    // `Any <op> T` could be application-dependent even if T is a universal built-in type.
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        case IN, NOT_IN ->
-            // If we are the LHS, fall through to RHS's inferBinaryOperator; RHS determines whether
-            // it is membership-testable.
-            // If we are the RHS, act as a membership-testable type that allows any LHS (e.g. list)
-            // and return bool.
-            thisLeft ? null : Types.BOOL;
-        default -> ANY;
-      };
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      // Instead of enumerating all comparable types here, allow StarlarkType#comparable to defer to
-      // that.isComparable(ANY).
-      return that.equals(ANY);
-    }
-
-    @Override
-    public boolean hasSetIndex() {
-      return true;
-    }
-
-    @Override
-    public boolean hasSetField() {
-      return true;
-    }
-  }
-
-  private static final class ObjectType extends StarlarkType {
-    // Singleton.
-    private ObjectType() {}
-
-    @Override
-    public String toString() {
-      return "object";
-    }
-
-    @Override
-    public int hashCode() {
-      return ObjectType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof ObjectType;
-    }
-  }
-
-  private static final class NeverType extends StarlarkType {
-    // Singleton.
-    private NeverType() {}
-
-    @Override
-    public String toString() {
-      return "Never";
-    }
-
-    @Override
-    public int hashCode() {
-      return NeverType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof NeverType;
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      // Regard Never - as the bottom type - to be comparable to anything; in particular, this
-      // allows empty lists (i.e. list[Never]) to be comparable to arbitrary non-empty lists.
-      return true;
-    }
-
-    @Override
-    public boolean hasSetIndex() {
-      return true;
-    }
-
-    @Override
-    public boolean hasSetField() {
-      return true;
-    }
-  }
-
-  private static final class NoneType extends StarlarkType {
-    // Singleton.
-    private NoneType() {}
-
-    @Override
-    public String toString() {
-      return "None";
-    }
-
-    @Override
-    public int hashCode() {
-      return NoneType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof NoneType;
-    }
-  }
-
-  private static final class BoolType extends StarlarkType {
-    // Singleton.
-    private BoolType() {}
-
-    @Override
-    public String toString() {
-      return "bool";
-    }
-
-    @Override
-    public int hashCode() {
-      return BoolType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof BoolType;
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      return StarlarkType.assignableFrom(Types.BOOL, that);
-    }
-  }
-
-  private static final class IntType extends StarlarkType {
-    // Singleton.
-    private IntType() {}
-
-    @Override
-    public String toString() {
-      return "int";
-    }
-
-    @Override
-    public int hashCode() {
-      return IntType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof IntType;
-    }
-
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        case PLUS, MINUS, PERCENT, SLASH_SLASH -> NUMERIC.getTypes().contains(that) ? that : null;
-        case SLASH -> NUMERIC.getTypes().contains(that) ? Types.FLOAT : null;
-        case STAR ->
-            // Repetition operator (int * str, int * list, etc.) is assumed to be symmetric and
-            // implemented by the rhs, so defer to rhs for non-numeric case.
-            NUMERIC.getTypes().contains(that) ? that : null;
-        case AMPERSAND, CARET, GREATER_GREATER, LESS_LESS, PIPE ->
-            that.equals(Types.INT) ? Types.INT : null;
-        default -> null;
-      };
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      return StarlarkType.assignableFrom(NUMERIC, that);
-    }
-  }
-
-  private static final class FloatType extends StarlarkType {
-    // Singleton.
-    private FloatType() {}
-
-    @Override
-    public String toString() {
-      return "float";
-    }
-
-    @Override
-    public int hashCode() {
-      return FloatType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof FloatType;
-    }
-
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        case PLUS, MINUS, PERCENT, SLASH, SLASH_SLASH, STAR ->
-            NUMERIC.getTypes().contains(that) ? Types.FLOAT : null;
-        default -> null;
-      };
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      return StarlarkType.assignableFrom(NUMERIC, that);
-    }
-  }
-
-  private static final class StrType extends StarlarkType {
-    // Singleton.
-    private StrType() {}
-
-    @Override
-    public String toString() {
-      return "str";
-    }
-
-    @Override
-    public int hashCode() {
-      return StrType.class.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof StrType;
-    }
-
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        case PLUS -> that.equals(STR) ? STR : null;
-        case PERCENT ->
-            // String substitution allows anything on the RHS
-            thisLeft ? STR : null;
-        case STAR -> that.equals(INT) ? STR : null;
-        case IN, NOT_IN ->
-            // If we are LHS, defer to the RHS.
-            // If we are RHS, explicitly handle Any since AnyType.inferBinaryOperator defers to us.
-            !thisLeft && (that.equals(STR) || that.equals(ANY)) ? BOOL : null;
-        default -> null;
-      };
-    }
-
-    @Override
-    @Nullable
-    public StarlarkType getField(String name, TypeContext context) {
-      return context.getStrFieldType(name);
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      return that.equals(STR) || that.equals(ANY);
-    }
-  }
-
-  /** Construct a CallableType representing a Starlark Function */
-  public static CallableType callable(
-      ImmutableList<String> parameterNames,
-      ImmutableList<StarlarkType> parameterTypes,
-      int numPositionalOnlyParameters,
-      int numPositionalParameters,
-      ImmutableSet<String> mandatoryParams,
-      @Nullable StarlarkType varargsType,
-      @Nullable StarlarkType kwargsType,
-      StarlarkType returns) {
-    Preconditions.checkArgument(
-        parameterNames.size() == parameterTypes.size(),
-        "%s != %s",
-        parameterNames.size(),
-        parameterTypes.size());
-    return new AutoValue_Types_GeneralCallableType(
-        parameterNames,
-        parameterTypes,
-        numPositionalOnlyParameters,
-        numPositionalParameters,
-        mandatoryParams,
-        varargsType,
-        kwargsType,
-        returns);
-  }
-
-  /**
-   * An interface for the general Starlark callable.
-   *
-   * <p>There are 3 flavours of parameters:
-   *
-   * <ul>
-   *   <li>positional-only (can't be passed with a keyword),
-   *   <li>ordinary (can be passed by position or with a keyword) and
-   *   <li>keyword-only parameters.
-   * </ul>
-   *
-   * The interface describes them as follows:
-   *
-   * <ul>
-   *   <li>Their types are stored consecutively in <code>parameterTypes</code>.
-   *   <li>The list <code>parameterNames</code> matches <code>parameterTypes</code>. (Even
-   *       positional-only parameters have names.)
-   *   <li><code>numPositionalOnlyParameters</code> counts positional-only arguments.
-   *   <li><code>numPositionalParameters</code> counts both positional-only and ordinary arguments.
-   * </ul>
-   *
-   * <p>Special parameters {@code *args} and {@code **kwargs} are stored separately. If they are
-   * absent, they are set to {@code null}.
-   *
-   * <p>Mandatory parameters (non-special parameters without default values) are stored as an
-   * ordered set.
-   *
-   * <p>The return type is marked as Any if not annotated.
-   */
-  public abstract static class CallableType extends StarlarkType {
-
-    public abstract ImmutableList<String> getParameterNames();
-
-    public abstract ImmutableList<StarlarkType> getParameterTypes();
-
-    public abstract int getNumPositionalOnlyParameters();
-
-    public abstract int getNumPositionalParameters();
-
-    public abstract ImmutableSet<String> getMandatoryParameters();
-
-    @Nullable
-    public abstract StarlarkType getVarargsType();
-
-    @Nullable
-    public abstract StarlarkType getKwargsType();
-
-    public abstract StarlarkType getReturnType();
-
-    public StarlarkType getParameterTypeByPos(int i) {
-      return getParameterTypes().get(i);
-    }
-
-    @Override
-    public String toString() {
-      // Approximate representation of the type - as much as Callable can do
-      return "Callable[["
-          + getParameterTypes().stream().map(StarlarkType::toString).collect(joining(", "))
-          + "], "
-          + getReturnType()
-          + "]";
-    }
-
-    /** Returns a complete string representation of the type */
-    public String toSignatureString() {
-      ImmutableList.Builder<String> params = ImmutableList.builder();
-
-      // positional parameters
-      int i = 0;
-      for (; i < getNumPositionalOnlyParameters(); i++) {
-        String name = getParameterNames().get(i);
-        StarlarkType type = getParameterTypeByPos(i);
-        if (getMandatoryParameters().contains(name)) {
-          params.add(type.toString());
-        } else {
-          params.add("[" + type + "]");
-        }
-      }
-
-      if (i > 0) { // if there were positional-only parameters, we need to separate them
-        params.add("/");
-      }
-
-      for (; i < getNumPositionalParameters(); i++) {
-        String name = getParameterNames().get(i);
-        StarlarkType type = getParameterTypeByPos(i);
-        if (getMandatoryParameters().contains(name)) {
-          params.add(name + ": " + type);
-        } else {
-          params.add(name + ": [" + type + "]");
-        }
-      }
-
-      if (getVarargsType() != null) {
-        params.add("*args: " + getVarargsType());
-      } else if (i < getParameterTypes().size()) { // if there are going to be kwonly params
-        params.add("*");
-      }
-
-      // keyword parameters
-      for (; i < getParameterTypes().size(); i++) {
-        String name = getParameterNames().get(i);
-        String type = getParameterTypeByPos(i).toString();
-        if (getMandatoryParameters().contains(name)) {
-          params.add(name + ": " + type);
-        } else {
-          params.add(name + ": [" + type + "]");
-        }
-      }
-
-      if (getKwargsType() != null) {
-        params.add("**kwargs: " + getKwargsType());
-      }
-
-      ImmutableList<String> paramList = params.build();
-      return "(" + String.join(", ", paramList) + ") -> " + getReturnType();
-    }
-  }
-
-  // About 0.1% memory regression may be removed by specializing GeneralCallableType for function
-  // without positional-only parameter and by retrieving parameter names from StarlarkFunction
-  @AutoValue
-  abstract static class GeneralCallableType extends CallableType {}
-
-  /**
-   * Constructs a union type.
-   *
-   * <p>If the types set contains another Union type it's flattened. Duplicates are removed.
-   * Occurrences of Never are removed.
-   *
-   * <p>If types set contains Object type it's simplified to Object type. If the set contains a
-   * single element, it is returned instead of constructing a union. And if the set is empty, Never
-   * is returned.
-   */
-  public static StarlarkType union(StarlarkType... types) {
-    return union(ImmutableSet.copyOf(types));
-  }
-
-  /** Constructs a union type. */
-  // TODO: #28043 - Seems more appropriate to use List<StarlarkType> for the param and let this
-  // factory method take care of deduplication. For the moment we have a convenience overload below.
-  public static StarlarkType union(ImmutableSet<StarlarkType> types) {
-    ImmutableSet.Builder<StarlarkType> subtypesBuilder = ImmutableSet.builder();
-    // Unions are flattened
-    for (StarlarkType type : types) {
-      if (type instanceof UnionType union) {
-        subtypesBuilder.addAll(union.getTypes());
-      } else if (!type.equals(Types.NEVER)) {
-        subtypesBuilder.add(type);
-      }
-    }
-    ImmutableSet<StarlarkType> subtypes = subtypesBuilder.build();
-    if (subtypes.contains(Types.OBJECT)) {
-      return Types.OBJECT;
-    }
-    if (subtypes.size() == 1) {
-      return subtypes.iterator().next();
-    } else if (subtypes.isEmpty()) {
-      return Types.NEVER;
-    }
-    return new AutoValue_Types_UnionType(subtypes);
-  }
-
-  public static StarlarkType union(List<StarlarkType> types) {
-    if (types.size() == 1) {
-      // Optimize the common case.
-      return types.getFirst();
-    }
-    return union(ImmutableSet.copyOf(types));
-  }
-
-  /** Returns the list of a union's types, or a singleton list if {@code type} is not a union. */
-  public static ImmutableCollection<StarlarkType> unfoldUnion(StarlarkType type) {
-    if (type instanceof Types.UnionType unionType) {
-      return unionType.getTypes();
-    }
-    return ImmutableList.of(type);
-  }
-
-  /**
-   * Union type
-   *
-   * <p>Unions must contain at least two types, none of which may be Never or Object. See {@link
-   * Types#union}.
-   */
-  @AutoValue
-  public abstract static class UnionType extends StarlarkType {
-    public abstract ImmutableSet<StarlarkType> getTypes();
-
-    @Override
-    public final String toString() {
-      return getTypes().stream().map(StarlarkType::toString).collect(joining("|"));
-    }
-
-    @Override
-    public StarlarkType toLvalue() {
-      return union(getTypes().stream().map(StarlarkType::toLvalue).collect(toImmutableSet()));
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      return getTypes().stream().allMatch(type -> StarlarkType.comparable(type, that));
-    }
-
-    @Override
-    @Nullable
-    public StarlarkType getField(String name, TypeContext context) {
-      ArrayList<StarlarkType> resultTypes = new ArrayList<>(getTypes().size());
-      for (StarlarkType type : getTypes()) {
-        StarlarkType result = type.getField(name, context);
-        if (result == null) {
-          return null;
-        }
-        resultTypes.add(result);
-      }
-      return union(resultTypes);
-    }
-
-    @Override
-    public boolean hasSetIndex() {
-      return getTypes().stream().allMatch(StarlarkType::hasSetIndex);
-    }
-
-    @Override
-    public boolean hasSetField() {
-      return getTypes().stream().allMatch(StarlarkType::hasSetField);
-    }
-  }
-
-  public static ListType list(StarlarkType elementType) {
-    return new AutoValue_Types_ListType(elementType);
-  }
-
-  /**
-   * Constructs a list rvalue type. Only for literals and anonymous temporary values.
-   *
-   * <p>Like all rvalue types, this type MUST NOT be used as or in the type of any variable or
-   * parameter; and it MUST NOT be inferred as or in a type parameter of a generic function.
-   */
-  public static ListRvalueType listRvalue(StarlarkType elementType) {
-    return new AutoValue_Types_ListRvalueType(elementType);
-  }
-
-  /** List type */
-  public abstract static sealed class BaseListType extends AbstractSequenceType
-      permits ListType, ListRvalueType {
-    @Override
-    public final String toString() {
-      return "list[" + getElementType() + "]";
-    }
-
-    @Override
-    public ListType toLvalue() {
-      return list(getElementType().toLvalue());
-    }
-
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        case PLUS ->
-            that instanceof BaseListType thatList
-                ? listRvalue(union(getElementType(), thatList.getElementType()))
-                : null;
-        case STAR -> that.equals(Types.INT) ? this.toRvalue() : null;
-        default -> super.inferBinaryOperator(operator, that, thisLeft);
-      };
-    }
-
-    @Override
-    @Nullable
-    public StarlarkType getField(String name, TypeContext context) {
-      return context.getListFieldType(name);
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      if (that.equals(Types.ANY)) {
-        return true;
-      } else if (that instanceof BaseListType thatList) {
-        return comparable(getElementType(), thatList.getElementType());
-      }
-      return false;
-    }
-
-    @Override
-    public boolean hasSetIndex() {
-      return true;
-    }
-  }
-
-  /**
-   * The type of a new, unaliased list value; for example, a list literal or the result of a binary
-   * operator which has not yet been assigned.
-   */
-  @AutoValue
-  public abstract static non-sealed class ListRvalueType extends BaseListType {
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(
-          list(getElementType()), sequence(getElementType()), collection(getElementType()));
-    }
-
-    @Override
-    public ListRvalueType toRvalue() {
-      return this;
-    }
-
-    @Override
-    protected boolean isRvalueAssignableTo(AbstractCollectionType that) {
-      // Covariant in element type. Assignable only to types having a constructor which is a
-      // constructor of one of this type's supertypes (in particular: not assignable to dicts,
-      // sets, or application-defined types).
-      // TODO: #27370 - when we have type deconstruction, replace `instanceof` checks below with
-      // deconstruction of getSupertypes().
-      return (that instanceof BaseListType
-              || that instanceof SequenceType
-              || that instanceof CollectionType)
-          && StarlarkType.assignableFrom(that.getElementType(), this.getElementType());
-    }
-  }
-
-  /**
-   * The type of a potentially aliased list value; for example, the value of a variable, or nested
-   * in a variable's compound value.
-   */
-  @AutoValue
-  public abstract static non-sealed class ListType extends BaseListType {
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(sequence(getElementType()), collection(getElementType()));
-    }
-
-    @Override
-    public ListRvalueType toRvalue() {
-      return listRvalue(getElementType());
-    }
-  }
-
-  public static DictType dict(StarlarkType keyType, StarlarkType valueType) {
-    return new AutoValue_Types_DictType(keyType, valueType);
-  }
-
-  /**
-   * Constructs a dict rvalue type. Only for literals and anonymous temporary values.
-   *
-   * <p>Like all rvalue types, this type MUST NOT be used as or in the type of any variable or
-   * parameter; and it MUST NOT be inferred as or in a type parameter of a generic function.
-   */
-  public static DictRvalueType dictRvalue(StarlarkType keyType, StarlarkType valueType) {
-    return new AutoValue_Types_DictRvalueType(keyType, valueType);
-  }
-
-  /** Dict type */
-  public abstract static sealed class BaseDictType extends AbstractMappingType
-      permits DictType, DictRvalueType {
-    @Override
-    public abstract StarlarkType getKeyType();
-
-    @Override
-    public abstract StarlarkType getValueType();
-
-    @Override
-    public final String toString() {
-      return "dict[" + getKeyType() + ", " + getValueType() + "]";
-    }
-
-    @Override
-    public DictType toLvalue() {
-      return dict(getKeyType().toLvalue(), getValueType().toLvalue());
-    }
-
-    @Override
-    @Nullable
-    public StarlarkType getField(String name, TypeContext context) {
-      return context.getDictFieldType(name);
-    }
-
-    @Override
-    public boolean hasSetIndex() {
-      return true;
-    }
-  }
-
-  /**
-   * The type of a new, unaliased dict value; for example, a dict literal or the result of a binary
-   * operator which has not yet been assigned.
-   */
-  @AutoValue
-  public abstract static non-sealed class DictRvalueType extends BaseDictType {
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(
-          dict(getKeyType(), getValueType()),
-          mapping(getKeyType(), getValueType()),
-          collection(getKeyType()));
-    }
-
-    @Override
-    public DictRvalueType toRvalue() {
-      return this;
-    }
-
-    @Override
-    protected boolean isMappingRvalueAssignableTo(AbstractMappingType that) {
-      // Covariant in both key and value types. This differs from Mapping, which is covariant only
-      // in the value type, because we need to be able to assign e.g. an empty dict having Never key
-      // type. Mapping avoids covariance in keys in order to catch type errors at lookups, but
-      // that's not a concern for rvalue dicts since this method is only checked upon promotion to
-      // lvalues, not at indexing expressions.
-      // Assignable only to types having a constructor which is a constructor of one of this type's
-      // supertypes (in particular: not assignable to sequences, sets, or application-defined
-      // types).
-      // TODO: #27370 - when we have type deconstruction, replace `instanceof` checks below with
-      // deconstruction of getSupertypes().
-      return (that instanceof BaseDictType || that instanceof MappingType)
-          && StarlarkType.assignableFrom(that.getKeyType(), getKeyType())
-          && StarlarkType.assignableFrom(that.getValueType(), getValueType());
-    }
-  }
-
-  /**
-   * The type of a potentially aliased dict value; for example, the value of a variable, or nested
-   * in a variable's compound value.
-   */
-  @AutoValue
-  public abstract static non-sealed class DictType extends BaseDictType {
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(mapping(getKeyType(), getValueType()), collection(getKeyType()));
-    }
-
-    @Override
-    public DictRvalueType toRvalue() {
-      return dictRvalue(getKeyType(), getValueType());
-    }
-  }
-
-  public static SetType set(StarlarkType elementType) {
-    return new AutoValue_Types_SetType(elementType);
-  }
-
-  /** Set type */
-  // TODO: #27370 - add Rvalue version (same as for ListType and DictType) and have the {@code
-  // set()} built-in function return an rvalue. To be useful, this would first require generics
-  // support for StarlarkMethod.
-  @AutoValue
-  public abstract static class SetType extends AbstractCollectionType {
-    @Override
-    public abstract StarlarkType getElementType();
-
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(collection(getElementType()));
-    }
-
-    @Override
-    public final String toString() {
-      return "set[" + getElementType() + "]";
-    }
-
-    @Override
-    @Nullable
-    public StarlarkType getField(String name, TypeContext context) {
-      return context.getSetFieldType(name);
-    }
-
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        case AMPERSAND, MINUS ->
-            // TODO: #27370 - we may want to tighten the type of a set intersection, but it's
-            // non-trivial.
-            that instanceof SetType ? this : null;
-        case CARET, PIPE ->
-            that instanceof SetType thatSet
-                ? set(union(getElementType(), thatSet.getElementType()))
-                : null;
-        default -> super.inferBinaryOperator(operator, that, thisLeft);
-      };
-    }
-
-    @Override
-    public SetType toLvalue() {
-      return set(getElementType().toLvalue());
-    }
-  }
-
-  public static FixedLengthTupleType tuple(ImmutableList<StarlarkType> elementTypes) {
-    return new AutoValue_Types_FixedLengthTupleType(elementTypes);
-  }
-
-  public static FixedLengthTupleType tuple(StarlarkType first, StarlarkType... rest) {
-    return tuple(ImmutableList.<StarlarkType>builder().add(first).add(rest).build());
-  }
-
-  public static HomogeneousTupleType homogeneousTuple(StarlarkType elementType) {
-    return new AutoValue_Types_HomogeneousTupleType(elementType);
-  }
-
-  /** Tuple type. */
-  public abstract static sealed class TupleType extends AbstractSequenceType
-      permits FixedLengthTupleType, HomogeneousTupleType {
-    /** Returns the type of this tuple concatenated with another. */
-    abstract TupleType concatenate(TupleType rhs);
-
-    /** Returns the type of this tuple repeated. */
-    abstract TupleType repeat(int times);
-
-    /** Returns the homogeneous version of this tuple type. */
-    public abstract HomogeneousTupleType toHomogeneous();
-
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        case PLUS -> that instanceof TupleType rhsTuple ? concatenate(rhsTuple) : null;
-        // Special case handled by TypeChecker.inferTupleRepetition.
-        case STAR -> null;
-        default -> super.inferBinaryOperator(operator, that, thisLeft);
-      };
-    }
-  }
-
-  /** Tuple type of a fixed length. */
-  @AutoValue
-  public abstract static non-sealed class FixedLengthTupleType extends TupleType {
-    public abstract ImmutableList<StarlarkType> getElementTypes();
-
-    @Override
-    public StarlarkType getElementType() {
-      return union(getElementTypes());
-    }
-
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (!(t instanceof FixedLengthTupleType that)) {
-        return false;
-      }
-      // Covariant in each element type; the number of elements must match exactly.
-      if (this.getElementTypes().size() != that.getElementTypes().size()) {
-        return false;
-      }
-      for (int i = 0; i < this.getElementTypes().size(); i++) {
-        if (!StarlarkType.assignableFrom(
-            this.getElementTypes().get(i), that.getElementTypes().get(i))) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      HomogeneousTupleType homogeneous = toHomogeneous();
-      return ImmutableList.of(
-          homogeneous,
-          sequence(homogeneous.getElementType()),
-          collection(homogeneous.getElementType()));
-    }
-
-    @Override
-    public final String toString() {
-      return String.format(
-          "tuple[%s]",
-          getElementTypes().isEmpty()
-              ? "()"
-              : getElementTypes().stream().map(StarlarkType::toString).collect(joining(", ")));
-    }
-
-    @Override
-    TupleType concatenate(TupleType rhs) {
-      if (rhs instanceof FixedLengthTupleType rhsFixedLength) {
-        return tuple(
-            ImmutableList.<StarlarkType>builder()
-                .addAll(getElementTypes())
-                .addAll(rhsFixedLength.getElementTypes())
-                .build());
-      } else {
-        return toHomogeneous().concatenate(rhs);
-      }
-    }
-
-    @Override
-    FixedLengthTupleType repeat(int times) {
-      ImmutableList.Builder<StarlarkType> builder = ImmutableList.builder();
-      for (int i = 0; i < times; i++) {
-        builder.addAll(getElementTypes());
-      }
-      return tuple(builder.build());
-    }
-
-    @Override
-    public HomogeneousTupleType toHomogeneous() {
-      return homogeneousTuple(union(getElementTypes()));
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      if (that.equals(Types.ANY)) {
-        return true;
-      } else if (that instanceof FixedLengthTupleType thatTuple) {
-        int commonLength = Math.min(getElementTypes().size(), thatTuple.getElementTypes().size());
-        for (int i = 0; i < commonLength; i++) {
-          if (!comparable(getElementTypes().get(i), thatTuple.getElementTypes().get(i))) {
-            return false;
-          }
-        }
-        return true;
-      }
-      // Comparison with HomogeneousTupleType defers to HomogeneousTupleType.
-      return false;
-    }
-
-    @Override
-    public FixedLengthTupleType toLvalue() {
-      return tuple(
-          getElementTypes().stream().map(StarlarkType::toLvalue).collect(toImmutableList()));
-    }
-  }
-
-  /** Tuple type of an indeterminate length. */
-  @AutoValue
-  public abstract static non-sealed class HomogeneousTupleType extends TupleType {
-    @Override
-    public abstract StarlarkType getElementType();
-
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(sequence(getElementType()), collection(getElementType()));
-    }
-
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (!(t instanceof HomogeneousTupleType that)) {
-        return false;
-      }
-      // Covariant in element type.
-      return StarlarkType.assignableFrom(this.getElementType(), that.getElementType());
-    }
-
-    @Override
-    public final String toString() {
-      return "tuple[" + getElementType() + ", ...]";
-    }
-
-    @Override
-    HomogeneousTupleType concatenate(TupleType rhs) {
-      return rhs instanceof HomogeneousTupleType rhsHomogeneous
-          ? homogeneousTuple(union(getElementType(), rhsHomogeneous.getElementType()))
-          : concatenate(rhs.toHomogeneous());
-    }
-
-    @Override
-    TupleType repeat(int times) {
-      return times > 0 ? this : Types.EMPTY_TUPLE;
-    }
-
-    @Override
-    public HomogeneousTupleType toHomogeneous() {
-      return this;
-    }
-
-    @Override
-    protected boolean isComparable(StarlarkType that) {
-      if (that.equals(Types.ANY)) {
-        return true;
-      } else if (that instanceof TupleType thatTuple) {
-        return comparable(getElementType(), thatTuple.toHomogeneous().getElementType());
-      }
-      return false;
-    }
-
-    @Override
-    public HomogeneousTupleType toLvalue() {
-      return homogeneousTuple(getElementType().toLvalue());
-    }
-  }
-
-  /** Collection type */
-  public static CollectionType collection(StarlarkType elementType) {
-    return new AutoValue_Types_CollectionType(elementType);
-  }
-
-  /** Returns true if {@code type} may be used as a collection. */
-  public static boolean isCollection(StarlarkType type) {
-    return StarlarkType.assignableFrom(COLLECTION_OF_ANY, type);
-  }
-
-  /**
-   * Abstract collection type implementing common functionality. Exists to be subclassed.
-   *
-   * <p>{@code AbstractCollectionType}'s default {@link #assignableFromHook} always returns false if
-   * {@code t} is not an rvalue-subtype of this and not of the same Java class as this. Therefore,
-   * subclasses having multiple Java classes corresponding to the same Starlark type family may need
-   * to override {@link #assignableFromHook}.
-   */
-  public abstract static class AbstractCollectionType extends StarlarkType {
-    public abstract StarlarkType getElementType();
-
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (t instanceof AbstractCollectionType that) {
-        if (that.isRvalueAssignableTo(this)) {
-          return true;
-        }
-        // Assume 1-1 correspondence between Java subclass and Starlark type family.
-        if (this.getClass().equals(t.getClass())) {
-          // Invariant in element type because `that` might be mutable.
-          return StarlarkType.consistentEquals(this.getElementType(), that.getElementType());
-        }
-      }
-      return false;
+object Types {
+    // TODO(ilist@): constructed types should probably be interned. In some cases it might help
+    // to precompute and memoize StarlarkTypes.getSupertypes.
+    /**
+     * The Dynamic type of gradual typing; compatible with any other type, but not related by
+     * subtyping to any other type.
+     */
+    @kotlin.jvm.JvmField
+    val ANY: StarlarkType = AnyType()
+
+    /** The top type of the type hierarchy.  */
+    @kotlin.jvm.JvmField
+    val OBJECT: StarlarkType = ObjectType()
+
+    /** The bottom type of the type hierarchy.  */
+    @kotlin.jvm.JvmField
+    val NEVER: StarlarkType = NeverType()
+
+    // Primitive types
+    @kotlin.jvm.JvmField
+    val NONE: StarlarkType = NoneType()
+
+    @kotlin.jvm.JvmField
+    val BOOL: StarlarkType = BoolType()
+    @kotlin.jvm.JvmField
+    val INT: StarlarkType = IntType()
+    @kotlin.jvm.JvmField
+    val FLOAT: StarlarkType = FloatType()
+    @kotlin.jvm.JvmField
+    val STR: StarlarkType = StrType()
+
+    // A frequently-used union `int | float`.
+    @kotlin.jvm.JvmField
+    val NUMERIC: UnionType = union(INT, FLOAT) as UnionType
+
+    // A frequently-used empty tuple type.
+    @kotlin.jvm.JvmField
+    val EMPTY_TUPLE: FixedLengthTupleType = tuple(ImmutableList.of<StarlarkType?>())
+
+    // A frequently-used arbitrary collection.
+    val COLLECTION_OF_ANY: CollectionType = collection(ANY)
+
+    // A frequently-used arbitrary struct
+    @kotlin.jvm.JvmField
+    val STRUCT_OF_ANY: StructType = partialStruct(ImmutableMap.of<String?, StarlarkType?>())
+
+    // A frequently used function without parameters, that returns Any.
+    val NO_PARAMS_CALLABLE: CallableType = callable(
+        ImmutableList.of<String?>(),
+        ImmutableList.of<StarlarkType?>(),
+        0,
+        0,
+        ImmutableSet.of<String?>(),
+        null,
+        null,
+        ANY
+    )
+
+    val ANY_CONSTRUCTOR: TypeConstructor = wrapType("Any", ANY)
+    val OBJECT_CONSTRUCTOR: TypeConstructor = wrapType("object", OBJECT)
+    val NONE_CONSTRUCTOR: TypeConstructor = wrapType("None", NONE)
+    val BOOL_CONSTRUCTOR: TypeConstructor = wrapType("bool", BOOL)
+    val INT_CONSTRUCTOR: TypeConstructor = wrapType("int", INT)
+    val FLOAT_CONSTRUCTOR: TypeConstructor = wrapType("float", FLOAT)
+    val STR_CONSTRUCTOR: TypeConstructor = wrapType("str", STR)
+    val LIST_CONSTRUCTOR: TypeConstructor = wrapTypeConstructor("list", Function { obj: StarlarkType? -> Types.list() })
+    val DICT_CONSTRUCTOR: TypeConstructor =
+        wrapTypeConstructor("dict", BiFunction { obj: StarlarkType?, keyType: StarlarkType? -> Types.dict(keyType) })
+    val SET_CONSTRUCTOR: TypeConstructor = wrapTypeConstructor("set", Function { obj: StarlarkType? -> Types.set() })
+    val TUPLE_CONSTRUCTOR: TypeConstructor = wrapTupleConstructor()
+    @kotlin.jvm.JvmField
+    val COLLECTION_CONSTRUCTOR: TypeConstructor =
+        wrapTypeConstructor("Collection", Function { obj: StarlarkType? -> Types.collection() })
+    @kotlin.jvm.JvmField
+    val SEQUENCE_CONSTRUCTOR: TypeConstructor =
+        wrapTypeConstructor("Sequence", Function { obj: StarlarkType? -> Types.sequence() })
+    @kotlin.jvm.JvmField
+    val MAPPING_CONSTRUCTOR: TypeConstructor = wrapTypeConstructor(
+        "Mapping",
+        BiFunction { obj: StarlarkType?, keyType: StarlarkType? -> Types.mapping(keyType) })
+    @kotlin.jvm.JvmField
+    val STRUCT_CONSTRUCTOR: TypeConstructor = wrapStructConstructor()
+
+    @kotlin.jvm.JvmField
+    val TYPE_UNIVERSE: ImmutableMap<String?, TypeConstructor?> = makeTypeUniverse()
+
+    // Note that STRUCT_CONSTRUCTOR is not in the type universe; applications are responsible for
+    // adding it if needed.
+    private fun makeTypeUniverse(): ImmutableMap<String?, TypeConstructor?> {
+        val env = ImmutableMap.builder<String?, TypeConstructor?>()
+        env //
+            .put("Any", ANY_CONSTRUCTOR)
+            .put("object", OBJECT_CONSTRUCTOR)
+            .put("None", NONE_CONSTRUCTOR)
+            .put("bool", BOOL_CONSTRUCTOR)
+            .put("int", INT_CONSTRUCTOR)
+            .put("float", FLOAT_CONSTRUCTOR)
+            .put("str", STR_CONSTRUCTOR)
+            .put("list", LIST_CONSTRUCTOR)
+            .put("dict", DICT_CONSTRUCTOR)
+            .put("set", SET_CONSTRUCTOR)
+            .put("tuple", TUPLE_CONSTRUCTOR)
+            .put("Collection", COLLECTION_CONSTRUCTOR)
+            .put("Sequence", SEQUENCE_CONSTRUCTOR)
+            .put("Mapping", MAPPING_CONSTRUCTOR)
+        return env.buildOrThrow()
+    }
+
+    /** Construct a CallableType representing a Starlark Function  */
+    fun callable(
+        parameterNames: ImmutableList<String?>,
+        parameterTypes: ImmutableList<StarlarkType?>,
+        numPositionalOnlyParameters: Int,
+        numPositionalParameters: Int,
+        mandatoryParams: ImmutableSet<String?>?,
+        varargsType: StarlarkType?,
+        kwargsType: StarlarkType?,
+        returns: StarlarkType?
+    ): CallableType {
+        Preconditions.checkArgument(
+            parameterNames.size() == parameterTypes.size(),
+            "%s != %s",
+            parameterNames.size(),
+            parameterTypes.size()
+        )
+        return AutoValue_Types_GeneralCallableType(
+            parameterNames,
+            parameterTypes,
+            numPositionalOnlyParameters,
+            numPositionalParameters,
+            mandatoryParams,
+            varargsType,
+            kwargsType,
+            returns
+        )
     }
 
     /**
-     * Returns true if {@code this} is an rvalue type and is assignable to {@code that}.
-     *
-     * <p>Must be overridden by rvalue types.
-     *
-     * <p>Intended to be invoked by {@link #assignableFromHook} implementations.
+     * Constructs a union type.
+     * 
+     * 
+     * If the types set contains another Union type it's flattened. Duplicates are removed.
+     * Occurrences of Never are removed.
+     * 
+     * 
+     * If types set contains Object type it's simplified to Object type. If the set contains a
+     * single element, it is returned instead of constructing a union. And if the set is empty, Never
+     * is returned.
      */
-    // TODO: #27370 - Consider elevating to StarlarkType level if useful for non-collection types.
-    protected boolean isRvalueAssignableTo(AbstractCollectionType that) {
-      return false;
+    @kotlin.jvm.JvmStatic
+    fun union(vararg types: StarlarkType?): StarlarkType {
+        return union(ImmutableSet.copyOf<StarlarkType?>(types))
     }
 
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType that, boolean thisLeft) {
-      return switch (operator) {
-        // `in` and `not in` are always valid for collections on the RHS.
-        case IN, NOT_IN -> thisLeft ? null : BOOL;
-        default -> null;
-      };
-    }
-  }
-
-  /** Collection type. */
-  // We need CollectionType to be a separate class from AbstractCollectionType for 2 reasons.
-  // First, CollectionType is an immutable view of a collection (and so can be covariant in element
-  // type), while AbstractCollectionType has mutable subtypes (which are invariant in element type).
-  // Second, an @AutoValue class may not extend another - so we cannot have SequenceType or SetType
-  // be subclasses of CollectionType (they are subclasses of AbstractCollectionType instead).
-  @AutoValue
-  public abstract static class CollectionType extends AbstractCollectionType {
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (t instanceof AbstractCollectionType that) {
-        if (that.isRvalueAssignableTo(this)) {
-          return true;
+    /** Constructs a union type.  */ // TODO: #28043 - Seems more appropriate to use List<StarlarkType> for the param and let this
+    // factory method take care of deduplication. For the moment we have a convenience overload below.
+    fun union(types: ImmutableSet<StarlarkType>): StarlarkType {
+        val subtypesBuilder = ImmutableSet.builder<StarlarkType?>()
+        // Unions are flattened
+        for (type in types) {
+            if (type is UnionType) {
+                subtypesBuilder.addAll(type.getTypes())
+            } else if (type != NEVER) {
+                subtypesBuilder.add(type)
+            }
         }
-        // Covariant in element type when assigning from a Collection (which is immutable)
-        return that instanceof CollectionType
-            && StarlarkType.assignableFrom(this.getElementType(), that.getElementType());
-      }
-      return false;
-    }
-
-    @Override
-    public final String toString() {
-      return "Collection[" + getElementType() + "]";
-    }
-
-    @Override
-    public CollectionType toLvalue() {
-      return collection(getElementType().toLvalue());
-    }
-  }
-
-  /** Sequence type */
-  public static SequenceType sequence(StarlarkType elementType) {
-    return new AutoValue_Types_SequenceType(elementType);
-  }
-
-  /** Abstract sequence type for common sequence functionality. Exists to be subclassed. */
-  public abstract static class AbstractSequenceType extends AbstractCollectionType {
-    @Override
-    public abstract StarlarkType getElementType();
-
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(collection(getElementType()));
-    }
-  }
-
-  /** Sequence type. */
-  // We need SequenceType to be a separate class from AbstractSequenceType for 2 reasons.
-  // First, SequenceType is an immutable view of a sequence (and so can be covariant in element
-  // type), while AbstractSequenceType has mutable subtypes (which are invariant in element type).
-  // Second, an @AutoValue class may not extend another - so we cannot have ListType or TupleType
-  // be subclasses of SequenceType (they are subclasses of AbstractSequenceType instead).
-  @AutoValue
-  public abstract static class SequenceType extends AbstractSequenceType {
-    @Override
-    public abstract StarlarkType getElementType();
-
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (t instanceof AbstractSequenceType that) {
-        if (that.isRvalueAssignableTo(this)) {
-          return true;
+        val subtypes: ImmutableSet<StarlarkType> = subtypesBuilder.build()
+        if (subtypes.contains(OBJECT)) {
+            return OBJECT
         }
-        // Covariant in element type when assigning from a Sequence (which is immutable)
-        return that instanceof SequenceType
-            && StarlarkType.assignableFrom(this.getElementType(), that.getElementType());
-      }
-      return false;
-    }
-
-    @Override
-    public final String toString() {
-      return "Sequence[" + getElementType() + "]";
-    }
-
-    @Override
-    public SequenceType toLvalue() {
-      return sequence(getElementType().toLvalue());
-    }
-
-    @Override
-    protected boolean isRvalueAssignableTo(AbstractCollectionType t) {
-      return false;
-    }
-  }
-
-  /** Mapping type */
-  public static MappingType mapping(StarlarkType keyType, StarlarkType valueType) {
-    return new AutoValue_Types_MappingType(keyType, valueType);
-  }
-
-  /**
-   * Abstract mapping type for common map functionality. Exists to be subclassed.
-   *
-   * <p>{@code AbstractMappingType}'s default {@link #assignableFromHook} always returns false if
-   * {@code t} and this are not of the same Java class. Therefore, subclasses having multiple Java
-   * classes corresponding to the same Starlark type family may need to override {@link
-   * #assignableFromHook}.
-   */
-  public abstract static class AbstractMappingType extends AbstractCollectionType {
-    public abstract StarlarkType getKeyType();
-
-    public abstract StarlarkType getValueType();
-
-    @Override
-    public List<StarlarkType> getSupertypes() {
-      return ImmutableList.of(collection(getKeyType()));
-    }
-
-    @Override
-    public StarlarkType getElementType() {
-      return getKeyType();
-    }
-
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (t instanceof AbstractMappingType that) {
-        if (that.isMappingRvalueAssignableTo(this)) {
-          return true;
+        if (subtypes.size() == 1) {
+            return subtypes.iterator().next()
+        } else if (subtypes.isEmpty()) {
+            return NEVER
         }
-        // Assume 1-1 correspondence between Java subclass and Starlark type family.
-        if (this.getClass().equals(t.getClass())) {
-          // Invariant in both key and value types because `that` might be mutable.
-          return StarlarkType.consistentEquals(this.getKeyType(), that.getKeyType())
-              && StarlarkType.consistentEquals(this.getValueType(), that.getValueType());
-        }
-      }
-      return false;
+        return AutoValue_Types_UnionType(subtypes)
     }
 
-    @Override
-    protected boolean isRvalueAssignableTo(AbstractCollectionType t) {
-      return t instanceof AbstractMappingType that && this.isMappingRvalueAssignableTo(that);
+    fun union(types: MutableList<StarlarkType?>): StarlarkType? {
+        if (types.size() == 1) {
+            // Optimize the common case.
+            return types.getFirst()
+        }
+        return union(ImmutableSet.copyOf<StarlarkType?>(types))
+    }
+
+    /** Returns the list of a union's types, or a singleton list if `type` is not a union.  */
+    fun unfoldUnion(type: StarlarkType): ImmutableCollection<StarlarkType>? {
+        if (type is UnionType) {
+            return type.getTypes()
+        }
+        return ImmutableList.of<StarlarkType?>(type)
+    }
+
+    @kotlin.jvm.JvmStatic
+    fun list(elementType: StarlarkType?): ListType {
+        return AutoValue_Types_ListType(elementType)
     }
 
     /**
-     * Returns true if {@code this} is an rvalue type and is assignable to {@code that}.
-     *
-     * <p>Must be overridden by rvalue types.
-     *
-     * <p>Intended to be invoked by {@link #assignableFromHook} implementations.
+     * Constructs a list rvalue type. Only for literals and anonymous temporary values.
+     * 
+     * 
+     * Like all rvalue types, this type MUST NOT be used as or in the type of any variable or
+     * parameter; and it MUST NOT be inferred as or in a type parameter of a generic function.
      */
-    protected boolean isMappingRvalueAssignableTo(AbstractMappingType that) {
-      return false;
+    @kotlin.jvm.JvmStatic
+    fun listRvalue(elementType: StarlarkType?): ListRvalueType {
+        return AutoValue_Types_ListRvalueType(elementType)
     }
 
-    @Override
-    @Nullable
-    StarlarkType inferBinaryOperator(TokenKind operator, StarlarkType rhs, boolean thisLeft) {
-      return switch (operator) {
-        case PIPE ->
-            // TODO: #27370 - mypy supports dict | dict, but doesn't support the | operator for
-            // non-dict mappings. Should we have the same restriction? (Note that such a restriction
-            // would break some uses of Bazel's native.existing_rules()).
-            // TODO: #27370 - do we need to handle Neve for the key or value type?
-            rhs instanceof AbstractMappingType rhsMapping
-                ? dictRvalue(
-                    union(getKeyType(), rhsMapping.getKeyType()),
-                    union(getValueType(), rhsMapping.getValueType()))
-                : null;
-        default -> super.inferBinaryOperator(operator, rhs, thisLeft);
-      };
-    }
-  }
-
-  /** Mapping type. */
-  // We need MappingType to be a separate class from AbstractMappingType for 2 reasons.
-  // First, MappingType is an immutable view of a mapping (and so can be covariant in value type),
-  // while AbstractMappingType has mutable subtypes (which are invariant in value type).
-  // Second, an @AutoValue class may not extend another - so we cannot have DictType be a subclass
-  // of MappingType (it is a subclass of AbstractMappingType instead).
-  @AutoValue
-  public abstract static class MappingType extends AbstractMappingType {
-    @Override
-    public abstract StarlarkType getKeyType();
-
-    @Override
-    public abstract StarlarkType getValueType();
-
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (t instanceof AbstractMappingType that) {
-        if (that.isMappingRvalueAssignableTo(this)) {
-          return true;
-        }
-        // Invariant in key type, covariant in value type when assigning from a Mapping (which is
-        // immutable).
-        // TODO: #27370 - Should Mapping assignment be covariant in key type as well?
-        return that instanceof MappingType
-            && StarlarkType.consistentEquals(this.getKeyType(), that.getKeyType())
-            && StarlarkType.assignableFrom(this.getValueType(), that.getValueType());
-      }
-      return false;
-    }
-
-    @Override
-    public final String toString() {
-      return "Mapping[" + getKeyType() + ", " + getValueType() + "]";
-    }
-
-    @Override
-    public MappingType toLvalue() {
-      return mapping(getKeyType().toLvalue(), getValueType().toLvalue());
-    }
-  }
-
-  /** Immutable partial struct type */
-  public static StructType partialStruct(ImmutableMap<String, StarlarkType> fields) {
-    return new AutoValue_Types_StructType(fields, /* partial= */ true);
-  }
-
-  /** Immutable total struct type */
-  public static StructType struct(ImmutableMap<String, StarlarkType> fields) {
-    return new AutoValue_Types_StructType(fields, /* partial= */ false);
-  }
-
-  /**
-   * Immutable struct type.
-   *
-   * <p>This is intended to be either the type or a supertype for values implementing {@link
-   * net.starlark.java.eval.Structure} - for example, Bazel's structs and providers.
-   *
-   * <p>Morally non-struct types shouldn't add a {@link StructType} to their supertypes just because
-   * they happen to have fields. For example, a {@code list} has {@code append} and {@code extend}
-   * methods, but it is *not* a subtype of {@code struct[{"append": ..., "extend": ...}]}.
-   *
-   * <p>Since struct types don't support mutation, their assignability follows structural subtyping:
-   *
-   * <ul>
-   *   <li>The set of LHS field names must be a subset of RHS field names. (This implies, in
-   *       particular, that a RHS total struct cannot be assigned to a LHS partial struct, since the
-   *       LHS partial struct admits any possible field name.)
-   *   <li>The type of each LHS field must be assignable from the type of the corresponding RHS
-   *       field. (This implies, in particular, that {@link #STRUCT_OF_ANY} is assignable to all
-   *       struct types.)
-   * </ul>
-   *
-   * In particular, these rules imply that:
-   *
-   * <ul>
-   *   <li>A RHS total struct cannot be assigned to a LHS partial struct, since the LHS partial
-   *       struct admits any possible field name.
-   *   <li>A LHS total struct with a particular set of fields {@code F} is assignable from any RHS
-   *       partial struct whose set of explicit fields is a subset of {@code F}.
-   *   <li>{@link #STRUCT_OF_ANY} is assignable to all LHS struct types.
-   * </ul>
-   */
-  @AutoValue
-  public abstract static class StructType extends StarlarkType {
-    /** Returns the names and types of the mandatory fields of this struct type. */
-    // TODO: #27370 - should we add optional fields? (Maybe useful for Bazel's providers.)
-    // TODO: #27370 - should we add mutable fields / hasSetField()? If we do, such fields would need
-    // to be treated as invariant for assignability.
-    public abstract ImmutableMap<String, StarlarkType> getFields();
-
-    /**
-     * If true, then any field not specified in {@link #getFields} is assumed to potentially exist
-     * and be of type {@link #ANY}.
-     */
-    public abstract boolean isPartial();
-
-    @Override
-    public boolean assignableFromHook(StarlarkType t) {
-      if (t instanceof StructType that) {
-        if (this.isPartial() && !that.isPartial()) {
-          return false;
-        }
-        // The set of LHS field names must be a subset of RHS field names, and LHS field types must
-        // be assignable from the corresponding RHS field types.
-        return this.getFields().entrySet().stream()
-            .allMatch(
-                entry1 -> {
-                  String fieldName = entry1.getKey();
-                  StarlarkType fieldType1 = entry1.getValue();
-                  @Nullable StarlarkType fieldType2 = that.getField(fieldName);
-                  return fieldType2 != null && assignableFrom(fieldType1, fieldType2);
-                });
-      }
-      return false;
-    }
-
-    @Nullable
-    @Override
-    public StarlarkType getField(String name, TypeContext context) {
-      return getField(name);
+    @kotlin.jvm.JvmStatic
+    fun dict(keyType: StarlarkType?, valueType: StarlarkType?): DictType {
+        return AutoValue_Types_DictType(keyType, valueType)
     }
 
     /**
-     * Returns the type of the field with the given name, or null if there is no such field.
-     *
-     * <p>Unlike for {@link StarlarkType#getField}, this method doesn't take a {@link TypeContext}
-     * because it's expected that the names and types of a struct's fields are fixed at type
-     * construction time.
+     * Constructs a dict rvalue type. Only for literals and anonymous temporary values.
+     * 
+     * 
+     * Like all rvalue types, this type MUST NOT be used as or in the type of any variable or
+     * parameter; and it MUST NOT be inferred as or in a type parameter of a generic function.
      */
-    @Nullable
-    public StarlarkType getField(String name) {
-      @Nullable StarlarkType fieldType = getFields().get(name);
-      if (fieldType != null) {
-        return fieldType;
-      }
-      return isPartial() ? ANY : null;
+    @kotlin.jvm.JvmStatic
+    fun dictRvalue(keyType: StarlarkType?, valueType: StarlarkType?): DictRvalueType {
+        return AutoValue_Types_DictRvalueType(keyType, valueType)
     }
 
-    @Override
-    public final String toString() {
-      if (this.equals(STRUCT_OF_ANY)) {
-        return "struct";
-      }
-      StringBuilder buf = new StringBuilder();
-      buf.append("struct[");
-      TypeConstructor.Arg.TypeDict.print(buf, getFields());
-      if (isPartial()) {
-        if (!getFields().isEmpty()) {
-          buf.append(", ");
-        }
-        buf.append("...");
-      }
-      buf.append("]");
-      return buf.toString();
+    @kotlin.jvm.JvmStatic
+    fun set(elementType: StarlarkType?): SetType {
+        return AutoValue_Types_SetType(elementType)
     }
 
-    @Override
-    public StructType toLvalue() {
-      ImmutableMap.Builder<String, StarlarkType> builder = ImmutableMap.builder();
-      for (Map.Entry<String, StarlarkType> entry : getFields().entrySet()) {
-        builder.put(entry.getKey(), entry.getValue().toLvalue());
-      }
-      return isPartial() ? partialStruct(builder.buildOrThrow()) : struct(builder.buildOrThrow());
+    fun tuple(elementTypes: ImmutableList<StarlarkType?>?): FixedLengthTupleType {
+        return AutoValue_Types_FixedLengthTupleType(elementTypes)
     }
-  }
 
-  static TypeConstructor wrapType(String name, StarlarkType type) {
-    return argsTuple -> {
-      if (!argsTuple.isEmpty()) {
-        throw new TypeConstructor.Failure(String.format("'%s' does not accept arguments", name));
-      }
-      return type;
-    };
-  }
-
-  private static ImmutableList<StarlarkType> toStarlarkTypes(
-      String name, ImmutableList<TypeConstructor.Arg> args) throws TypeConstructor.Failure {
-    for (TypeConstructor.Arg arg : args) {
-      if (!(arg instanceof StarlarkType)) {
-        throw new TypeConstructor.Failure(
-            String.format("in application to %s, got '%s', expected a type", name, arg));
-      }
+    @kotlin.jvm.JvmStatic
+    fun tuple(first: StarlarkType, vararg rest: StarlarkType?): FixedLengthTupleType {
+        return tuple(ImmutableList.builder<StarlarkType?>().add(first).add(*rest).build())
     }
-    @SuppressWarnings("unchecked") // list is immutable and all elements verified above
-    var result = (ImmutableList<StarlarkType>) (ImmutableList<?>) args;
-    return result;
-  }
 
-  /**
-   * Returns a new type constructor wrapping the given one-argument type factory.
-   *
-   * <p>The type constructor can be invoked with one argument, which is passed to the underlying
-   * factory, or with zero arguments, in which case the factory is invoked with {@link #ANY}. (This
-   * allows, for instance, {@code list} to be treated as syntactic sugar for {@code list[Any]}.)
-   */
-  static TypeConstructor wrapTypeConstructor(
-      String name, Function<StarlarkType, StarlarkType> factory) {
-    return args -> {
-      var types = toStarlarkTypes(name, args);
-      return switch (types.size()) {
-        case 0 -> factory.apply(ANY);
-        case 1 -> factory.apply(types.get(0));
-        default -> {
-          throw new TypeConstructor.Failure(
-              String.format("%s[] accepts exactly 1 argument but got %d", name, types.size()));
-        }
-      };
-    };
-  }
+    @kotlin.jvm.JvmStatic
+    fun homogeneousTuple(elementType: StarlarkType?): HomogeneousTupleType {
+        return AutoValue_Types_HomogeneousTupleType(elementType)
+    }
 
-  /**
-   * Returns a new type constructor wrapping the given two-argument type factory.
-   *
-   * <p>The type constructor can be invoked with two arguments, which are passed to the underlying
-   * factory, or with zero arguments, in which case the factory is invoked with {@link #ANY} for
-   * both arguments. (This allows, for instance, {@code dict} to be treated as syntactic sugar for
-   * {@code dict[Any, Any]}.)
-   */
-  static TypeConstructor wrapTypeConstructor(
-      String name, BiFunction<StarlarkType, StarlarkType, StarlarkType> factory) {
-    return args -> {
-      var types = toStarlarkTypes(name, args);
-      return switch (types.size()) {
-        case 0 -> factory.apply(ANY, ANY);
-        case 2 -> factory.apply(types.get(0), types.get(1));
-        default ->
-            throw new TypeConstructor.Failure(
-                String.format("%s[] accepts exactly 2 arguments but got %d", name, types.size()));
-      };
-    };
-  }
+    /** Collection type  */
+    @kotlin.jvm.JvmStatic
+    fun collection(elementType: StarlarkType?): CollectionType {
+        return AutoValue_Types_CollectionType(elementType)
+    }
 
-  private static TypeConstructor wrapTupleConstructor() {
-    // This is a function instead of a constant, so that the order of evaluation doesn't depend on
-    // the position in the class.
-    return args -> {
-      if (args.isEmpty()) {
-        // `tuple` is equivalent to `tuple[Any, ...]`
-        return homogeneousTuple(ANY);
-      }
-      for (int i = 0; i < args.size(); i++) {
-        TypeConstructor.Arg arg = args.get(i);
-        if (arg.equals(TypeConstructor.Arg.ELLIPSIS)) {
-          if (i == 1 && args.size() == 2) {
-            return homogeneousTuple((StarlarkType) args.getFirst());
-          }
-          throw new TypeConstructor.Failure(
-              "in application to tuple, '...' can only appear as the second of exactly 2 arguments,"
-                  + " where the first argument is a type");
-        } else if (arg.equals(TypeConstructor.Arg.EMPTY_TUPLE)) {
-          if (args.size() == 1) {
-            return Types.EMPTY_TUPLE;
-          }
-          throw new TypeConstructor.Failure(
-              "in application to tuple, '()' can only appear if it is the only argument");
-        } else if (!(arg instanceof StarlarkType)) {
-          throw new TypeConstructor.Failure(
-              String.format("in application to tuple, got '%s', expected a type", arg));
-        }
-      }
-      @SuppressWarnings("unchecked") // list is immutable and all elements verified above
-      var result = (ImmutableList<StarlarkType>) (ImmutableList<?>) args;
-      return tuple(result);
-    };
-  }
+    /** Returns true if `type` may be used as a collection.  */
+    fun isCollection(type: StarlarkType?): Boolean {
+        return StarlarkType.Companion.assignableFrom(COLLECTION_OF_ANY, type)
+    }
 
-  private static final TypeConstructor wrapStructConstructor() {
-    return args -> {
-      if (args.isEmpty()) {
-        // `struct` is equivalent to `struct[{}, ...]`
-        return STRUCT_OF_ANY;
-      } else if (args.size() <= 2) {
-        TypeConstructor.Arg arg = args.getFirst();
-        ImmutableMap<String, StarlarkType> fields;
-        if (arg instanceof TypeConstructor.Arg.TypeDict dict) {
-          fields = dict.getTypes();
-        } else {
-          throw new TypeConstructor.Failure(
-              String.format("in application to struct, got '%s', expected a dict", arg));
+    /** Sequence type  */
+    @kotlin.jvm.JvmStatic
+    fun sequence(elementType: StarlarkType?): SequenceType {
+        return AutoValue_Types_SequenceType(elementType)
+    }
+
+    /** Mapping type  */
+    @kotlin.jvm.JvmStatic
+    fun mapping(keyType: StarlarkType?, valueType: StarlarkType?): MappingType {
+        return AutoValue_Types_MappingType(keyType, valueType)
+    }
+
+    /** Immutable partial struct type  */
+    fun partialStruct(fields: ImmutableMap<String?, StarlarkType?>?): StructType {
+        return AutoValue_Types_StructType(fields,  /* partial= */true)
+    }
+
+    /** Immutable total struct type  */
+    fun struct(fields: ImmutableMap<String?, StarlarkType?>?): StructType {
+        return AutoValue_Types_StructType(fields,  /* partial= */false)
+    }
+
+    fun wrapType(name: String?, type: StarlarkType): TypeConstructor {
+        return TypeConstructor { argsTuple: ImmutableList<TypeConstructor.Arg>? ->
+            if (!argsTuple!!.isEmpty()) {
+                throw TypeConstructor.Failure(String.format("'%s' does not accept arguments", name))
+            }
+            type
         }
-        if (args.size() == 1) {
-          return struct(fields);
-        } else {
-          if (!(args.get(1) instanceof TypeConstructor.Arg.Ellipsis)) {
-            throw new TypeConstructor.Failure(
-                String.format(
-                    "in application to struct, got '%s' for optional argument #2, expected '...'",
-                    args.get(1)));
-          }
-          return partialStruct(fields);
+    }
+
+    @Throws(TypeConstructor.Failure::class)
+    private fun toStarlarkTypes(
+        name: kotlin.String?, args: ImmutableList<TypeConstructor.Arg>
+    ): ImmutableList<StarlarkType?> {
+        for (arg in args) {
+            if (arg !is StarlarkType) {
+                throw TypeConstructor.Failure(
+                    String.format("in application to %s, got '%s', expected a type", name, arg)
+                )
+            }
         }
-      } else {
-        throw new TypeConstructor.Failure(
-            String.format("struct[] accepts at most 2 arguments but got %d", args.size()));
-      }
-    };
-  }
+        val result// list is immutable and all elements verified above
+                = args as ImmutableList<*> as ImmutableList<StarlarkType?>
+        return result
+    }
+
+    /**
+     * Returns a new type constructor wrapping the given one-argument type factory.
+     * 
+     * 
+     * The type constructor can be invoked with one argument, which is passed to the underlying
+     * factory, or with zero arguments, in which case the factory is invoked with [.ANY]. (This
+     * allows, for instance, `list` to be treated as syntactic sugar for `list[Any]`.)
+     */
+    fun wrapTypeConstructor(
+        name: kotlin.String?, factory: Function<StarlarkType?, StarlarkType?>
+    ): TypeConstructor {
+        return TypeConstructor { args: ImmutableList<TypeConstructor.Arg>? ->
+            val types = Types.toStarlarkTypes(name, args!!)
+            when (types.size()) {
+                0 -> factory.apply(ANY)
+                1 -> factory.apply(types.get(0))
+                else -> {
+                    throw TypeConstructor.Failure(
+                        String.format("%s[] accepts exactly 1 argument but got %d", name, types.size())
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Returns a new type constructor wrapping the given two-argument type factory.
+     * 
+     * 
+     * The type constructor can be invoked with two arguments, which are passed to the underlying
+     * factory, or with zero arguments, in which case the factory is invoked with [.ANY] for
+     * both arguments. (This allows, for instance, `dict` to be treated as syntactic sugar for
+     * `dict[Any, Any]`.)
+     */
+    fun wrapTypeConstructor(
+        name: kotlin.String?, factory: BiFunction<StarlarkType?, StarlarkType?, StarlarkType?>
+    ): TypeConstructor {
+        return TypeConstructor { args: ImmutableList<TypeConstructor.Arg>? ->
+            val types = Types.toStarlarkTypes(name, args!!)
+            when (types.size()) {
+                0 -> factory.apply(ANY, ANY)
+                2 -> factory.apply(types.get(0), types.get(1))
+                else -> throw TypeConstructor.Failure(
+                    String.format("%s[] accepts exactly 2 arguments but got %d", name, types.size())
+                )
+            }
+        }
+    }
+
+    private fun wrapTupleConstructor(): TypeConstructor {
+        // This is a function instead of a constant, so that the order of evaluation doesn't depend on
+        // the position in the class.
+        return TypeConstructor { args: ImmutableList<TypeConstructor.Arg>? ->
+            if (args!!.isEmpty()) {
+                // `tuple` is equivalent to `tuple[Any, ...]`
+                return@TypeConstructor homogeneousTuple(ANY)
+            }
+            for (i in args.indices) {
+                val arg = args.get(i)
+                if (arg == TypeConstructor.Arg.Companion.ELLIPSIS) {
+                    if (i == 1 && args.size() == 2) {
+                        return@TypeConstructor homogeneousTuple(args.getFirst() as StarlarkType?)
+                    }
+                    throw TypeConstructor.Failure(
+                        "in application to tuple, '...' can only appear as the second of exactly 2 arguments,"
+                                + " where the first argument is a type"
+                    )
+                } else if (arg == TypeConstructor.Arg.Companion.EMPTY_TUPLE) {
+                    if (args.size() == 1) {
+                        return@TypeConstructor EMPTY_TUPLE
+                    }
+                    throw TypeConstructor.Failure(
+                        "in application to tuple, '()' can only appear if it is the only argument"
+                    )
+                } else if (arg !is StarlarkType) {
+                    throw TypeConstructor.Failure(
+                        String.format("in application to tuple, got '%s', expected a type", arg)
+                    )
+                }
+            }
+            val result// list is immutable and all elements verified above
+                    = args as ImmutableList<*> as ImmutableList<StarlarkType?>
+            tuple(result)
+        }
+    }
+
+    private fun wrapStructConstructor(): TypeConstructor {
+        return TypeConstructor { args: ImmutableList<TypeConstructor.Arg>? ->
+            if (args!!.isEmpty()) {
+                // `struct` is equivalent to `struct[{}, ...]`
+                return@TypeConstructor STRUCT_OF_ANY
+            } else if (args.size() <= 2) {
+                val arg: TypeConstructor.Arg? = args.getFirst()
+                val fields: ImmutableMap<kotlin.String?, StarlarkType?>?
+                if (arg is TypeConstructor.Arg.TypeDict) {
+                    fields = arg.getTypes()
+                } else {
+                    throw TypeConstructor.Failure(
+                        String.format("in application to struct, got '%s', expected a dict", arg)
+                    )
+                }
+                if (args.size() == 1) {
+                    return@TypeConstructor struct(fields)
+                } else {
+                    if (args.get(1) !is TypeConstructor.Arg.Ellipsis) {
+                        throw TypeConstructor.Failure(
+                            String.format(
+                                "in application to struct, got '%s' for optional argument #2, expected '...'",
+                                args.get(1)
+                            )
+                        )
+                    }
+                    return@TypeConstructor partialStruct(fields)
+                }
+            } else {
+                throw TypeConstructor.Failure(
+                    String.format("struct[] accepts at most 2 arguments but got %d", args.size())
+                )
+            }
+        }
+    }
+
+    // hashCode and equals implementation is a workaround for serialization code that may duplicate
+    // otherwise singletons
+    private class AnyType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "Any"
+        }
+
+        override fun hashCode(): Int {
+            return AnyType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is AnyType
+        }
+
+        override fun getField(name: kotlin.String?, context: TypeContext?): StarlarkType {
+            return ANY
+        }
+
+        // TODO: #27370 - we may want to infer a more precise type when one of the operands is non-Any.
+        // (For example, we could infer that int % Any is int | float; on the other hand, Any % int
+        // could also be a string, since % is also a string substitution operator.) Requires a registry
+        // of which types (including those of application-defined net.starlark.java.eval.HasBinary
+        // values) support which binary operators. This would also imply that the inferred type of
+        // `Any <op> T` could be application-dependent even if T is a universal built-in type.
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType?, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.IN, TokenKind.NOT_IN ->  // If we are the LHS, fall through to RHS's inferBinaryOperator; RHS determines whether
+                    // it is membership-testable.
+                    // If we are the RHS, act as a membership-testable type that allows any LHS (e.g. list)
+                    // and return bool.
+                    if (thisLeft) null else BOOL
+
+                else -> ANY
+            }
+        }
+
+        override fun isComparable(that: StarlarkType): Boolean {
+            // Instead of enumerating all comparable types here, allow StarlarkType#comparable to defer to
+            // that.isComparable(ANY).
+            return that == ANY
+        }
+
+        override fun hasSetIndex(): Boolean {
+            return true
+        }
+
+        override fun hasSetField(): Boolean {
+            return true
+        }
+    }
+
+    private class ObjectType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "object"
+        }
+
+        override fun hashCode(): Int {
+            return ObjectType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is ObjectType
+        }
+    }
+
+    private class NeverType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "Never"
+        }
+
+        override fun hashCode(): Int {
+            return NeverType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is NeverType
+        }
+
+        override fun isComparable(that: StarlarkType?): Boolean {
+            // Regard Never - as the bottom type - to be comparable to anything; in particular, this
+            // allows empty lists (i.e. list[Never]) to be comparable to arbitrary non-empty lists.
+            return true
+        }
+
+        override fun hasSetIndex(): Boolean {
+            return true
+        }
+
+        override fun hasSetField(): Boolean {
+            return true
+        }
+    }
+
+    private class NoneType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "None"
+        }
+
+        override fun hashCode(): Int {
+            return NoneType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is NoneType
+        }
+    }
+
+    private class BoolType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "bool"
+        }
+
+        override fun hashCode(): Int {
+            return BoolType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is BoolType
+        }
+
+        override fun isComparable(that: StarlarkType?): Boolean {
+            return StarlarkType.Companion.assignableFrom(BOOL, that)
+        }
+    }
+
+    private class IntType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "int"
+        }
+
+        override fun hashCode(): Int {
+            return IntType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is IntType
+        }
+
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.PLUS, TokenKind.MINUS, TokenKind.PERCENT, TokenKind.SLASH_SLASH -> if (NUMERIC.getTypes()!!
+                        .contains(that)
+                ) that else null
+
+                TokenKind.SLASH -> if (NUMERIC.getTypes()!!.contains(that)) FLOAT else null
+                TokenKind.STAR ->  // Repetition operator (int * str, int * list, etc.) is assumed to be symmetric and
+                    // implemented by the rhs, so defer to rhs for non-numeric case.
+                    if (NUMERIC.getTypes()!!.contains(that)) that else null
+
+                TokenKind.AMPERSAND, TokenKind.CARET, TokenKind.GREATER_GREATER, TokenKind.LESS_LESS, TokenKind.PIPE -> if (that == INT) INT else null
+                else -> null
+            }
+        }
+
+        override fun isComparable(that: StarlarkType?): Boolean {
+            return StarlarkType.Companion.assignableFrom(NUMERIC, that)
+        }
+    }
+
+    private class FloatType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "float"
+        }
+
+        override fun hashCode(): Int {
+            return FloatType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is FloatType
+        }
+
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType?, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.PLUS, TokenKind.MINUS, TokenKind.PERCENT, TokenKind.SLASH, TokenKind.SLASH_SLASH, TokenKind.STAR -> if (NUMERIC.getTypes()!!
+                        .contains(that)
+                ) FLOAT else null
+
+                else -> null
+            }
+        }
+
+        override fun isComparable(that: StarlarkType?): Boolean {
+            return StarlarkType.Companion.assignableFrom(NUMERIC, that)
+        }
+    }
+
+    private class StrType  // Singleton.
+        : StarlarkType() {
+        override fun toString(): kotlin.String {
+            return "str"
+        }
+
+        override fun hashCode(): Int {
+            return StrType::class.java.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            return obj is StrType
+        }
+
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.PLUS -> if (that == STR) STR else null
+                TokenKind.PERCENT ->  // String substitution allows anything on the RHS
+                    if (thisLeft) STR else null
+
+                TokenKind.STAR -> if (that == INT) STR else null
+                TokenKind.IN, TokenKind.NOT_IN ->  // If we are LHS, defer to the RHS.
+                    // If we are RHS, explicitly handle Any since AnyType.inferBinaryOperator defers to us.
+                    if (!thisLeft && (that == STR || that == ANY)) BOOL else null
+
+                else -> null
+            }
+        }
+
+        override fun getField(name: kotlin.String?, context: TypeContext): StarlarkType? {
+            return context.getStrFieldType(name)
+        }
+
+        override fun isComparable(that: StarlarkType): Boolean {
+            return that == STR || that == ANY
+        }
+    }
+
+    /**
+     * An interface for the general Starlark callable.
+     * 
+     * 
+     * There are 3 flavours of parameters:
+     * 
+     * 
+     *  * positional-only (can't be passed with a keyword),
+     *  * ordinary (can be passed by position or with a keyword) and
+     *  * keyword-only parameters.
+     * 
+     * 
+     * The interface describes them as follows:
+     * 
+     * 
+     *  * Their types are stored consecutively in `parameterTypes`.
+     *  * The list `parameterNames` matches `parameterTypes`. (Even
+     * positional-only parameters have names.)
+     *  * `numPositionalOnlyParameters` counts positional-only arguments.
+     *  * `numPositionalParameters` counts both positional-only and ordinary arguments.
+     * 
+     * 
+     * 
+     * Special parameters `*args` and `**kwargs` are stored separately. If they are
+     * absent, they are set to `null`.
+     * 
+     * 
+     * Mandatory parameters (non-special parameters without default values) are stored as an
+     * ordered set.
+     * 
+     * 
+     * The return type is marked as Any if not annotated.
+     */
+    abstract class CallableType : StarlarkType() {
+        abstract fun getParameterNames(): ImmutableList<kotlin.String>?
+
+        abstract fun getParameterTypes(): ImmutableList<StarlarkType>?
+
+        abstract fun getNumPositionalOnlyParameters(): Int
+
+        abstract fun getNumPositionalParameters(): Int
+
+        abstract fun getMandatoryParameters(): ImmutableSet<kotlin.String?>?
+
+        abstract fun getVarargsType(): StarlarkType?
+
+        abstract fun getKwargsType(): StarlarkType?
+
+        abstract fun getReturnType(): StarlarkType?
+
+        fun getParameterTypeByPos(i: Int): StarlarkType {
+            return getParameterTypes()!!.get(i)
+        }
+
+        override fun toString(): kotlin.String {
+            // Approximate representation of the type - as much as Callable can do
+            return ("Callable[["
+                    + getParameterTypes()!!.stream()
+                .map<kotlin.String?>(Function { obj: StarlarkType? -> obj.toString() })
+                .collect(Collectors.joining(", "))
+                    + "], "
+                    + getReturnType()
+                    + "]")
+        }
+
+        /** Returns a complete string representation of the type  */
+        fun toSignatureString(): kotlin.String {
+            val params = ImmutableList.builder<kotlin.String?>()
+
+            // positional parameters
+            var i = 0
+            while (i < getNumPositionalOnlyParameters()) {
+                val name = getParameterNames()!!.get(i)
+                val type = getParameterTypeByPos(i)
+                if (getMandatoryParameters()!!.contains(name)) {
+                    params.add(type.toString())
+                } else {
+                    params.add("[" + type + "]")
+                }
+                i++
+            }
+
+            if (i > 0) { // if there were positional-only parameters, we need to separate them
+                params.add("/")
+            }
+
+            while (i < getNumPositionalParameters()) {
+                val name = getParameterNames()!!.get(i)
+                val type = getParameterTypeByPos(i)
+                if (getMandatoryParameters()!!.contains(name)) {
+                    params.add(name + ": " + type)
+                } else {
+                    params.add(name + ": [" + type + "]")
+                }
+                i++
+            }
+
+            if (getVarargsType() != null) {
+                params.add("*args: " + getVarargsType())
+            } else if (i < getParameterTypes().size()) { // if there are going to be kwonly params
+                params.add("*")
+            }
+
+            // keyword parameters
+            while (i < getParameterTypes().size()) {
+                val name = getParameterNames()!!.get(i)
+                val type: kotlin.String? = getParameterTypeByPos(i).toString()
+                if (getMandatoryParameters()!!.contains(name)) {
+                    params.add(name + ": " + type)
+                } else {
+                    params.add(name + ": [" + type + "]")
+                }
+                i++
+            }
+
+            if (getKwargsType() != null) {
+                params.add("**kwargs: " + getKwargsType())
+            }
+
+            val paramList = params.build()
+            return "(" + String.join(", ", paramList) + ") -> " + getReturnType()
+        }
+    }
+
+    // About 0.1% memory regression may be removed by specializing GeneralCallableType for function
+    // without positional-only parameter and by retrieving parameter names from StarlarkFunction
+    @AutoValue
+    internal abstract class GeneralCallableType : CallableType()
+
+    /**
+     * Union type
+     * 
+     * 
+     * Unions must contain at least two types, none of which may be Never or Object. See [ ][Types.union].
+     */
+    @AutoValue
+    abstract class UnionType : StarlarkType() {
+        abstract fun getTypes(): ImmutableSet<StarlarkType>?
+
+        override fun toString(): kotlin.String {
+            return getTypes()!!.stream().map<kotlin.String?>(Function { obj: StarlarkType? -> obj.toString() })
+                .collect(Collectors.joining("|"))
+        }
+
+        override fun toLvalue(): StarlarkType {
+            return union(
+                getTypes()!!.stream().map<StarlarkType?>(Function { obj: StarlarkType? -> obj!!.toLvalue() }).collect(
+                    ImmutableSet.toImmutableSet<StarlarkType?>()
+                )
+            )
+        }
+
+        override fun isComparable(that: StarlarkType?): Boolean {
+            return getTypes()!!.stream()
+                .allMatch(Predicate { type: StarlarkType? -> StarlarkType.Companion.comparable(type, that) })
+        }
+
+        override fun getField(name: kotlin.String?, context: TypeContext?): StarlarkType? {
+            val resultTypes: ArrayList<StarlarkType?> = ArrayList<StarlarkType?>(getTypes().size())
+            for (type in getTypes()!!) {
+                val result = type.getField(name, context)
+                if (result == null) {
+                    return null
+                }
+                resultTypes.add(result)
+            }
+            return union(resultTypes)
+        }
+
+        override fun hasSetIndex(): Boolean {
+            return getTypes()!!.stream().allMatch(Predicate { obj: StarlarkType? -> obj!!.hasSetIndex() })
+        }
+
+        override fun hasSetField(): Boolean {
+            return getTypes()!!.stream().allMatch(Predicate { obj: StarlarkType? -> obj!!.hasSetField() })
+        }
+    }
+
+    /** List type  */
+    abstract class BaseListType : AbstractSequenceType() {
+        override fun toString(): kotlin.String {
+            return "list[" + getElementType() + "]"
+        }
+
+        override fun toLvalue(): ListType {
+            return list(getElementType()!!.toLvalue())
+        }
+
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.PLUS -> if (that is BaseListType)
+                    listRvalue(union(getElementType(), that.getElementType()))
+                else
+                    null
+
+                TokenKind.STAR -> if (that == INT) this.toRvalue() else null
+                else -> super.inferBinaryOperator(operator, that, thisLeft)
+            }
+        }
+
+        override fun getField(name: kotlin.String?, context: TypeContext): StarlarkType? {
+            return context.getListFieldType(name)
+        }
+
+        override fun isComparable(that: StarlarkType): Boolean {
+            if (that == ANY) {
+                return true
+            } else if (that is BaseListType) {
+                return StarlarkType.Companion.comparable(getElementType(), that.getElementType())
+            }
+            return false
+        }
+
+        override fun hasSetIndex(): Boolean {
+            return true
+        }
+    }
+
+    /**
+     * The type of a new, unaliased list value; for example, a list literal or the result of a binary
+     * operator which has not yet been assigned.
+     */
+    @AutoValue
+    abstract class ListRvalueType : BaseListType() {
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(
+                list(getElementType()), sequence(getElementType()), collection(getElementType())
+            )
+        }
+
+        override fun toRvalue(): ListRvalueType {
+            return this
+        }
+
+        protected override fun isRvalueAssignableTo(that: AbstractCollectionType?): Boolean {
+            // Covariant in element type. Assignable only to types having a constructor which is a
+            // constructor of one of this type's supertypes (in particular: not assignable to dicts,
+            // sets, or application-defined types).
+            // TODO: #27370 - when we have type deconstruction, replace `instanceof` checks below with
+            // deconstruction of getSupertypes().
+            return (that is BaseListType
+                    || that is SequenceType
+                    || that is CollectionType)
+                    && StarlarkType.Companion.assignableFrom(that.getElementType(), this.getElementType())
+        }
+    }
+
+    /**
+     * The type of a potentially aliased list value; for example, the value of a variable, or nested
+     * in a variable's compound value.
+     */
+    @AutoValue
+    abstract class ListType : BaseListType() {
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(sequence(getElementType()), collection(getElementType()))
+        }
+
+        override fun toRvalue(): ListRvalueType {
+            return listRvalue(getElementType())
+        }
+    }
+
+    /** Dict type  */
+    abstract class BaseDictType : AbstractMappingType() {
+        abstract override fun getKeyType(): StarlarkType?
+
+        abstract override fun getValueType(): StarlarkType?
+
+        override fun toString(): kotlin.String {
+            return "dict[" + getKeyType() + ", " + getValueType() + "]"
+        }
+
+        override fun toLvalue(): DictType {
+            return dict(getKeyType()!!.toLvalue(), getValueType()!!.toLvalue())
+        }
+
+        override fun getField(name: kotlin.String?, context: TypeContext): StarlarkType? {
+            return context.getDictFieldType(name)
+        }
+
+        override fun hasSetIndex(): Boolean {
+            return true
+        }
+    }
+
+    /**
+     * The type of a new, unaliased dict value; for example, a dict literal or the result of a binary
+     * operator which has not yet been assigned.
+     */
+    @AutoValue
+    abstract class DictRvalueType : BaseDictType() {
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(
+                dict(getKeyType(), getValueType()),
+                mapping(getKeyType(), getValueType()),
+                collection(getKeyType())
+            )
+        }
+
+        override fun toRvalue(): DictRvalueType {
+            return this
+        }
+
+        protected override fun isMappingRvalueAssignableTo(that: AbstractMappingType?): Boolean {
+            // Covariant in both key and value types. This differs from Mapping, which is covariant only
+            // in the value type, because we need to be able to assign e.g. an empty dict having Never key
+            // type. Mapping avoids covariance in keys in order to catch type errors at lookups, but
+            // that's not a concern for rvalue dicts since this method is only checked upon promotion to
+            // lvalues, not at indexing expressions.
+            // Assignable only to types having a constructor which is a constructor of one of this type's
+            // supertypes (in particular: not assignable to sequences, sets, or application-defined
+            // types).
+            // TODO: #27370 - when we have type deconstruction, replace `instanceof` checks below with
+            // deconstruction of getSupertypes().
+            return (that is BaseDictType || that is MappingType)
+                    && StarlarkType.Companion.assignableFrom(that.getKeyType(), getKeyType())
+                    && StarlarkType.Companion.assignableFrom(that.getValueType(), getValueType())
+        }
+    }
+
+    /**
+     * The type of a potentially aliased dict value; for example, the value of a variable, or nested
+     * in a variable's compound value.
+     */
+    @AutoValue
+    abstract class DictType : BaseDictType() {
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(mapping(getKeyType(), getValueType()), collection(getKeyType()))
+        }
+
+        override fun toRvalue(): DictRvalueType {
+            return dictRvalue(getKeyType(), getValueType())
+        }
+    }
+
+    /** Set type  */ // TODO: #27370 - add Rvalue version (same as for ListType and DictType) and have the {@code
+    // set()} built-in function return an rvalue. To be useful, this would first require generics
+    // support for StarlarkMethod.
+    @AutoValue
+    abstract class SetType : AbstractCollectionType() {
+        abstract override fun getElementType(): StarlarkType?
+
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(collection(getElementType()))
+        }
+
+        override fun toString(): kotlin.String {
+            return "set[" + getElementType() + "]"
+        }
+
+        override fun getField(name: kotlin.String?, context: TypeContext): StarlarkType? {
+            return context.getSetFieldType(name)
+        }
+
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType?, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.AMPERSAND, TokenKind.MINUS ->  // TODO: #27370 - we may want to tighten the type of a set intersection, but it's
+                    // non-trivial.
+                    if (that is SetType) this else null
+
+                TokenKind.CARET, TokenKind.PIPE -> if (that is SetType)
+                    set(union(getElementType(), that.getElementType()))
+                else
+                    null
+
+                else -> super.inferBinaryOperator(operator, that, thisLeft)
+            }
+        }
+
+        override fun toLvalue(): SetType {
+            return set(getElementType()!!.toLvalue())
+        }
+    }
+
+    /** Tuple type.  */
+    abstract class TupleType : AbstractSequenceType() {
+        /** Returns the type of this tuple concatenated with another.  */
+        abstract fun concatenate(rhs: TupleType?): TupleType?
+
+        /** Returns the type of this tuple repeated.  */
+        abstract fun repeat(times: Int): TupleType?
+
+        /** Returns the homogeneous version of this tuple type.  */
+        abstract fun toHomogeneous(): HomogeneousTupleType?
+
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType?, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.PLUS -> if (that is TupleType) concatenate(that) else null
+                TokenKind.STAR -> null
+                else -> super.inferBinaryOperator(operator, that, thisLeft)
+            }
+        }
+    }
+
+    /** Tuple type of a fixed length.  */
+    @AutoValue
+    abstract class FixedLengthTupleType : TupleType() {
+        abstract fun getElementTypes(): ImmutableList<StarlarkType?>?
+
+        override fun getElementType(): StarlarkType? {
+            return Types.union(getElementTypes()!!)
+        }
+
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t !is FixedLengthTupleType) {
+                return false
+            }
+            // Covariant in each element type; the number of elements must match exactly.
+            if (this.getElementTypes().size() != t.getElementTypes().size()) {
+                return false
+            }
+            for (i in this.getElementTypes().indices) {
+                if (!StarlarkType.Companion.assignableFrom(
+                        this.getElementTypes()!!.get(i), t.getElementTypes()!!.get(i)
+                    )
+                ) {
+                    return false
+                }
+            }
+            return true
+        }
+
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            val homogeneous = toHomogeneous()
+            return ImmutableList.of<StarlarkType?>(
+                homogeneous,
+                sequence(homogeneous.getElementType()),
+                collection(homogeneous.getElementType())
+            )
+        }
+
+        override fun toString(): kotlin.String {
+            return String.format(
+                "tuple[%s]",
+                if (getElementTypes()!!.isEmpty())
+                    "()"
+                else
+                    getElementTypes()!!.stream().map<kotlin.String?>(Function { obj: StarlarkType? -> obj.toString() })
+                        .collect(Collectors.joining(", "))
+            )
+        }
+
+        override fun concatenate(rhs: TupleType): TupleType? {
+            if (rhs is FixedLengthTupleType) {
+                return tuple(
+                    ImmutableList.builder<StarlarkType?>()
+                        .addAll(getElementTypes())
+                        .addAll(rhs.getElementTypes())
+                        .build()
+                )
+            } else {
+                return toHomogeneous().concatenate(rhs)
+            }
+        }
+
+        override fun repeat(times: Int): FixedLengthTupleType {
+            val builder = ImmutableList.builder<StarlarkType?>()
+            for (i in 0..<times) {
+                builder.addAll(getElementTypes())
+            }
+            return tuple(builder.build())
+        }
+
+        override fun toHomogeneous(): HomogeneousTupleType {
+            return homogeneousTuple(Types.union(getElementTypes()!!))
+        }
+
+        override fun isComparable(that: StarlarkType): Boolean {
+            if (that == ANY) {
+                return true
+            } else if (that is FixedLengthTupleType) {
+                val commonLength: Int = Math.min(getElementTypes().size(), that.getElementTypes().size())
+                for (i in 0..<commonLength) {
+                    if (!StarlarkType.Companion.comparable(
+                            getElementTypes()!!.get(i),
+                            that.getElementTypes()!!.get(i)
+                        )
+                    ) {
+                        return false
+                    }
+                }
+                return true
+            }
+            // Comparison with HomogeneousTupleType defers to HomogeneousTupleType.
+            return false
+        }
+
+        override fun toLvalue(): FixedLengthTupleType {
+            return tuple(
+                getElementTypes()!!.stream().map<StarlarkType?>(Function { obj: StarlarkType? -> obj!!.toLvalue() })
+                    .collect(
+                        ImmutableList.toImmutableList<StarlarkType?>()
+                    )
+            )
+        }
+    }
+
+    /** Tuple type of an indeterminate length.  */
+    @AutoValue
+    abstract class HomogeneousTupleType : TupleType() {
+        abstract override fun getElementType(): StarlarkType?
+
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(sequence(getElementType()), collection(getElementType()))
+        }
+
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t !is HomogeneousTupleType) {
+                return false
+            }
+            // Covariant in element type.
+            return StarlarkType.Companion.assignableFrom(this.getElementType(), t.getElementType())
+        }
+
+        override fun toString(): kotlin.String {
+            return "tuple[" + getElementType() + ", ...]"
+        }
+
+        override fun concatenate(rhs: TupleType): HomogeneousTupleType? {
+            return if (rhs is HomogeneousTupleType)
+                homogeneousTuple(union(getElementType(), rhs.getElementType()))
+            else
+                concatenate(rhs.toHomogeneous())
+        }
+
+        override fun repeat(times: Int): TupleType {
+            return if (times > 0) this else Types.EMPTY_TUPLE
+        }
+
+        override fun toHomogeneous(): HomogeneousTupleType {
+            return this
+        }
+
+        override fun isComparable(that: StarlarkType): Boolean {
+            if (that == ANY) {
+                return true
+            } else if (that is TupleType) {
+                return StarlarkType.Companion.comparable(getElementType(), that.toHomogeneous()!!.getElementType())
+            }
+            return false
+        }
+
+        override fun toLvalue(): HomogeneousTupleType {
+            return homogeneousTuple(getElementType()!!.toLvalue())
+        }
+    }
+
+    /**
+     * Abstract collection type implementing common functionality. Exists to be subclassed.
+     * 
+     * 
+     * `AbstractCollectionType`'s default [.assignableFromHook] always returns false if
+     * `t` is not an rvalue-subtype of this and not of the same Java class as this. Therefore,
+     * subclasses having multiple Java classes corresponding to the same Starlark type family may need
+     * to override [.assignableFromHook].
+     */
+    abstract class AbstractCollectionType : StarlarkType() {
+        abstract fun getElementType(): StarlarkType?
+
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t is AbstractCollectionType) {
+                if (t.isRvalueAssignableTo(this)) {
+                    return true
+                }
+                // Assume 1-1 correspondence between Java subclass and Starlark type family.
+                if (this.getClass() == t.getClass()) {
+                    // Invariant in element type because `that` might be mutable.
+                    return StarlarkType.Companion.consistentEquals(this.getElementType(), t.getElementType())
+                }
+            }
+            return false
+        }
+
+        /**
+         * Returns true if `this` is an rvalue type and is assignable to `that`.
+         * 
+         * 
+         * Must be overridden by rvalue types.
+         * 
+         * 
+         * Intended to be invoked by [.assignableFromHook] implementations.
+         */
+        // TODO: #27370 - Consider elevating to StarlarkType level if useful for non-collection types.
+        open fun isRvalueAssignableTo(that: AbstractCollectionType?): Boolean {
+            return false
+        }
+
+        override fun inferBinaryOperator(operator: TokenKind, that: StarlarkType?, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.IN, TokenKind.NOT_IN -> if (thisLeft) null else BOOL
+                else -> null
+            }
+        }
+    }
+
+    /** Collection type.  */ // We need CollectionType to be a separate class from AbstractCollectionType for 2 reasons.
+    // First, CollectionType is an immutable view of a collection (and so can be covariant in element
+    // type), while AbstractCollectionType has mutable subtypes (which are invariant in element type).
+    // Second, an @AutoValue class may not extend another - so we cannot have SequenceType or SetType
+    // be subclasses of CollectionType (they are subclasses of AbstractCollectionType instead).
+    @AutoValue
+    abstract class CollectionType : AbstractCollectionType() {
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t is AbstractCollectionType) {
+                if (t.isRvalueAssignableTo(this)) {
+                    return true
+                }
+                // Covariant in element type when assigning from a Collection (which is immutable)
+                return t is CollectionType
+                        && StarlarkType.Companion.assignableFrom(this.getElementType(), t.getElementType())
+            }
+            return false
+        }
+
+        override fun toString(): kotlin.String {
+            return "Collection[" + getElementType() + "]"
+        }
+
+        override fun toLvalue(): CollectionType {
+            return collection(getElementType()!!.toLvalue())
+        }
+    }
+
+    /** Abstract sequence type for common sequence functionality. Exists to be subclassed.  */
+    abstract class AbstractSequenceType : AbstractCollectionType() {
+        abstract override fun getElementType(): StarlarkType?
+
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(collection(getElementType()))
+        }
+    }
+
+    /** Sequence type.  */ // We need SequenceType to be a separate class from AbstractSequenceType for 2 reasons.
+    // First, SequenceType is an immutable view of a sequence (and so can be covariant in element
+    // type), while AbstractSequenceType has mutable subtypes (which are invariant in element type).
+    // Second, an @AutoValue class may not extend another - so we cannot have ListType or TupleType
+    // be subclasses of SequenceType (they are subclasses of AbstractSequenceType instead).
+    @AutoValue
+    abstract class SequenceType : AbstractSequenceType() {
+        abstract override fun getElementType(): StarlarkType?
+
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t is AbstractSequenceType) {
+                if (t.isRvalueAssignableTo(this)) {
+                    return true
+                }
+                // Covariant in element type when assigning from a Sequence (which is immutable)
+                return t is SequenceType
+                        && StarlarkType.Companion.assignableFrom(this.getElementType(), t.getElementType())
+            }
+            return false
+        }
+
+        override fun toString(): kotlin.String {
+            return "Sequence[" + getElementType() + "]"
+        }
+
+        override fun toLvalue(): SequenceType {
+            return sequence(getElementType()!!.toLvalue())
+        }
+
+        protected override fun isRvalueAssignableTo(t: AbstractCollectionType?): Boolean {
+            return false
+        }
+    }
+
+    /**
+     * Abstract mapping type for common map functionality. Exists to be subclassed.
+     * 
+     * 
+     * `AbstractMappingType`'s default [.assignableFromHook] always returns false if
+     * `t` and this are not of the same Java class. Therefore, subclasses having multiple Java
+     * classes corresponding to the same Starlark type family may need to override [ ][.assignableFromHook].
+     */
+    abstract class AbstractMappingType : AbstractCollectionType() {
+        abstract fun getKeyType(): StarlarkType?
+
+        abstract fun getValueType(): StarlarkType?
+
+        override fun getSupertypes(): MutableList<StarlarkType?> {
+            return ImmutableList.of<StarlarkType?>(collection(getKeyType()))
+        }
+
+        override fun getElementType(): StarlarkType? {
+            return getKeyType()
+        }
+
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t is AbstractMappingType) {
+                if (t.isMappingRvalueAssignableTo(this)) {
+                    return true
+                }
+                // Assume 1-1 correspondence between Java subclass and Starlark type family.
+                if (this.getClass() == t.getClass()) {
+                    // Invariant in both key and value types because `that` might be mutable.
+                    return StarlarkType.Companion.consistentEquals(this.getKeyType(), t.getKeyType())
+                            && StarlarkType.Companion.consistentEquals(this.getValueType(), t.getValueType())
+                }
+            }
+            return false
+        }
+
+        protected override fun isRvalueAssignableTo(t: AbstractCollectionType?): Boolean {
+            return t is AbstractMappingType && this.isMappingRvalueAssignableTo(t)
+        }
+
+        /**
+         * Returns true if `this` is an rvalue type and is assignable to `that`.
+         * 
+         * 
+         * Must be overridden by rvalue types.
+         * 
+         * 
+         * Intended to be invoked by [.assignableFromHook] implementations.
+         */
+        open fun isMappingRvalueAssignableTo(that: AbstractMappingType?): Boolean {
+            return false
+        }
+
+        override fun inferBinaryOperator(operator: TokenKind, rhs: StarlarkType?, thisLeft: Boolean): StarlarkType? {
+            return when (operator) {
+                TokenKind.PIPE ->  // TODO: #27370 - mypy supports dict | dict, but doesn't support the | operator for
+                    // non-dict mappings. Should we have the same restriction? (Note that such a restriction
+                    // would break some uses of Bazel's native.existing_rules()).
+                    // TODO: #27370 - do we need to handle Neve for the key or value type?
+                    if (rhs is AbstractMappingType)
+                        dictRvalue(
+                            union(getKeyType(), rhs.getKeyType()),
+                            union(getValueType(), rhs.getValueType())
+                        )
+                    else
+                        null
+
+                else -> super.inferBinaryOperator(operator, rhs, thisLeft)
+            }
+        }
+    }
+
+    /** Mapping type.  */ // We need MappingType to be a separate class from AbstractMappingType for 2 reasons.
+    // First, MappingType is an immutable view of a mapping (and so can be covariant in value type),
+    // while AbstractMappingType has mutable subtypes (which are invariant in value type).
+    // Second, an @AutoValue class may not extend another - so we cannot have DictType be a subclass
+    // of MappingType (it is a subclass of AbstractMappingType instead).
+    @AutoValue
+    abstract class MappingType : AbstractMappingType() {
+        abstract override fun getKeyType(): StarlarkType?
+
+        abstract override fun getValueType(): StarlarkType?
+
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t is AbstractMappingType) {
+                if (t.isMappingRvalueAssignableTo(this)) {
+                    return true
+                }
+                // Invariant in key type, covariant in value type when assigning from a Mapping (which is
+                // immutable).
+                // TODO: #27370 - Should Mapping assignment be covariant in key type as well?
+                return t is MappingType
+                        && StarlarkType.Companion.consistentEquals(this.getKeyType(), t.getKeyType())
+                        && StarlarkType.Companion.assignableFrom(this.getValueType(), t.getValueType())
+            }
+            return false
+        }
+
+        override fun toString(): kotlin.String {
+            return "Mapping[" + getKeyType() + ", " + getValueType() + "]"
+        }
+
+        override fun toLvalue(): MappingType {
+            return mapping(getKeyType()!!.toLvalue(), getValueType()!!.toLvalue())
+        }
+    }
+
+    /**
+     * Immutable struct type.
+     * 
+     * 
+     * This is intended to be either the type or a supertype for values implementing [ ] - for example, Bazel's structs and providers.
+     * 
+     * 
+     * Morally non-struct types shouldn't add a [StructType] to their supertypes just because
+     * they happen to have fields. For example, a `list` has `append` and `extend`
+     * methods, but it is *not* a subtype of `struct[{"append": ..., "extend": ...}]`.
+     * 
+     * 
+     * Since struct types don't support mutation, their assignability follows structural subtyping:
+     * 
+     * 
+     *  * The set of LHS field names must be a subset of RHS field names. (This implies, in
+     * particular, that a RHS total struct cannot be assigned to a LHS partial struct, since the
+     * LHS partial struct admits any possible field name.)
+     *  * The type of each LHS field must be assignable from the type of the corresponding RHS
+     * field. (This implies, in particular, that [.STRUCT_OF_ANY] is assignable to all
+     * struct types.)
+     * 
+     * 
+     * In particular, these rules imply that:
+     * 
+     * 
+     *  * A RHS total struct cannot be assigned to a LHS partial struct, since the LHS partial
+     * struct admits any possible field name.
+     *  * A LHS total struct with a particular set of fields `F` is assignable from any RHS
+     * partial struct whose set of explicit fields is a subset of `F`.
+     *  * [.STRUCT_OF_ANY] is assignable to all LHS struct types.
+     * 
+     */
+    @AutoValue
+    abstract class StructType : StarlarkType() {
+        /** Returns the names and types of the mandatory fields of this struct type.  */ // TODO: #27370 - should we add optional fields? (Maybe useful for Bazel's providers.)
+        // TODO: #27370 - should we add mutable fields / hasSetField()? If we do, such fields would need
+        // to be treated as invariant for assignability.
+        abstract fun getFields(): ImmutableMap<kotlin.String, StarlarkType>?
+
+        /**
+         * If true, then any field not specified in [.getFields] is assumed to potentially exist
+         * and be of type [.ANY].
+         */
+        abstract fun isPartial(): Boolean
+
+        override fun assignableFromHook(t: StarlarkType?): Boolean {
+            if (t is StructType) {
+                if (this.isPartial() && !t.isPartial()) {
+                    return false
+                }
+                // The set of LHS field names must be a subset of RHS field names, and LHS field types must
+                // be assignable from the corresponding RHS field types.
+                return this.getFields().entrySet().stream()
+                    .allMatch(
+                        Predicate { entry1: MutableMap.MutableEntry<kotlin.String, StarlarkType>? ->
+                            val fieldName: kotlin.String = entry1.getKey()
+                            val fieldType1: StarlarkType = entry1.getValue()
+                            val fieldType2 = t.getField(fieldName)
+                            fieldType2 != null && StarlarkType.Companion.assignableFrom(fieldType1, fieldType2)
+                        })
+            }
+            return false
+        }
+
+        override fun getField(name: kotlin.String?, context: TypeContext?): StarlarkType? {
+            return getField(name)
+        }
+
+        /**
+         * Returns the type of the field with the given name, or null if there is no such field.
+         * 
+         * 
+         * Unlike for [StarlarkType.getField], this method doesn't take a [TypeContext]
+         * because it's expected that the names and types of a struct's fields are fixed at type
+         * construction time.
+         */
+        fun getField(name: kotlin.String?): StarlarkType? {
+            val fieldType = getFields()!!.get(name)
+            if (fieldType != null) {
+                return fieldType
+            }
+            return if (isPartial()) ANY else null
+        }
+
+        override fun toString(): kotlin.String {
+            if (this == STRUCT_OF_ANY) {
+                return "struct"
+            }
+            val buf = StringBuilder()
+            buf.append("struct[")
+            TypeConstructor.Arg.TypeDict.Companion.print(buf, getFields())
+            if (isPartial()) {
+                if (!getFields()!!.isEmpty()) {
+                    buf.append(", ")
+                }
+                buf.append("...")
+            }
+            buf.append("]")
+            return buf.toString()
+        }
+
+        override fun toLvalue(): StructType {
+            val builder = ImmutableMap.builder<kotlin.String?, StarlarkType?>()
+            for (entry in getFields().entrySet()) {
+                builder.put(entry.getKey(), entry.getValue().toLvalue())
+            }
+            return if (isPartial()) partialStruct(builder.buildOrThrow()) else struct(builder.buildOrThrow())
+        }
+    }
 }

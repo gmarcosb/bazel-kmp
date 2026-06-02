@@ -11,34 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen
 
-package com.google.devtools.build.docgen;
+import com.google.devtools.build.docgen.starlark.StarlarkDocExpander
 
-import static com.google.common.truth.Truth.assertThat;
+/** A test class for StarlarkDocExpander.  */
+@RunWith(JUnit4::class)
+class StarlarkDocExpanderTest {
+    @org.junit.Test
+    fun testExpand() {
+        DocgenConsts.starlarkDocsRoot = "/strlrk"
+        val linkMap: DocLinkMap =
+            DocLinkMap( /* beRoot= */
+                "/be_root",
+                com.google.common.collect.ImmutableMap.of<K?, V?>("foo", "foobar.html"),  /* sourceUrlRoot= */
+                "",
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        val expander: StarlarkDocExpander = StarlarkDocExpander(RuleLinkExpander(false, linkMap))
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.docgen.starlark.StarlarkDocExpander;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** A test class for StarlarkDocExpander. */
-@RunWith(JUnit4.class)
-public class StarlarkDocExpanderTest {
-
-  @Test
-  public void testExpand() {
-    DocgenConsts.starlarkDocsRoot = "/strlrk";
-    DocLinkMap linkMap =
-        new DocLinkMap(
-            /* beRoot= */ "/be_root",
-            ImmutableMap.of("foo", "foobar.html"),
-            /* sourceUrlRoot= */ "",
-            ImmutableMap.of());
-    StarlarkDocExpander expander = new StarlarkDocExpander(new RuleLinkExpander(false, linkMap));
-
-    assertThat(expander.expand("$STARLARK_DOCS_ROOT")).isEqualTo("/strlrk");
-    assertThat(expander.expand("$BE_ROOT")).isEqualTo("/be_root");
-    assertThat(expander.expand("${link foo}")).isEqualTo("foobar.html");
-  }
+        assertThat(expander.expand("\$STARLARK_DOCS_ROOT")).isEqualTo("/strlrk")
+        assertThat(expander.expand("\$BE_ROOT")).isEqualTo("/be_root")
+        assertThat(expander.expand("\${link foo}")).isEqualTo("foobar.html")
+    }
 }

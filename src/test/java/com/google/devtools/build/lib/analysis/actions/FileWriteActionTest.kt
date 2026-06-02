@@ -11,144 +11,145 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.actions;
+package com.google.devtools.build.lib.analysis.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
+import com.google.devtools.build.lib.actions.ActionOwner
 
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.util.OnDemandString;
-import java.util.Random;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public class FileWriteActionTest extends FileWriteActionTestCase {
-
-  @Override
-  protected FileWriteAction createAction(
-      ActionOwner actionOwner, Artifact outputArtifact, String data, boolean makeExecutable) {
-    return FileWriteAction.create(
-        actionOwner, outputArtifact, data, makeExecutable, Compression.DISALLOW);
-  }
-
-  @Test
-  public void testNoInputs() {
-    checkNoInputsByDefault();
-  }
-
-  @Test
-  public void testDestinationArtifactIsOutput() {
-    checkDestinationArtifactIsOutput();
-  }
-
-  @Test
-  public void testCanWriteNonExecutableFile() throws Exception {
-    checkCanWriteNonExecutableFile();
-  }
-
-  @Test
-  public void testCanWriteExecutableFile() throws Exception {
-    checkCanWriteExecutableFile();
-  }
-
-  @Test
-  public void testComputesConsistentKeys() throws Exception {
-    checkComputesConsistentKeys();
-  }
-
-  @Test
-  public void testFileWriteActionWithShortString() throws Exception {
-    Artifact outputArtifact = getBinArtifactWithNoOwner("destination.txt");
-    String contents = "Hello world";
-    FileWriteAction action =
-        FileWriteAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            contents,
-            /*makeExecutable=*/ false,
-            Compression.DISALLOW);
-    assertThat(action.getFileContents()).isEqualTo(contents);
-  }
-
-  @Test
-  public void testFileWriteActionWithLazyString() throws Exception {
-    Artifact outputArtifact = getBinArtifactWithNoOwner("destination.txt");
-    final String backingString = "Hello world";
-    OnDemandString contents =
-        new OnDemandString() {
-          @Override
-          public String toString() {
-            return backingString;
-          }
-        };
-    FileWriteAction action =
-        FileWriteAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            contents,
-            /*makeExecutable=*/ false,
-            Compression.DISALLOW);
-    assertThat(action.getFileContents()).isEqualTo(backingString);
-  }
-
-  /**
-   * Returns a string filled with (deterministic) random characters to get a string that won't
-   * compress to a tiny size.
-   */
-  private String generateLongRandomString() {
-    StringBuilder sb = new StringBuilder();
-    Random random = new Random(0);
-    for (int i = 0; i < 16 * 1024; ++i) {
-      char c = (char) random.nextInt(128);
-      sb.append(c);
+@RunWith(JUnit4::class)
+class FileWriteActionTest : FileWriteActionTestCase() {
+    override fun createAction(
+        actionOwner: ActionOwner?, outputArtifact: Artifact?, data: String?, makeExecutable: Boolean
+    ): FileWriteAction {
+        return FileWriteAction.create(
+            actionOwner, outputArtifact, data, makeExecutable, Compression.DISALLOW
+        )
     }
-    return sb.toString();
-  }
 
-  @Test
-  public void testFileWriteActionWithLongStringAndCompression() throws Exception {
-    Artifact outputArtifact = getBinArtifactWithNoOwner("destination.txt");
-    String contents = generateLongRandomString();
-    FileWriteAction action =
-        FileWriteAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            contents,
-            /*makeExecutable=*/ false,
-            Compression.ALLOW);
-    assertThat(action.getFileContents()).isEqualTo(contents);
-  }
-
-  @Test
-  public void testFileWriteActionWithCompressionDoesNotForceLazyString() throws Exception {
-    Artifact outputArtifact = getBinArtifactWithNoOwner("destination.txt");
-    final String backingContents = generateLongRandomString();
-
-    class ForceCountingOnDemandString extends OnDemandString {
-      public int forced = 0;
-
-      @Override
-      public String toString() {
-        forced += 1;
-        return backingContents;
-      }
+    @org.junit.Test
+    fun testNoInputs() {
+        checkNoInputsByDefault()
     }
-    ForceCountingOnDemandString contents = new ForceCountingOnDemandString();
-    FileWriteAction action =
-        FileWriteAction.create(
-            NULL_ACTION_OWNER,
-            outputArtifact,
-            contents,
-            /*makeExecutable=*/ false,
-            Compression.ALLOW);
 
-    // The string should only be forced once we actually read it, not when the action is
-    // constructed.
-    assertThat(contents.forced).isEqualTo(0);
-    assertThat(action.getFileContents()).isEqualTo(backingContents);
-    assertThat(contents.forced).isEqualTo(1);
-  }
+    @org.junit.Test
+    fun testDestinationArtifactIsOutput() {
+        checkDestinationArtifactIsOutput()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCanWriteNonExecutableFile() {
+        checkCanWriteNonExecutableFile()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCanWriteExecutableFile() {
+        checkCanWriteExecutableFile()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testComputesConsistentKeys() {
+        checkComputesConsistentKeys()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFileWriteActionWithShortString() {
+        val outputArtifact: Artifact? = getBinArtifactWithNoOwner("destination.txt")
+        val contents = "Hello world"
+        val action: FileWriteAction =
+            FileWriteAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                contents,  /*makeExecutable=*/
+                false,
+                Compression.DISALLOW
+            )
+        assertThat(action.getFileContents()).isEqualTo(contents)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFileWriteActionWithLazyString() {
+        val outputArtifact: Artifact? = getBinArtifactWithNoOwner("destination.txt")
+        val backingString = "Hello world"
+        val contents: OnDemandString =
+            object : OnDemandString() {
+                public override fun toString(): String {
+                    return backingString
+                }
+            }
+        val action: FileWriteAction =
+            FileWriteAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                contents,  /*makeExecutable=*/
+                false,
+                Compression.DISALLOW
+            )
+        assertThat(action.getFileContents()).isEqualTo(backingString)
+    }
+
+    /**
+     * Returns a string filled with (deterministic) random characters to get a string that won't
+     * compress to a tiny size.
+     */
+    private fun generateLongRandomString(): String {
+        val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+        val random: Random = Random(0)
+        for (i in 0..<16 * 1024) {
+            val c: Char = random.nextInt(128).toChar()
+            sb.append(c)
+        }
+        return sb.toString()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFileWriteActionWithLongStringAndCompression() {
+        val outputArtifact: Artifact? = getBinArtifactWithNoOwner("destination.txt")
+        val contents = generateLongRandomString()
+        val action: FileWriteAction =
+            FileWriteAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                contents,  /*makeExecutable=*/
+                false,
+                Compression.ALLOW
+            )
+        assertThat(action.getFileContents()).isEqualTo(contents)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFileWriteActionWithCompressionDoesNotForceLazyString() {
+        val outputArtifact: Artifact? = getBinArtifactWithNoOwner("destination.txt")
+        val backingContents = generateLongRandomString()
+
+        class ForceCountingOnDemandString : OnDemandString() {
+            var forced: Int = 0
+
+            override fun toString(): String {
+                forced += 1
+                return backingContents
+            }
+        }
+
+        val contents = ForceCountingOnDemandString()
+        val action: FileWriteAction =
+            FileWriteAction.create(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                outputArtifact,
+                contents,  /*makeExecutable=*/
+                false,
+                Compression.ALLOW
+            )
+
+        // The string should only be forced once we actually read it, not when the action is
+        // constructed.
+        Truth.assertThat(contents.forced).isEqualTo(0)
+        assertThat(action.getFileContents()).isEqualTo(backingContents)
+        Truth.assertThat(contents.forced).isEqualTo(1)
+    }
 }

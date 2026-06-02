@@ -11,29 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests of {@link ToolchainInfo}. */
-@RunWith(JUnit4.class)
-public class ToolchainInfoTest extends BuildViewTestCase {
-
-  @Test
-  public void toolchainInfoConstructor() throws Exception {
-    scratch.file(
-        "test/toolchain/my_toolchain.bzl",
-        """
+/** Tests of [ToolchainInfo].  */
+@RunWith(JUnit4::class)
+class ToolchainInfoTest : BuildViewTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun toolchainInfoConstructor() {
+        scratch.file(
+            "test/toolchain/my_toolchain.bzl",
+            """
         def _impl(ctx):
             toolchain = platform_common.ToolchainInfo(
                 extra_label = ctx.attr.extra_label,
@@ -48,10 +40,12 @@ public class ToolchainInfoTest extends BuildViewTestCase {
                 "extra_str": attr.string(),
             },
         )
-        """);
-    scratch.file(
-        "test/toolchain/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/toolchain/BUILD",
+            """
         load("//test/toolchain:my_toolchain.bzl", "my_toolchain")
 
         toolchain_type(name = "my_toolchain_type")
@@ -63,31 +57,33 @@ public class ToolchainInfoTest extends BuildViewTestCase {
             extra_label = ":dep",
             extra_str = "foo",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget toolchain = getConfiguredTarget("//test/toolchain:toolchain");
-    assertThat(toolchain).isNotNull();
+        val toolchain: ConfiguredTarget? = getConfiguredTarget("//test/toolchain:toolchain")
+        assertThat(toolchain).isNotNull()
 
-    ToolchainInfo provider = PlatformProviderUtils.toolchain(toolchain);
-    assertThat(provider).isNotNull();
+        val provider: ToolchainInfo = PlatformProviderUtils.toolchain(toolchain)
+        assertThat(provider).isNotNull()
 
-    ConfiguredTarget extraLabel = (ConfiguredTarget) provider.getValue("extra_label");
-    assertThat(extraLabel).isNotNull();
-    assertThat(extraLabel.getLabel())
-        .isEqualTo(Label.parseCanonicalUnchecked("//test/toolchain:dep"));
-    assertThat(provider.getValue("extra_str")).isEqualTo("foo");
-  }
+        val extraLabel: ConfiguredTarget = provider.getValue("extra_label") as ConfiguredTarget
+        assertThat(extraLabel).isNotNull()
+        assertThat(extraLabel.getLabel())
+            .isEqualTo(Label.parseCanonicalUnchecked("//test/toolchain:dep"))
+        assertThat(provider.getValue("extra_str")).isEqualTo("foo")
+    }
 
-  @Test
-  public void toolchainInfo_equalsTester() {
-    new EqualsTester()
-        .addEqualityGroup(
-            // Base case.
-            new ToolchainInfo(ImmutableMap.of("foo", "val1", "bar", "val2")),
-            new ToolchainInfo(ImmutableMap.of("foo", "val1", "bar", "val2")))
-        .addEqualityGroup(
-            // Different data.
-            new ToolchainInfo(ImmutableMap.of("foo", "val1", "bar", "val3")))
-        .testEquals();
-  }
+    @Test
+    fun toolchainInfo_equalsTester() {
+        EqualsTester()
+            .addEqualityGroup( // Base case.
+                ToolchainInfo(ImmutableMap.of<K?, V?>("foo", "val1", "bar", "val2")),
+                ToolchainInfo(ImmutableMap.of<K?, V?>("foo", "val1", "bar", "val2"))
+            )
+            .addEqualityGroup( // Different data.
+                ToolchainInfo(ImmutableMap.of<K?, V?>("foo", "val1", "bar", "val3"))
+            )
+            .testEquals()
+    }
 }

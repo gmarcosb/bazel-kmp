@@ -11,50 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.actions;
+package com.google.devtools.build.lib.analysis.actions
 
-import com.google.common.io.ByteSource;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
+import com.google.devtools.build.lib.actions.Action
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class BinaryFileWriteActionTest : FileWriteActionTestCase() {
+    override fun createAction(
+        actionOwner: ActionOwner?, outputArtifact: Artifact?, data: String, makeExecutable: Boolean
+    ): Action? {
+        return BinaryFileWriteAction(
+            actionOwner, outputArtifact,
+            com.google.common.io.ByteSource.wrap(data.getBytes(java.nio.charset.StandardCharsets.UTF_8)), makeExecutable
+        )
+    }
 
-import java.nio.charset.StandardCharsets;
+    @org.junit.Test
+    fun testNoInputs() {
+        checkNoInputsByDefault()
+    }
 
-@RunWith(JUnit4.class)
-public class BinaryFileWriteActionTest extends FileWriteActionTestCase {
-  @Override
-  protected Action createAction(
-      ActionOwner actionOwner, Artifact outputArtifact, String data, boolean makeExecutable) {
-    return new BinaryFileWriteAction(actionOwner, outputArtifact,
-        ByteSource.wrap(data.getBytes(StandardCharsets.UTF_8)), makeExecutable);
-  }
+    @org.junit.Test
+    fun testDestinationArtifactIsOutput() {
+        checkDestinationArtifactIsOutput()
+    }
 
-  @Test
-  public void testNoInputs() {
-    checkNoInputsByDefault();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCanWriteNonExecutableFile() {
+        checkCanWriteNonExecutableFile()
+    }
 
-  @Test
-  public void testDestinationArtifactIsOutput() {
-    checkDestinationArtifactIsOutput();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCanWriteExecutableFile() {
+        checkCanWriteExecutableFile()
+    }
 
-  @Test
-  public void testCanWriteNonExecutableFile() throws Exception {
-    checkCanWriteNonExecutableFile();
-  }
-
-  @Test
-  public void testCanWriteExecutableFile() throws Exception {
-    checkCanWriteExecutableFile();
-  }
-
-  @Test
-  public void testComputesConsistentKeys() throws Exception {
-    checkComputesConsistentKeys();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testComputesConsistentKeys() {
+        checkComputesConsistentKeys()
+    }
 }

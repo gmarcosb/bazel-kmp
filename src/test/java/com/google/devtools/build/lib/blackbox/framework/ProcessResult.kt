@@ -11,32 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.framework
 
-package com.google.devtools.build.lib.blackbox.framework;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.util.StringUtilities
 
-import com.google.auto.value.AutoValue;
-import com.google.devtools.build.lib.util.StringUtilities;
-import java.util.List;
-
-/** Result of the external process execution, see {@link ProcessRunner} */
+/** Result of the external process execution, see [ProcessRunner]  */
 @AutoValue
-public abstract class ProcessResult {
+abstract class ProcessResult {
+    abstract fun exitCode(): Int
 
-  static ProcessResult create(int exitCode, List<String> out, List<String> err) {
-    return new AutoValue_ProcessResult(exitCode, out, err);
-  }
+    abstract fun out(): MutableList<String?>?
 
-  abstract int exitCode();
+    abstract fun err(): MutableList<String?>?
 
-  abstract List<String> out();
+    fun outString(): String? {
+        return StringUtilities.joinLines(out())
+    }
 
-  abstract List<String> err();
+    fun errString(): String? {
+        return StringUtilities.joinLines(err())
+    }
 
-  public String outString() {
-    return StringUtilities.joinLines(out());
-  }
-
-  public String errString() {
-    return StringUtilities.joinLines(err());
-  }
+    companion object {
+        fun create(exitCode: Int, out: MutableList<String?>?, err: MutableList<String?>?): ProcessResult {
+            return AutoValue_ProcessResult(exitCode, out, err)
+        }
+    }
 }

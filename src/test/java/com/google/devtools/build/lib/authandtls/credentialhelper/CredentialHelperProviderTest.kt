@@ -11,298 +11,314 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls.credentialhelper
 
-package com.google.devtools.build.lib.authandtls.credentialhelper;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import org.junit.Test
+import java.net.URI
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [CredentialHelperProvider].  */
+@RunWith(JUnit4::class)
+class CredentialHelperProviderTest {
+    private val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.OutputStream;
-import java.net.URI;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link CredentialHelperProvider}. */
-@RunWith(JUnit4.class)
-public class CredentialHelperProviderTest {
-  private static final PathFragment DEFAULT_HELPER_PATH =
-      PathFragment.create("/path/to/default/helper");
-  private static final PathFragment EXAMPLE_COM_HELPER_PATH =
-      PathFragment.create("/path/to/example/com/helper");
-  private static final PathFragment EXAMPLE_COM_WILDCARD_HELPER_PATH =
-      PathFragment.create("/path/to/example/com/wildcard/helper");
-  private static final PathFragment SUB_EXAMPLE_COM_WILDCARD_HELPER_PATH =
-      PathFragment.create("/path/to/sub/example/com/wildcard/helper");
-
-  private final FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-
-  @Before
-  public void setUp() throws Exception {
-    setUpHelper(fileSystem.getPath(DEFAULT_HELPER_PATH));
-    setUpHelper(fileSystem.getPath(EXAMPLE_COM_HELPER_PATH));
-    setUpHelper(fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH));
-    setUpHelper(fileSystem.getPath(SUB_EXAMPLE_COM_WILDCARD_HELPER_PATH));
-  }
-
-  private void setUpHelper(Path path) throws Exception {
-    Preconditions.checkNotNull(path);
-
-    path.getParentDirectory().createDirectoryAndParents();
-    try (OutputStream stream = path.getOutputStream()) {
-      // Just create an empty file, nothing to do.
+    @Before
+    @Throws(Exception::class)
+    fun setUp() {
+        setUpHelper(fileSystem.getPath(DEFAULT_HELPER_PATH))
+        setUpHelper(fileSystem.getPath(EXAMPLE_COM_HELPER_PATH))
+        setUpHelper(fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH))
+        setUpHelper(fileSystem.getPath(SUB_EXAMPLE_COM_WILDCARD_HELPER_PATH))
     }
-    path.setExecutable(true);
-  }
 
-  @Test
-  public void noHelpersConfigured() {
-    CredentialHelperProvider provider = CredentialHelperProvider.builder().build();
+    @Throws(Exception::class)
+    private fun setUpHelper(path: Path?) {
+        Preconditions.checkNotNull<Any?>(path)
 
-    assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo"))).isEmpty();
-    assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo"))).isEmpty();
-    assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo"))).isEmpty();
-    assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo"))).isEmpty();
-    assertThat(provider.findCredentialHelper(URI.create("custom://example.com/foo"))).isEmpty();
+        path.getParentDirectory().createDirectoryAndParents()
+        path.getOutputStream().use { stream -> }
+        path.setExecutable(true)
+    }
 
-    assertThat(provider.findCredentialHelper(URI.create("https://subdomain.example.com/bar")))
-        .isEmpty();
-    assertThat(provider.findCredentialHelper(URI.create("https://other-domain.com"))).isEmpty();
-  }
+    @Test
+    fun noHelpersConfigured() {
+        val provider: CredentialHelperProvider = CredentialHelperProvider.builder().build()
 
-  @Test
-  public void uriWithoutHostComponent() throws Exception {
-    Path helper = fileSystem.getPath(EXAMPLE_COM_HELPER_PATH);
-    CredentialHelperProvider provider =
-        CredentialHelperProvider.builder().add("example.com", helper).build();
+        assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo"))).isEmpty()
+        assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo"))).isEmpty()
+        assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo"))).isEmpty()
+        assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo"))).isEmpty()
+        assertThat(provider.findCredentialHelper(URI.create("custom://example.com/foo"))).isEmpty()
 
-    assertThat(provider.findCredentialHelper(URI.create("unix:///path/to/socket"))).isEmpty();
-  }
+        assertThat(provider.findCredentialHelper(URI.create("https://subdomain.example.com/bar")))
+            .isEmpty()
+        assertThat(provider.findCredentialHelper(URI.create("https://other-domain.com"))).isEmpty()
+    }
 
-  @Test
-  public void onlyDefaultHelper() throws Exception {
-    Path helper = fileSystem.getPath(DEFAULT_HELPER_PATH);
-    CredentialHelperProvider provider = CredentialHelperProvider.builder().add(helper).build();
+    @Test
+    @Throws(Exception::class)
+    fun uriWithoutHostComponent() {
+        val helper: Path? = fileSystem.getPath(EXAMPLE_COM_HELPER_PATH)
+        val provider: CredentialHelperProvider =
+            CredentialHelperProvider.builder().add("example.com", helper).build()
 
-    assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
-        .isEqualTo(helper);
-    assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
-        .isEqualTo(helper);
-    assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
-        .isEqualTo(helper);
-    assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
-        .isEqualTo(helper);
-    assertThat(provider.findCredentialHelper(URI.create("unix:///tmp/grpc.sock")).get().getPath())
-        .isEqualTo(helper);
-    assertThat(
-            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath())
-        .isEqualTo(helper);
+        assertThat(provider.findCredentialHelper(URI.create("unix:///path/to/socket"))).isEmpty()
+    }
 
-    assertThat(
+    @Test
+    @Throws(Exception::class)
+    fun onlyDefaultHelper() {
+        val helper: Path? = fileSystem.getPath(DEFAULT_HELPER_PATH)
+        val provider: CredentialHelperProvider = CredentialHelperProvider.builder().add(helper).build()
+
+        assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
+            .isEqualTo(helper)
+        assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
+            .isEqualTo(helper)
+        assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
+            .isEqualTo(helper)
+        assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
+            .isEqualTo(helper)
+        assertThat(provider.findCredentialHelper(URI.create("unix:///tmp/grpc.sock")).get().getPath())
+            .isEqualTo(helper)
+        assertThat(
+            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath()
+        )
+            .isEqualTo(helper)
+
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(helper);
-    assertThat(
-            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath())
-        .isEqualTo(helper);
-  }
+                .getPath()
+        )
+            .isEqualTo(helper)
+        assertThat(
+            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath()
+        )
+            .isEqualTo(helper)
+    }
 
-  @Test
-  public void withHostHelpersAndDefaultFallback() throws Exception {
-    Path defaultHelper = fileSystem.getPath(DEFAULT_HELPER_PATH);
-    Path exampleComHelper = fileSystem.getPath(EXAMPLE_COM_HELPER_PATH);
-    CredentialHelperProvider provider =
-        CredentialHelperProvider.builder()
-            .add(defaultHelper)
-            .add("example.com", exampleComHelper)
-            .build();
+    @Test
+    @Throws(Exception::class)
+    fun withHostHelpersAndDefaultFallback() {
+        val defaultHelper: Path? = fileSystem.getPath(DEFAULT_HELPER_PATH)
+        val exampleComHelper: Path? = fileSystem.getPath(EXAMPLE_COM_HELPER_PATH)
+        val provider: CredentialHelperProvider =
+            CredentialHelperProvider.builder()
+                .add(defaultHelper)
+                .add("example.com", exampleComHelper)
+                .build()
 
-    assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(
-            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
+        assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(
+            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath()
+        )
+            .isEqualTo(exampleComHelper)
 
-    assertThat(
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(defaultHelper);
-    assertThat(
-            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath())
-        .isEqualTo(defaultHelper);
-    assertThat(provider.findCredentialHelper(URI.create("unix:///tmp/grpc.sock")).get().getPath())
-        .isEqualTo(defaultHelper);
-  }
+                .getPath()
+        )
+            .isEqualTo(defaultHelper)
+        assertThat(
+            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath()
+        )
+            .isEqualTo(defaultHelper)
+        assertThat(provider.findCredentialHelper(URI.create("unix:///tmp/grpc.sock")).get().getPath())
+            .isEqualTo(defaultHelper)
+    }
 
-  @Test
-  public void wildcardMatching() throws Exception {
-    Path defaultHelper = fileSystem.getPath(DEFAULT_HELPER_PATH);
-    Path exampleComWildcardHelper = fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH);
-    CredentialHelperProvider provider =
-        CredentialHelperProvider.builder()
-            .add(defaultHelper)
-            .add("*.example.com", exampleComWildcardHelper)
-            .build();
+    @Test
+    @Throws(Exception::class)
+    fun wildcardMatching() {
+        val defaultHelper: Path? = fileSystem.getPath(DEFAULT_HELPER_PATH)
+        val exampleComWildcardHelper: Path? = fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH)
+        val provider: CredentialHelperProvider =
+            CredentialHelperProvider.builder()
+                .add(defaultHelper)
+                .add("*.example.com", exampleComWildcardHelper)
+                .build()
 
-    assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
-            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComWildcardHelper);
+        assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
+            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
 
-    assertThat(
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain2.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://sub.subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
 
-    assertThat(
-            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath())
-        .isEqualTo(defaultHelper);
+        assertThat(
+            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath()
+        )
+            .isEqualTo(defaultHelper)
 
-    assertThat(provider.findCredentialHelper(URI.create("unix:///tmp/grpc.sock")).get().getPath())
-        .isEqualTo(defaultHelper);
-  }
+        assertThat(provider.findCredentialHelper(URI.create("unix:///tmp/grpc.sock")).get().getPath())
+            .isEqualTo(defaultHelper)
+    }
 
-  @Test
-  public void preferExactMatchOverWildcardMatching() throws Exception {
-    Path defaultHelper = fileSystem.getPath(DEFAULT_HELPER_PATH);
-    Path exampleComHelper = fileSystem.getPath(EXAMPLE_COM_HELPER_PATH);
-    Path exampleComWildcardHelper = fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH);
-    CredentialHelperProvider provider =
-        CredentialHelperProvider.builder()
-            .add(defaultHelper)
-            .add("example.com", exampleComHelper)
-            .add("*.example.com", exampleComWildcardHelper)
-            .build();
+    @Test
+    @Throws(Exception::class)
+    fun preferExactMatchOverWildcardMatching() {
+        val defaultHelper: Path? = fileSystem.getPath(DEFAULT_HELPER_PATH)
+        val exampleComHelper: Path? = fileSystem.getPath(EXAMPLE_COM_HELPER_PATH)
+        val exampleComWildcardHelper: Path? = fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH)
+        val provider: CredentialHelperProvider =
+            CredentialHelperProvider.builder()
+                .add(defaultHelper)
+                .add("example.com", exampleComHelper)
+                .add("*.example.com", exampleComWildcardHelper)
+                .build()
 
-    assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(
-            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath())
-        .isEqualTo(exampleComHelper);
+        assertThat(provider.findCredentialHelper(URI.create("http://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(provider.findCredentialHelper(URI.create("https://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(provider.findCredentialHelper(URI.create("grpc://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(provider.findCredentialHelper(URI.create("grpcs://example.com/foo")).get().getPath())
+            .isEqualTo(exampleComHelper)
+        assertThat(
+            provider.findCredentialHelper(URI.create("custom://example.com/foo")).get().getPath()
+        )
+            .isEqualTo(exampleComHelper)
 
-    assertThat(
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain2.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://sub.subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://subdomain.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
 
-    assertThat(
-            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath())
-        .isEqualTo(defaultHelper);
-  }
+        assertThat(
+            provider.findCredentialHelper(URI.create("https://other-domain.com")).get().getPath()
+        )
+            .isEqualTo(defaultHelper)
+    }
 
-  @Test
-  public void preferMostSpecificWildcardMatch() throws Exception {
-    Path exampleComWildcardHelper = fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH);
-    Path subExampleComWildcardHelper = fileSystem.getPath(SUB_EXAMPLE_COM_WILDCARD_HELPER_PATH);
-    CredentialHelperProvider provider =
-        CredentialHelperProvider.builder()
-            .add("*.example.com", exampleComWildcardHelper)
-            .add("*.sub.example.com", subExampleComWildcardHelper)
-            .build();
+    @Test
+    @Throws(Exception::class)
+    fun preferMostSpecificWildcardMatch() {
+        val exampleComWildcardHelper: Path? = fileSystem.getPath(EXAMPLE_COM_WILDCARD_HELPER_PATH)
+        val subExampleComWildcardHelper: Path? = fileSystem.getPath(SUB_EXAMPLE_COM_WILDCARD_HELPER_PATH)
+        val provider: CredentialHelperProvider =
+            CredentialHelperProvider.builder()
+                .add("*.example.com", exampleComWildcardHelper)
+                .add("*.sub.example.com", subExampleComWildcardHelper)
+                .build()
 
-    assertThat(provider.findCredentialHelper(URI.create("https://example.com/bar")).get().getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+        assertThat(provider.findCredentialHelper(URI.create("https://example.com/bar")).get().getPath())
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://foo.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://sub.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(subExampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(subExampleComWildcardHelper)
+        assertThat(
             provider
                 .findCredentialHelper(URI.create("https://foo.sub.example.com/bar"))
                 .get()
-                .getPath())
-        .isEqualTo(subExampleComWildcardHelper);
-  }
+                .getPath()
+        )
+            .isEqualTo(subExampleComWildcardHelper)
+    }
 
-  @Test
-  public void parentDomain() {
-    assertThat(CredentialHelperProvider.parentDomain("com")).isEmpty();
+    @Test
+    fun parentDomain() {
+        assertThat(CredentialHelperProvider.parentDomain("com")).isEmpty()
 
-    assertThat(CredentialHelperProvider.parentDomain("foo.example.com")).hasValue("example.com");
-    assertThat(CredentialHelperProvider.parentDomain("example.com")).hasValue("com");
+        assertThat(CredentialHelperProvider.parentDomain("foo.example.com")).hasValue("example.com")
+        assertThat(CredentialHelperProvider.parentDomain("example.com")).hasValue("com")
 
-    // Punycode URIs (münchen.de).
-    assertThat(CredentialHelperProvider.parentDomain("foo.xn--mnchen-3ya.de"))
-        .hasValue("xn--mnchen-3ya.de");
-    assertThat(CredentialHelperProvider.parentDomain("bar.foo.xn--mnchen-3ya.de"))
-        .hasValue("foo.xn--mnchen-3ya.de");
-    assertThat(CredentialHelperProvider.parentDomain("xn--mnchen-3ya.de")).hasValue("de");
-  }
+        // Punycode URIs (münchen.de).
+        assertThat(CredentialHelperProvider.parentDomain("foo.xn--mnchen-3ya.de"))
+            .hasValue("xn--mnchen-3ya.de")
+        assertThat(CredentialHelperProvider.parentDomain("bar.foo.xn--mnchen-3ya.de"))
+            .hasValue("foo.xn--mnchen-3ya.de")
+        assertThat(CredentialHelperProvider.parentDomain("xn--mnchen-3ya.de")).hasValue("de")
+    }
+
+    companion object {
+        private val DEFAULT_HELPER_PATH: PathFragment? = PathFragment.create("/path/to/default/helper")
+        private val EXAMPLE_COM_HELPER_PATH: PathFragment? = PathFragment.create("/path/to/example/com/helper")
+        private val EXAMPLE_COM_WILDCARD_HELPER_PATH: PathFragment? =
+            PathFragment.create("/path/to/example/com/wildcard/helper")
+        private val SUB_EXAMPLE_COM_WILDCARD_HELPER_PATH: PathFragment? =
+            PathFragment.create("/path/to/sub/example/com/wildcard/helper")
+    }
 }

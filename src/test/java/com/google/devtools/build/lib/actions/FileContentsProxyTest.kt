@@ -11,103 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.util.Fingerprint
 
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [FileContentsProxy].  */
+@RunWith(JUnit4::class)
+class FileContentsProxyTest {
+    /** A simple implementation of FileStatus for testing.  */
+    private class InjectedStat : FileStatus {
+        private val mtime: Long
+        private val ctime: Long
+        private val size: Long
+        private val nodeId: Long
 
-/** Tests for {@link FileContentsProxy}. */
-@RunWith(JUnit4.class)
-public class FileContentsProxyTest {
-  /** A simple implementation of FileStatus for testing. */
-  private static final class InjectedStat implements FileStatus {
-    private final long mtime;
-    private final long ctime;
-    private final long size;
-    private final long nodeId;
+        internal constructor(mtime: Long, ctime: Long, size: Long, nodeId: Long) {
+            this.mtime = mtime
+            this.ctime = ctime
+            this.size = size
+            this.nodeId = nodeId
+        }
 
-    InjectedStat(long mtime, long ctime, long size, long nodeId) {
-      this.mtime = mtime;
-      this.ctime = ctime;
-      this.size = size;
-      this.nodeId = nodeId;
+        internal constructor(ctime: Long, nodeId: Long) {
+            this.ctime = ctime
+            this.mtime = ctime
+            this.nodeId = nodeId
+            this.size = 0
+        }
+
+        public override fun isFile(): Boolean {
+            return true
+        }
+
+        public override fun isSpecialFile(): Boolean {
+            return false
+        }
+
+        public override fun isDirectory(): Boolean {
+            return false
+        }
+
+        public override fun isSymbolicLink(): Boolean {
+            return false
+        }
+
+        public override fun getSize(): Long {
+            return size
+        }
+
+        public override fun getLastModifiedTime(): Long {
+            return mtime
+        }
+
+        public override fun getLastChangeTime(): Long {
+            return ctime
+        }
+
+        public override fun getNodeId(): Long {
+            return nodeId
+        }
     }
 
-    InjectedStat(long ctime, long nodeId) {
-      this.ctime = ctime;
-      this.mtime = ctime;
-      this.nodeId = nodeId;
-      this.size = 0;
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun equalsAndHashCode() {
+        EqualsTester()
+            .addEqualityGroup(
+                FileContentsProxy.create(InjectedStat(1L, 2L)),
+                FileContentsProxy.create(InjectedStat(1L, 2L))
+            )
+            .addEqualityGroup(FileContentsProxy.create(InjectedStat(1L, 4L)))
+            .addEqualityGroup(FileContentsProxy.create(InjectedStat(3L, 4L)))
+            .addEqualityGroup(FileContentsProxy.create(InjectedStat(-1L, -1L)))
+            .testEquals()
     }
 
-    @Override
-    public boolean isFile() {
-      return true;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun fingerprint() {
+        val p1: FileContentsProxy =
+            FileContentsProxy.create(
+                InjectedStat( /*mtime=*/1,  /*ctime=*/2,  /*size=*/3,  /*nodeId=*/4)
+            )
+        val fingerprint: Fingerprint = Fingerprint()
+        p1.addToFingerprint(fingerprint)
+        assertThat(fingerprint.digestAndReset())
+            .isEqualTo(Fingerprint().addLong(2L).addLong(1L).addLong(4L).digestAndReset())
     }
-
-    @Override
-    public boolean isSpecialFile() {
-      return false;
-    }
-
-    @Override
-    public boolean isDirectory() {
-      return false;
-    }
-
-    @Override
-    public boolean isSymbolicLink() {
-      return false;
-    }
-
-    @Override
-    public long getSize() {
-      return size;
-    }
-
-    @Override
-    public long getLastModifiedTime() {
-      return mtime;
-    }
-
-    @Override
-    public long getLastChangeTime() {
-      return ctime;
-    }
-
-    @Override
-    public long getNodeId() {
-      return nodeId;
-    }
-  }
-
-  @Test
-  public void equalsAndHashCode() throws IOException {
-    new EqualsTester()
-        .addEqualityGroup(
-            FileContentsProxy.create(new InjectedStat(1L, 2L)),
-            FileContentsProxy.create(new InjectedStat(1L, 2L)))
-        .addEqualityGroup(FileContentsProxy.create(new InjectedStat(1L, 4L)))
-        .addEqualityGroup(FileContentsProxy.create(new InjectedStat(3L, 4L)))
-        .addEqualityGroup(FileContentsProxy.create(new InjectedStat(-1L, -1L)))
-        .testEquals();
-  }
-
-  @Test
-  public void fingerprint() throws Exception {
-    FileContentsProxy p1 =
-        FileContentsProxy.create(
-            new InjectedStat(/*mtime=*/1, /*ctime=*/2, /*size=*/3, /*nodeId=*/4));
-    Fingerprint fingerprint = new Fingerprint();
-    p1.addToFingerprint(fingerprint);
-    assertThat(fingerprint.digestAndReset())
-        .isEqualTo(new Fingerprint().addLong(2L).addLong(1L).addLong(4L).digestAndReset());
-  }
 }

@@ -11,298 +11,280 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.actions;
+package com.google.devtools.build.lib.analysis.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ActionInputMap;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationDepsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.testing.vfs.SpiedFileSystem;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SymlinkTargetType;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests [SymlinkAction].  */
+@RunWith(TestParameterInjector::class)
+class SymlinkActionTest : BuildViewTestCase() {
+    private var executor: Executor? = null
+    private var fs: SpiedFileSystem? = null
 
-/** Tests {@link SymlinkAction}. */
-@RunWith(TestParameterInjector.class)
-public class SymlinkActionTest extends BuildViewTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        executor = TestExecutorBuilder(fileSystem, directories).build()
+    }
 
-  private Executor executor;
-  private SpiedFileSystem fs;
+    public override fun createFileSystem(): FileSystem? {
+        fs = SpiedFileSystem.createInMemorySpy()
+        return fs
+    }
 
-  @Before
-  public void setUp() throws Exception {
-    executor = new TestExecutorBuilder(fileSystem, directories).build();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinkToSourceFile(@TestParameter useExecRootForSource: Boolean) {
+        val inputArtifact: Artifact = getSourceArtifact("input")
+        val outputArtifact: Artifact = getBinArtifactWithNoOwner("output")
 
-  @Override
-  public FileSystem createFileSystem() {
-    fs = SpiedFileSystem.createInMemorySpy();
-    return fs;
-  }
+        val inputPath: Path = directories.getExecRoot(TestConstants.WORKSPACE_NAME).getRelative("input")
+        inputPath.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(inputPath)
+        inputArtifact.getPath().createSymbolicLink(inputPath)
+        outputArtifact.getPath().getParentDirectory().createDirectoryAndParents()
 
-  @Test
-  public void testSymlinkToSourceFile(@TestParameter boolean useExecRootForSource)
-      throws Exception {
-    Artifact inputArtifact = getSourceArtifact("input");
-    Artifact outputArtifact = getBinArtifactWithNoOwner("output");
+        runSymlinkAction(inputArtifact, outputArtifact, useExecRootForSource)
 
-    Path inputPath = directories.getExecRoot(TestConstants.WORKSPACE_NAME).getRelative("input");
-    inputPath.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(inputPath);
-    inputArtifact.getPath().createSymbolicLink(inputPath);
-    outputArtifact.getPath().getParentDirectory().createDirectoryAndParents();
+        val expectedTarget: PathFragment? =
+            if (useExecRootForSource)
+                getExecRoot().getRelative(inputArtifact.getExecPath()).asFragment()
+            else
+                inputArtifact.getPath().asFragment()
 
-    runSymlinkAction(inputArtifact, outputArtifact, useExecRootForSource);
+        assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue()
+        assertThat(outputArtifact.getPath().readSymbolicLink()).isEqualTo(expectedTarget)
 
-    PathFragment expectedTarget =
-        useExecRootForSource
-            ? getExecRoot().getRelative(inputArtifact.getExecPath()).asFragment()
-            : inputArtifact.getPath().asFragment();
+        Mockito.verify<SpiedFileSystem?>(fs)
+            .createSymbolicLink(
+                outputArtifact.getPath().asFragment(), expectedTarget, SymlinkTargetType.FILE
+            )
+    }
 
-    assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue();
-    assertThat(outputArtifact.getPath().readSymbolicLink()).isEqualTo(expectedTarget);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinkToSourceDirectory(@TestParameter useExecRootForSource: Boolean) {
+        val inputArtifact: Artifact = getSourceArtifact("input")
+        val outputArtifact: Artifact = getBinArtifactWithNoOwner("output")
 
-    verify(fs)
-        .createSymbolicLink(
-            outputArtifact.getPath().asFragment(), expectedTarget, SymlinkTargetType.FILE);
-  }
+        val inputPath: Path = directories.getExecRoot(TestConstants.WORKSPACE_NAME).getRelative("input")
+        inputPath.createDirectoryAndParents()
+        inputArtifact.getPath().createSymbolicLink(inputPath)
+        outputArtifact.getPath().getParentDirectory().createDirectoryAndParents()
 
-  @Test
-  public void testSymlinkToSourceDirectory(@TestParameter boolean useExecRootForSource)
-      throws Exception {
-    Artifact inputArtifact = getSourceArtifact("input");
-    Artifact outputArtifact = getBinArtifactWithNoOwner("output");
+        runSymlinkAction(inputArtifact, outputArtifact, useExecRootForSource)
 
-    Path inputPath = directories.getExecRoot(TestConstants.WORKSPACE_NAME).getRelative("input");
-    inputPath.createDirectoryAndParents();
-    inputArtifact.getPath().createSymbolicLink(inputPath);
-    outputArtifact.getPath().getParentDirectory().createDirectoryAndParents();
+        val expectedTarget: PathFragment? =
+            if (useExecRootForSource)
+                getExecRoot().getRelative(inputArtifact.getExecPath()).asFragment()
+            else
+                inputArtifact.getPath().asFragment()
 
-    runSymlinkAction(inputArtifact, outputArtifact, useExecRootForSource);
+        assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue()
+        assertThat(outputArtifact.getPath().readSymbolicLink()).isEqualTo(expectedTarget)
 
-    PathFragment expectedTarget =
-        useExecRootForSource
-            ? getExecRoot().getRelative(inputArtifact.getExecPath()).asFragment()
-            : inputArtifact.getPath().asFragment();
+        Mockito.verify<SpiedFileSystem?>(fs)
+            .createSymbolicLink(
+                outputArtifact.getPath().asFragment(), expectedTarget, SymlinkTargetType.DIRECTORY
+            )
+    }
 
-    assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue();
-    assertThat(outputArtifact.getPath().readSymbolicLink()).isEqualTo(expectedTarget);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinkToOutputFile() {
+        val inputArtifact: Artifact = getBinArtifactWithNoOwner("input")
+        val outputArtifact: Artifact = getBinArtifactWithNoOwner("output")
 
-    verify(fs)
-        .createSymbolicLink(
-            outputArtifact.getPath().asFragment(), expectedTarget, SymlinkTargetType.DIRECTORY);
-  }
+        inputArtifact.getPath().getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContent(inputArtifact.getPath(), java.nio.charset.StandardCharsets.UTF_8, "hello world")
+        outputArtifact.getPath().getParentDirectory().createDirectoryAndParents()
 
-  @Test
-  public void testSymlinkToOutputFile() throws Exception {
-    Artifact inputArtifact = getBinArtifactWithNoOwner("input");
-    Artifact outputArtifact = getBinArtifactWithNoOwner("output");
+        runSymlinkAction(inputArtifact, outputArtifact)
 
-    inputArtifact.getPath().getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContent(inputArtifact.getPath(), UTF_8, "hello world");
-    outputArtifact.getPath().getParentDirectory().createDirectoryAndParents();
+        assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue()
+        assertThat(outputArtifact.getPath().readSymbolicLink())
+            .isEqualTo(inputArtifact.getPath().asFragment())
 
-    runSymlinkAction(inputArtifact, outputArtifact);
+        Mockito.verify<SpiedFileSystem?>(fs)
+            .createSymbolicLink(
+                outputArtifact.getPath().asFragment(),
+                inputArtifact.getPath().asFragment(),
+                SymlinkTargetType.FILE
+            )
+    }
 
-    assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue();
-    assertThat(outputArtifact.getPath().readSymbolicLink())
-        .isEqualTo(inputArtifact.getPath().asFragment());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinkToOutputTree() {
+        val inputArtifact: Artifact =
+            createTreeArtifactWithGeneratingAction(
+                getTargetConfiguration().getBinDir(), "input"
+            )
+        val outputArtifact: Artifact =
+            createTreeArtifactWithGeneratingAction(
+                getTargetConfiguration().getBinDir(), "output"
+            )
 
-    verify(fs)
-        .createSymbolicLink(
-            outputArtifact.getPath().asFragment(),
-            inputArtifact.getPath().asFragment(),
-            SymlinkTargetType.FILE);
-  }
+        inputArtifact.getPath().createDirectoryAndParents()
+        outputArtifact.getPath().createDirectoryAndParents()
 
-  @Test
-  public void testSymlinkToOutputTree() throws Exception {
-    Artifact inputArtifact =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(
-            getTargetConfiguration().getBinDir(), "input");
-    Artifact outputArtifact =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(
-            getTargetConfiguration().getBinDir(), "output");
+        runSymlinkAction(inputArtifact, outputArtifact)
 
-    inputArtifact.getPath().createDirectoryAndParents();
-    outputArtifact.getPath().createDirectoryAndParents();
+        assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue()
+        assertThat(outputArtifact.getPath().readSymbolicLink())
+            .isEqualTo(inputArtifact.getPath().asFragment())
 
-    runSymlinkAction(inputArtifact, outputArtifact);
+        Mockito.verify<SpiedFileSystem?>(fs)
+            .createSymbolicLink(
+                outputArtifact.getPath().asFragment(),
+                inputArtifact.getPath().asFragment(),
+                SymlinkTargetType.DIRECTORY
+            )
+    }
 
-    assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue();
-    assertThat(outputArtifact.getPath().readSymbolicLink())
-        .isEqualTo(inputArtifact.getPath().asFragment());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinkToAbsolutePath() {
+        val outputArtifact: Artifact = getBinArtifactWithNoOwner("output")
 
-    verify(fs)
-        .createSymbolicLink(
-            outputArtifact.getPath().asFragment(),
-            inputArtifact.getPath().asFragment(),
-            SymlinkTargetType.DIRECTORY);
-  }
+        outputArtifact.getPath().getParentDirectory().createDirectoryAndParents()
 
-  @Test
-  public void testSymlinkToAbsolutePath() throws Exception {
-    Artifact outputArtifact = getBinArtifactWithNoOwner("output");
+        runSymlinkAction(PathFragment.create("/some/path"), outputArtifact)
 
-    outputArtifact.getPath().getParentDirectory().createDirectoryAndParents();
+        assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue()
+        assertThat(outputArtifact.getPath().readSymbolicLink())
+            .isEqualTo(PathFragment.create("/some/path"))
 
-    runSymlinkAction(PathFragment.create("/some/path"), outputArtifact);
+        Mockito.verify<SpiedFileSystem?>(fs)
+            .createSymbolicLink(
+                outputArtifact.getPath().asFragment(),
+                PathFragment.create("/some/path"),
+                SymlinkTargetType.UNSPECIFIED
+            )
+    }
 
-    assertThat(outputArtifact.getPath().isSymbolicLink()).isTrue();
-    assertThat(outputArtifact.getPath().readSymbolicLink())
-        .isEqualTo(PathFragment.create("/some/path"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec(@TestParameter useExecRootForSource: Boolean) {
+        val inputArtifact: Artifact = getSourceArtifact("input")
+        val outputArtifact: Artifact.DerivedArtifact = getBinArtifactWithNoOwner("output")
+        outputArtifact.setGeneratingActionKey(ActionsTestUtil.Companion.NULL_ACTION_LOOKUP_DATA)
 
-    verify(fs)
-        .createSymbolicLink(
-            outputArtifact.getPath().asFragment(),
-            PathFragment.create("/some/path"),
-            SymlinkTargetType.UNSPECIFIED);
-  }
+        val action: SymlinkAction? =
+            SymlinkAction.toArtifact(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                inputArtifact,
+                outputArtifact,
+                "Test symlink action",
+                useExecRootForSource
+            )
 
-  @Test
-  public void testCodec(@TestParameter boolean useExecRootForSource) throws Exception {
-    Artifact inputArtifact = getSourceArtifact("input");
-    Artifact.DerivedArtifact outputArtifact = getBinArtifactWithNoOwner("output");
-    outputArtifact.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
+        SerializationTester(action)
+            .addDependency(FileSystem::class.java, scratch.getFileSystem())
+            .addDependency(Root.RootCodecDependencies::class.java, RootCodecDependencies(root))
+            .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
+            .setVerificationFunction(
+                { `in`, out ->
+                    val inAction: SymlinkAction = `in` as SymlinkAction
+                    val outAction: SymlinkAction = out as SymlinkAction
+                    assertThat(inAction.getPrimaryInput().getFilename())
+                        .isEqualTo(outAction.getPrimaryInput().getFilename())
+                    assertThat(inAction.getPrimaryOutput().getFilename())
+                        .isEqualTo(outAction.getPrimaryOutput().getFilename())
+                    assertThat(inAction.getOwner()).isEqualTo(outAction.getOwner())
+                    assertThat(inAction.getProgressMessage()).isEqualTo(outAction.getProgressMessage())
+                })
+            .runTests()
+    }
 
-    SymlinkAction action =
-        SymlinkAction.toArtifact(
-            NULL_ACTION_OWNER,
-            inputArtifact,
-            outputArtifact,
-            "Test symlink action",
-            useExecRootForSource);
+    @Throws(java.lang.Exception::class)
+    private fun runSymlinkAction(
+        inputArtifact: Artifact?, outputArtifact: Artifact?, useExecRootForSource: Boolean
+    ) {
+        val action: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            SymlinkAction.toArtifact(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                inputArtifact,
+                outputArtifact,
+                "Test symlink action",
+                useExecRootForSource
+            )
 
-    new SerializationTester(action)
-        .addDependency(FileSystem.class, scratch.getFileSystem())
-        .addDependency(Root.RootCodecDependencies.class, new Root.RootCodecDependencies(root))
-        .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
-        .setVerificationFunction(
-            (in, out) -> {
-              SymlinkAction inAction = (SymlinkAction) in;
-              SymlinkAction outAction = (SymlinkAction) out;
-              assertThat(inAction.getPrimaryInput().getFilename())
-                  .isEqualTo(outAction.getPrimaryInput().getFilename());
-              assertThat(inAction.getPrimaryOutput().getFilename())
-                  .isEqualTo(outAction.getPrimaryOutput().getFilename());
-              assertThat(inAction.getOwner()).isEqualTo(outAction.getOwner());
-              assertThat(inAction.getProgressMessage()).isEqualTo(outAction.getProgressMessage());
-            })
-        .runTests();
-  }
+        assertThat(action.getInputs().toList()).containsExactly(inputArtifact)
+        assertThat(action.getOutputs()).containsExactly(outputArtifact)
+        assertThat(action.getProgressMessage()).isEqualTo("Test symlink action")
 
-  private void runSymlinkAction(
-      Artifact inputArtifact, Artifact outputArtifact, boolean useExecRootForSource)
-      throws Exception {
-    var action =
-        SymlinkAction.toArtifact(
-            NULL_ACTION_OWNER,
-            inputArtifact,
-            outputArtifact,
-            "Test symlink action",
-            useExecRootForSource);
+        execute(action)
+    }
 
-    assertThat(action.getInputs().toList()).containsExactly(inputArtifact);
-    assertThat(action.getOutputs()).containsExactly(outputArtifact);
-    assertThat(action.getProgressMessage()).isEqualTo("Test symlink action");
+    @Throws(java.lang.Exception::class)
+    private fun runSymlinkAction(inputArtifact: Artifact?, outputArtifact: Artifact?) {
+        val action: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            SymlinkAction.toArtifact(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                inputArtifact,
+                outputArtifact,
+                "Test symlink action",  /* useExecRootForSource= */
+                false
+            )
 
-    execute(action);
-  }
+        assertThat(action.getInputs().toList()).containsExactly(inputArtifact)
+        assertThat(action.getOutputs()).containsExactly(outputArtifact)
+        assertThat(action.getProgressMessage()).isEqualTo("Test symlink action")
 
-  private void runSymlinkAction(Artifact inputArtifact, Artifact outputArtifact) throws Exception {
-    var action =
-        SymlinkAction.toArtifact(
-            NULL_ACTION_OWNER,
-            inputArtifact,
-            outputArtifact,
-            "Test symlink action",
-            /* useExecRootForSource= */ false);
+        execute(action)
+    }
 
-    assertThat(action.getInputs().toList()).containsExactly(inputArtifact);
-    assertThat(action.getOutputs()).containsExactly(outputArtifact);
-    assertThat(action.getProgressMessage()).isEqualTo("Test symlink action");
+    @Throws(java.lang.Exception::class)
+    private fun runSymlinkAction(absolutePath: PathFragment?, outputArtifact: Artifact?) {
+        val action: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            SymlinkAction.toAbsolutePath(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER, absolutePath, outputArtifact, "Test symlink action"
+            )
 
-    execute(action);
-  }
+        assertThat(action.getInputs().toList()).isEmpty()
+        assertThat(action.getOutputs()).containsExactly(outputArtifact)
+        assertThat(action.getProgressMessage()).isEqualTo("Test symlink action")
 
-  private void runSymlinkAction(PathFragment absolutePath, Artifact outputArtifact)
-      throws Exception {
-    var action =
-        SymlinkAction.toAbsolutePath(
-            NULL_ACTION_OWNER, absolutePath, outputArtifact, "Test symlink action");
+        execute(action)
+    }
 
-    assertThat(action.getInputs().toList()).isEmpty();
-    assertThat(action.getOutputs()).containsExactly(outputArtifact);
-    assertThat(action.getProgressMessage()).isEqualTo("Test symlink action");
-
-    execute(action);
-  }
-
-  private void execute(SymlinkAction action) throws Exception {
-    ActionResult actionResult =
-        action.execute(
-            new ActionExecutionContext(
-                executor,
-                createInputMetadataProvider(action.getInputs().toList()),
-                ActionInputPrefetcher.NONE,
-                actionKeyContext,
-                mock(OutputMetadataStore.class),
-                /* rewindingEnabled= */ false,
-                LostInputsCheck.NONE,
-                /* fileOutErr= */ null,
-                new StoredEventHandler(),
-                /* clientEnv= */ ImmutableMap.of(),
-                /* actionFileSystem= */ null,
+    @Throws(java.lang.Exception::class)
+    private fun execute(action: SymlinkAction) {
+        val actionResult: ActionResult =
+            action.execute(
+                ActionExecutionContext(
+                    executor,
+                    createInputMetadataProvider(action.getInputs().toList()),
+                    ActionInputPrefetcher.NONE,
+                    actionKeyContext,
+                    < T > mock < T ? > (OutputMetadataStore::class.java),  /* rewindingEnabled= */
+                false,
+                LostInputsCheck.NONE,  /* fileOutErr= */
+                null,
+                StoredEventHandler(),  /* clientEnv= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* actionFileSystem= */
+                null,
                 DiscoveredModulesPruner.DEFAULT,
                 SyscallCache.NO_CACHE,
-                ThreadStateReceiver.NULL_INSTANCE));
+                ThreadStateReceiver.NULL_INSTANCE
+            ))
 
-    assertThat(actionResult.spawnResults()).isEmpty();
-  }
-
-  private static InputMetadataProvider createInputMetadataProvider(Iterable<Artifact> inputs)
-      throws IOException {
-    ActionInputMap inputMap = new ActionInputMap(1);
-    for (Artifact input : inputs) {
-      if (input.isTreeArtifact()) {
-        inputMap.putTreeArtifact(input, TreeArtifactValue.empty());
-      } else {
-        inputMap.put(input, FileArtifactValue.createForTesting(input));
-      }
+        assertThat(actionResult.spawnResults()).isEmpty()
     }
-    return inputMap;
-  }
+
+    companion object {
+        @Throws(IOException::class)
+        private fun createInputMetadataProvider(inputs: Iterable<Artifact>): InputMetadataProvider {
+            val inputMap: ActionInputMap = ActionInputMap(1)
+            for (input in inputs) {
+                if (input.isTreeArtifact()) {
+                    inputMap.putTreeArtifact(input, TreeArtifactValue.empty())
+                } else {
+                    inputMap.put(input, FileArtifactValue.createForTesting(input))
+                }
+            }
+            return inputMap
+        }
+    }
 }

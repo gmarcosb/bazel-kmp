@@ -11,68 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.util.RegexFilter
 
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.util.RegexFilter;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** A test for [PerLabelOptions].  */
+@RunWith(JUnit4::class)
+class PerLabelOptionsTest {
+    private var options: PerLabelOptions? = null
 
-/** A test for {@link PerLabelOptions}. */
-@RunWith(JUnit4.class)
-public class PerLabelOptionsTest {
-  private PerLabelOptions options = null;
+    @Throws(OptionsParsingException::class)
+    private fun createOptions(string: String?): PerLabelOptions? {
+        options = PerLabelOptionsConverter().convert(string)
+        return options
+    }
 
-  private PerLabelOptions createOptions(String string) throws OptionsParsingException {
-    options = new PerLabelOptions.PerLabelOptionsConverter().convert(string);
-    return options;
-  }
+    @Throws(OptionsParsingException::class)
+    private fun assertRegexParsing(filter: String?) {
+        val regexFilter: RegexFilter = RegexFilterConverter().convert(filter)
+        assertThat(options.getRegexFilter().toString()).isEqualTo(regexFilter.toString())
+    }
 
-  private void assertRegexParsing(String filter) throws OptionsParsingException {
-    RegexFilter regexFilter = new RegexFilter.RegexFilterConverter().convert(filter);
-    assertThat(options.getRegexFilter().toString()).isEqualTo(regexFilter.toString());
-  }
+    @Throws(OptionsParsingException::class)
+    private fun assertOptions(pattern: String?, opts: String?, expectedOptions: MutableList<String?>?) {
+        createOptions(pattern + "@" + opts)
+        assertRegexParsing(pattern)
+        assertThat(options.options).isNotNull()
+        assertThat(options.options).isEqualTo(expectedOptions)
+    }
 
-  private void assertOptions(String pattern, String opts, List<String> expectedOptions)
-      throws OptionsParsingException {
-    createOptions(pattern + "@" + opts);
-    assertRegexParsing(pattern);
-    assertThat(options.options).isNotNull();
-    assertThat(options.options).isEqualTo(expectedOptions);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmpty() {
+        createOptions("")
+        assertRegexParsing("")
+        assertThat(options.options).isEmpty()
+    }
 
-  @Test
-  public void testEmpty() throws Exception {
-    createOptions("");
-    assertRegexParsing("");
-    assertThat(options.options).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsing() {
+        assertOptions("", "", Collections.emptyList<String?>())
+        assertOptions("", ", ,\t,", Collections.emptyList<String?>())
+        assertOptions("a/b,+^c,_test$", ", ,\t,", Collections.emptyList<String?>())
+        assertOptions("a/b,+^c,_test$", "", Collections.emptyList<String?>())
+        assertOptions("a/b,+^c,_test$", "-g,-O0", java.util.Arrays.asList<String?>("-g", "-O0"))
+        assertOptions("a/b,+^c,_test$", "-g@,-O0", java.util.Arrays.asList<String?>("-g@", "-O0"))
+        assertOptions("a/b,+^c,_test$", "-g\\,,-O0", java.util.Arrays.asList<String?>("-g,", "-O0"))
+        assertOptions("a/b,+^c,_test$", "-g\\,,,,,-O0,,,@,", java.util.Arrays.asList<String?>("-g,", "-O0", "@"))
+    }
 
-  @Test
-  public void testParsing() throws Exception {
-    assertOptions("", "", Collections.<String> emptyList());
-    assertOptions("", ", ,\t,", Collections.<String> emptyList());
-    assertOptions("a/b,+^c,_test$", ", ,\t,", Collections.<String> emptyList());
-    assertOptions("a/b,+^c,_test$", "", Collections.<String> emptyList());
-    assertOptions("a/b,+^c,_test$", "-g,-O0", Arrays.asList("-g", "-O0"));
-    assertOptions("a/b,+^c,_test$", "-g@,-O0", Arrays.asList("-g@", "-O0"));
-    assertOptions("a/b,+^c,_test$", "-g\\,,-O0", Arrays.asList("-g,", "-O0"));
-    assertOptions("a/b,+^c,_test$", "-g\\,,,,,-O0,,,@,", Arrays.asList("-g,", "-O0", "@"));
-  }
-
-  @Test
-  public void testEquals() throws Exception {
-    new EqualsTester()
-        .addEqualityGroup(createOptions("a/b,+^c,_test$@-g,-O0"),
-            createOptions("a/b,+^c,_test$@-g,-O0"))
-        .addEqualityGroup(createOptions("a/b,+^c,_test$@-O0"))
-        .testEquals();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEquals() {
+        EqualsTester()
+            .addEqualityGroup(
+                createOptions("a/b,+^c,_test$@-g,-O0"),
+                createOptions("a/b,+^c,_test$@-g,-O0")
+            )
+            .addEqualityGroup(createOptions("a/b,+^c,_test$@-O0"))
+            .testEquals()
+    }
 }

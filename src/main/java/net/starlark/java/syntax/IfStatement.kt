@@ -11,82 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.collect.ImmutableList;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.common.collect.ImmutableList
 
-/** Syntax node for an if or elif statement. */
-public final class IfStatement extends Statement {
+/** Syntax node for an if or elif statement.  */
+class IfStatement internal constructor(
+    locs: FileLocations?,
+    token: TokenKind?,
+    ifOffset: Int,
+    condition: Expression,
+    thenBlock: MutableList<Statement?>
+) : Statement(locs, Kind.IF) {
+    private val token: TokenKind? // IF or ELIF
+    private val ifOffset: Int
+    private val condition: Expression
 
-  private final TokenKind token; // IF or ELIF
-  private final int ifOffset;
-  private final Expression condition;
-  // These blocks may be non-null but empty after a misparse:
-  private final ImmutableList<Statement> thenBlock; // non-empty
-  @Nullable ImmutableList<Statement> elseBlock; // non-empty if non-null; set after construction
+    // These blocks may be non-null but empty after a misparse:
+    private val thenBlock: ImmutableList<Statement?> // non-empty
+    @kotlin.jvm.JvmField
+    var elseBlock: ImmutableList<Statement?>? = null // non-empty if non-null; set after construction
 
-  IfStatement(
-      FileLocations locs,
-      TokenKind token,
-      int ifOffset,
-      Expression condition,
-      List<Statement> thenBlock) {
-    super(locs, Kind.IF);
-    this.token = token;
-    this.ifOffset = ifOffset;
-    this.condition = condition;
-    this.thenBlock = ImmutableList.copyOf(thenBlock);
-  }
+    init {
+        this.token = token
+        this.ifOffset = ifOffset
+        this.condition = condition
+        this.thenBlock = ImmutableList.copyOf<Statement?>(thenBlock)
+    }
 
-  /**
-   * Reports whether this is an 'elif' statement.
-   *
-   * <p>An elif statement may appear only as the sole statement in the "else" block of another
-   * IfStatement.
-   */
-  public boolean isElif() {
-    return token == TokenKind.ELIF;
-  }
+    /**
+     * Reports whether this is an 'elif' statement.
+     * 
+     * 
+     * An elif statement may appear only as the sole statement in the "else" block of another
+     * IfStatement.
+     */
+    fun isElif(): Boolean {
+        return token == TokenKind.ELIF
+    }
 
-  public Expression getCondition() {
-    return condition;
-  }
+    fun getCondition(): Expression {
+        return condition
+    }
 
-  public ImmutableList<Statement> getThenBlock() {
-    return thenBlock;
-  }
+    fun getThenBlock(): ImmutableList<Statement?> {
+        return thenBlock
+    }
 
-  @Nullable
-  public ImmutableList<Statement> getElseBlock() {
-    return elseBlock;
-  }
+    fun getElseBlock(): ImmutableList<Statement?>? {
+        return elseBlock
+    }
 
-  void setElseBlock(ImmutableList<Statement> elseBlock) {
-    this.elseBlock = elseBlock;
-  }
+    fun setElseBlock(elseBlock: ImmutableList<Statement?>?) {
+        this.elseBlock = elseBlock
+    }
 
-  @Override
-  public int getStartOffset() {
-    return ifOffset;
-  }
+    override fun getStartOffset(): Int {
+        return ifOffset
+    }
 
-  @Override
-  public int getEndOffset() {
-    List<Statement> body = elseBlock != null ? elseBlock : thenBlock;
-    return body.isEmpty()
-        ? condition.getEndOffset() // wrong, but tree is ill formed
-        : body.get(body.size() - 1).getEndOffset();
-  }
+    override fun getEndOffset(): Int {
+        val body: MutableList<Statement?> = (if (elseBlock != null) elseBlock else thenBlock)!!
+        return if (body.isEmpty())
+            condition.getEndOffset() // wrong, but tree is ill formed
+        else
+            body.get(body.size - 1)!!.getEndOffset()
+    }
 
-  @Override
-  public String toString() {
-    return String.format("if %s: ...\n", condition);
-  }
+    override fun toString(): String {
+        return String.format("if %s: ...\n", condition)
+    }
 
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

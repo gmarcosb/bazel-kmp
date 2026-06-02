@@ -11,95 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.windows.WindowsPathOperations
 
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.buildModule;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createRepositoryMapping;
+/** Tests for [Module].  */
+@RunWith(JUnit4::class)
+class ModuleTest {
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val repoMapping: Unit
+        get() {
+            val key: ModuleKey = BzlmodTestUtil.createModuleKey("test_module", "1.0")
+            val fooKey: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "1.0")
+            val barKey: ModuleKey = BzlmodTestUtil.createModuleKey("bar", "2.0")
+            val module: java.lang.Module =
+                BzlmodTestUtil.buildModule("test_module", "1.0")
+                    .addDep("my_foo", fooKey)
+                    .addDep("my_bar", barKey)
+                    .addDep("my_root", ModuleKey.ROOT)
+                    .setFlagAliases(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                    .build()
+            assertThat(
+                module.getRepoMappingWithBazelDepsOnly(
+                    java.util.stream.Stream.of<Any?>(key, fooKey, barKey, ModuleKey.ROOT)
+                        .collect(
+                            com.google.common.collect.ImmutableMap.toImmutableMap<T?, K?, V?>(
+                                java.util.function.Function { k: T? -> k },
+                                ModuleKey::getCanonicalRepoNameWithoutVersion
+                            )
+                        )
+                )
+            )
+                .isEqualTo(
+                    BzlmodTestUtil.createRepositoryMapping(
+                        key,
+                        "test_module",
+                        "test_module+",
+                        "my_foo",
+                        "foo+",
+                        "my_bar",
+                        "bar+",
+                        "my_root",
+                        ""
+                    )
+                )
+        }
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.windows.WindowsPathOperations;
-import java.util.stream.Stream;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val repoMapping_asMainModule: Unit
+        get() {
+            val fooKey: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "1.0")
+            val barKey: ModuleKey = BzlmodTestUtil.createModuleKey("bar", "2.0")
+            val module: java.lang.Module =
+                BzlmodTestUtil.buildModule("test_module", "1.0")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("my_foo", BzlmodTestUtil.createModuleKey("foo", "1.0"))
+                    .addDep("my_bar", BzlmodTestUtil.createModuleKey("bar", "2.0"))
+                    .setFlagAliases(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                    .build()
+            assertThat(
+                module.getRepoMappingWithBazelDepsOnly(
+                    java.util.stream.Stream.of<Any?>(ModuleKey.ROOT, fooKey, barKey)
+                        .collect(
+                            com.google.common.collect.ImmutableMap.toImmutableMap<T?, K?, V?>(
+                                java.util.function.Function { k: T? -> k },
+                                ModuleKey::getCanonicalRepoNameWithVersion
+                            )
+                        )
+                )
+            )
+                .isEqualTo(
+                    BzlmodTestUtil.createRepositoryMapping(
+                        ModuleKey.ROOT,
+                        "",
+                        "",
+                        "test_module",
+                        "",
+                        "my_foo",
+                        "foo+1.0",
+                        "my_bar",
+                        "bar+2.0"
+                    )
+                )
+        }
 
-/** Tests for {@link Module}. */
-@RunWith(JUnit4.class)
-public class ModuleTest {
+    @get:org.junit.Test
+    val canonicalRepoName_isNotAWindowsShortPath: Unit
+        get() {
+            assertNotAShortPath(
+                BzlmodTestUtil.createModuleKey("foo", "").getCanonicalRepoNameWithoutVersion().getName()
+            )
+            assertNotAShortPath(
+                BzlmodTestUtil.createModuleKey("foo", "1").getCanonicalRepoNameWithVersion().getName()
+            )
+            assertNotAShortPath(
+                BzlmodTestUtil.createModuleKey("foo", "1.2").getCanonicalRepoNameWithVersion().getName()
+            )
+            assertNotAShortPath(
+                BzlmodTestUtil.createModuleKey("foo", "1.2.3").getCanonicalRepoNameWithVersion().getName()
+            )
+        }
 
-  @Test
-  public void getRepoMapping() throws Exception {
-    ModuleKey key = createModuleKey("test_module", "1.0");
-    ModuleKey fooKey = createModuleKey("foo", "1.0");
-    ModuleKey barKey = createModuleKey("bar", "2.0");
-    Module module =
-        buildModule("test_module", "1.0")
-            .addDep("my_foo", fooKey)
-            .addDep("my_bar", barKey)
-            .addDep("my_root", ModuleKey.ROOT)
-            .setFlagAliases(ImmutableMap.of())
-            .build();
-    assertThat(
-            module.getRepoMappingWithBazelDepsOnly(
-                Stream.of(key, fooKey, barKey, ModuleKey.ROOT)
-                    .collect(
-                        toImmutableMap(k -> k, ModuleKey::getCanonicalRepoNameWithoutVersion))))
-        .isEqualTo(
-            createRepositoryMapping(
-                key,
-                "test_module",
-                "test_module+",
-                "my_foo",
-                "foo+",
-                "my_bar",
-                "bar+",
-                "my_root",
-                ""));
-  }
-
-  @Test
-  public void getRepoMapping_asMainModule() throws Exception {
-    ModuleKey fooKey = createModuleKey("foo", "1.0");
-    ModuleKey barKey = createModuleKey("bar", "2.0");
-    Module module =
-        buildModule("test_module", "1.0")
-            .setKey(ModuleKey.ROOT)
-            .addDep("my_foo", createModuleKey("foo", "1.0"))
-            .addDep("my_bar", createModuleKey("bar", "2.0"))
-            .setFlagAliases(ImmutableMap.of())
-            .build();
-    assertThat(
-            module.getRepoMappingWithBazelDepsOnly(
-                Stream.of(ModuleKey.ROOT, fooKey, barKey)
-                    .collect(toImmutableMap(k -> k, ModuleKey::getCanonicalRepoNameWithVersion))))
-        .isEqualTo(
-            createRepositoryMapping(
-                ModuleKey.ROOT,
-                "",
-                "",
-                "test_module",
-                "",
-                "my_foo",
-                "foo+1.0",
-                "my_bar",
-                "bar+2.0"));
-  }
-
-  @Test
-  public void getCanonicalRepoName_isNotAWindowsShortPath() {
-    assertNotAShortPath(createModuleKey("foo", "").getCanonicalRepoNameWithoutVersion().getName());
-    assertNotAShortPath(createModuleKey("foo", "1").getCanonicalRepoNameWithVersion().getName());
-    assertNotAShortPath(createModuleKey("foo", "1.2").getCanonicalRepoNameWithVersion().getName());
-    assertNotAShortPath(
-        createModuleKey("foo", "1.2.3").getCanonicalRepoNameWithVersion().getName());
-  }
-
-  private static void assertNotAShortPath(String name) {
-    assertWithMessage("For %s", name).that(WindowsPathOperations.isShortPath(name)).isFalse();
-  }
+    companion object {
+        private fun assertNotAShortPath(name: String) {
+            Truth.assertWithMessage("For %s", name).that(WindowsPathOperations.isShortPath(name)).isFalse()
+        }
+    }
 }

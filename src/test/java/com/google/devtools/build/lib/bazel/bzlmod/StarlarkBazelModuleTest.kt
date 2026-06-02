@@ -12,156 +12,154 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.buildModule;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.buildTag;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createTagClass;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.packages.Types;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import java.util.Optional;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.syntax.Location;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link StarlarkBazelModule}. */
-@RunWith(JUnit4.class)
-public class StarlarkBazelModuleTest {
-
-  /** A builder for ModuleExtensionUsage that sets all the mandatory but irrelevant fields. */
-  private static ModuleExtensionUsage.Builder getBaseUsageBuilder() {
-    return ModuleExtensionUsage.builder()
-        .setExtensionBzlFile("//:rje.bzl")
-        .setExtensionName("maven")
-        .setIsolationKey(Optional.empty())
-        .setRepoOverrides(ImmutableMap.of());
-  }
-
-  /** A builder for ModuleExtension that sets all the mandatory but irrelevant fields. */
-  private static ModuleExtension.Builder getBaseExtensionBuilder() {
-    return ModuleExtension.builder()
-        .setDoc(Optional.empty())
-        .setDefiningBzlFileLabel(Label.parseCanonicalUnchecked("//:rje.bzl"))
-        .setLocation(Location.BUILTIN)
-        .setImplementation(() -> "maven")
-        .setEnvVariables(ImmutableList.of())
-        .setOsDependent(false)
-        .setArchDependent(false)
-        .setFactsVersion(0);
-  }
-
-  @Test
-  public void basic() throws Exception {
-    ModuleExtensionUsage usage =
-        getBaseUsageBuilder()
-            .addTag(buildTag("dep").addAttr("coord", "junit").build())
-            .addTag(buildTag("dep").addAttr("coord", "guava").build())
-            .addTag(
-                buildTag("pom")
-                    .addAttr("pom_xmls", StarlarkList.immutableOf("//:pom.xml", "@bar//:pom.xml"))
-                    .build())
-            .build();
-    ModuleExtension extension =
-        getBaseExtensionBuilder()
-            .setTagClasses(
-                ImmutableMap.of(
-                    "dep", createTagClass(attr("coord", Type.STRING).build()),
-                    "repos", createTagClass(attr("repos", Types.STRING_LIST).build()),
-                    "pom",
+/** Tests for [StarlarkBazelModule].  */
+@RunWith(JUnit4::class)
+class StarlarkBazelModuleTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basic() {
+        val usage: ModuleExtensionUsage? =
+            baseUsageBuilder
+                .addTag(BzlmodTestUtil.buildTag("dep").addAttr("coord", "junit").build())
+                .addTag(BzlmodTestUtil.buildTag("dep").addAttr("coord", "guava").build())
+                .addTag(
+                    BzlmodTestUtil.buildTag("pom")
+                        .addAttr("pom_xmls", StarlarkList.immutableOf<String?>("//:pom.xml", "@bar//:pom.xml"))
+                        .build()
+                )
+                .build()
+        val extension: ModuleExtension? =
+            baseExtensionBuilder
+                .setTagClasses(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "dep", createTagClass(attr("coord", Type.STRING).build()),
+                        "repos", createTagClass(attr("repos", Types.STRING_LIST).build()),
+                        "pom",
                         createTagClass(
                             attr("pom_xmls", BuildType.LABEL_LIST)
                                 .allowedFileTypes(FileTypeSet.ANY_FILE)
-                                .build())))
-            .build();
-    ModuleKey fooKey = createModuleKey("foo", "");
-    ModuleKey barKey = createModuleKey("bar", "2.0");
-    Module module =
-        buildModule("foo", "1.0")
-            .setKey(fooKey)
-            .addDep("bar", barKey)
-            .setFlagAliases(ImmutableMap.of())
-            .build();
-    AbridgedModule abridgedModule = AbridgedModule.from(module);
+                                .build()
+                        )
+                    )
+                )
+                .build()
+        val fooKey: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "")
+        val barKey: ModuleKey = BzlmodTestUtil.createModuleKey("bar", "2.0")
+        val module: java.lang.Module =
+            BzlmodTestUtil.buildModule("foo", "1.0")
+                .setKey(fooKey)
+                .addDep("bar", barKey)
+                .setFlagAliases(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .build()
+        val abridgedModule: AbridgedModule? = AbridgedModule.from(module)
 
-    var repoMappingRecorder = new Label.SimpleRepoMappingRecorder();
-    StarlarkBazelModule moduleProxy =
-        StarlarkBazelModule.create(
-            abridgedModule,
-            extension,
-            module.getRepoMappingWithBazelDepsOnly(
-                ImmutableMap.of(
-                    fooKey, fooKey.getCanonicalRepoNameWithoutVersion(),
-                    barKey, barKey.getCanonicalRepoNameWithoutVersion())),
-            usage,
-            repoMappingRecorder,
-            /* moduleIndex= */ 0);
+        val repoMappingRecorder: Label.SimpleRepoMappingRecorder = SimpleRepoMappingRecorder()
+        val moduleProxy: StarlarkBazelModule =
+            StarlarkBazelModule.create(
+                abridgedModule,
+                extension,
+                module.getRepoMappingWithBazelDepsOnly(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        fooKey, fooKey.getCanonicalRepoNameWithoutVersion(),
+                        barKey, barKey.getCanonicalRepoNameWithoutVersion()
+                    )
+                ),
+                usage,
+                repoMappingRecorder,  /* moduleIndex= */
+                0
+            )
 
-    assertThat(moduleProxy.name).isEqualTo("foo");
-    assertThat(moduleProxy.version).isEqualTo("1.0");
-    assertThat(moduleProxy.tags.getFieldNames()).containsExactly("dep", "repos", "pom");
+        assertThat(moduleProxy.name).isEqualTo("foo")
+        assertThat(moduleProxy.version).isEqualTo("1.0")
+        assertThat(moduleProxy.tags.getFieldNames()).containsExactly("dep", "repos", "pom")
 
-    // We have 2 "dep" tags...
-    @SuppressWarnings("unchecked")
-    StarlarkList<TypeCheckedTag> depTags =
-        (StarlarkList<TypeCheckedTag>) moduleProxy.tags.getValue("dep");
-    assertThat(depTags.size()).isEqualTo(2);
-    assertThat(depTags.get(0).getValue("coord")).isEqualTo("junit");
-    assertThat(depTags.get(1).getValue("coord")).isEqualTo("guava");
+        // We have 2 "dep" tags...
+        val depTags: StarlarkList<TypeCheckedTag?> =
+            moduleProxy.tags.getValue("dep") as StarlarkList<TypeCheckedTag?>
+        Truth.assertThat(depTags.size).isEqualTo(2)
+        assertThat(depTags.get(0).getValue("coord")).isEqualTo("junit")
+        assertThat(depTags.get(1).getValue("coord")).isEqualTo("guava")
 
-    // ... zero "repos" tags...
-    assertThat(moduleProxy.tags.getValue("repos")).isEqualTo(StarlarkList.empty());
+        // ... zero "repos" tags...
+        assertThat(moduleProxy.tags.getValue("repos")).isEqualTo(StarlarkList.empty<Any?>())
 
-    // ... and 1 "pom" tag.
-    @SuppressWarnings("unchecked")
-    StarlarkList<TypeCheckedTag> pomTags =
-        (StarlarkList<TypeCheckedTag>) moduleProxy.tags.getValue("pom");
-    assertThat(pomTags.size()).isEqualTo(1);
-    assertThat(pomTags.get(0).getValue("pom_xmls"))
-        .isEqualTo(
-            StarlarkList.immutableOf(
-                Label.parseCanonical("@@foo+//:pom.xml"),
-                Label.parseCanonical("@@bar+//:pom.xml")));
+        // ... and 1 "pom" tag.
+        val pomTags: StarlarkList<TypeCheckedTag?> =
+            moduleProxy.tags.getValue("pom") as StarlarkList<TypeCheckedTag?>
+        Truth.assertThat(pomTags.size).isEqualTo(1)
+        assertThat(pomTags.get(0).getValue("pom_xmls"))
+            .isEqualTo(
+                StarlarkList.immutableOf<T?>(
+                    Label.parseCanonical("@@foo+//:pom.xml"),
+                    Label.parseCanonical("@@bar+//:pom.xml")
+                )
+            )
 
-    assertThat(repoMappingRecorder.recordedEntries())
-        .containsCell(RepositoryName.create("foo+"), "bar", RepositoryName.create("bar+"));
-  }
+        assertThat(repoMappingRecorder.recordedEntries())
+            .containsCell(RepositoryName.create("foo+"), "bar", RepositoryName.create("bar+"))
+    }
 
-  @Test
-  public void unknownTagClass() throws Exception {
-    ModuleExtensionUsage usage = getBaseUsageBuilder().addTag(buildTag("blep").build()).build();
-    ModuleExtension extension =
-        getBaseExtensionBuilder().setTagClasses(ImmutableMap.of("dep", createTagClass())).build();
-    ModuleKey fooKey = createModuleKey("foo", "");
-    Module module =
-        buildModule("foo", "1.0").setKey(fooKey).setFlagAliases(ImmutableMap.of()).build();
-    AbridgedModule abridgedModule = AbridgedModule.from(module);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun unknownTagClass() {
+        val usage: ModuleExtensionUsage? = baseUsageBuilder.addTag(BzlmodTestUtil.buildTag("blep").build()).build()
+        val extension: ModuleExtension? =
+            baseExtensionBuilder.setTagClasses(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "dep",
+                    BzlmodTestUtil.createTagClass()
+                )
+            ).build()
+        val fooKey: ModuleKey = BzlmodTestUtil.createModuleKey("foo", "")
+        val module: java.lang.Module =
+            BzlmodTestUtil.buildModule("foo", "1.0").setKey(fooKey)
+                .setFlagAliases(com.google.common.collect.ImmutableMap.of<K?, V?>()).build()
+        val abridgedModule: AbridgedModule? = AbridgedModule.from(module)
 
-    ExternalDepsException e =
-        assertThrows(
-            ExternalDepsException.class,
-            () ->
-                StarlarkBazelModule.create(
-                    abridgedModule,
-                    extension,
-                    module.getRepoMappingWithBazelDepsOnly(
-                        ImmutableMap.of(fooKey, fooKey.getCanonicalRepoNameWithoutVersion())),
-                    usage,
-                    new Label.SimpleRepoMappingRecorder(),
-                    /* moduleIndex= */ 0));
-    assertThat(e).hasMessageThat().contains("does not have a tag class named blep");
-  }
+        val e: ExternalDepsException? =
+            org.junit.Assert.assertThrows<T?>(
+                ExternalDepsException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    StarlarkBazelModule.create(
+                        abridgedModule,
+                        extension,
+                        module.getRepoMappingWithBazelDepsOnly(
+                            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                                fooKey,
+                                fooKey.getCanonicalRepoNameWithoutVersion()
+                            )
+                        ),
+                        usage,
+                        SimpleRepoMappingRecorder(),  /* moduleIndex= */
+                        0
+                    )
+                })
+        assertThat(e).hasMessageThat().contains("does not have a tag class named blep")
+    }
+
+    companion object {
+        private val baseUsageBuilder: ModuleExtensionUsage.Builder
+            /** A builder for ModuleExtensionUsage that sets all the mandatory but irrelevant fields.  */
+            get() = ModuleExtensionUsage.builder()
+                .setExtensionBzlFile("//:rje.bzl")
+                .setExtensionName("maven")
+                .setIsolationKey(java.util.Optional.empty<T?>())
+                .setRepoOverrides(com.google.common.collect.ImmutableMap.of<K?, V?>())
+
+        private val baseExtensionBuilder: ModuleExtension.Builder
+            /** A builder for ModuleExtension that sets all the mandatory but irrelevant fields.  */
+            get() = ModuleExtension.builder()
+                .setDoc(java.util.Optional.empty<T?>())
+                .setDefiningBzlFileLabel(Label.parseCanonicalUnchecked("//:rje.bzl"))
+                .setLocation(net.starlark.java.syntax.Location.BUILTIN)
+                .setImplementation({ "maven" })
+                .setEnvVariables(com.google.common.collect.ImmutableList.of<E?>())
+                .setOsDependent(false)
+                .setArchDependent(false)
+                .setFactsVersion(0)
+    }
 }

@@ -11,67 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.testing;
+package com.google.devtools.build.lib.analysis.testing
 
-import static com.google.common.truth.Truth.assertAbout;
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.IterableSubject;
-import com.google.common.truth.Subject;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.DeclaredExecGroup;
-import java.util.stream.Collectors;
+/** A Truth [Subject] for [DeclaredExecGroup].  */
+class DeclaredExecGroupSubject protected constructor(failureMetadata: FailureMetadata?, subject: DeclaredExecGroup) :
+    Subject(failureMetadata, subject) {
+    // Instance fields.
+    private val actual: DeclaredExecGroup
 
-/** A Truth {@link Subject} for {@link DeclaredExecGroup}. */
-public class DeclaredExecGroupSubject extends Subject {
-  // Static data.
+    init {
+        this.actual = subject
+    }
 
-  /** Entry point for test assertions related to {@link DeclaredExecGroup}. */
-  public static DeclaredExecGroupSubject assertThat(DeclaredExecGroup declaredExecGroup) {
-    return assertAbout(DeclaredExecGroupSubject::new).that(declaredExecGroup);
-  }
+    fun toolchainType(toolchainTypeLabel: String?): ToolchainTypeRequirementSubject? {
+        return toolchainType(Label.parseCanonicalUnchecked(toolchainTypeLabel))
+    }
 
-  // Instance fields.
+    fun toolchainType(toolchainType: Label): ToolchainTypeRequirementSubject? {
+        return check("toolchainType(%s)", toolchainType)
+            .about<ToolchainTypeRequirementSubject?, ToolchainTypeRequirement?>(ToolchainTypeRequirementSubject.Companion.toolchainTypeRequirements())
+            .that(actual.toolchainType(toolchainType))
+    }
 
-  private final DeclaredExecGroup actual;
+    fun hasToolchainType(toolchainTypeLabel: String?) {
+        toolchainType(toolchainTypeLabel).isNotNull()
+    }
 
-  protected DeclaredExecGroupSubject(FailureMetadata failureMetadata, DeclaredExecGroup subject) {
-    super(failureMetadata, subject);
-    this.actual = subject;
-  }
+    fun hasToolchainType(toolchainType: Label) {
+        toolchainType(toolchainType).isNotNull()
+    }
 
-  public ToolchainTypeRequirementSubject toolchainType(String toolchainTypeLabel) {
-    return toolchainType(Label.parseCanonicalUnchecked(toolchainTypeLabel));
-  }
+    fun execCompatibleWith(): IterableSubject? {
+        return check("execCompatibleWith()")
+            .that(actual.execCompatibleWith().stream().collect(Collectors.toList()))
+    }
 
-  public ToolchainTypeRequirementSubject toolchainType(Label toolchainType) {
-    return check("toolchainType(%s)", toolchainType)
-        .about(ToolchainTypeRequirementSubject.toolchainTypeRequirements())
-        .that(actual.toolchainType(toolchainType));
-  }
+    fun hasExecCompatibleWith(constraintLabel: String?) {
+        hasExecCompatibleWith(Label.parseCanonicalUnchecked(constraintLabel))
+    }
 
-  public void hasToolchainType(String toolchainTypeLabel) {
-    toolchainType(toolchainTypeLabel).isNotNull();
-  }
+    fun hasExecCompatibleWith(constraintLabel: Label?) {
+        execCompatibleWith().contains(constraintLabel)
+    }
 
-  public void hasToolchainType(Label toolchainType) {
-    toolchainType(toolchainType).isNotNull();
-  }
+    fun copiesFromDefault() {
+        check("copyFromDefault()").that(actual.copyFromDefault).isTrue()
+    }
 
-  public IterableSubject execCompatibleWith() {
-    return check("execCompatibleWith()")
-        .that(actual.execCompatibleWith().stream().collect(Collectors.toList()));
-  }
-
-  public void hasExecCompatibleWith(String constraintLabel) {
-    hasExecCompatibleWith(Label.parseCanonicalUnchecked(constraintLabel));
-  }
-
-  public void hasExecCompatibleWith(Label constraintLabel) {
-    execCompatibleWith().contains(constraintLabel);
-  }
-
-  public void copiesFromDefault() {
-    check("copyFromDefault()").that(actual.copyFromDefault).isTrue();
-  }
+    companion object {
+        // Static data.
+        /** Entry point for test assertions related to [DeclaredExecGroup].  */
+        fun assertThat(declaredExecGroup: DeclaredExecGroup?): DeclaredExecGroupSubject? {
+            return Truth.assertAbout<DeclaredExecGroupSubject?, DeclaredExecGroup?>(Subject.Factory { failureMetadata: FailureMetadata?, subject: DeclaredExecGroup? ->
+                DeclaredExecGroupSubject(
+                    failureMetadata,
+                    subject
+                )
+            }).that(declaredExecGroup)
+        }
+    }
 }

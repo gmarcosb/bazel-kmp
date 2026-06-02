@@ -11,42 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.ConfiguredAttributeMapper;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget
 
 /**
- * Unit tests for {@link AspectAwareAttributeMapper}.
+ * Unit tests for [AspectAwareAttributeMapper].
  */
-@RunWith(JUnit4.class)
-public class AspectAwareAttributeMapperTest extends BuildViewTestCase {
-  private Rule rule;
-  private ImmutableMap<String, Attribute> aspectAttributes;
-  private AspectAwareAttributeMapper mapper;
+@RunWith(JUnit4::class)
+class AspectAwareAttributeMapperTest : BuildViewTestCase() {
+    private var rule: Rule? = null
+    private var aspectAttributes: com.google.common.collect.ImmutableMap<String?, Attribute?>? = null
+    private var mapper: AspectAwareAttributeMapper? = null
 
-  @Before
-  public final void createMapper() throws Exception {
-    ConfiguredTargetAndData ctad =
-        scratchConfiguredTargetAndData(
-            "foo",
-            "myrule",
-            """
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createMapper() {
+        val ctad: ConfiguredTargetAndData =
+            scratchConfiguredTargetAndData(
+                "foo",
+                "myrule",
+                """
             load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 
             # Needed to avoid select() being eliminated as trivial.
@@ -63,95 +48,114 @@ public class AspectAwareAttributeMapperTest extends BuildViewTestCase {
                     "//conditions:default": 1,
                 }),
             )
-            """);
+            
+            """.trimIndent()
+            )
 
-    RuleConfiguredTarget ct = (RuleConfiguredTarget) ctad.getConfiguredTarget();
-    rule = (Rule) ctad.getTargetForTesting();
-    Attribute aspectAttr = new Attribute.Builder<Label>("fromaspect", BuildType.LABEL)
-        .allowedFileTypes(FileTypeSet.ANY_FILE)
-        .build();
-    aspectAttributes = ImmutableMap.<String, Attribute>of(aspectAttr.name, aspectAttr);
-    mapper =
-        new AspectAwareAttributeMapper(
-            ConfiguredAttributeMapper.of(
-                rule,
-                ct.getConfigConditions(),
-                ct.getConfigurationChecksum(),
-                /*alwaysSucceed=*/ false),
-            aspectAttributes);
-  }
+        val ct: RuleConfiguredTarget = ctad.getConfiguredTarget() as RuleConfiguredTarget
+        rule = ctad.getTargetForTesting() as Rule
+        val aspectAttr: Attribute = Builder<Label?>("fromaspect", BuildType.LABEL)
+            .allowedFileTypes(FileTypeSet.ANY_FILE)
+            .build()
+        aspectAttributes = com.google.common.collect.ImmutableMap.of<String?, Attribute?>(aspectAttr.name, aspectAttr)
+        mapper =
+            AspectAwareAttributeMapper(
+                ConfiguredAttributeMapper.of(
+                    rule,
+                    ct.getConfigConditions(),
+                    ct.getConfigurationChecksum(),  /*alwaysSucceed=*/
+                    false
+                ),
+                aspectAttributes
+            )
+    }
 
-  @Test
-  public void getName() throws Exception {
-    assertThat(mapper.getLabel().getName()).isEqualTo(rule.getName());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getName() {
+        assertThat(mapper.getLabel().getName()).isEqualTo(rule.getName())
+    }
 
-  @Test
-  public void getLabel() throws Exception {
-    assertThat(mapper.getLabel()).isEqualTo(rule.getLabel());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getLabel() {
+        assertThat(mapper.getLabel()).isEqualTo(rule.getLabel())
+    }
 
-  @Test
-  public void getRuleAttributeValue() throws Exception {
-    assertThat(mapper.get("srcs", BuildType.LABEL_LIST))
-        .containsExactly(Label.parseCanonical("//foo:a.cc"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getRuleAttributeValue() {
+        assertThat(mapper.get("srcs", BuildType.LABEL_LIST))
+            .containsExactly(Label.parseCanonical("//foo:a.cc"))
+    }
 
-  @Test
-  public void getAspectAttributeValue() throws Exception {
-    assertThrows(
-        UnsupportedOperationException.class, () -> mapper.get("fromaspect", BuildType.LABEL));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getAspectAttributeValue() {
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable { mapper.get("fromaspect", BuildType.LABEL) })
+    }
 
-  @Test
-  public void getAspectValueWrongType() throws Exception {
-    IllegalArgumentException e =
-        assertThrows(
-            IllegalArgumentException.class, () -> mapper.get("fromaspect", BuildType.LABEL_LIST));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("attribute fromaspect has type label, not expected type list(label)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getAspectValueWrongType() {
+        val e: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { mapper.get("fromaspect", BuildType.LABEL_LIST) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("attribute fromaspect has type label, not expected type list(label)")
+    }
 
-  @Test
-  public void getMissingAttributeValue() throws Exception {
-    IllegalArgumentException e =
-        assertThrows(IllegalArgumentException.class, () -> mapper.get("noexist", BuildType.LABEL));
-    assertThat(e)
-        .hasMessageThat()
-        .matches(
-            "no attribute 'noexist' in either cc_binary //foo:myrule \\([^)]+\\) or its aspects");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getMissingAttributeValue() {
+        val e: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { mapper.get("noexist", BuildType.LABEL) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .matches(
+                "no attribute 'noexist' in either cc_binary //foo:myrule \\([^)]+\\) or its aspects"
+            )
+    }
 
-  @Test
-  public void isConfigurable() throws Exception {
-    assertThat(mapper.isConfigurable("linkstatic")).isTrue();
-    assertThat(mapper.isConfigurable("fromaspect")).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun isConfigurable() {
+        assertThat(mapper.isConfigurable("linkstatic")).isTrue()
+        assertThat(mapper.isConfigurable("fromaspect")).isFalse()
+    }
 
-  @Test
-  public void getAttributeNames() throws Exception {
-    assertThat(mapper.getAttributeNames()).containsAtLeast("srcs", "linkstatic", "fromaspect");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getAttributeNames() {
+        assertThat(mapper.getAttributeNames()).containsAtLeast("srcs", "linkstatic", "fromaspect")
+    }
 
-  @Test
-  public void getAttributeType() throws Exception {
-    assertThat(mapper.getAttributeType("srcs")).isEqualTo(BuildType.LABEL_LIST);
-    assertThat(mapper.getAttributeType("fromaspect")).isEqualTo(BuildType.LABEL);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getAttributeType() {
+        assertThat(mapper.getAttributeType("srcs")).isEqualTo(BuildType.LABEL_LIST)
+        assertThat(mapper.getAttributeType("fromaspect")).isEqualTo(BuildType.LABEL)
+    }
 
-  @Test
-  public void getAttributeDefinition() throws Exception {
-    assertThat(mapper.getAttributeDefinition("srcs").getName()).isEqualTo("srcs");
-    assertThat(mapper.getAttributeDefinition("fromaspect").getName()).isEqualTo("fromaspect");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getAttributeDefinition() {
+        assertThat(mapper.getAttributeDefinition("srcs").getName()).isEqualTo("srcs")
+        assertThat(mapper.getAttributeDefinition("fromaspect").getName()).isEqualTo("fromaspect")
+    }
 
-  }
-
-  @Test
-  public void has() throws Exception {
-    assertThat(mapper.has("srcs")).isTrue();
-    assertThat(mapper.has("fromaspect")).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun has() {
+        assertThat(mapper.has("srcs")).isTrue()
+        assertThat(mapper.has("fromaspect")).isTrue()
+    }
 }
 
 

@@ -11,141 +11,187 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.bazel.repository.downloader.RetryingInputStream.Reconnector
+import org.junit.After
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.ArgumentMatchers
+import org.mockito.Mockito
+import java.io.IOException
+import java.io.InputStream
+import java.io.InterruptedIOException
+import java.net.SocketTimeoutException
+import java.net.URLConnection
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.same;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+/** Unit tests for [RetryingInputStream].  */
+@RunWith(JUnit4::class)
+class RetryingInputStreamTest {
+    private val delegate: InputStream = Mockito.mock<InputStream>(InputStream::class.java)
+    private val newDelegate: InputStream = Mockito.mock<InputStream>(InputStream::class.java)
+    private val reconnector: Reconnector = Mockito.mock<Reconnector>(Reconnector::class.java)
+    private val connection: URLConnection? = Mockito.mock<URLConnection?>(URLConnection::class.java)
+    private val stream = RetryingInputStream(delegate, reconnector)
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.repository.downloader.RetryingInputStream.Reconnector;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InterruptedIOException;
-import java.net.SocketTimeoutException;
-import java.net.URLConnection;
-import org.junit.After;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @After
+    @Throws(Exception::class)
+    fun after() {
+        Mockito.verifyNoMoreInteractions(delegate, newDelegate, reconnector)
+    }
 
-/** Unit tests for {@link RetryingInputStream}. */
-@RunWith(JUnit4.class)
-public class RetryingInputStreamTest {
+    @Test
+    @Throws(Exception::class)
+    fun close_callsDelegate() {
+        stream.close()
+        Mockito.verify<InputStream?>(delegate).close()
+    }
 
-  private final InputStream delegate = mock(InputStream.class);
-  private final InputStream newDelegate = mock(InputStream.class);
-  private final Reconnector reconnector = mock(Reconnector.class);
-  private final URLConnection connection = mock(URLConnection.class);
-  private final RetryingInputStream stream = new RetryingInputStream(delegate, reconnector);
+    @Test
+    @Throws(Exception::class)
+    fun available_callsDelegate() {
+        stream.available()
+        Mockito.verify<InputStream?>(delegate).available()
+    }
 
-  @After
-  public void after() throws Exception {
-    verifyNoMoreInteractions(delegate, newDelegate, reconnector);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun read_callsdelegate() {
+        stream.read()
+        Mockito.verify<InputStream?>(delegate).read()
+    }
 
-  @Test
-  public void close_callsDelegate() throws Exception {
-    stream.close();
-    verify(delegate).close();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun bufferRead_callsdelegate() {
+        val buffer = ByteArray(1024)
+        stream.read(buffer)
+        Mockito.verify<InputStream?>(delegate)
+            .read(ArgumentMatchers.same<ByteArray?>(buffer), ArgumentMatchers.eq(0), ArgumentMatchers.eq(1024))
+    }
 
-  @Test
-  public void available_callsDelegate() throws Exception {
-    stream.available();
-    verify(delegate).available();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun readInterrupted_alwaysPassesThrough() {
+        Mockito.`when`<Int?>(delegate.read()).thenThrow(InterruptedIOException())
+        Assert.assertThrows<InterruptedIOException?>(
+            InterruptedIOException::class.java,
+            ThrowingRunnable { stream.read() })
+        Mockito.verify<InputStream?>(delegate).read()
+    }
 
-  @Test
-  public void read_callsdelegate() throws Exception {
-    stream.read();
-    verify(delegate).read();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun readTimesOut_retries() {
+        Mockito.`when`<Int?>(delegate.read()).thenReturn(1).thenThrow(SocketTimeoutException())
+        Mockito.`when`<URLConnection>(
+            reconnector.connect(
+                ArgumentMatchers.any<Throwable?>(Throwable::class.java), ArgumentMatchers.any<ImmutableMap<*, *>?>(
+                    ImmutableMap::class.java
+                )
+            )
+        ).thenReturn(connection)
+        Mockito.`when`<InputStream?>(connection!!.getInputStream()).thenReturn(newDelegate)
+        Mockito.`when`<Int?>(newDelegate.read()).thenReturn(2)
+        Mockito.`when`<String?>(connection.getHeaderField("Content-Range")).thenReturn("bytes 1-42/42")
+        Truth.assertThat(stream.read()).isEqualTo(1)
+        Truth.assertThat(stream.read()).isEqualTo(2)
+        Mockito.verify<Reconnector?>(reconnector)
+            .connect(
+                ArgumentMatchers.any<Throwable?>(Throwable::class.java),
+                ArgumentMatchers.eq<ImmutableMap<String?, MutableList<String?>?>?>(
+                    ImmutableMap.of<String?, MutableList<String?>?>("Range", ImmutableList.of<String?>("bytes=1-"))
+                )
+            )
+        Mockito.verify<InputStream?>(delegate, Mockito.times(2)).read()
+        Mockito.verify<InputStream?>(delegate).close()
+        Mockito.verify<InputStream?>(newDelegate).read()
+    }
 
-  @Test
-  public void bufferRead_callsdelegate() throws Exception {
-    byte[] buffer = new byte[1024];
-    stream.read(buffer);
-    verify(delegate).read(same(buffer), eq(0), eq(1024));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun failureWhenNoBytesAreRead_doesntUseRange() {
+        Mockito.`when`<Int?>(delegate.read()).thenThrow(SocketTimeoutException())
+        Mockito.`when`<Int?>(newDelegate.read()).thenReturn(1)
+        Mockito.`when`<URLConnection>(
+            reconnector.connect(
+                ArgumentMatchers.any<Throwable?>(Throwable::class.java), ArgumentMatchers.any<ImmutableMap<*, *>?>(
+                    ImmutableMap::class.java
+                )
+            )
+        ).thenReturn(connection)
+        Mockito.`when`<InputStream?>(connection!!.getInputStream()).thenReturn(newDelegate)
+        Truth.assertThat(stream.read()).isEqualTo(1)
+        Mockito.verify<Reconnector?>(reconnector).connect(
+            ArgumentMatchers.any<Throwable?>(Throwable::class.java),
+            ArgumentMatchers.eq<ImmutableMap<String?, MutableList<String?>?>?>(
+                ImmutableMap.of<String?, MutableList<String?>?>()
+            )
+        )
+        Mockito.verify<InputStream?>(delegate).read()
+        Mockito.verify<InputStream?>(delegate).close()
+        Mockito.verify<InputStream?>(newDelegate).read()
+    }
 
-  @Test
-  public void readInterrupted_alwaysPassesThrough() throws Exception {
-    when(delegate.read()).thenThrow(new InterruptedIOException());
-    assertThrows(InterruptedIOException.class, () -> stream.read());
-    verify(delegate).read();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun reconnectFails_alwaysPassesThrough() {
+        Mockito.`when`<Int?>(delegate.read()).thenThrow(IOException())
+        Mockito.`when`<URLConnection>(
+            reconnector.connect(
+                ArgumentMatchers.any<Throwable?>(Throwable::class.java), ArgumentMatchers.any<ImmutableMap<*, *>?>(
+                    ImmutableMap::class.java
+                )
+            )
+        )
+            .thenThrow(IOException())
+        Assert.assertThrows<IOException?>(IOException::class.java, ThrowingRunnable { stream.read() })
+        Mockito.verify<InputStream?>(delegate).read()
+        Mockito.verify<InputStream?>(delegate).close()
+        Mockito.verify<Reconnector?>(reconnector).connect(
+            ArgumentMatchers.any<Throwable?>(Throwable::class.java), ArgumentMatchers.any<ImmutableMap<*, *>?>(
+                ImmutableMap::class.java
+            )
+        )
+    }
 
-  @Test
-  @SuppressWarnings("unchecked")
-  public void readTimesOut_retries() throws Exception {
-    when(delegate.read()).thenReturn(1).thenThrow(new SocketTimeoutException());
-    when(reconnector.connect(any(Throwable.class), any(ImmutableMap.class))).thenReturn(connection);
-    when(connection.getInputStream()).thenReturn(newDelegate);
-    when(newDelegate.read()).thenReturn(2);
-    when(connection.getHeaderField("Content-Range")).thenReturn("bytes 1-42/42");
-    assertThat(stream.read()).isEqualTo(1);
-    assertThat(stream.read()).isEqualTo(2);
-    verify(reconnector)
-        .connect(any(Throwable.class), eq(ImmutableMap.of("Range", ImmutableList.of("bytes=1-"))));
-    verify(delegate, times(2)).read();
-    verify(delegate).close();
-    verify(newDelegate).read();
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void failureWhenNoBytesAreRead_doesntUseRange() throws Exception {
-    when(delegate.read()).thenThrow(new SocketTimeoutException());
-    when(newDelegate.read()).thenReturn(1);
-    when(reconnector.connect(any(Throwable.class), any(ImmutableMap.class))).thenReturn(connection);
-    when(connection.getInputStream()).thenReturn(newDelegate);
-    assertThat(stream.read()).isEqualTo(1);
-    verify(reconnector).connect(any(Throwable.class), eq(ImmutableMap.of()));
-    verify(delegate).read();
-    verify(delegate).close();
-    verify(newDelegate).read();
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void reconnectFails_alwaysPassesThrough() throws Exception {
-    when(delegate.read()).thenThrow(new IOException());
-    when(reconnector.connect(any(Throwable.class), any(ImmutableMap.class)))
-        .thenThrow(new IOException());
-    assertThrows(IOException.class, () -> stream.read());
-    verify(delegate).read();
-      verify(delegate).close();
-    verify(reconnector).connect(any(Throwable.class), any(ImmutableMap.class));
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void maxRetries_givesUp() throws Exception {
-    when(delegate.read())
-        .thenReturn(1)
-        .thenThrow(new IOException())
-        .thenThrow(new IOException())
-        .thenThrow(new IOException())
-        .thenThrow(new SocketTimeoutException());
-    when(reconnector.connect(any(Throwable.class), any(ImmutableMap.class))).thenReturn(connection);
-    when(connection.getInputStream()).thenReturn(delegate);
-    when(connection.getHeaderField("Content-Range")).thenReturn("bytes 1-42/42");
-    stream.read();
-    SocketTimeoutException e = assertThrows(SocketTimeoutException.class, () -> stream.read());
-    assertThat(e.getSuppressed()).hasLength(3);
-    verify(reconnector, times(3))
-        .connect(any(Throwable.class), eq(ImmutableMap.of("Range", ImmutableList.of("bytes=1-"))));
-      verify(delegate, times(5)).read();
-    verify(delegate, times(3)).close();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun maxRetries_givesUp() {
+        Mockito.`when`<Int?>(delegate.read())
+            .thenReturn(1)
+            .thenThrow(IOException())
+            .thenThrow(IOException())
+            .thenThrow(IOException())
+            .thenThrow(SocketTimeoutException())
+        Mockito.`when`<URLConnection>(
+            reconnector.connect(
+                ArgumentMatchers.any<Throwable?>(Throwable::class.java), ArgumentMatchers.any<ImmutableMap<*, *>?>(
+                    ImmutableMap::class.java
+                )
+            )
+        ).thenReturn(connection)
+        Mockito.`when`<InputStream?>(connection!!.getInputStream()).thenReturn(delegate)
+        Mockito.`when`<String?>(connection.getHeaderField("Content-Range")).thenReturn("bytes 1-42/42")
+        stream.read()
+        val e = Assert.assertThrows<SocketTimeoutException>(
+            SocketTimeoutException::class.java,
+            ThrowingRunnable { stream.read() })
+        Truth.assertThat<Throwable?>(e.getSuppressed()).hasLength(3)
+        Mockito.verify<Reconnector?>(reconnector, Mockito.times(3))
+            .connect(
+                ArgumentMatchers.any<Throwable?>(Throwable::class.java),
+                ArgumentMatchers.eq<ImmutableMap<String?, MutableList<String?>?>?>(
+                    ImmutableMap.of<String?, MutableList<String?>?>("Range", ImmutableList.of<String?>("bytes=1-"))
+                )
+            )
+        Mockito.verify<InputStream?>(delegate, Mockito.times(5)).read()
+        Mockito.verify<InputStream?>(delegate, Mockito.times(3)).close()
+    }
 }

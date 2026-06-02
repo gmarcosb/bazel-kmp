@@ -11,63 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import javax.annotation.Nullable;
+/** Syntax node for comments.  */
+class Comment internal constructor(locs: FileLocations?, offset: Int, text: String) : Node(locs) {
+    private val offset: Int
 
-/** Syntax node for comments. */
-public final class Comment extends Node {
+    /** Returns the text of the comment, including the leading '#' but not the trailing newline.  */
+    @kotlin.jvm.JvmField
+    val text: String
 
-  private final int offset;
-  private final String text;
-
-  Comment(FileLocations locs, int offset, String text) {
-    super(locs);
-    this.offset = offset;
-    this.text = text;
-  }
-
-  /** Returns the text of the comment, including the leading '#' but not the trailing newline. */
-  public String getText() {
-    return text;
-  }
-
-  /**
-   * Returns true if the comment starts with {@code #:}, like a Sphinx autodoc-style doc comment.
-   */
-  public boolean hasDocCommentPrefix() {
-    return text.startsWith("#:");
-  }
-
-  /**
-   * If the comment starts with a {@code #: } or {@code #:} prefix, returns the text following it;
-   * otherwise, returns null.
-   */
-  @Nullable
-  public String getDocCommentText() {
-    if (hasDocCommentPrefix()) {
-      return text.startsWith("#: ") ? text.substring(3) : text.substring(2);
+    init {
+        this.offset = offset
+        this.text = text
     }
-    return null;
-  }
 
-  @Override
-  public int getStartOffset() {
-    return offset;
-  }
+    /**
+     * Returns true if the comment starts with `#:`, like a Sphinx autodoc-style doc comment.
+     */
+    fun hasDocCommentPrefix(): Boolean {
+        return text.startsWith("#:")
+    }
 
-  @Override
-  public int getEndOffset() {
-    return offset + text.length();
-  }
+    val docCommentText: String?
+        /**
+         * If the comment starts with a `#: ` or `#:` prefix, returns the text following it;
+         * otherwise, returns null.
+         */
+        get() {
+            if (hasDocCommentPrefix()) {
+                return if (text.startsWith("#: ")) text.substring(3) else text.substring(2)
+            }
+            return null
+        }
 
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun getStartOffset(): Int {
+        return offset
+    }
 
-  @Override
-  public String toString() {
-    return text;
-  }
+    override fun getEndOffset(): Int {
+        return offset + text.length
+    }
+
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
+
+    override fun toString(): String {
+        return text
+    }
 }

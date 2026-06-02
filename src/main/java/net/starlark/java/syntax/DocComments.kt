@@ -11,46 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import static com.google.common.base.Preconditions.checkArgument;
+import com.google.common.base.Joiner
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import java.util.List;
+/** A block of Sphinx autodoc-style doc comments.  */
+class DocComments(lines: MutableList<Comment?>) {
+    val lines: ImmutableList<Comment?>
 
-/** A block of Sphinx autodoc-style doc comments. */
-public final class DocComments {
-  private final ImmutableList<Comment> lines;
+    init {
+        Preconditions.checkArgument(!lines.isEmpty())
+        Preconditions.checkArgument(lines.stream().allMatch { obj: Comment? -> obj!!.hasDocCommentPrefix() })
+        this.lines = ImmutableList.copyOf<Comment?>(lines)
+    }
 
-  public DocComments(List<Comment> lines) {
-    checkArgument(!lines.isEmpty());
-    checkArgument(lines.stream().allMatch(Comment::hasDocCommentPrefix));
-    this.lines = ImmutableList.copyOf(lines);
-  }
+    val startLocation: Location
+        get() = lines.getFirst().getStartLocation()
 
-  public ImmutableList<Comment> getLines() {
-    return lines;
-  }
+    val endLocation: Location
+        get() = lines.getLast().getEndLocation()
 
-  public Location getStartLocation() {
-    return lines.getFirst().getStartLocation();
-  }
+    val text: String
+        /**
+         * Returns the text content (trimmed of the leading `#: ` or `#:` prefixes, and joined
+         * with newlines) of the doc comment block.
+         */
+        get() = Joiner.on("\n").join(
+            lines.stream().map<String?> { obj: Comment? -> obj!!.getDocCommentText() }
+                .iterator())
 
-  public Location getEndLocation() {
-    return lines.getLast().getEndLocation();
-  }
-
-  /**
-   * Returns the text content (trimmed of the leading {@code #: } or {@code #:} prefixes, and joined
-   * with newlines) of the doc comment block.
-   */
-  public String getText() {
-    return Joiner.on("\n").join(lines.stream().map(Comment::getDocCommentText).iterator());
-  }
-
-  @Override
-  public String toString() {
-    return Joiner.on("\n").join(lines.stream().map(Comment::toString).iterator());
-  }
+    override fun toString(): String {
+        return Joiner.on("\n").join(lines.stream().map<String?> { obj: Comment? -> obj.toString() }.iterator())
+    }
 }

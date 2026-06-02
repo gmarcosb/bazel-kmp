@@ -11,251 +11,252 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.actions;
+package com.google.devtools.build.lib.analysis.actions
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
-
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.StringEncoding;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import net.starlark.java.eval.EvalException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
 /**
- * Tests {@link TemplateExpansionAction}.
+ * Tests [TemplateExpansionAction].
  */
-@RunWith(JUnit4.class)
-public class TemplateExpansionActionTest extends FoundationTestCase {
+@RunWith(JUnit4::class)
+class TemplateExpansionActionTest : FoundationTestCase() {
+    private var outputRoot: ArtifactRoot? = null
+    private var inputArtifact: Artifact? = null
+    private var outputArtifact: Artifact? = null
+    private var output: Path? = null
+    private var substitutions: MutableList<Substitution?>? = null
+    private var directories: BlazeDirectories? = null
+    private val actionKeyContext: ActionKeyContext = ActionKeyContext()
 
-  private static final String TEMPLATE = Joiner.on('\n').join("key=%key%", "value=%value%");
-  private static final String SPECIAL_CHARS = "Š©±½_strøget";
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createDirectoriesAndTools() {
+        createArtifacts(TEMPLATE)
 
-  private ArtifactRoot outputRoot;
-  private Artifact inputArtifact;
-  private Artifact outputArtifact;
-  private Path output;
-  private List<Substitution> substitutions;
-  private BlazeDirectories directories;
-  private final ActionKeyContext actionKeyContext = new ActionKeyContext();
+        substitutions = java.util.ArrayList<Substitution?>()
+        substitutions!!.add(Substitution.of("%key%", "foo"))
+        substitutions!!.add(Substitution.of("%value%", "bar"))
+        directories =
+            BlazeDirectories(
+                ServerDirectories(
+                    scratch.resolve("/install"),
+                    scratch.resolve("/base"),
+                    scratch.resolve("/userRoot")
+                ),
+                scratch.resolve("/workspace"),
+                "mock-product-name"
+            )
+    }
 
-  @Before
-  public final void createDirectoriesAndTools() throws Exception {
-    createArtifacts(TEMPLATE);
+    @Throws(java.lang.Exception::class)
+    private fun createArtifacts(template: String?) {
+        val workspace: ArtifactRoot? = ArtifactRoot.asSourceRoot(Root.fromPath(scratch.dir("/workspace")))
+        scratch.dir("/workspace/out")
+        outputRoot = ArtifactRoot.asDerivedRoot(scratch.dir("/workspace"), RootType.OUTPUT, "out")
+        val input: Path =
+            scratch.overwriteFile("/workspace/input.txt", java.nio.charset.StandardCharsets.UTF_8, template)
+        inputArtifact = ActionsTestUtil.Companion.createArtifact(workspace, input)
+        output = scratch.resolve("/workspace/out/destination.txt")
+        outputArtifact = ActionsTestUtil.Companion.createArtifact(outputRoot, output)
+    }
 
-    substitutions = new ArrayList<>();
-    substitutions.add(Substitution.of("%key%", "foo"));
-    substitutions.add(Substitution.of("%value%", "bar"));
-    directories =
-        new BlazeDirectories(
-            new ServerDirectories(
-                scratch.resolve("/install"),
-                scratch.resolve("/base"),
-                scratch.resolve("/userRoot")),
-            scratch.resolve("/workspace"),
-            "mock-product-name");
-  }
+    private fun create(): TemplateExpansionAction {
+        val result: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact, Template.forString(TEMPLATE), substitutions, false
+        )
+        return result
+    }
 
-  private void createArtifacts(String template) throws Exception {
-    ArtifactRoot workspace = ArtifactRoot.asSourceRoot(Root.fromPath(scratch.dir("/workspace")));
-    scratch.dir("/workspace/out");
-    outputRoot = ArtifactRoot.asDerivedRoot(scratch.dir("/workspace"), RootType.OUTPUT, "out");
-    Path input = scratch.overwriteFile("/workspace/input.txt", StandardCharsets.UTF_8, template);
-    inputArtifact = ActionsTestUtil.createArtifact(workspace, input);
-    output = scratch.resolve("/workspace/out/destination.txt");
-    outputArtifact = ActionsTestUtil.createArtifact(outputRoot, output);
-  }
+    @org.junit.Test
+    fun testInputsIsEmpty() {
+        assertThat(create().getInputs().toList()).isEmpty()
+    }
 
-  private TemplateExpansionAction create() {
-    TemplateExpansionAction result = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact, Template.forString(TEMPLATE), substitutions, false);
-    return result;
-  }
+    @org.junit.Test
+    fun testDestinationArtifactIsOutput() {
+        assertThat(create().getOutputs()).containsExactly(outputArtifact)
+    }
 
-  @Test
-  public void testInputsIsEmpty() {
-    assertThat(create().getInputs().toList()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpansion() {
+        val executor: Executor? = TestExecutorBuilder(fileSystem, directories).build()
+        val unused: ActionResult? = create().execute(createContext(executor))
+        val content = String(FileSystemUtils.readContentAsLatin1(output))
+        val expected: String = com.google.common.base.Joiner.on('\n').join("key=foo", "value=bar")
+        Truth.assertThat(content).isEqualTo(expected)
+    }
 
-  @Test
-  public void testDestinationArtifactIsOutput() {
-    assertThat(create().getOutputs()).containsExactly(outputArtifact);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeySameIfSame() {
+        val outputArtifact2: Artifact? =
+            ActionsTestUtil.Companion.createArtifact(
+                outputRoot, scratch.resolve("/workspace/out/destination.txt")
+            )
+        val a: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact, Template.forString(TEMPLATE),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo")), false
+        )
+        val b: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact2, Template.forString(TEMPLATE),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo")), false
+        )
 
-  @Test
-  public void testExpansion() throws Exception {
-    Executor executor = new TestExecutorBuilder(fileSystem, directories).build();
-    ActionResult unused = create().execute(createContext(executor));
-    String content = new String(FileSystemUtils.readContentAsLatin1(output));
-    String expected = Joiner.on('\n').join("key=foo", "value=bar");
-    assertThat(content).isEqualTo(expected);
-  }
+        Truth.assertThat(computeKey(a)).isEqualTo(computeKey(b))
+    }
 
-  @Test
-  public void testKeySameIfSame() throws Exception {
-    Artifact outputArtifact2 =
-        ActionsTestUtil.createArtifact(
-            outputRoot, scratch.resolve("/workspace/out/destination.txt"));
-    TemplateExpansionAction a = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact, Template.forString(TEMPLATE),
-         ImmutableList.of(Substitution.of("%key%", "foo")), false);
-    TemplateExpansionAction b = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact2, Template.forString(TEMPLATE),
-         ImmutableList.of(Substitution.of("%key%", "foo")), false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeyDiffersForSubstitution() {
+        val outputArtifact2: Artifact? =
+            ActionsTestUtil.Companion.createArtifact(
+                outputRoot, scratch.resolve("/workspace/out/destination.txt")
+            )
+        val a: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact, Template.forString(TEMPLATE),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo")), false
+        )
+        val b: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact2, Template.forString(TEMPLATE),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo2")), false
+        )
 
-    assertThat(computeKey(a)).isEqualTo(computeKey(b));
-  }
+        Truth.assertThat(computeKey(a)).isNotEqualTo(computeKey(b))
+    }
 
-  @Test
-  public void testKeyDiffersForSubstitution() throws Exception {
-    Artifact outputArtifact2 =
-        ActionsTestUtil.createArtifact(
-            outputRoot, scratch.resolve("/workspace/out/destination.txt"));
-    TemplateExpansionAction a = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact, Template.forString(TEMPLATE),
-         ImmutableList.of(Substitution.of("%key%", "foo")), false);
-    TemplateExpansionAction b = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact2, Template.forString(TEMPLATE),
-         ImmutableList.of(Substitution.of("%key%", "foo2")), false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeyDiffersForExecutable() {
+        val outputArtifact2: Artifact? =
+            ActionsTestUtil.Companion.createArtifact(
+                outputRoot, scratch.resolve("/workspace/out/destination.txt")
+            )
+        val a: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact, Template.forString(TEMPLATE),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo")), false
+        )
+        val b: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact2, Template.forString(TEMPLATE),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo")), true
+        )
 
-    assertThat(computeKey(a)).isNotEqualTo(computeKey(b));
-  }
+        Truth.assertThat(computeKey(a)).isNotEqualTo(computeKey(b))
+    }
 
-  @Test
-  public void testKeyDiffersForExecutable() throws Exception {
-    Artifact outputArtifact2 =
-        ActionsTestUtil.createArtifact(
-            outputRoot, scratch.resolve("/workspace/out/destination.txt"));
-    TemplateExpansionAction a = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact, Template.forString(TEMPLATE),
-         ImmutableList.of(Substitution.of("%key%", "foo")), false);
-    TemplateExpansionAction b = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact2, Template.forString(TEMPLATE),
-         ImmutableList.of(Substitution.of("%key%", "foo")), true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeyDiffersForTemplates() {
+        val outputArtifact2: Artifact? =
+            ActionsTestUtil.Companion.createArtifact(
+                outputRoot, scratch.resolve("/workspace/out/destination.txt")
+            )
+        val a: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact, Template.forString(TEMPLATE),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo")), false
+        )
+        val b: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+            outputArtifact2, Template.forString(TEMPLATE + " "),
+            com.google.common.collect.ImmutableList.of<E?>(Substitution.of("%key%", "foo")), false
+        )
 
-    assertThat(computeKey(a)).isNotEqualTo(computeKey(b));
-  }
+        Truth.assertThat(computeKey(a)).isNotEqualTo(computeKey(b))
+    }
 
-  @Test
-  public void testKeyDiffersForTemplates() throws Exception {
-    Artifact outputArtifact2 =
-        ActionsTestUtil.createArtifact(
-            outputRoot, scratch.resolve("/workspace/out/destination.txt"));
-    TemplateExpansionAction a = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact, Template.forString(TEMPLATE),
-         ImmutableList.of(Substitution.of("%key%", "foo")), false);
-    TemplateExpansionAction b = new TemplateExpansionAction(NULL_ACTION_OWNER,
-         outputArtifact2, Template.forString(TEMPLATE + " "),
-         ImmutableList.of(Substitution.of("%key%", "foo")), false);
+    private fun createWithArtifact(): TemplateExpansionAction {
+        return createWithArtifact(substitutions)
+    }
 
-    assertThat(computeKey(a)).isNotEqualTo(computeKey(b));
-  }
+    private fun createWithArtifact(substitutions: MutableList<Substitution?>?): TemplateExpansionAction {
+        val result: TemplateExpansionAction = TemplateExpansionAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER, inputArtifact, outputArtifact, substitutions, false
+        )
+        return result
+    }
 
-  private TemplateExpansionAction createWithArtifact() {
-    return createWithArtifact(substitutions);
-  }
+    private fun createContext(executor: Executor?): ActionExecutionContext {
+        return ActionExecutionContext(
+            executor,  /* inputMetadataProvider= */
+            null,
+            ActionInputPrefetcher.NONE,
+            actionKeyContext,  /* outputMetadataStore= */
+            null,  /* rewindingEnabled= */
+            false,
+            LostInputsCheck.NONE,
+            FileOutErr(),
+            StoredEventHandler(),  /* clientEnv= */
+            com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* actionFileSystem= */
+            null,
+            DiscoveredModulesPruner.DEFAULT,
+            SyscallCache.NO_CACHE,
+            ThreadStateReceiver.NULL_INSTANCE
+        )
+    }
 
-  private TemplateExpansionAction createWithArtifact(List<Substitution> substitutions) {
-    TemplateExpansionAction result = new TemplateExpansionAction(
-        NULL_ACTION_OWNER, inputArtifact, outputArtifact, substitutions, false);
-    return result;
-  }
+    @Throws(java.lang.Exception::class)
+    private fun executeTemplateExpansion(
+        expected: String?,
+        substitutions: MutableList<Substitution?>? = this.substitutions
+    ) {
+        val executor: Executor? = TestExecutorBuilder(fileSystem, directories).build()
+        val unused: ActionResult? = createWithArtifact(substitutions).execute(createContext(executor))
+        val actual: String? = FileSystemUtils.readContent(output, java.nio.charset.StandardCharsets.UTF_8)
+        Truth.assertThat(actual).isEqualTo(expected)
+    }
 
-  private ActionExecutionContext createContext(Executor executor) {
-    return new ActionExecutionContext(
-        executor,
-        /* inputMetadataProvider= */ null,
-        ActionInputPrefetcher.NONE,
-        actionKeyContext,
-        /* outputMetadataStore= */ null,
-        /* rewindingEnabled= */ false,
-        LostInputsCheck.NONE,
-        new FileOutErr(),
-        new StoredEventHandler(),
-        /* clientEnv= */ ImmutableMap.of(),
-        /* actionFileSystem= */ null,
-        DiscoveredModulesPruner.DEFAULT,
-        SyscallCache.NO_CACHE,
-        ThreadStateReceiver.NULL_INSTANCE);
-  }
+    @org.junit.Test
+    fun testArtifactTemplateHasInput() {
+        assertThat(createWithArtifact().getInputs().toList()).containsExactly(inputArtifact)
+    }
 
-  private void executeTemplateExpansion(String expected) throws Exception {
-    executeTemplateExpansion(expected, substitutions);
-  }
+    @org.junit.Test
+    fun testArtifactTemplateHasOutput() {
+        assertThat(createWithArtifact().getOutputs()).containsExactly(outputArtifact)
+    }
 
-  private void executeTemplateExpansion(String expected, List<Substitution> substitutions)
-      throws Exception {
-    Executor executor = new TestExecutorBuilder(fileSystem, directories).build();
-    ActionResult unused = createWithArtifact(substitutions).execute(createContext(executor));
-    String actual = FileSystemUtils.readContent(output, StandardCharsets.UTF_8);
-    assertThat(actual).isEqualTo(expected);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArtifactTemplateExpansion() {
+        // The trailing "" is needed because scratch.overwriteFile implicitly appends "\n".
+        val expected: String = com.google.common.base.Joiner.on('\n').join("key=foo", "value=bar", "")
+        executeTemplateExpansion(expected)
+    }
 
-  @Test
-  public void testArtifactTemplateHasInput() {
-    assertThat(createWithArtifact().getInputs().toList()).containsExactly(inputArtifact);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWithSpecialCharacters() {
+        // We have to overwrite the artifacts since we need our template in "inputs"
+        createArtifacts(SPECIAL_CHARS + "%key%")
 
-  @Test
-  public void testArtifactTemplateHasOutput() {
-    assertThat(createWithArtifact().getOutputs()).containsExactly(outputArtifact);
-  }
+        // scratch.overwriteFile appends a newline, so we need an additional \n here
+        val expected: String? = java.lang.String.format("%s%s\n", SPECIAL_CHARS, SPECIAL_CHARS)
 
-  @Test
-  public void testArtifactTemplateExpansion() throws Exception {
-    // The trailing "" is needed because scratch.overwriteFile implicitly appends "\n".
-    String expected = Joiner.on('\n').join("key=foo", "value=bar", "");
-    executeTemplateExpansion(expected);
-  }
+        executeTemplateExpansion(
+            expected,
+            com.google.common.collect.ImmutableList.of<E?>(
+                Substitution.of("%key%", StringEncoding.unicodeToInternal(SPECIAL_CHARS))
+            )
+        )
+    }
 
-  @Test
-  public void testWithSpecialCharacters() throws Exception {
-    // We have to overwrite the artifacts since we need our template in "inputs"
-    createArtifacts(SPECIAL_CHARS + "%key%");
+    @Throws(net.starlark.java.eval.EvalException::class, java.lang.InterruptedException::class)
+    private fun computeKey(action: TemplateExpansionAction): String {
+        val fp: Fingerprint = Fingerprint()
+        action.computeKey(actionKeyContext,  /* inputMetadataProvider= */null, fp)
+        return fp.hexDigestAndReset()
+    }
 
-    // scratch.overwriteFile appends a newline, so we need an additional \n here
-    String expected = String.format("%s%s\n", SPECIAL_CHARS, SPECIAL_CHARS);
-
-    executeTemplateExpansion(
-        expected,
-        ImmutableList.of(
-            Substitution.of("%key%", StringEncoding.unicodeToInternal(SPECIAL_CHARS))));
-  }
-
-  private String computeKey(TemplateExpansionAction action)
-      throws EvalException, InterruptedException {
-    Fingerprint fp = new Fingerprint();
-    action.computeKey(actionKeyContext, /* inputMetadataProvider= */ null, fp);
-    return fp.hexDigestAndReset();
-  }
+    companion object {
+        private val TEMPLATE: String = com.google.common.base.Joiner.on('\n').join("key=%key%", "value=%value%")
+        private const val SPECIAL_CHARS = "Š©±½_strøget"
+    }
 }

@@ -11,74 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+/** Syntax node for cast() expressions.  */
+class CastExpression internal constructor(
+    locs: FileLocations?,
+    startOffset: Int,
+    type: Expression?,
+    value: Expression?,
+    rparenOffset: Int
+) : Expression(locs, Kind.CAST) {
+    private val startOffset: Int
+    @kotlin.jvm.JvmField
+    val type: Expression?
+    @kotlin.jvm.JvmField
+    val value: Expression?
+    private val rparenOffset: Int
+    /**
+     * Returns the Starlark type extracted from the [.getType] expression. Non-null after type
+     * tagging.
+     */
+    /** Intended for use by [TypeTagger].  */
+    // Set by type tagging.
+    var starlarkType: StarlarkType? = null
 
-import javax.annotation.Nullable;
+    init {
+        this.startOffset = startOffset
+        this.type = type
+        this.value = value
+        this.rparenOffset = rparenOffset
+    }
 
-/** Syntax node for cast() expressions. */
-public final class CastExpression extends Expression {
-  private final int startOffset;
-  private final Expression type;
-  private final Expression value;
-  private final int rparenOffset;
-  // Set by type tagging.
-  @Nullable private StarlarkType starlarkType;
+    override fun getStartOffset(): Int {
+        return startOffset
+    }
 
-  CastExpression(
-      FileLocations locs, int startOffset, Expression type, Expression value, int rparenOffset) {
-    super(locs, Kind.CAST);
-    this.startOffset = startOffset;
-    this.type = type;
-    this.value = value;
-    this.rparenOffset = rparenOffset;
-  }
+    override fun getEndOffset(): Int {
+        return rparenOffset + 1
+    }
 
-  @Override
-  public int getStartOffset() {
-    return startOffset;
-  }
+    override fun toString(): String {
+        val buf = StringBuilder()
+        buf.append("cast(")
+        buf.append(type)
+        buf.append(", ")
+        buf.append(value)
+        buf.append(')')
+        return buf.toString()
+    }
 
-  @Override
-  public int getEndOffset() {
-    return rparenOffset + 1;
-  }
-
-  public Expression getType() {
-    return type;
-  }
-
-  /**
-   * Returns the Starlark type extracted from the {@link #getType()} expression. Non-null after type
-   * tagging.
-   */
-  @Nullable
-  public StarlarkType getStarlarkType() {
-    return starlarkType;
-  }
-
-  /** Intended for use by {@link TypeTagger}. */
-  void setStarlarkType(StarlarkType starlarkType) {
-    this.starlarkType = starlarkType;
-  }
-
-  public Expression getValue() {
-    return value;
-  }
-
-  @Override
-  public String toString() {
-    StringBuilder buf = new StringBuilder();
-    buf.append("cast(");
-    buf.append(type);
-    buf.append(", ");
-    buf.append(value);
-    buf.append(')');
-    return buf.toString();
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

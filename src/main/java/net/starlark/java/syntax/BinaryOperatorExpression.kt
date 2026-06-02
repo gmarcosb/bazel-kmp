@@ -11,86 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import java.util.EnumSet;
+import java.util.*
 
-/** A BinaryExpression represents a binary operator expression 'x op y'. */
-public final class BinaryOperatorExpression extends Expression {
+/** A BinaryExpression represents a binary operator expression 'x op y'.  */
+class BinaryOperatorExpression internal constructor(
+    locs: FileLocations?,
+    x: Expression,
+    op: TokenKind?,
+    opOffset: Int,
+    y: Expression
+) : Expression(locs, Kind.BINARY_OPERATOR) {
+    /** Returns the left operand.  */
+    @kotlin.jvm.JvmField
+    val x: Expression
 
-  private final Expression x;
-  private final TokenKind op; // one of 'operators'
-  private final int opOffset;
-  private final Expression y;
+    /** Returns the operator.  */
+    val operator: TokenKind? // one of 'operators'
+    private val opOffset: Int
 
-  /** operators is the set of valid binary operators. */
-  public static final EnumSet<TokenKind> operators =
-      EnumSet.of(
-          TokenKind.AND,
-          TokenKind.EQUALS_EQUALS,
-          TokenKind.GREATER,
-          TokenKind.GREATER_EQUALS,
-          TokenKind.IN,
-          TokenKind.LESS,
-          TokenKind.LESS_EQUALS,
-          TokenKind.MINUS,
-          TokenKind.NOT_EQUALS,
-          TokenKind.NOT_IN,
-          TokenKind.OR,
-          TokenKind.PERCENT,
-          TokenKind.SLASH,
-          TokenKind.SLASH_SLASH,
-          TokenKind.PLUS,
-          TokenKind.PIPE,
-          TokenKind.STAR);
+    /** Returns the right operand.  */
+    @kotlin.jvm.JvmField
+    val y: Expression
 
-  BinaryOperatorExpression(
-      FileLocations locs, Expression x, TokenKind op, int opOffset, Expression y) {
-    super(locs, Kind.BINARY_OPERATOR);
-    this.x = x;
-    this.op = op;
-    this.opOffset = opOffset;
-    this.y = y;
-  }
+    init {
+        this.x = x
+        this.operator = op
+        this.opOffset = opOffset
+        this.y = y
+    }
 
-  /** Returns the left operand. */
-  public Expression getX() {
-    return x;
-  }
+    val operatorLocation: Location
+        get() = locs.getLocation(opOffset)
 
-  /** Returns the operator. */
-  public TokenKind getOperator() {
-    return op;
-  }
+    override fun getStartOffset(): Int {
+        return x.getStartOffset()
+    }
 
-  public Location getOperatorLocation() {
-    return locs.getLocation(opOffset);
-  }
+    override fun getEndOffset(): Int {
+        return y.getEndOffset()
+    }
 
-  /** Returns the right operand. */
-  public Expression getY() {
-    return y;
-  }
+    override fun toString(): String {
+        // This omits the parentheses for brevity, but is not correct in general due to operator
+        // precedence rules.
+        return x.toString() + " " + this.operator + " " + y
+    }
 
-  @Override
-  public int getStartOffset() {
-    return x.getStartOffset();
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 
-  @Override
-  public int getEndOffset() {
-    return y.getEndOffset();
-  }
-
-  @Override
-  public String toString() {
-    // This omits the parentheses for brevity, but is not correct in general due to operator
-    // precedence rules.
-    return x + " " + op + " " + y;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    companion object {
+        /** operators is the set of valid binary operators.  */
+        val operators: EnumSet<TokenKind?> = EnumSet.of<TokenKind?>(
+            TokenKind.AND,
+            TokenKind.EQUALS_EQUALS,
+            TokenKind.GREATER,
+            TokenKind.GREATER_EQUALS,
+            TokenKind.IN,
+            TokenKind.LESS,
+            TokenKind.LESS_EQUALS,
+            TokenKind.MINUS,
+            TokenKind.NOT_EQUALS,
+            TokenKind.NOT_IN,
+            TokenKind.OR,
+            TokenKind.PERCENT,
+            TokenKind.SLASH,
+            TokenKind.SLASH_SLASH,
+            TokenKind.PLUS,
+            TokenKind.PIPE,
+            TokenKind.STAR
+        )
+    }
 }

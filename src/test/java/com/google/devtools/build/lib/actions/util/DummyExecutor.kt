@@ -11,98 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions.util;
+package com.google.devtools.build.lib.actions.util
 
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.ShowSubcommands;
-import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.common.options.OptionsProvider;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionContext
+import com.google.devtools.build.lib.clock.Clock
+import com.google.devtools.build.lib.testutil.ManualClock
 
-/** A dummy implementation of Executor. */
-public class DummyExecutor implements Executor {
+/** A dummy implementation of Executor.  */
+class DummyExecutor(
+    fileSystem: FileSystem?,
+    bugReporter: BugReporter?,
+    inputDir: Path?,
+    optionsProvider: OptionsProvider?,
+    showSubcommands: ShowSubcommands?
+) : Executor {
+    private val fileSystem: FileSystem?
+    private val bugReporter: BugReporter?
+    private val inputDir: Path?
+    private val clock = ManualClock()
+    private val optionsProvider: OptionsProvider?
+    private val showSubcommands: ShowSubcommands?
 
-  private final FileSystem fileSystem;
-  private final BugReporter bugReporter;
-  private final Path inputDir;
-  private final ManualClock clock = new ManualClock();
-  @Nullable private final OptionsProvider optionsProvider;
-  @Nullable private final ShowSubcommands showSubcommands;
+    init {
+        this.fileSystem = fileSystem
+        this.bugReporter = bugReporter
+        this.inputDir = inputDir
+        this.optionsProvider = optionsProvider
+        this.showSubcommands = showSubcommands
+    }
 
-  public DummyExecutor(
-      FileSystem fileSystem,
-      BugReporter bugReporter,
-      Path inputDir,
-      @Nullable OptionsProvider optionsProvider,
-      @Nullable ShowSubcommands showSubcommands) {
-    this.fileSystem = fileSystem;
-    this.bugReporter = bugReporter;
-    this.inputDir = inputDir;
-    this.optionsProvider = optionsProvider;
-    this.showSubcommands = showSubcommands;
-  }
-
-  public DummyExecutor(
-      FileSystem fileSystem, Path inputDir, @Nullable OptionsProvider optionsProvider) {
-    this(
+    constructor(fileSystem: FileSystem?, inputDir: Path?, optionsProvider: OptionsProvider?) : this(
         fileSystem,
         BugReporter.defaultInstance(),
         inputDir,
-        optionsProvider,
-        /*showSubcommands=*/ null);
-  }
+        optionsProvider,  /*showSubcommands=*/
+        null
+    )
 
-  public DummyExecutor(FileSystem fileSystem, Path inputDir) {
-    this(fileSystem, inputDir, null);
-  }
+    @kotlin.jvm.JvmOverloads
+    constructor(fileSystem: FileSystem? = null, inputDir: Path? = null) : this(fileSystem, inputDir, null)
 
-  public DummyExecutor() {
-    this(/*fileSystem=*/ null, /*inputDir=*/ null);
-  }
-
-  @Override
-  public FileSystem getFileSystem() {
-    return fileSystem;
-  }
-
-  @Override
-  public Path getExecRoot() {
-    return inputDir;
-  }
-
-  @Override
-  public Clock getClock() {
-    return clock;
-  }
-
-  @Override
-  public BugReporter getBugReporter() {
-    return bugReporter;
-  }
-
-  @Override
-  public <T extends ActionContext> T getContext(Class<T> type) {
-    return null;
-  }
-
-  @Override
-  public OptionsProvider getOptions() {
-    if (optionsProvider != null) {
-      return optionsProvider;
+    public override fun getFileSystem(): FileSystem? {
+        return fileSystem
     }
-    throw new UnsupportedOperationException();
-  }
 
-  @Override
-  public ShowSubcommands reportsSubcommands() {
-    if (showSubcommands != null) {
-      return showSubcommands;
+    public override fun getExecRoot(): Path? {
+        return inputDir
     }
-    throw new UnsupportedOperationException();
-  }
+
+    public override fun getClock(): Clock {
+        return clock
+    }
+
+    public override fun getBugReporter(): BugReporter? {
+        return bugReporter
+    }
+
+    public override fun <T : ActionContext?> getContext(type: Class<T?>?): T? {
+        return null
+    }
+
+    public override fun getOptions(): OptionsProvider {
+        if (optionsProvider != null) {
+            return optionsProvider
+        }
+        throw UnsupportedOperationException()
+    }
+
+    public override fun reportsSubcommands(): ShowSubcommands? {
+        if (showSubcommands != null) {
+            return showSubcommands
+        }
+        throw UnsupportedOperationException()
+    }
 }

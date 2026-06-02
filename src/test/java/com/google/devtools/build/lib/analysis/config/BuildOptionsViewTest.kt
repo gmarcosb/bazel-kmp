@@ -11,76 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.rules.cpp.CppOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.rules.cpp.CppOptions;
-import com.google.devtools.common.options.OptionsParser;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [BuildOptionsView].  */
+@RunWith(JUnit4::class)
+class BuildOptionsViewTest {
+    private var options: BuildOptions? = null
 
-/** Tests for {@link BuildOptionsView}. */
-@RunWith(JUnit4.class)
-public final class BuildOptionsViewTest {
+    @Before
+    fun constructBuildOptions() {
+        options =
+            BuildOptions.of(
+                BUILD_CONFIG_OPTIONS,
+                OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build()
+            )
+    }
 
-  private static final ImmutableList<Class<? extends FragmentOptions>> BUILD_CONFIG_OPTIONS =
-      ImmutableList.of(CoreOptions.class, CppOptions.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allowedGet() {
+        val restrictedOptions: BuildOptionsView =
+            BuildOptionsView(options, com.google.common.collect.ImmutableSet.of<E?>(CoreOptions::class.java))
+        assertThat(restrictedOptions.get(CoreOptions::class.java))
+            .isSameInstanceAs(options.get(CoreOptions::class.java))
+    }
 
-  private BuildOptions options;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun prohibitedGet() {
+        val restrictedOptions: BuildOptionsView =
+            BuildOptionsView(options, com.google.common.collect.ImmutableSet.of<E?>(CoreOptions::class.java))
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { restrictedOptions.get(CppOptions::class.java) })
+    }
 
-  @Before
-  public void constructBuildOptions() {
-    options =
-        BuildOptions.of(
-            BUILD_CONFIG_OPTIONS,
-            OptionsParser.builder().optionsClasses(BUILD_CONFIG_OPTIONS).build());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allowedContains() {
+        val restrictedOptions: BuildOptionsView =
+            BuildOptionsView(options, com.google.common.collect.ImmutableSet.of<E?>(CoreOptions::class.java))
+        assertThat(restrictedOptions.contains(CoreOptions::class.java)).isTrue()
+    }
 
-  @Test
-  public void allowedGet() throws Exception {
-    BuildOptionsView restrictedOptions =
-        new BuildOptionsView(options, ImmutableSet.of(CoreOptions.class));
-    assertThat(restrictedOptions.get(CoreOptions.class))
-        .isSameInstanceAs(options.get(CoreOptions.class));
-    ;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun prohibitedContains() {
+        val restrictedOptions: BuildOptionsView =
+            BuildOptionsView(options, com.google.common.collect.ImmutableSet.of<E?>(CoreOptions::class.java))
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { restrictedOptions.contains(CppOptions::class.java) })
+    }
 
-  @Test
-  public void prohibitedGet() throws Exception {
-    BuildOptionsView restrictedOptions =
-        new BuildOptionsView(options, ImmutableSet.of(CoreOptions.class));
-    assertThrows(IllegalArgumentException.class, () -> restrictedOptions.get(CppOptions.class));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cloneTest() {
+        val restrictedOptions: BuildOptionsView =
+            BuildOptionsView(options, com.google.common.collect.ImmutableSet.of<E?>(CoreOptions::class.java))
+        val clone: BuildOptionsView = restrictedOptions.clone()
+        assertThat(clone).isNotSameInstanceAs(restrictedOptions)
+        assertThat(restrictedOptions.underlying()).isSameInstanceAs(options)
+        assertThat(clone.underlying()).isNotSameInstanceAs(options)
+        assertThat(clone.underlying()).isEqualTo(options)
+    }
 
-  @Test
-  public void allowedContains() throws Exception {
-    BuildOptionsView restrictedOptions =
-        new BuildOptionsView(options, ImmutableSet.of(CoreOptions.class));
-    assertThat(restrictedOptions.contains(CoreOptions.class)).isTrue();
-  }
-
-  @Test
-  public void prohibitedContains() throws Exception {
-    BuildOptionsView restrictedOptions =
-        new BuildOptionsView(options, ImmutableSet.of(CoreOptions.class));
-    assertThrows(
-        IllegalArgumentException.class, () -> restrictedOptions.contains(CppOptions.class));
-  }
-
-  @Test
-  public void cloneTest() throws Exception {
-    BuildOptionsView restrictedOptions =
-        new BuildOptionsView(options, ImmutableSet.of(CoreOptions.class));
-    BuildOptionsView clone = restrictedOptions.clone();
-    assertThat(clone).isNotSameInstanceAs(restrictedOptions);
-    assertThat(restrictedOptions.underlying()).isSameInstanceAs(options);
-    assertThat(clone.underlying()).isNotSameInstanceAs(options);
-    assertThat(clone.underlying()).isEqualTo(options);
-  }
+    companion object {
+        private val BUILD_CONFIG_OPTIONS: com.google.common.collect.ImmutableList<java.lang.Class<out FragmentOptions?>?> =
+            com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java, CppOptions::class.java)
+    }
 }

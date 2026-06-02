@@ -11,142 +11,114 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
 
-import static com.google.common.truth.Truth.assertThat;
+/** BuildViewTest where it's possible to stub the FileSystem operations.  */
+@RunWith(JUnit4::class)
+class StubbableFSBuildViewTest : BuildViewTestBase() {
+    override fun createFileSystem(): FileSystem? {
+        return StubbableFs(com.google.devtools.build.lib.testutil.ManualClock())
+    }
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestBase;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private val stubbableFS: StubbableFs?
+        get() = fileSystem as StubbableFs?
 
-/** BuildViewTest where it's possible to stub the FileSystem operations. */
-@RunWith(JUnit4.class)
-public class StubbableFSBuildViewTest extends BuildViewTestBase {
-  @Override
-  protected FileSystem createFileSystem() {
-    return new StubbableFs(new ManualClock());
-  }
-
-  private StubbableFs getStubbableFS() {
-    return (StubbableFs) fileSystem;
-  }
-
-  // Regression test for b/227641207.
-  @Test
-  public void testCatastrophicAnalysisErrorAspect_keepGoing_noCrashCatastrophicErrorReported()
-      throws Exception {
-    // We're expecting failures.
-    reporter.removeHandler(failFastHandler);
-    Path pathToBuildB = scratch.file("b/BUILD", "cc_library(name='b')");
-    scratch.file(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='a', srcs = ['a.cc'], deps = ['//b:b'])");
-    scratch.file("a/a.cc", "");
-    scratch.file(
-        "a/aspect.bzl",
-        """
+    // Regression test for b/227641207.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCatastrophicAnalysisErrorAspect_keepGoing_noCrashCatastrophicErrorReported() {
+        // We're expecting failures.
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        val pathToBuildB: Path = scratch.file("b/BUILD", "cc_library(name='b')")
+        scratch.file(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='a', srcs = ['a.cc'], deps = ['//b:b'])"
+        )
+        scratch.file("a/a.cc", "")
+        scratch.file(
+            "a/aspect.bzl",
+            """
         def _impl(target, ctx):
             print("This aspect does nothing")
             return []
 
         MyAspect = aspect(implementation = _impl)
-        """);
-    getStubbableFS().stubFastDigestError(pathToBuildB, new IOException("testException"));
-    AnalysisFailureRecorder recorder = new AnalysisFailureRecorder();
-    eventBus.register(recorder);
+        
+        """.trimIndent()
+        )
+        this.stubbableFS!!.stubFastDigestError(pathToBuildB, IOException("testException"))
+        val recorder: AnalysisFailureRecorder = AnalysisFailureRecorder()
+        eventBus.register(recorder)
 
-    AnalysisResult result =
-        update(
+        val result: AnalysisResult =
+            update(
+                eventBus,
+                defaultFlags().with(com.google.devtools.build.lib.analysis.util.AnalysisTestCase.Flag.KEEP_GOING),
+                com.google.common.collect.ImmutableList.of<String?>("a/aspect.bzl%MyAspect"),
+                "//a"
+            )
+
+        assertThat(result.hasError()).isTrue()
+        com.google.common.truth.Subject.contains("command succeeded, but not all targets were analyzed")
+        Truth.assertThat(recorder.events).hasSize(1)
+        com.google.common.truth.Subject.contains(
+            ("Inconsistent filesystem operations. 'stat' said /workspace/b/BUILD is a file but then"
+                    + " we later encountered error 'testException' which indicates that"
+                    + " /workspace/b/BUILD is no longer a file.")
+        )
+    }
+
+    // Regression test for b/227641207.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCatastrophicAnalysisError_keepGoing_noCrashCatastrophicErrorReported() {
+        // We're expecting failures.
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        val pathToBuildB: Path = scratch.file("b/BUILD", "cc_library(name='b')")
+        scratch.file(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='a', srcs = ['a.cc'], deps = ['//b:b'])"
+        )
+        scratch.file("a/a.cc", "")
+        this.stubbableFS!!.stubFastDigestError(pathToBuildB, IOException("testExeception"))
+        val recorder: AnalysisFailureRecorder = AnalysisFailureRecorder()
+        eventBus.register(recorder)
+
+        val result: AnalysisResult = update(
             eventBus,
-            defaultFlags().with(Flag.KEEP_GOING),
-            ImmutableList.of("a/aspect.bzl%MyAspect"),
-            "//a");
+            defaultFlags().with(com.google.devtools.build.lib.analysis.util.AnalysisTestCase.Flag.KEEP_GOING),
+            "//a"
+        )
 
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getFailureDetail().getMessage())
-        .contains("command succeeded, but not all targets were analyzed");
-    assertThat(recorder.events).hasSize(1);
-    assertThat(
-            Iterables.getOnlyElement(recorder.events)
-                .getRootCauses()
-                .getSingleton()
-                .getDetailedExitCode()
-                .getFailureDetail()
-                .getMessage())
-        .contains(
-            "Inconsistent filesystem operations. 'stat' said /workspace/b/BUILD is a file but then"
-                + " we later encountered error 'testException' which indicates that"
-                + " /workspace/b/BUILD is no longer a file.");
-  }
-
-  // Regression test for b/227641207.
-  @Test
-  public void testCatastrophicAnalysisError_keepGoing_noCrashCatastrophicErrorReported()
-      throws Exception {
-    // We're expecting failures.
-    reporter.removeHandler(failFastHandler);
-    Path pathToBuildB = scratch.file("b/BUILD", "cc_library(name='b')");
-    scratch.file(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='a', srcs = ['a.cc'], deps = ['//b:b'])");
-    scratch.file("a/a.cc", "");
-    getStubbableFS().stubFastDigestError(pathToBuildB, new IOException("testExeception"));
-    AnalysisFailureRecorder recorder = new AnalysisFailureRecorder();
-    eventBus.register(recorder);
-
-    AnalysisResult result = update(eventBus, defaultFlags().with(Flag.KEEP_GOING), "//a");
-
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getFailureDetail().getMessage())
-        .contains("command succeeded, but not all targets were analyzed");
-    assertThat(recorder.events).hasSize(1);
-    assertThat(
-            Iterables.getOnlyElement(recorder.events)
-                .getRootCauses()
-                .getSingleton()
-                .getDetailedExitCode()
-                .getFailureDetail()
-                .getMessage())
-        .contains(
-            "Inconsistent filesystem operations. 'stat' said /workspace/b/BUILD is a file but then"
-                + " we later encountered error 'testExeception' which indicates that"
-                + " /workspace/b/BUILD is no longer a file.");
-  }
-
-  private static class StubbableFs extends InMemoryFileSystem {
-
-    private final Map<PathFragment, IOException> stubbedFastDigestErrors = new HashMap<>();
-
-    StubbableFs(ManualClock manualClock) {
-      super(manualClock, DigestHashFunction.SHA256);
+        assertThat(result.hasError()).isTrue()
+        com.google.common.truth.Subject.contains("command succeeded, but not all targets were analyzed")
+        Truth.assertThat(recorder.events).hasSize(1)
+        com.google.common.truth.Subject.contains(
+            ("Inconsistent filesystem operations. 'stat' said /workspace/b/BUILD is a file but then"
+                    + " we later encountered error 'testExeception' which indicates that"
+                    + " /workspace/b/BUILD is no longer a file.")
+        )
     }
 
-    void stubFastDigestError(Path path, IOException error) {
-      stubbedFastDigestErrors.put(path.asFragment(), error);
-    }
+    private class StubbableFs(manualClock: com.google.devtools.build.lib.testutil.ManualClock) :
+        InMemoryFileSystem(manualClock, DigestHashFunction.SHA256) {
+        private val stubbedFastDigestErrors: MutableMap<PathFragment?, IOException?> =
+            HashMap<PathFragment?, IOException?>()
 
-    @Override
-    @SuppressWarnings("UnsynchronizedOverridesSynchronized")
-    public byte[] getFastDigest(PathFragment path) throws IOException {
-      if (stubbedFastDigestErrors.containsKey(path)) {
-        throw stubbedFastDigestErrors.get(path);
-      }
-      return getDigest(path);
+        fun stubFastDigestError(path: Path, error: IOException?) {
+            stubbedFastDigestErrors.put(path.asFragment(), error)
+        }
+
+        @Throws(IOException::class)
+        public override fun getFastDigest(path: PathFragment?): ByteArray {
+            if (stubbedFastDigestErrors.containsKey(path)) {
+                throw stubbedFastDigestErrors.get(path)
+            }
+            return getDigest(path)
+        }
     }
-  }
 }

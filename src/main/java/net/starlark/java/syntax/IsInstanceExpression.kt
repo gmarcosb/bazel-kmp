@@ -11,56 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+/** Syntax node for isinstance() expressions.  */
+class IsInstanceExpression internal constructor(
+    locs: FileLocations?,
+    startOffset: Int,
+    value: Expression?,
+    type: Expression?,
+    rparenOffset: Int
+) : Expression(locs, Kind.ISINSTANCE) {
+    private val startOffset: Int
+    @kotlin.jvm.JvmField
+    private val value: Expression?
+    @kotlin.jvm.JvmField
+    private val type: Expression?
+    private val rparenOffset: Int
 
-/** Syntax node for isinstance() expressions. */
-public final class IsInstanceExpression extends Expression {
-  private final int startOffset;
-  private final Expression value;
-  private final Expression type;
-  private final int rparenOffset;
+    init {
+        this.startOffset = startOffset
+        this.value = value
+        this.type = type
+        this.rparenOffset = rparenOffset
+    }
 
-  IsInstanceExpression(
-      FileLocations locs, int startOffset, Expression value, Expression type, int rparenOffset) {
-    super(locs, Kind.ISINSTANCE);
-    this.startOffset = startOffset;
-    this.value = value;
-    this.type = type;
-    this.rparenOffset = rparenOffset;
-  }
+    override fun getStartOffset(): Int {
+        return startOffset
+    }
 
-  @Override
-  public int getStartOffset() {
-    return startOffset;
-  }
+    override fun getEndOffset(): Int {
+        return rparenOffset + 1
+    }
 
-  @Override
-  public int getEndOffset() {
-    return rparenOffset + 1;
-  }
+    fun getValue(): Expression? {
+        return value
+    }
 
-  public Expression getValue() {
-    return value;
-  }
+    fun getType(): Expression? {
+        return type
+    }
 
-  public Expression getType() {
-    return type;
-  }
+    override fun toString(): String {
+        val buf = StringBuilder()
+        buf.append("isinstance(")
+        buf.append(value)
+        buf.append(", ")
+        buf.append(type)
+        buf.append(')')
+        return buf.toString()
+    }
 
-  @Override
-  public String toString() {
-    StringBuilder buf = new StringBuilder();
-    buf.append("isinstance(");
-    buf.append(value);
-    buf.append(", ");
-    buf.append(type);
-    buf.append(')');
-    return buf.toString();
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

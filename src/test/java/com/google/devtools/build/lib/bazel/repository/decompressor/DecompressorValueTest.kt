@@ -11,158 +11,155 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.decompressor
 
-package com.google.devtools.build.lib.bazel.repository.decompressor;
+import com.google.devtools.build.lib.bazel.repository.RepositoryFunctionException
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import java.lang.String
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.util.*
+import kotlin.Exception
+import kotlin.Int
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.testutil.TestConstants.PRODUCT_NAME;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeFalse;
+/** Tests for [DecompressorValue].  */
+@RunWith(JUnit4::class)
+class DecompressorValueTest {
+    private val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.bazel.repository.RepositoryFunctionException;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.runfiles.Runfiles;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    @Throws(Exception::class)
+    fun testKnownFileExtensionsDoNotThrow() {
+        var path: Path? = fs.getPath("/foo/.external-repositories/some-repo/bar.zip")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.jar")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.zip")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.nupkg")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.whl")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.gz")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarGzFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tgz")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarGzFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.gz")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(GzFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.xz")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarXzFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.txz")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarXzFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.xz")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(XzFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.zst")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarZstFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tzst")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarZstFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.zst")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZstFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.bz2")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarBz2Function::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tbz")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarBz2Function::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.bz2")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(Bz2Function::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.ar")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ArFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.deb")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ArFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.7z")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(SevenZDecompressor::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.br")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(BrFunction::class.java)
+        path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.br")
+        assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarBrFunction::class.java)
+    }
 
-/** Tests for {@link DecompressorValue}. */
-@RunWith(JUnit4.class)
-public class DecompressorValueTest {
+    @Test
+    @Throws(Exception::class)
+    fun testUnknownFileExtensionsThrow() {
+        val zipPath: Path? = fs.getPath("/foo/.external-repositories/some-repo/bar.baz")
+        val expected: RepositoryFunctionException? =
+            Assert.assertThrows<T?>(
+                RepositoryFunctionException::class.java,
+                ThrowingRunnable { DecompressorValue.getDecompressor(zipPath) })
+        assertThat(expected).hasMessageThat().contains("Expected a file with a .zip, .jar,")
+    }
 
-  private final FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
+    @Test
+    @Throws(IOException::class)
+    fun httpBzlDocumentation() {
+        // This test is specific to the Bazel runfiles structure and the open-source http.bzl.
+        // Skip this test when running under Google's internal Blaze.
+        Assume.assumeFalse(
+            "Skipping httpBzlDocumentation test in Blaze environment.", TestConstants.PRODUCT_NAME == "blaze"
+        )
 
-  @Test
-  public void testKnownFileExtensionsDoNotThrow() throws Exception {
-    Path path = fs.getPath("/foo/.external-repositories/some-repo/bar.zip");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.jar");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.zip");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.nupkg");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.whl");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZipDecompressor.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.gz");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarGzFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tgz");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarGzFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.gz");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(GzFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.xz");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarXzFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.txz");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarXzFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.xz");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(XzFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.zst");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarZstFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tzst");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarZstFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.zst");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ZstFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.bz2");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarBz2Function.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tbz");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarBz2Function.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.bz2");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(Bz2Function.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.ar");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ArFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.deb");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(ArFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.7z");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(SevenZDecompressor.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.br");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(BrFunction.class);
-    path = fs.getPath("/foo/.external-repositories/some-repo/bar.baz.tar.br");
-    assertThat(DecompressorValue.getDecompressor(path)).isInstanceOf(TarBrFunction.class);
-  }
+        val filePath: String? = Runfiles.create().rlocation("_main/tools/build_defs/repo/http.bzl")
+        val contents = Files.readString(Paths.get(filePath), StandardCharsets.UTF_8)
 
-  @Test
-  public void testUnknownFileExtensionsThrow() throws Exception {
-    Path zipPath = fs.getPath("/foo/.external-repositories/some-repo/bar.baz");
-    RepositoryFunctionException expected =
-        assertThrows(
-            RepositoryFunctionException.class, () -> DecompressorValue.getDecompressor(zipPath));
-    assertThat(expected).hasMessageThat().contains("Expected a file with a .zip, .jar,");
-  }
+        // Find where the archive formats variable is initialized and parse out.
+        val startVarNameIndex: Int = contents.indexOf("SUPPORTED_ARCHIVE_FORMATS =")
+        val startBracket: Int = contents.indexOf("[", startVarNameIndex)
+        val endBracket: Int = contents.indexOf("]", startBracket)
+        val formats: String = contents.substring(startBracket + 1, endBracket)
+        val observedExtensions =
+            Arrays.stream<String?>(formats.split(",".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray())
+                .map<String?> { obj: String? -> obj.trim() }
+                .filter { s: String? -> s.contains("\"") }
+                .map<String?> { s: String? -> s.substring(1, s!!.length - 1) }
+                .toList()
 
-  @Test
-  public void httpBzlDocumentation() throws IOException {
-    // This test is specific to the Bazel runfiles structure and the open-source http.bzl.
-    // Skip this test when running under Google's internal Blaze.
-    assumeFalse(
-        "Skipping httpBzlDocumentation test in Blaze environment.", PRODUCT_NAME.equals("blaze"));
+        val expectedExtensions =
+            DecompressorValue.allSupportedExtensions( /* prefix= */"",  /* suffix= */"")
+        if (expectedExtensions != observedExtensions) {
+            val copyPasteCode =
+                ("SUPPORTED_ARCHIVE_FORMATS = [\n"
+                        + String.join(
+                    "\n",
+                    DecompressorValue.allSupportedExtensions( /* prefix= */
+                        "    \"",  /* suffix= */"\","
+                    )
+                )
+                        + "\n]")
 
-    String filePath = Runfiles.create().rlocation("_main/tools/build_defs/repo/http.bzl");
-    String contents = Files.readString(Paths.get(filePath), StandardCharsets.UTF_8);
-
-    // Find where the archive formats variable is initialized and parse out.
-    int startVarNameIndex = contents.indexOf("SUPPORTED_ARCHIVE_FORMATS =");
-    int startBracket = contents.indexOf("[", startVarNameIndex);
-    int endBracket = contents.indexOf("]", startBracket);
-    String formats = contents.substring(startBracket + 1, endBracket);
-    List<String> observedExtensions =
-        Arrays.stream(formats.split(","))
-            .map(String::strip)
-            .filter(s -> s.contains("\""))
-            .map(s -> s.substring(1, s.length() - 1))
-            .toList();
-
-    ImmutableList<String> expectedExtensions =
-        DecompressorValue.allSupportedExtensions(/* prefix= */ "", /* suffix= */ "");
-    if (!expectedExtensions.equals(observedExtensions)) {
-      String copyPasteCode =
-          "SUPPORTED_ARCHIVE_FORMATS = [\n"
-              + String.join(
-                  "\n",
-                  DecompressorValue.allSupportedExtensions(
-                      /* prefix= */ "    \"", /* suffix= */ "\","))
-              + "\n]";
-
-      fail(
-          String.format(
-              """
+            Assert.fail(
+                kotlin.String.format(
+                    """
               Supported archive formats list is out-dated.
 
               Expected:
-              \t%1$s
+              ${'\t'}%1${'$'}s
               Got:
-              \t%2$s
+              ${'\t'}%2${'$'}s
 
               Copy-paste string to replace in http.bzl:
 
-              %3$s
-              """,
-              expectedExtensions, observedExtensions, copyPasteCode));
+              %3${'$'}s
+              
+              """.trimIndent(),
+                    expectedExtensions, observedExtensions, copyPasteCode
+                )
+            )
+        }
     }
-  }
 
-  @Test
-  public void getDecompressorByType() throws Exception {
-    DecompressorValue.Decompressor decompressor = DecompressorValue.getDecompressor("zip");
-    assertThat(decompressor).isInstanceOf(ZipDecompressor.class);
+    @Test
+    @Throws(Exception::class)
+    fun getDecompressorByType() {
+        var decompressor: DecompressorValue.Decompressor? = DecompressorValue.getDecompressor("zip")
+        Truth.assertThat(decompressor).isInstanceOf(ZipDecompressor::class.java)
 
-    decompressor = DecompressorValue.getDecompressor("deb");
-    assertThat(decompressor).isInstanceOf(ArFunction.class);
+        decompressor = DecompressorValue.getDecompressor("deb")
+        Truth.assertThat(decompressor).isInstanceOf(ArFunction::class.java)
 
-    RepositoryFunctionException expected =
-        assertThrows(
-            RepositoryFunctionException.class, () -> DecompressorValue.getDecompressor("baz"));
-    assertThat(expected).hasMessageThat().contains("No decompressor found for type baz");
-    assertThat(expected).hasMessageThat().contains("Available types are: zip, jar");
-  }
+        val expected: RepositoryFunctionException? =
+            Assert.assertThrows<T?>(
+                RepositoryFunctionException::class.java, ThrowingRunnable { DecompressorValue.getDecompressor("baz") })
+        assertThat(expected).hasMessageThat().contains("No decompressor found for type baz")
+        assertThat(expected).hasMessageThat().contains("Available types are: zip, jar")
+    }
 }

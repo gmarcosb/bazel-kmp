@@ -123,7 +123,7 @@ public final class TypeCheckerTest {
   private StarlarkType inferTypeGivenDecls(String expr, String... decls) throws Exception {
     PreparedFile preparedFile = prepareFile(ObjectArrays.concat(decls, expr));
     var resolvedExpr =
-        ((ExpressionStatement) preparedFile.file().getStatements().getLast()).getExpression();
+        ((ExpressionStatement) preparedFile.file().statements.getLast()).getExpression();
     return TypeChecker.inferTypeOf(resolvedExpr, preparedFile.typeTable(), module);
   }
 
@@ -148,7 +148,7 @@ public final class TypeCheckerTest {
     TypeChecker.checkFile(preparedFile.file(), preparedFile.typeTable(), module);
     assertThat(preparedFile.file().errors()).isEmpty();
     var resolvedExpr =
-        ((ExpressionStatement) preparedFile.file().getStatements().getLast()).getExpression();
+        ((ExpressionStatement) preparedFile.file().statements.getLast()).getExpression();
     assertWithMessage("type of %s", expr)
         .that(TypeChecker.inferTypeOf(resolvedExpr, preparedFile.typeTable(), module))
         .isEqualTo(expected);

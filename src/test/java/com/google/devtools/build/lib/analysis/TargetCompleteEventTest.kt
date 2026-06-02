@@ -11,224 +11,247 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.actions.ActionInputMap
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-import static java.nio.charset.StandardCharsets.UTF_8;
+/** Tests for [TargetCompleteEvent].  */
+@RunWith(JUnit4::class)
+class TargetCompleteEventTest : AnalysisTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReferencedSourceFile() {
+        scratch.file("BUILD", "filegroup(name = 'files', srcs = ['file'])")
+        scratch.file("file", "content does not matter")
+        val ctAndData: ConfiguredTargetAndData = getCtAndData("//:files")
+        val artifactsToBuild: ArtifactsToBuild =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getArtifactsToBuild(ctAndData)
+        val artifact: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(artifactsToBuild.getAllArtifacts().toList())
+        val metadata: FileArtifactValue =
+            FileArtifactValue.createForNormalFile(byteArrayOf(1, 2, 3), null, 10)
+        val completionContext: CompletionContext =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getCompletionContext(
+                com.google.common.collect.ImmutableMap.of<Artifact?, FileArtifactValue?>(
+                    artifact,
+                    metadata
+                ), com.google.common.collect.ImmutableMap.of<SpecialArtifact?, TreeArtifactValue?>()
+            )
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.ActionInputMap;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ArtifactPathResolver;
-import com.google.devtools.build.lib.actions.CompletionContext;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.ArtifactsToBuild;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.File;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val event: TargetCompleteEvent =
+            TargetCompleteEvent.successfulBuild(
+                ctAndData,
+                completionContext,
+                artifactsToBuild.getAllArtifactsByOutputGroup(),  /* announceTargetSummary= */
+                false
+            )
 
-/** Tests for {@link TargetCompleteEvent}. */
-@RunWith(JUnit4.class)
-public class TargetCompleteEventTest extends AnalysisTestCase {
+        assertThat(event.referencedLocalFiles())
+            .containsExactly(LocalFile(artifact.getPath(), LocalFileType.OUTPUT_FILE, metadata))
+    }
 
-  @Test
-  public void testReferencedSourceFile() throws Exception {
-    scratch.file("BUILD", "filegroup(name = 'files', srcs = ['file'])");
-    scratch.file("file", "content does not matter");
-    ConfiguredTargetAndData ctAndData = getCtAndData("//:files");
-    ArtifactsToBuild artifactsToBuild = getArtifactsToBuild(ctAndData);
-    Artifact artifact = Iterables.getOnlyElement(artifactsToBuild.getAllArtifacts().toList());
-    FileArtifactValue metadata =
-        FileArtifactValue.createForNormalFile(new byte[] {1, 2, 3}, null, 10);
-    CompletionContext completionContext =
-        getCompletionContext(ImmutableMap.of(artifact, metadata), ImmutableMap.of());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReferencedSourceDirectory() {
+        scratch.file("BUILD", "filegroup(name = 'files', srcs = ['dir'])")
+        scratch.file("dir/file", "content does not matter")
+        val ctAndData: ConfiguredTargetAndData = getCtAndData("//:files")
+        val artifactsToBuild: ArtifactsToBuild =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getArtifactsToBuild(ctAndData)
+        val artifact: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(artifactsToBuild.getAllArtifacts().toList())
+        val metadata: FileArtifactValue = FileArtifactValue.createForDirectoryWithMtime(0)
+        val completionContext: CompletionContext =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getCompletionContext(
+                com.google.common.collect.ImmutableMap.of<Artifact?, FileArtifactValue?>(
+                    artifact,
+                    metadata
+                ), com.google.common.collect.ImmutableMap.of<SpecialArtifact?, TreeArtifactValue?>()
+            )
 
-    TargetCompleteEvent event =
-        TargetCompleteEvent.successfulBuild(
-            ctAndData,
-            completionContext,
-            artifactsToBuild.getAllArtifactsByOutputGroup(),
-            /* announceTargetSummary= */ false);
+        val event: TargetCompleteEvent =
+            TargetCompleteEvent.successfulBuild(
+                ctAndData,
+                completionContext,
+                artifactsToBuild.getAllArtifactsByOutputGroup(),  /* announceTargetSummary= */
+                false
+            )
 
-    assertThat(event.referencedLocalFiles())
-        .containsExactly(new LocalFile(artifact.getPath(), LocalFileType.OUTPUT_FILE, metadata));
-  }
+        assertThat(event.referencedLocalFiles())
+            .containsExactly(
+                LocalFile(artifact.getPath(), LocalFileType.OUTPUT_DIRECTORY, metadata)
+            )
+    }
 
-  @Test
-  public void testReferencedSourceDirectory() throws Exception {
-    scratch.file("BUILD", "filegroup(name = 'files', srcs = ['dir'])");
-    scratch.file("dir/file", "content does not matter");
-    ConfiguredTargetAndData ctAndData = getCtAndData("//:files");
-    ArtifactsToBuild artifactsToBuild = getArtifactsToBuild(ctAndData);
-    Artifact artifact = Iterables.getOnlyElement(artifactsToBuild.getAllArtifacts().toList());
-    FileArtifactValue metadata = FileArtifactValue.createForDirectoryWithMtime(0);
-    CompletionContext completionContext =
-        getCompletionContext(ImmutableMap.of(artifact, metadata), ImmutableMap.of());
-
-    TargetCompleteEvent event =
-        TargetCompleteEvent.successfulBuild(
-            ctAndData,
-            completionContext,
-            artifactsToBuild.getAllArtifactsByOutputGroup(),
-            /* announceTargetSummary= */ false);
-
-    assertThat(event.referencedLocalFiles())
-        .containsExactly(
-            new LocalFile(artifact.getPath(), LocalFileType.OUTPUT_DIRECTORY, metadata));
-  }
-
-  @Test
-  public void testReferencedTreeArtifact() throws Exception {
-    scratch.file(
-        "defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReferencedTreeArtifact() {
+        scratch.file(
+            "defs.bzl",
+            """
         def _impl(ctx):
             d = ctx.actions.declare_directory(ctx.label.name)
             ctx.actions.run_shell(outputs = [d], command = "does not matter")
             return DefaultInfo(files = depset([d]))
 
         dir = rule(_impl)
-        """);
-    scratch.file(
-        "BUILD",
-        "load(':defs.bzl', 'dir')",
-        "dir(name = 'dir')",
-        "filegroup(name = 'files', srcs = ['dir'])");
-    ConfiguredTargetAndData ctAndData = getCtAndData("//:files");
-    ArtifactsToBuild artifactsToBuild = getArtifactsToBuild(ctAndData);
-    SpecialArtifact tree =
-        (SpecialArtifact) Iterables.getOnlyElement(artifactsToBuild.getAllArtifacts().toList());
-    TreeFileArtifact fileChild =
-        TreeFileArtifact.createTreeOutput(tree, PathFragment.create("dir/file.txt"));
-    FileArtifactValue fileMetadata =
-        FileArtifactValue.createForNormalFile(new byte[] {1, 2, 3}, null, 10);
-    // A TreeFileArtifact can be a directory, when materialized by a symlink.
-    // See https://github.com/bazelbuild/bazel/issues/20418.
-    TreeFileArtifact dirChild = TreeFileArtifact.createTreeOutput(tree, PathFragment.create("sym"));
-    FileArtifactValue dirMetadata = FileArtifactValue.createForDirectoryWithMtime(123456789);
-    TreeArtifactValue metadata =
-        TreeArtifactValue.newBuilder(tree)
-            .putChild(fileChild, fileMetadata)
-            .putChild(dirChild, dirMetadata)
-            .build();
-    CompletionContext completionContext =
-        getCompletionContext(ImmutableMap.of(), ImmutableMap.of(tree, metadata));
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "BUILD",
+            "load(':defs.bzl', 'dir')",
+            "dir(name = 'dir')",
+            "filegroup(name = 'files', srcs = ['dir'])"
+        )
+        val ctAndData: ConfiguredTargetAndData = getCtAndData("//:files")
+        val artifactsToBuild: ArtifactsToBuild =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getArtifactsToBuild(ctAndData)
+        val tree: SpecialArtifact? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                artifactsToBuild.getAllArtifacts().toList()
+            ) as SpecialArtifact?
+        val fileChild: TreeFileArtifact =
+            TreeFileArtifact.createTreeOutput(tree, PathFragment.create("dir/file.txt"))
+        val fileMetadata: FileArtifactValue? =
+            FileArtifactValue.createForNormalFile(byteArrayOf(1, 2, 3), null, 10)
+        // A TreeFileArtifact can be a directory, when materialized by a symlink.
+        // See https://github.com/bazelbuild/bazel/issues/20418.
+        val dirChild: TreeFileArtifact = TreeFileArtifact.createTreeOutput(tree, PathFragment.create("sym"))
+        val dirMetadata: FileArtifactValue? = FileArtifactValue.createForDirectoryWithMtime(123456789)
+        val metadata: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(tree)
+                .putChild(fileChild, fileMetadata)
+                .putChild(dirChild, dirMetadata)
+                .build()
+        val completionContext: CompletionContext =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getCompletionContext(
+                com.google.common.collect.ImmutableMap.of<Artifact?, FileArtifactValue?>(),
+                com.google.common.collect.ImmutableMap.of<SpecialArtifact?, TreeArtifactValue?>(tree, metadata)
+            )
 
-    TargetCompleteEvent event =
-        TargetCompleteEvent.successfulBuild(
-            ctAndData,
-            completionContext,
-            artifactsToBuild.getAllArtifactsByOutputGroup(),
-            /* announceTargetSummary= */ false);
+        val event: TargetCompleteEvent =
+            TargetCompleteEvent.successfulBuild(
+                ctAndData,
+                completionContext,
+                artifactsToBuild.getAllArtifactsByOutputGroup(),  /* announceTargetSummary= */
+                false
+            )
 
-    assertThat(event.referencedLocalFiles())
-        .containsExactly(
-            new LocalFile(fileChild.getPath(), LocalFileType.OUTPUT_FILE, fileMetadata),
-            new LocalFile(dirChild.getPath(), LocalFileType.OUTPUT_DIRECTORY, dirMetadata));
-  }
+        assertThat(event.referencedLocalFiles())
+            .containsExactly(
+                LocalFile(fileChild.getPath(), LocalFileType.OUTPUT_FILE, fileMetadata),
+                LocalFile(dirChild.getPath(), LocalFileType.OUTPUT_DIRECTORY, dirMetadata)
+            )
+    }
 
-  @Test
-  public void testReferencedUnresolvedSymlink() throws Exception {
-    scratch.file(
-        "defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReferencedUnresolvedSymlink() {
+        scratch.file(
+            "defs.bzl",
+            """
         def _impl(ctx):
             s = ctx.actions.declare_symlink(ctx.label.name)
             ctx.actions.symlink(output = s, target_path = "does not matter")
             return DefaultInfo(files = depset([s]))
 
         sym = rule(_impl)
-        """);
-    scratch.file(
-        "BUILD",
-        "load(':defs.bzl', 'sym')",
-        "sym(name = 'sym')",
-        "filegroup(name = 'files', srcs = ['sym'])");
-    ConfiguredTargetAndData ctAndData = getCtAndData("//:files");
-    ArtifactsToBuild artifactsToBuild = getArtifactsToBuild(ctAndData);
-    Artifact artifact = Iterables.getOnlyElement(artifactsToBuild.getAllArtifacts().toList());
-    artifact.getPath().getParentDirectory().createDirectoryAndParents();
-    artifact.getPath().createSymbolicLink(fileSystem.getPath("/some/path"));
-    FileArtifactValue metadata = FileArtifactValue.createForUnresolvedSymlink(artifact.getPath());
-    CompletionContext completionContext =
-        getCompletionContext(ImmutableMap.of(artifact, metadata), ImmutableMap.of());
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "BUILD",
+            "load(':defs.bzl', 'sym')",
+            "sym(name = 'sym')",
+            "filegroup(name = 'files', srcs = ['sym'])"
+        )
+        val ctAndData: ConfiguredTargetAndData = getCtAndData("//:files")
+        val artifactsToBuild: ArtifactsToBuild =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getArtifactsToBuild(ctAndData)
+        val artifact: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(artifactsToBuild.getAllArtifacts().toList())
+        artifact.getPath().getParentDirectory().createDirectoryAndParents()
+        artifact.getPath().createSymbolicLink(fileSystem.getPath("/some/path"))
+        val metadata: FileArtifactValue = FileArtifactValue.createForUnresolvedSymlink(artifact.getPath())
+        val completionContext: CompletionContext =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getCompletionContext(
+                com.google.common.collect.ImmutableMap.of<Artifact?, FileArtifactValue?>(
+                    artifact,
+                    metadata
+                ), com.google.common.collect.ImmutableMap.of<SpecialArtifact?, TreeArtifactValue?>()
+            )
 
-    TargetCompleteEvent event =
-        TargetCompleteEvent.successfulBuild(
-            ctAndData,
-            completionContext,
-            artifactsToBuild.getAllArtifactsByOutputGroup(),
-            /* announceTargetSummary= */ false);
+        val event: TargetCompleteEvent =
+            TargetCompleteEvent.successfulBuild(
+                ctAndData,
+                completionContext,
+                artifactsToBuild.getAllArtifactsByOutputGroup(),  /* announceTargetSummary= */
+                false
+            )
 
-    assertThat(event.referencedLocalFiles())
-        .containsExactly(new LocalFile(artifact.getPath(), LocalFileType.OUTPUT_SYMLINK, metadata));
-  }
-
-  /** Regression test for b/165671166. */
-  @Test
-  public void testFileProtoFromArtifactReencodesAsUtf8() throws Exception {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      // Windows filesystems return paths with wide characters and don't suffer from the current
-      // workaround where arbitrary bytes are represented to Java as Latin-1.
-      return;
+        assertThat(event.referencedLocalFiles())
+            .containsExactly(LocalFile(artifact.getPath(), LocalFileType.OUTPUT_SYMLINK, metadata))
     }
-    scratch.file("sh/BUILD", "filegroup(name = 'globby', srcs = glob(['dir/*']))");
-    // Bytes are UTF-8 encoding of: sh/dir/圖片
-    byte[] filenameBytes = {
-      0x73, 0x68, 0x2f, 0x64, 0x69, 0x72, 0x2f, -27, -100, -106, -25, -119, -121
-    };
-    String utf8InLatin1FileName = new String(filenameBytes, ISO_8859_1);
-    scratch.file(utf8InLatin1FileName, "content does not matter");
-    ConfiguredTargetAndData ctAndData = getCtAndData("//sh:globby");
-    ArtifactsToBuild artifactsToBuild = getArtifactsToBuild(ctAndData);
-    Artifact artifact = Iterables.getOnlyElement(artifactsToBuild.getAllArtifacts().toList());
-    FileArtifactValue metadata =
-        FileArtifactValue.createForNormalFile(new byte[] {1, 2, 3}, null, 10);
 
-    File fileProto = TargetCompleteEvent.newFile(artifact, metadata);
+    /** Regression test for b/165671166.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFileProtoFromArtifactReencodesAsUtf8() {
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            // Windows filesystems return paths with wide characters and don't suffer from the current
+            // workaround where arbitrary bytes are represented to Java as Latin-1.
+            return
+        }
+        scratch.file("sh/BUILD", "filegroup(name = 'globby', srcs = glob(['dir/*']))")
+        // Bytes are UTF-8 encoding of: sh/dir/圖片
+        val filenameBytes = byteArrayOf(
+            0x73, 0x68, 0x2f, 0x64, 0x69, 0x72, 0x2f, -27, -100, -106, -25, -119, -121
+        )
+        val utf8InLatin1FileName = String(filenameBytes, java.nio.charset.StandardCharsets.ISO_8859_1)
+        scratch.file(utf8InLatin1FileName, "content does not matter")
+        val ctAndData: ConfiguredTargetAndData = getCtAndData("//sh:globby")
+        val artifactsToBuild: ArtifactsToBuild =
+            com.google.devtools.build.lib.analysis.TargetCompleteEventTest.Companion.getArtifactsToBuild(ctAndData)
+        val artifact: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(artifactsToBuild.getAllArtifacts().toList())
+        val metadata: FileArtifactValue? =
+            FileArtifactValue.createForNormalFile(byteArrayOf(1, 2, 3), null, 10)
 
-    // Bytes are the same but the encoding is actually UTF-8 as required of a protobuf string.
-    assertThat(fileProto.getName()).isEqualTo(new String(filenameBytes, UTF_8));
-  }
+        val fileProto: File = TargetCompleteEvent.newFile(artifact, metadata)
 
-  private ConfiguredTargetAndData getCtAndData(String target) throws Exception {
-    AnalysisResult result = update(target);
-    ConfiguredTarget ct = Iterables.getOnlyElement(result.getTargetsToBuild());
-    TargetAndConfiguration tac = Iterables.getOnlyElement(result.getTopLevelTargetsWithConfigs());
-    var configuredTargetConfiguration =
-        (BuildConfigurationValue)
-            skyframeExecutor.getEvaluator().getExistingValue(ct.getConfigurationKey());
-    return new ConfiguredTargetAndData(ct, tac.getTarget(), configuredTargetConfiguration, null);
-  }
+        // Bytes are the same but the encoding is actually UTF-8 as required of a protobuf string.
+        assertThat(fileProto.getName()).isEqualTo(String(filenameBytes, java.nio.charset.StandardCharsets.UTF_8))
+    }
 
-  private static ArtifactsToBuild getArtifactsToBuild(ConfiguredTargetAndData ctAndData) {
-    TopLevelArtifactContext context =
-        new TopLevelArtifactContext(false, false, OutputGroupInfo.DEFAULT_GROUPS);
-    return TopLevelArtifactHelper.getAllArtifactsToBuild(ctAndData.getConfiguredTarget(), context);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getCtAndData(target: String?): ConfiguredTargetAndData {
+        val result: AnalysisResult = update(target)
+        val ct: ConfiguredTarget? = com.google.common.collect.Iterables.getOnlyElement<T?>(result.getTargetsToBuild())
+        val tac: TargetAndConfiguration? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(result.getTopLevelTargetsWithConfigs())
+        val configuredTargetConfiguration: BuildConfigurationValue? =
+            skyframeExecutor.getEvaluator().getExistingValue(ct.getConfigurationKey()) as BuildConfigurationValue?
+        return ConfiguredTargetAndData(ct, tac.getTarget(), configuredTargetConfiguration, null)
+    }
 
-  private static CompletionContext getCompletionContext(
-      Map<Artifact, FileArtifactValue> metadata,
-      Map<SpecialArtifact, TreeArtifactValue> treeMetadata) {
-    ActionInputMap inputMap = new ActionInputMap(0);
-    metadata.forEach(inputMap::put);
-    treeMetadata.forEach(inputMap::putTreeArtifact);
-    return new CompletionContext(
-        ArtifactPathResolver.IDENTITY, inputMap, /* expandFilesets= */ false);
-  }
+    companion object {
+        private fun getArtifactsToBuild(ctAndData: ConfiguredTargetAndData): ArtifactsToBuild {
+            val context: TopLevelArtifactContext =
+                TopLevelArtifactContext(false, false, OutputGroupInfo.DEFAULT_GROUPS)
+            return TopLevelArtifactHelper.getAllArtifactsToBuild(ctAndData.getConfiguredTarget(), context)
+        }
+
+        private fun getCompletionContext(
+            metadata: MutableMap<Artifact?, FileArtifactValue?>,
+            treeMetadata: MutableMap<SpecialArtifact?, TreeArtifactValue?>
+        ): CompletionContext {
+            val inputMap: ActionInputMap = ActionInputMap(0)
+            metadata.forEach(inputMap::put)
+            treeMetadata.forEach(inputMap::putTreeArtifact)
+            return CompletionContext(
+                ArtifactPathResolver.IDENTITY, inputMap,  /* expandFilesets= */false
+            )
+        }
+    }
 }

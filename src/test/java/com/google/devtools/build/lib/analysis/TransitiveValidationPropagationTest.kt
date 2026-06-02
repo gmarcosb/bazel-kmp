@@ -11,115 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.prettyArtifactNames;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.NullAction;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import java.util.List;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [OutputGroupInfo.VALIDATION_TRANSITIVE] output group  */
+@RunWith(JUnit4::class)
+class TransitiveValidationPropagationTest : BuildViewTestCase() {
+    /** Fake native rule that outputs a single validation artifact  */
+    class ValidationOutputRule
 
-/** Tests for {@link OutputGroupInfo#VALIDATION_TRANSITIVE} output group */
-@RunWith(JUnit4.class)
-public final class TransitiveValidationPropagationTest extends BuildViewTestCase {
+        : RuleDefinition, RuleConfiguredTargetFactory {
+        public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+            return builder
+                .addAttribute(attr("deps", LABEL_LIST).allowedFileTypes(FileTypeSet.NO_FILE).build())
+                .build()
+        }
 
-  /** Fake native rule that outputs a single validation artifact */
-  public static final class ValidationOutputRule
-      implements RuleDefinition, RuleConfiguredTargetFactory {
-    @Override
-    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-      return builder
-          .addAttribute(attr("deps", LABEL_LIST).allowedFileTypes(FileTypeSet.NO_FILE).build())
-          .build();
+        val metadata: Metadata
+            get() = RuleDefinition.Metadata.builder()
+                .name("validation_rule")
+                .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+                .factoryClass(ValidationOutputRule::class.java)
+                .build()
+
+        @Throws(java.lang.InterruptedException::class, RuleErrorException::class, ActionConflictException::class)
+        public override fun create(ruleContext: RuleContext): ConfiguredTarget? {
+            val valid: Artifact = ruleContext.createOutputArtifact()
+            ruleContext.registerAction(NullAction(valid))
+            return RuleConfiguredTargetBuilder(ruleContext)
+                .setFilesToBuild(NestedSetBuilder.emptySet(Order.NAIVE_LINK_ORDER))
+                .addProvider(RunfilesProvider.EMPTY)
+                .addOutputGroup(OutputGroupInfo.VALIDATION, valid)
+                .build()
+        }
     }
 
-    @Override
-    public Metadata getMetadata() {
-      return RuleDefinition.Metadata.builder()
-          .name("validation_rule")
-          .ancestors(BaseRuleClasses.NativeBuildRule.class)
-          .factoryClass(ValidationOutputRule.class)
-          .build();
+    /**
+     * Fake native rule that disables transitive validation artifact propagation returning only a
+     * single validation artifact
+     */
+    class TransitiveValidationOverrideRule
+
+        : RuleDefinition, RuleConfiguredTargetFactory {
+        public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+            return builder.build()
+        }
+
+        val metadata: Metadata
+            get() = RuleDefinition.Metadata.builder()
+                .name("transitive_validation_rule")
+                .ancestors(BaseRuleClasses.NativeBuildRule::class.java, ValidationOutputRule::class.java)
+                .factoryClass(TransitiveValidationOverrideRule::class.java)
+                .build()
+
+        @Throws(java.lang.InterruptedException::class, RuleErrorException::class, ActionConflictException::class)
+        public override fun create(ruleContext: RuleContext): ConfiguredTarget {
+            val valid: Artifact = ruleContext.createOutputArtifact()
+            ruleContext.registerAction(NullAction(valid))
+            return RuleConfiguredTargetBuilder(ruleContext)
+                .setFilesToBuild(NestedSetBuilder.emptySet(Order.NAIVE_LINK_ORDER))
+                .addProvider(RunfilesProvider.EMPTY)
+                .addOutputGroup(OutputGroupInfo.VALIDATION_TRANSITIVE, valid)
+                .build()
+        }
     }
 
-    @Override
-    @Nullable
-    public ConfiguredTarget create(RuleContext ruleContext)
-        throws InterruptedException, RuleErrorException, ActionConflictException {
-      Artifact valid = ruleContext.createOutputArtifact();
-      ruleContext.registerAction(new NullAction(valid));
-      return new RuleConfiguredTargetBuilder(ruleContext)
-          .setFilesToBuild(NestedSetBuilder.emptySet(Order.NAIVE_LINK_ORDER))
-          .addProvider(RunfilesProvider.EMPTY)
-          .addOutputGroup(OutputGroupInfo.VALIDATION, valid)
-          .build();
-    }
-  }
-
-  /**
-   * Fake native rule that disables transitive validation artifact propagation returning only a
-   * single validation artifact
-   */
-  public static final class TransitiveValidationOverrideRule
-      implements RuleDefinition, RuleConfiguredTargetFactory {
-    @Override
-    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-      return builder.build();
+    /** Make the test rule class provider understand our rules in addition to the standard ones.  */
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder =
+            Builder()
+                .addRuleDefinition(ValidationOutputRule())
+                .addRuleDefinition(TransitiveValidationOverrideRule())
+        TestRuleClassProvider.addStandardRules(builder)
+        return builder.build()
     }
 
-    @Override
-    public Metadata getMetadata() {
-      return RuleDefinition.Metadata.builder()
-          .name("transitive_validation_rule")
-          .ancestors(BaseRuleClasses.NativeBuildRule.class, ValidationOutputRule.class)
-          .factoryClass(TransitiveValidationOverrideRule.class)
-          .build();
-    }
-
-    @Override
-    public ConfiguredTarget create(RuleContext ruleContext)
-        throws InterruptedException, RuleErrorException, ActionConflictException {
-      Artifact valid = ruleContext.createOutputArtifact();
-      ruleContext.registerAction(new NullAction(valid));
-      return new RuleConfiguredTargetBuilder(ruleContext)
-          .setFilesToBuild(NestedSetBuilder.emptySet(Order.NAIVE_LINK_ORDER))
-          .addProvider(RunfilesProvider.EMPTY)
-          .addOutputGroup(OutputGroupInfo.VALIDATION_TRANSITIVE, valid)
-          .build();
-    }
-  }
-
-  /** Make the test rule class provider understand our rules in addition to the standard ones. */
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder =
-        new ConfiguredRuleClassProvider.Builder()
-            .addRuleDefinition(new ValidationOutputRule())
-            .addRuleDefinition(new TransitiveValidationOverrideRule());
-    TestRuleClassProvider.addStandardRules(builder);
-    return builder.build();
-  }
-
-  @Test
-  public void testValidationOutputPropagation() throws Exception {
-    scratch.file(
-        "valid/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testValidationOutputPropagation() {
+        scratch.file(
+            "valid/BUILD",
+            """
         validation_rule(name = "foo")
 
         validation_rule(
@@ -144,44 +117,55 @@ public final class TransitiveValidationPropagationTest extends BuildViewTestCase
                 "baz",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    List<String> topValid =
-        prettyArtifactNames(
-            OutputGroupInfo.get(getConfiguredTarget("//valid:top"))
-                .getOutputGroup(OutputGroupInfo.VALIDATION));
-    List<String> topTransitiveValid =
-        prettyArtifactNames(
-            OutputGroupInfo.get(getConfiguredTarget("//valid:top_transitive"))
-                .getOutputGroup(OutputGroupInfo.VALIDATION));
+        val topValid: MutableList<String?>? =
+            prettyArtifactNames(
+                OutputGroupInfo.get(getConfiguredTarget("//valid:top"))
+                    .getOutputGroup(OutputGroupInfo.VALIDATION)
+            )
+        val topTransitiveValid: MutableList<String?>? =
+            prettyArtifactNames(
+                OutputGroupInfo.get(getConfiguredTarget("//valid:top_transitive"))
+                    .getOutputGroup(OutputGroupInfo.VALIDATION)
+            )
 
-    assertThat(topValid).containsExactly("valid/foo", "valid/bar", "valid/baz", "valid/top");
-    assertThat(topTransitiveValid).containsExactly("valid/top_transitive");
-  }
+        Truth.assertThat(topValid).containsExactly("valid/foo", "valid/bar", "valid/baz", "valid/top")
+        Truth.assertThat(topTransitiveValid).containsExactly("valid/top_transitive")
+    }
 
-  @Test
-  public void testTransitiveValidationOutputGroupNotAllowedForStarlarkRules() throws Exception {
-    scratch.file(
-        "foobar/foo_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveValidationOutputGroupNotAllowedForStarlarkRules() {
+        scratch.file(
+            "foobar/foo_rule.bzl",
+            """
         def _impl(ctx):
             return [OutputGroupInfo(_validation_transitive = depset())]
 
         foo_rule = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "foobar/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foobar/BUILD",
+            """
         load("//foobar:foo_rule.bzl", "foo_rule")
 
         foo_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foobar:foo"));
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foobar:foo") })
 
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("//foobar:foo_rule.bzl cannot access the _transitive_validation private API");
-  }
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains("//foobar:foo_rule.bzl cannot access the _transitive_validation private API")
+    }
 }

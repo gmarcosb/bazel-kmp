@@ -11,111 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
-
-import com.google.common.base.Preconditions;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
 
 /**
- * Syntax node for an assignment statement ({@code lhs = rhs}) or augmented assignment statement
- * ({@code lhs op= rhs}).
+ * Syntax node for an assignment statement (`lhs = rhs`) or augmented assignment statement
+ * (`lhs op= rhs`).
  */
-public final class AssignmentStatement extends Statement {
+class AssignmentStatement internal constructor(
+    locs: FileLocations?,
+    /** Returns the LHS of the assignment.  */
+    val lHS: Expression, // = IDENTIFIER | DOT | INDEX | LIST_EXPR
+    /** Returns the type expression (if present) of the variable on the LHS.  */
+    // non-null only when lhs is an identifier and we're not augmented
+    @kotlin.jvm.JvmField val type: Expression?,
+    op: TokenKind?,
+    opOffset: Int,
+    rhs: Expression,
+    docComments: DocComments?
+) : Statement(locs, Kind.ASSIGNMENT) {
+    /** Returns the operator of an augmented assignment, or null for an ordinary assignment.  */
+    val operator: TokenKind? // TODO(adonovan): make this mandatory even when '='.
+    private val opOffset: Int
 
-  private final Expression lhs; // = IDENTIFIER | DOT | INDEX | LIST_EXPR
+    /** Returns the RHS of the assignment.  */
+    val rHS: Expression
 
-  // non-null only when lhs is an identifier and we're not augmented
-  @Nullable private final Expression type;
+    /** Returns the Sphinx autodoc-style doc comments attached to this statement, if any.  */
+    @kotlin.jvm.JvmField
+    val docComments: DocComments?
 
-  @Nullable private final TokenKind op; // TODO(adonovan): make this mandatory even when '='.
-  private final int opOffset;
-
-  private final Expression rhs;
-
-  @Nullable private final DocComments docComments;
-
-  /**
-   * Constructs an assignment statement. For an ordinary assignment ({@code op == null}), the LHS
-   * expression must be of the form {@code id}, {@code x.y}, {@code x[i]}, {@code [e, ...]}, or
-   * {@code (e, ...)}, where x, i, and e are arbitrary expressions. For an augmented assignment, the
-   * list and tuple forms are disallowed.
-   *
-   * <p>If a type annotation is present ({@code x : T = ...}), the LHS expression must be an
-   * identifier, and the assignment must not be augmented.
-   */
-  AssignmentStatement(
-      FileLocations locs,
-      Expression lhs,
-      @Nullable Expression type,
-      @Nullable TokenKind op,
-      int opOffset,
-      Expression rhs,
-      @Nullable DocComments docComments) {
-    super(locs, Kind.ASSIGNMENT);
-    this.lhs = lhs;
-    this.type = type;
-    this.op = op;
-    this.opOffset = opOffset;
-    this.rhs = rhs;
-    this.docComments = docComments;
-    if (type != null) {
-      Preconditions.checkState(
-          lhs.kind() == Expression.Kind.IDENTIFIER, "Can't have type annotation on complex LHS");
-      Preconditions.checkState(op == null, "Can't have augmented assignment with type annotation");
+    /**
+     * Constructs an assignment statement. For an ordinary assignment (`op == null`), the LHS
+     * expression must be of the form `id`, `x.y`, `x[i]`, `[e, ...]`, or
+     * `(e, ...)`, where x, i, and e are arbitrary expressions. For an augmented assignment, the
+     * list and tuple forms are disallowed.
+     * 
+     * 
+     * If a type annotation is present (`x : T = ...`), the LHS expression must be an
+     * identifier, and the assignment must not be augmented.
+     */
+    init {
+        this.type = type
+        this.operator = op
+        this.opOffset = opOffset
+        this.rHS = rhs
+        this.docComments = docComments
+        if (type != null) {
+            Preconditions.checkState(
+                lHS.kind() == Expression.Kind.IDENTIFIER, "Can't have type annotation on complex LHS"
+            )
+            Preconditions.checkState(op == null, "Can't have augmented assignment with type annotation")
+        }
     }
-  }
 
-  /** Returns the LHS of the assignment. */
-  public Expression getLHS() {
-    return lhs;
-  }
+    val operatorLocation: Location
+        /** Returns the location of the assignment operator.  */
+        get() = locs.getLocation(opOffset)
 
-  /** Returns the type expression (if present) of the variable on the LHS. */
-  @Nullable
-  public Expression getType() {
-    return type;
-  }
+    override fun getStartOffset(): Int {
+        return lHS.getStartOffset()
+    }
 
-  /** Returns the operator of an augmented assignment, or null for an ordinary assignment. */
-  @Nullable
-  public TokenKind getOperator() {
-    return op;
-  }
+    override fun getEndOffset(): Int {
+        return rHS.getEndOffset()
+    }
 
-  /** Returns the location of the assignment operator. */
-  public Location getOperatorLocation() {
-    return locs.getLocation(opOffset);
-  }
+    val isAugmented: Boolean
+        /** Reports whether this is an augmented assignment (`getOperator() != null`).  */
+        get() = this.operator != null
 
-  @Override
-  public int getStartOffset() {
-    return lhs.getStartOffset();
-  }
-
-  @Override
-  public int getEndOffset() {
-    return rhs.getEndOffset();
-  }
-
-  /** Reports whether this is an augmented assignment ({@code getOperator() != null}). */
-  public boolean isAugmented() {
-    return op != null;
-  }
-
-  /** Returns the RHS of the assignment. */
-  public Expression getRHS() {
-    return rhs;
-  }
-
-  /** Returns the Sphinx autodoc-style doc comments attached to this statement, if any. */
-  @Nullable
-  public DocComments getDocComments() {
-    return docComments;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

@@ -11,95 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.packages.TestTimeout;
-import com.google.devtools.build.lib.packages.TestTimeout.TestTimeoutConverter;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.time.Duration;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.packages.TestTimeout
 
 /**
- * A test for {@link TestTimeoutConverter}.
+ * A test for [TestTimeoutConverter].
  */
-@RunWith(JUnit4.class)
-public class TestTimeoutConverterTest {
-  private Map<TestTimeout, Duration> timeouts;
+@RunWith(JUnit4::class)
+class TestTimeoutConverterTest {
+    private var timeouts: MutableMap<TestTimeout?, java.time.Duration?>? = null
 
-  protected void setTimeouts(String option) throws OptionsParsingException {
-    timeouts = new TestTimeoutConverter().convert(option);
-  }
+    @Throws(OptionsParsingException::class)
+    protected fun setTimeouts(option: String?) {
+        timeouts = TestTimeoutConverter().convert(option)
+    }
 
-  protected void assertTimeout(TestTimeout timeout, int expected) {
-    assertThat(timeouts).containsEntry(timeout, Duration.ofSeconds(expected));
-  }
+    protected fun assertTimeout(timeout: TestTimeout?, expected: Int) {
+        Truth.assertThat(timeouts).containsEntry(timeout, java.time.Duration.ofSeconds(expected.toLong()))
+    }
 
-  protected void assertDefaultTimeout(TestTimeout timeout) {
-    assertTimeout(timeout, timeout.timeoutSeconds);
-  }
+    protected fun assertDefaultTimeout(timeout: TestTimeout) {
+        assertTimeout(timeout, timeout.timeoutSeconds)
+    }
 
-  protected void assertFailure(String option) {
-    assertThrows(
-        "Incorrectly parsed '" + option + "'",
-        OptionsParsingException.class,
-        () -> setTimeouts(option));
-  }
+    protected fun assertFailure(option: String?) {
+        org.junit.Assert.assertThrows<T?>(
+            "Incorrectly parsed '" + option + "'",
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable { setTimeouts(option) })
+    }
 
-  @Test
-  public void testDefaultTimeout() throws Exception {
-    setTimeouts("-1");
-    assertDefaultTimeout(TestTimeout.SHORT);
-    assertDefaultTimeout(TestTimeout.MODERATE);
-    assertDefaultTimeout(TestTimeout.LONG);
-    assertDefaultTimeout(TestTimeout.ETERNAL);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultTimeout() {
+        setTimeouts("-1")
+        assertDefaultTimeout(TestTimeout.SHORT)
+        assertDefaultTimeout(TestTimeout.MODERATE)
+        assertDefaultTimeout(TestTimeout.LONG)
+        assertDefaultTimeout(TestTimeout.ETERNAL)
+    }
 
-  @Test
-  public void testUniversalTimeout() throws Exception {
-    setTimeouts("1");
-    assertTimeout(TestTimeout.SHORT, 1);
-    assertTimeout(TestTimeout.MODERATE, 1);
-    assertTimeout(TestTimeout.LONG, 1);
-    assertTimeout(TestTimeout.ETERNAL, 1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUniversalTimeout() {
+        setTimeouts("1")
+        assertTimeout(TestTimeout.SHORT, 1)
+        assertTimeout(TestTimeout.MODERATE, 1)
+        assertTimeout(TestTimeout.LONG, 1)
+        assertTimeout(TestTimeout.ETERNAL, 1)
 
-    setTimeouts("2,"); // comma at the end is ignored.
-    assertTimeout(TestTimeout.SHORT, 2);
-    assertTimeout(TestTimeout.MODERATE, 2);
-    assertTimeout(TestTimeout.LONG, 2);
-    assertTimeout(TestTimeout.ETERNAL, 2);
-  }
+        setTimeouts("2,") // comma at the end is ignored.
+        assertTimeout(TestTimeout.SHORT, 2)
+        assertTimeout(TestTimeout.MODERATE, 2)
+        assertTimeout(TestTimeout.LONG, 2)
+        assertTimeout(TestTimeout.ETERNAL, 2)
+    }
 
-  @Test
-  public void testSeparateTimeouts() throws Exception {
-    setTimeouts("1,0,-1,3");
-    assertTimeout(TestTimeout.SHORT, 1);
-    assertDefaultTimeout(TestTimeout.MODERATE);
-    assertDefaultTimeout(TestTimeout.LONG);
-    assertTimeout(TestTimeout.ETERNAL, 3);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSeparateTimeouts() {
+        setTimeouts("1,0,-1,3")
+        assertTimeout(TestTimeout.SHORT, 1)
+        assertDefaultTimeout(TestTimeout.MODERATE)
+        assertDefaultTimeout(TestTimeout.LONG)
+        assertTimeout(TestTimeout.ETERNAL, 3)
 
-    setTimeouts("0,-1,3,20");
-    assertDefaultTimeout(TestTimeout.SHORT);
-    assertDefaultTimeout(TestTimeout.MODERATE);
-    assertTimeout(TestTimeout.LONG, 3);
-    assertTimeout(TestTimeout.ETERNAL, 20);
-  }
+        setTimeouts("0,-1,3,20")
+        assertDefaultTimeout(TestTimeout.SHORT)
+        assertDefaultTimeout(TestTimeout.MODERATE)
+        assertTimeout(TestTimeout.LONG, 3)
+        assertTimeout(TestTimeout.ETERNAL, 20)
+    }
 
-  @Test
-  public void testIncorrectStrings() throws Exception {
-    assertFailure("");
-    assertFailure("1a");
-    assertFailure("1 2 3 4");
-    assertFailure("1:2:3:4");
-    assertFailure("1,2,3");
-    assertFailure("1,2,3,4,");
-    assertFailure("1,2,,3,4");
-    assertFailure("1,2,3 4");
-    assertFailure("1,2,3,4,5");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIncorrectStrings() {
+        assertFailure("")
+        assertFailure("1a")
+        assertFailure("1 2 3 4")
+        assertFailure("1:2:3:4")
+        assertFailure("1,2,3")
+        assertFailure("1,2,3,4,")
+        assertFailure("1,2,,3,4")
+        assertFailure("1,2,3 4")
+        assertFailure("1,2,3,4,5")
+    }
 }

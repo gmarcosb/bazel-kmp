@@ -56,7 +56,7 @@ public class LValueBoundNamesTest {
     if (!file.ok()) {
       throw new AssertionError(new SyntaxError.Exception(file.errors()));
     }
-    Expression lhs = ((AssignmentStatement) file.getStatements().get(0)).getLHS();
+    Expression lhs = ((AssignmentStatement) file.statements.get(0)).getLHS();
     Set<String> boundNames =
         Identifier.boundIdentifiers(lhs).stream()
             .map(Identifier::getName)

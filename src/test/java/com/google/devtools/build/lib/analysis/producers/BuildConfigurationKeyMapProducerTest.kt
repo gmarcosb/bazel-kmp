@@ -11,402 +11,415 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.producers;
+package com.google.devtools.build.lib.analysis.producers
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSortedMap
+import com.google.common.collect.Ordering
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
+import com.google.devtools.common.options.Option
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Ordering;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.skyframe.BuildOptionsScopeFunction.BuildOptionsScopeFunctionException;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.config.PlatformMappingException;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.List;
-import java.util.Map;
-import java.util.SortedMap;
-import javax.annotation.Nullable;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests of [BuildConfigurationKeyMapProducer].  */
+@RunWith(JUnit4::class)
+class BuildConfigurationKeyMapProducerTest : ProducerTestCase() {
+    /** Extra options for this test.  */
+    @OptionsClass
+    abstract class DummyTestOptions : FragmentOptions() {
+        @get:Option(
+            name = "option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "super secret"
+        )
+        abstract val option: String?
 
-/** Tests of {@link BuildConfigurationKeyMapProducer}. */
-@RunWith(JUnit4.class)
-public class BuildConfigurationKeyMapProducerTest extends ProducerTestCase {
+        @get:Option(
+            name = "internal_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "super secret",
+            metadataTags = [OptionMetadataTag.INTERNAL]
+        )
+        abstract val internalOption: String?
 
-  /** Extra options for this test. */
-  @OptionsClass
-  public abstract static class DummyTestOptions extends FragmentOptions {
-    public DummyTestOptions() {}
-
-    @Option(
-        name = "option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "super secret")
-    public abstract String getOption();
-
-    @Option(
-        name = "internal_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "super secret",
-        metadataTags = {OptionMetadataTag.INTERNAL})
-    public abstract String getInternalOption();
-
-    @Option(
-        name = "accumulating",
-        allowMultiple = true,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract List<String> getAccumulating();
-  }
-
-  /** Test fragment. */
-  @RequiresOptions(options = {DummyTestOptions.class})
-  public static final class DummyTestOptionsFragment extends Fragment {
-    private final BuildOptions buildOptions;
-
-    public DummyTestOptionsFragment(BuildOptions buildOptions) {
-      this.buildOptions = buildOptions;
+        @get:Option(
+            name = "accumulating",
+            allowMultiple = true,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract val accumulating: MutableList<String?>?
     }
 
-    // Getter required to satisfy AutoCodec.
-    public BuildOptions getBuildOptions() {
-      return buildOptions;
+    /** Test fragment.  */
+    @RequiresOptions(options = [DummyTestOptions::class])
+    class DummyTestOptionsFragment(buildOptions: BuildOptions?) : Fragment() {
+        private val buildOptions: BuildOptions?
+
+        init {
+            this.buildOptions = buildOptions
+        }
+
+        // Getter required to satisfy AutoCodec.
+        fun getBuildOptions(): BuildOptions? {
+            return buildOptions
+        }
     }
-  }
 
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
-    TestRuleClassProvider.addStandardRules(builder);
-    builder.addConfigurationFragment(DummyTestOptionsFragment.class);
-    return builder.build();
-  }
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder = Builder()
+        TestRuleClassProvider.addStandardRules(builder)
+        builder.addConfigurationFragment(DummyTestOptionsFragment::class.java)
+        return builder.build()
+    }
 
-  @Before
-  public void writePlatforms() throws Exception {
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @Before
+    @Throws(Exception::class)
+    fun writePlatforms() {
+        scratch.file(
+            "platforms/BUILD",
+            """
         platform(name = "sample")
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void createKey() throws Exception {
-    BuildOptions baseOptions =
-        createBuildOptions("--platforms=//platforms:sample", "--internal_option=from_cmd");
-    BuildConfigurationKey result = fetch(baseOptions);
+    @Test
+    @Throws(Exception::class)
+    fun createKey() {
+        val baseOptions: BuildOptions =
+            createBuildOptions("--platforms=//platforms:sample", "--internal_option=from_cmd")
+        val result: BuildConfigurationKey = fetch(baseOptions)
 
-    assertThat(result).isNotNull();
-    assertThat(result.getOptions().get(DummyTestOptions.class).getInternalOption())
-        .isEqualTo("from_cmd");
-  }
+        assertThat(result).isNotNull()
+        assertThat(result.getOptions().get(DummyTestOptions::class.java).getInternalOption())
+            .isEqualTo("from_cmd")
+    }
 
-  @Test
-  public void createKeys_preservesOrder() throws Exception {
-    BuildOptions baseOptions1 =
-        createBuildOptions("--platforms=//platforms:sample", "--internal_option=first");
-    BuildOptions baseOptions2 =
-        createBuildOptions("--platforms=//platforms:sample", "--internal_option=second");
-    BuildOptions baseOptions3 =
-        createBuildOptions("--platforms=//platforms:sample", "--internal_option=third");
+    @Test
+    @Throws(Exception::class)
+    fun createKeys_preservesOrder() {
+        val baseOptions1: BuildOptions =
+            createBuildOptions("--platforms=//platforms:sample", "--internal_option=first")
+        val baseOptions2: BuildOptions =
+            createBuildOptions("--platforms=//platforms:sample", "--internal_option=second")
+        val baseOptions3: BuildOptions =
+            createBuildOptions("--platforms=//platforms:sample", "--internal_option=third")
 
-    // Use a sorted map implementation to ensure consistent ordering of the input.
-    SortedMap<String, BuildOptions> input =
-        new ImmutableSortedMap.Builder<String, BuildOptions>(Ordering.natural())
-            .put("first", baseOptions1)
-            .put("second", baseOptions2)
-            .put("third", baseOptions3)
-            .buildOrThrow();
-    assertThat(input.keySet()).containsExactly("first", "second", "third").inOrder();
-    ImmutableMap<String, BuildConfigurationKey> result = fetch(input);
+        // Use a sorted map implementation to ensure consistent ordering of the input.
+        val input: SortedMap<String?, BuildOptions?> =
+            ImmutableSortedMap.Builder<String?, BuildOptions?>(Ordering.natural<String?>())
+                .put("first", baseOptions1)
+                .put("second", baseOptions2)
+                .put("third", baseOptions3)
+                .buildOrThrow()
+        Truth.assertThat(input.keys).containsExactly("first", "second", "third").inOrder()
+        val result: ImmutableMap<String?, BuildConfigurationKey> = fetch(input)
 
-    assertThat(result).isNotNull();
-    assertThat(result.keySet()).containsExactly("first", "second", "third").inOrder();
-  }
+        Truth.assertThat(result).isNotNull()
+        Truth.assertThat(result.keys).containsExactly("first", "second", "third").inOrder()
+    }
 
-  @Test
-  public void createKey_platformMapping() throws Exception {
-    scratch.file(
-        "/workspace/platform_mappings",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformMapping() {
+        scratch.file(
+            "/workspace/platform_mappings",
+            """
         platforms:
           //platforms:sample
             --internal_option=from_mapping_changed
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions =
-        createBuildOptions("--platforms=//platforms:sample", "--internal_option=from_cmd");
-    BuildConfigurationKey result = fetch(baseOptions);
+        val baseOptions: BuildOptions =
+            createBuildOptions("--platforms=//platforms:sample", "--internal_option=from_cmd")
+        val result: BuildConfigurationKey = fetch(baseOptions)
 
-    assertThat(result).isNotNull();
-    assertThat(result.getOptions().get(DummyTestOptions.class).getInternalOption())
-        .isEqualTo("from_mapping_changed");
-  }
+        assertThat(result).isNotNull()
+        assertThat(result.getOptions().get(DummyTestOptions::class.java).getInternalOption())
+            .isEqualTo("from_mapping_changed")
+    }
 
-  @Test
-  public void createKey_platformMapping_invalidFile() throws Exception {
-    scratch.file(
-        "/workspace/platform_mappings",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformMapping_invalidFile() {
+        scratch.file(
+            "/workspace/platform_mappings",
+            """
         not a mapping file
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions = createBuildOptions("--platforms=//platforms:sample");
-    // Fails because the mapping file is poorly formed and cannot be parsed.
-    assertThrows(PlatformMappingException.class, () -> fetch(baseOptions));
-  }
+        val baseOptions: BuildOptions = createBuildOptions("--platforms=//platforms:sample")
+        // Fails because the mapping file is poorly formed and cannot be parsed.
+        Assert.assertThrows<T?>(PlatformMappingException::class.java, ThrowingRunnable { fetch(baseOptions) })
+    }
 
-  @Test
-  public void createKey_platformMapping_invalidOption() throws Exception {
-    scratch.file(
-        "/workspace/platform_mappings",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformMapping_invalidOption() {
+        scratch.file(
+            "/workspace/platform_mappings",
+            """
         platforms:
           //platforms:sample
             --fake_option
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions = createBuildOptions("--platforms=//platforms:sample");
-    // Fails because the changed platform has an invalid mapping.
-    var e = assertThrows(PlatformMappingException.class, () -> fetch(baseOptions));
-    assertThat(e).hasMessageThat().contains("Unrecognized option: --fake_option");
-  }
+        val baseOptions: BuildOptions = createBuildOptions("--platforms=//platforms:sample")
+        // Fails because the changed platform has an invalid mapping.
+        val e: T? =
+            Assert.assertThrows<T?>(PlatformMappingException::class.java, ThrowingRunnable { fetch(baseOptions) })
+        assertThat(e).hasMessageThat().contains("Unrecognized option: --fake_option")
+    }
 
-  @Test
-  public void createKey_platformFlags() throws Exception {
-    scratch.overwriteFile(
-        "platforms/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformFlags() {
+        scratch.overwriteFile(
+            "platforms/BUILD",
+            """
         platform(
             name = "sample",
             flags = [
                 "--internal_option=from_platform",
             ],
         )
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions = createBuildOptions("--platforms=//platforms:sample");
-    BuildConfigurationKey result = fetch(baseOptions);
+        val baseOptions: BuildOptions = createBuildOptions("--platforms=//platforms:sample")
+        val result: BuildConfigurationKey = fetch(baseOptions)
 
-    assertThat(result).isNotNull();
-    assertThat(result.getOptions().get(DummyTestOptions.class).getInternalOption())
-        .isEqualTo("from_platform");
-  }
+        assertThat(result).isNotNull()
+        assertThat(result.getOptions().get(DummyTestOptions::class.java).getInternalOption())
+            .isEqualTo("from_platform")
+    }
 
-  @Test
-  public void createKey_platformFlags_override() throws Exception {
-    scratch.overwriteFile(
-        "platforms/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformFlags_override() {
+        scratch.overwriteFile(
+            "platforms/BUILD",
+            """
         platform(
             name = "sample",
             flags = [
                 "--option=from_platform",
             ],
         )
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions =
-        createBuildOptions("--platforms=//platforms:sample", "--option=from_cli");
-    BuildConfigurationKey result = fetch(baseOptions);
+        val baseOptions: BuildOptions =
+            createBuildOptions("--platforms=//platforms:sample", "--option=from_cli")
+        val result: BuildConfigurationKey = fetch(baseOptions)
 
-    assertThat(result).isNotNull();
-    assertThat(result.getOptions().get(DummyTestOptions.class).getOption())
-        .isEqualTo("from_platform");
-  }
+        assertThat(result).isNotNull()
+        assertThat(result.getOptions().get(DummyTestOptions::class.java).getOption())
+            .isEqualTo("from_platform")
+    }
 
-  @Test
-  // Re-enable this once merging repeatable flags works properly.
-  @Ignore("https://github.com/bazelbuild/bazel/issues/22453")
-  public void createKey_platformFlags_accumulate() throws Exception {
-    scratch.overwriteFile(
-        "platforms/BUILD",
-        """
+    @Test // Re-enable this once merging repeatable flags works properly.
+    @Ignore("https://github.com/bazelbuild/bazel/issues/22453")
+    @Throws(Exception::class)
+    fun createKey_platformFlags_accumulate() {
+        scratch.overwriteFile(
+            "platforms/BUILD",
+            """
         platform(
             name = "sample",
             flags = [
                 "--accumulating=from_platform",
             ],
         )
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions =
-        createBuildOptions("--platforms=//platforms:sample", "--accumulating=from_cli");
-    BuildConfigurationKey result = fetch(baseOptions);
+        val baseOptions: BuildOptions =
+            createBuildOptions("--platforms=//platforms:sample", "--accumulating=from_cli")
+        val result: BuildConfigurationKey = fetch(baseOptions)
 
-    assertThat(result).isNotNull();
-    assertThat(result.getOptions().get(DummyTestOptions.class).getAccumulating())
-        .containsExactly("from_cli", "from_platform")
-        .inOrder();
-  }
+        assertThat(result).isNotNull()
+        assertThat(result.getOptions().get(DummyTestOptions::class.java).getAccumulating())
+            .containsExactly("from_cli", "from_platform")
+            .inOrder()
+    }
 
-  @Test
-  public void createKey_platformFlags_invalidPlatform() throws Exception {
-    scratch.overwriteFile(
-        "platforms/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformFlags_invalidPlatform() {
+        scratch.overwriteFile(
+            "platforms/BUILD",
+            """
         filegroup(name = "sample")
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions = createBuildOptions("--platforms=//platforms:sample");
-    assertThrows(InvalidPlatformException.class, () -> fetch(baseOptions));
-  }
+        val baseOptions: BuildOptions = createBuildOptions("--platforms=//platforms:sample")
+        Assert.assertThrows<T?>(InvalidPlatformException::class.java, ThrowingRunnable { fetch(baseOptions) })
+    }
 
-  @Test
-  public void createKey_platformFlags_invalidOption() throws Exception {
-    scratch.overwriteFile(
-        "platforms/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformFlags_invalidOption() {
+        scratch.overwriteFile(
+            "platforms/BUILD",
+            """
         platform(
             name = "sample",
             flags = [
                 "--fake_option_doesnt_exist=from_platform",
             ],
         )
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    useConfiguration("--platforms=//platforms:sample");
-    BuildOptions baseOptions = createBuildOptions("--platforms=//platforms:sample");
-    assertThrows(OptionsParsingException.class, () -> fetch(baseOptions));
-  }
+        useConfiguration("--platforms=//platforms:sample")
+        val baseOptions: BuildOptions = createBuildOptions("--platforms=//platforms:sample")
+        Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            ThrowingRunnable { fetch(baseOptions) })
+    }
 
-  @Test
-  public void createKey_platformFlags_overridesMapping() throws Exception {
-    scratch.file(
-        "/workspace/platform_mappings",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun createKey_platformFlags_overridesMapping() {
+        scratch.file(
+            "/workspace/platform_mappings",
+            """
         platforms:
           //platforms:sample
             --internal_option=from_mapping
-        """);
-    scratch.overwriteFile(
-        "platforms/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "platforms/BUILD",
+            """
         platform(
             name = "sample",
             flags = [
                 "--internal_option=from_platform",
             ],
         )
-        """);
-    invalidatePackages(false);
+        
+        """.trimIndent()
+        )
+        invalidatePackages(false)
 
-    BuildOptions baseOptions = createBuildOptions("--platforms=//platforms:sample");
-    BuildConfigurationKey result = fetch(baseOptions);
+        val baseOptions: BuildOptions = createBuildOptions("--platforms=//platforms:sample")
+        val result: BuildConfigurationKey = fetch(baseOptions)
 
-    assertThat(result).isNotNull();
-    assertThat(result.getOptions().get(DummyTestOptions.class).getInternalOption())
-        .isEqualTo("from_platform");
-  }
-
-  private BuildConfigurationKey fetch(BuildOptions options)
-      throws InterruptedException,
-          OptionsParsingException,
-          PlatformMappingException,
-          InvalidPlatformException,
-          BuildOptionsScopeFunctionException {
-    ImmutableMap<String, BuildConfigurationKey> result = fetch(ImmutableMap.of("only", options));
-    return result.get("only");
-  }
-
-  private ImmutableMap<String, BuildConfigurationKey> fetch(Map<String, BuildOptions> options)
-      throws InterruptedException,
-          OptionsParsingException,
-          PlatformMappingException,
-          InvalidPlatformException,
-          BuildOptionsScopeFunctionException {
-    Sink sink = new Sink();
-    BuildConfigurationKeyMapProducer producer =
-        new BuildConfigurationKeyMapProducer(sink, StateMachine.DONE, options, null);
-    // Ignore the return value: sink will either return a result or re-throw whatever exception it
-    // received from the producer.
-    var unused = executeProducer(producer);
-    return sink.options();
-  }
-
-  /** Receiver for platform info from {@link PlatformProducer}. */
-  private static class Sink implements BuildConfigurationKeyMapProducer.ResultSink {
-    @Nullable private OptionsParsingException optionsParsingException;
-    @Nullable private PlatformMappingException platformMappingException;
-    @Nullable private InvalidPlatformException invalidPlatformException;
-    @Nullable private BuildOptionsScopeFunctionException buildOptionsScopeFunctionException;
-    @Nullable private ImmutableMap<String, BuildConfigurationKey> keys;
-
-    @Override
-    public void acceptOptionsParsingError(OptionsParsingException e) {
-      this.optionsParsingException = e;
+        assertThat(result).isNotNull()
+        assertThat(result.getOptions().get(DummyTestOptions::class.java).getInternalOption())
+            .isEqualTo("from_platform")
     }
 
-    @Override
-    public void acceptPlatformMappingError(PlatformMappingException e) {
-      this.platformMappingException = e;
+    @Throws(
+        InterruptedException::class,
+        OptionsParsingException::class,
+        PlatformMappingException::class,
+        InvalidPlatformException::class,
+        BuildOptionsScopeFunctionException::class
+    )
+    private fun fetch(options: BuildOptions): BuildConfigurationKey {
+        val result: ImmutableMap<String?, BuildConfigurationKey> =
+            fetch(ImmutableMap.of<String?, BuildOptions?>("only", options))
+        return result.get("only")
     }
 
-    @Override
-    public void acceptPlatformFlagsError(InvalidPlatformException e) {
-      this.invalidPlatformException = e;
+    @Throws(
+        InterruptedException::class,
+        OptionsParsingException::class,
+        PlatformMappingException::class,
+        InvalidPlatformException::class,
+        BuildOptionsScopeFunctionException::class
+    )
+    private fun fetch(options: MutableMap<String?, BuildOptions?>?): ImmutableMap<String?, BuildConfigurationKey> {
+        val sink = Sink()
+        val producer: BuildConfigurationKeyMapProducer =
+            BuildConfigurationKeyMapProducer(sink, StateMachine.DONE, options, null)
+        // Ignore the return value: sink will either return a result or re-throw whatever exception it
+        // received from the producer.
+        val unused = executeProducer(producer)
+        return sink.options()
     }
 
-    @Override
-    public void acceptTransitionedConfigurations(ImmutableMap<String, BuildConfigurationKey> keys) {
-      this.keys = keys;
-    }
+    /** Receiver for platform info from [PlatformProducer].  */
+    private class Sink : BuildConfigurationKeyMapProducer.ResultSink {
+        private var optionsParsingException: OptionsParsingException? = null
+        private var platformMappingException: PlatformMappingException? = null
+        private var invalidPlatformException: InvalidPlatformException? = null
+        private var buildOptionsScopeFunctionException: BuildOptionsScopeFunctionException? = null
+        private var keys: ImmutableMap<String?, BuildConfigurationKey>? = null
 
-    @Override
-    public void acceptBuildOptionsScopeFunctionError(BuildOptionsScopeFunctionException e) {
-      this.buildOptionsScopeFunctionException = e;
-    }
+        public override fun acceptOptionsParsingError(e: OptionsParsingException?) {
+            this.optionsParsingException = e
+        }
 
-    ImmutableMap<String, BuildConfigurationKey> options()
-        throws OptionsParsingException,
-            PlatformMappingException,
-            InvalidPlatformException,
-            BuildOptionsScopeFunctionException {
-      if (this.optionsParsingException != null) {
-        throw this.optionsParsingException;
-      }
-      if (this.platformMappingException != null) {
-        throw this.platformMappingException;
-      }
-      if (this.invalidPlatformException != null) {
-        throw this.invalidPlatformException;
-      }
-      if (this.buildOptionsScopeFunctionException != null) {
-        throw this.buildOptionsScopeFunctionException;
-      }
-      if (this.keys != null) {
-        return this.keys;
-      }
-      throw new IllegalStateException("Value and exception not set");
+        public override fun acceptPlatformMappingError(e: PlatformMappingException?) {
+            this.platformMappingException = e
+        }
+
+        public override fun acceptPlatformFlagsError(e: InvalidPlatformException?) {
+            this.invalidPlatformException = e
+        }
+
+        public override fun acceptTransitionedConfigurations(keys: ImmutableMap<String?, BuildConfigurationKey>?) {
+            this.keys = keys
+        }
+
+        public override fun acceptBuildOptionsScopeFunctionError(e: BuildOptionsScopeFunctionException?) {
+            this.buildOptionsScopeFunctionException = e
+        }
+
+        @Throws(
+            OptionsParsingException::class,
+            PlatformMappingException::class,
+            InvalidPlatformException::class,
+            BuildOptionsScopeFunctionException::class
+        )
+        fun options(): ImmutableMap<String?, BuildConfigurationKey> {
+            if (this.optionsParsingException != null) {
+                throw this.optionsParsingException
+            }
+            if (this.platformMappingException != null) {
+                throw this.platformMappingException
+            }
+            if (this.invalidPlatformException != null) {
+                throw this.invalidPlatformException
+            }
+            if (this.buildOptionsScopeFunctionException != null) {
+                throw this.buildOptionsScopeFunctionException
+            }
+            if (this.keys != null) {
+                return this.keys
+            }
+            throw IllegalStateException("Value and exception not set")
+        }
     }
-  }
 }

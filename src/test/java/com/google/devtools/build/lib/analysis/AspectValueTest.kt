@@ -11,170 +11,170 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping.roundTripMemoized;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping.roundTripMemoized
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.analysis.util.TestAspects;
-import com.google.devtools.build.lib.analysis.util.TestAspects.AttributeAspect;
-import com.google.devtools.build.lib.analysis.util.TestAspects.ExtraAttributeAspect;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.packages.AspectParameters;
-import com.google.devtools.build.lib.packages.NativeAspectClass;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry;
-import com.google.devtools.build.skyframe.SkyKey;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [AspectValue].  */
+@RunWith(JUnit4::class)
+class AspectValueTest : AnalysisTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun keyEquality() {
+        update()
+        val c1: BuildConfigurationValue? = getTargetConfiguration()
+        val c2: BuildConfigurationValue? = getExecConfiguration()
+        val l1: Label? = Label.parseCanonical("//a:l1")
+        val l1b: Label? = Label.parseCanonical("//a:l1")
+        val l2: Label? = Label.parseCanonical("//a:l2")
+        val i1: AspectParameters? = Builder()
+            .addAttribute("foo", "bar")
+            .build()
+        val i1b: AspectParameters? = Builder()
+            .addAttribute("foo", "bar")
+            .build()
+        val i2: AspectParameters? = Builder()
+            .addAttribute("foo", "baz")
+            .build()
+        val a1: AttributeAspect = TestAspects.ATTRIBUTE_ASPECT
+        val a1b: AttributeAspect = TestAspects.ATTRIBUTE_ASPECT
+        val a2: ExtraAttributeAspect = TestAspects.EXTRA_ATTRIBUTE_ASPECT
 
-/** Tests for {@link AspectValue}. */
-@RunWith(JUnit4.class)
-public final class AspectValueTest extends AnalysisTestCase {
+        // label: //a:l1 or //a:l2
+        // baseConfiguration: target or exec
+        // aspect: Attribute or ExtraAttribute
+        // parameters: bar or baz
+        EqualsTester()
+            .addEqualityGroup(
+                createKey(l1, c1, a1, i1),
+                createKey(l1, c1, a1, i1b),
+                createKey(l1, c1, a1b, i1),
+                createKey(l1, c1, a1b, i1b),
+                createKey(l1b, c1, a1, i1),
+                createKey(l1b, c1, a1, i1b),
+                createKey(l1b, c1, a1b, i1),
+                createKey(l1b, c1, a1b, i1b)
+            )
+            .addEqualityGroup(
+                createKey(l1, c1, a1, i2),
+                createKey(l1, c1, a1b, i2),
+                createKey(l1b, c1, a1, i2),
+                createKey(l1b, c1, a1b, i2)
+            )
+            .addEqualityGroup(
+                createKey(l1, c1, a2, i1),
+                createKey(l1, c1, a2, i1b),
+                createKey(l1b, c1, a2, i1),
+                createKey(l1b, c1, a2, i1b)
+            )
+            .addEqualityGroup(createKey(l1, c1, a2, i2), createKey(l1b, c1, a2, i2))
+            .addEqualityGroup(
+                createKey(l1, c2, a1, i1),
+                createKey(l1, c2, a1, i1b),
+                createKey(l1, c2, a1b, i1),
+                createKey(l1, c2, a1b, i1b),
+                createKey(l1b, c2, a1, i1),
+                createKey(l1b, c2, a1, i1b),
+                createKey(l1b, c2, a1b, i1),
+                createKey(l1b, c2, a1b, i1b)
+            )
+            .addEqualityGroup(
+                createKey(l1, c2, a1, i2),
+                createKey(l1, c2, a1b, i2),
+                createKey(l1b, c2, a1, i2),
+                createKey(l1b, c2, a1b, i2)
+            )
+            .addEqualityGroup(
+                createKey(l1, c2, a2, i1),
+                createKey(l1, c2, a2, i1b),
+                createKey(l1b, c2, a2, i1),
+                createKey(l1b, c2, a2, i1b)
+            )
+            .addEqualityGroup(createKey(l1, c2, a2, i2), createKey(l1b, c2, a2, i2))
+            .addEqualityGroup(
+                createKey(l2, c1, a1, i1),
+                createKey(l2, c1, a1, i1b),
+                createKey(l2, c1, a1b, i1),
+                createKey(l2, c1, a1b, i1b)
+            )
+            .addEqualityGroup(createKey(l2, c1, a1, i2), createKey(l2, c1, a1b, i2))
+            .addEqualityGroup(createKey(l2, c1, a2, i1), createKey(l2, c1, a2, i1b))
+            .addEqualityGroup(createKey(l2, c1, a2, i2))
+            .addEqualityGroup(
+                createKey(l2, c2, a1, i1),
+                createKey(l2, c2, a1, i1b),
+                createKey(l2, c2, a1b, i1),
+                createKey(l2, c2, a1b, i1b)
+            )
+            .addEqualityGroup(createKey(l2, c2, a1, i2), createKey(l2, c2, a1b, i2))
+            .addEqualityGroup(createKey(l2, c2, a2, i1), createKey(l2, c2, a2, i1b))
+            .addEqualityGroup(createKey(l2, c2, a2, i2))
+            .addEqualityGroup(
+                createDerivedKey(l1, c1, a1, i1, a2, i2), createDerivedKey(l1, c1, a1, i1b, a2, i2)
+            )
+            .addEqualityGroup(
+                createDerivedKey(l1, c1, a2, i1, a1, i2), createDerivedKey(l1, c1, a2, i1b, a1, i2)
+            )
+            .testEquals()
+    }
 
-  @Test
-  public void keyEquality() throws Exception {
-    update();
-    BuildConfigurationValue c1 = getTargetConfiguration();
-    BuildConfigurationValue c2 = getExecConfiguration();
-    Label l1 = Label.parseCanonical("//a:l1");
-    Label l1b = Label.parseCanonical("//a:l1");
-    Label l2 = Label.parseCanonical("//a:l2");
-    AspectParameters i1 = new AspectParameters.Builder()
-        .addAttribute("foo", "bar")
-        .build();
-    AspectParameters i1b = new AspectParameters.Builder()
-        .addAttribute("foo", "bar")
-        .build();
-    AspectParameters i2 = new AspectParameters.Builder()
-        .addAttribute("foo", "baz")
-        .build();
-    AttributeAspect a1 = TestAspects.ATTRIBUTE_ASPECT;
-    AttributeAspect a1b = TestAspects.ATTRIBUTE_ASPECT;
-    ExtraAttributeAspect a2 = TestAspects.EXTRA_ATTRIBUTE_ASPECT;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundTrippingEmptyAspectParameters_outputsSingleInstance() {
+        val subject: com.google.common.collect.ImmutableList<E?> =
+            com.google.common.collect.ImmutableList.of<E?>(
+                Builder().build(), Builder().build()
+            )
+        // Empty parameters has its own singleton serialization constant.
+        assertThat(subject.get(0)).isSameInstanceAs(subject.get(1))
+        val deserialized: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            roundTripMemoized(subject, AutoRegistry.get())
+        // It's preserved by round tripping.
+        assertThat(deserialized.get(0)).isSameInstanceAs(subject.get(0))
+        assertThat(deserialized.get(1)).isSameInstanceAs(subject.get(0))
+    }
 
-    // label: //a:l1 or //a:l2
-    // baseConfiguration: target or exec
-    // aspect: Attribute or ExtraAttribute
-    // parameters: bar or baz
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundTripping_mergesEquivalentAspectParameters() {
+        val subject: com.google.common.collect.ImmutableList<E?> =
+            com.google.common.collect.ImmutableList.of<E?>(
+                Builder().addAttribute("abc", "def").build(),
+                Builder().addAttribute("abc", "def").build()
+            )
+        assertThat(subject.get(0)).isNotSameInstanceAs(subject.get(1))
+        val deserialized: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            roundTripMemoized(subject, AutoRegistry.get())
+        assertThat(deserialized.get(0)).isSameInstanceAs(deserialized.get(1))
+    }
 
-    new EqualsTester()
-        .addEqualityGroup(
-            createKey(l1, c1, a1, i1),
-            createKey(l1, c1, a1, i1b),
-            createKey(l1, c1, a1b, i1),
-            createKey(l1, c1, a1b, i1b),
-            createKey(l1b, c1, a1, i1),
-            createKey(l1b, c1, a1, i1b),
-            createKey(l1b, c1, a1b, i1),
-            createKey(l1b, c1, a1b, i1b))
-        .addEqualityGroup(
-            createKey(l1, c1, a1, i2),
-            createKey(l1, c1, a1b, i2),
-            createKey(l1b, c1, a1, i2),
-            createKey(l1b, c1, a1b, i2))
-        .addEqualityGroup(
-            createKey(l1, c1, a2, i1),
-            createKey(l1, c1, a2, i1b),
-            createKey(l1b, c1, a2, i1),
-            createKey(l1b, c1, a2, i1b))
-        .addEqualityGroup(createKey(l1, c1, a2, i2), createKey(l1b, c1, a2, i2))
-        .addEqualityGroup(
-            createKey(l1, c2, a1, i1),
-            createKey(l1, c2, a1, i1b),
-            createKey(l1, c2, a1b, i1),
-            createKey(l1, c2, a1b, i1b),
-            createKey(l1b, c2, a1, i1),
-            createKey(l1b, c2, a1, i1b),
-            createKey(l1b, c2, a1b, i1),
-            createKey(l1b, c2, a1b, i1b))
-        .addEqualityGroup(
-            createKey(l1, c2, a1, i2),
-            createKey(l1, c2, a1b, i2),
-            createKey(l1b, c2, a1, i2),
-            createKey(l1b, c2, a1b, i2))
-        .addEqualityGroup(
-            createKey(l1, c2, a2, i1),
-            createKey(l1, c2, a2, i1b),
-            createKey(l1b, c2, a2, i1),
-            createKey(l1b, c2, a2, i1b))
-        .addEqualityGroup(createKey(l1, c2, a2, i2), createKey(l1b, c2, a2, i2))
-        .addEqualityGroup(
-            createKey(l2, c1, a1, i1),
-            createKey(l2, c1, a1, i1b),
-            createKey(l2, c1, a1b, i1),
-            createKey(l2, c1, a1b, i1b))
-        .addEqualityGroup(createKey(l2, c1, a1, i2), createKey(l2, c1, a1b, i2))
-        .addEqualityGroup(createKey(l2, c1, a2, i1), createKey(l2, c1, a2, i1b))
-        .addEqualityGroup(createKey(l2, c1, a2, i2))
-        .addEqualityGroup(
-            createKey(l2, c2, a1, i1),
-            createKey(l2, c2, a1, i1b),
-            createKey(l2, c2, a1b, i1),
-            createKey(l2, c2, a1b, i1b))
-        .addEqualityGroup(createKey(l2, c2, a1, i2), createKey(l2, c2, a1b, i2))
-        .addEqualityGroup(createKey(l2, c2, a2, i1), createKey(l2, c2, a2, i1b))
-        .addEqualityGroup(createKey(l2, c2, a2, i2))
-        .addEqualityGroup(
-            createDerivedKey(l1, c1, a1, i1, a2, i2), createDerivedKey(l1, c1, a1, i1b, a2, i2))
-        .addEqualityGroup(
-            createDerivedKey(l1, c1, a2, i1, a1, i2), createDerivedKey(l1, c1, a2, i1b, a1, i2))
-        .testEquals();
-  }
+    companion object {
+        private fun createKey(
+            label: Label?,
+            baseConfiguration: BuildConfigurationValue?,
+            aspectClass: NativeAspectClass?,
+            parameters: AspectParameters?
+        ): AspectKey {
+            return AspectKeyCreator.createAspectKey(
+                AspectDescriptor.of(aspectClass, parameters),
+                ConfiguredTargetKey.builder().setLabel(label).setConfiguration(baseConfiguration).build()
+            )
+        }
 
-  @Test
-  public void roundTrippingEmptyAspectParameters_outputsSingleInstance() throws Exception {
-    var subject =
-        ImmutableList.of(
-            new AspectParameters.Builder().build(), new AspectParameters.Builder().build());
-    // Empty parameters has its own singleton serialization constant.
-    assertThat(subject.get(0)).isSameInstanceAs(subject.get(1));
-    var deserialized = roundTripMemoized(subject, AutoRegistry.get());
-    // It's preserved by round tripping.
-    assertThat(deserialized.get(0)).isSameInstanceAs(subject.get(0));
-    assertThat(deserialized.get(1)).isSameInstanceAs(subject.get(0));
-  }
-
-  @Test
-  public void roundTripping_mergesEquivalentAspectParameters() throws Exception {
-    var subject =
-        ImmutableList.of(
-            new AspectParameters.Builder().addAttribute("abc", "def").build(),
-            new AspectParameters.Builder().addAttribute("abc", "def").build());
-    assertThat(subject.get(0)).isNotSameInstanceAs(subject.get(1));
-    var deserialized = roundTripMemoized(subject, AutoRegistry.get());
-    assertThat(deserialized.get(0)).isSameInstanceAs(deserialized.get(1));
-  }
-
-  private static AspectKey createKey(
-      Label label,
-      BuildConfigurationValue baseConfiguration,
-      NativeAspectClass aspectClass,
-      AspectParameters parameters) {
-    return AspectKeyCreator.createAspectKey(
-        AspectDescriptor.of(aspectClass, parameters),
-        ConfiguredTargetKey.builder().setLabel(label).setConfiguration(baseConfiguration).build());
-  }
-
-  private static SkyKey createDerivedKey(
-      Label label,
-      BuildConfigurationValue baseConfiguration,
-      NativeAspectClass aspectClass1,
-      AspectParameters parameters1,
-      NativeAspectClass aspectClass2,
-      AspectParameters parameters2) {
-    AspectKey baseKey = createKey(label, baseConfiguration, aspectClass1, parameters1);
-    return AspectKeyCreator.createAspectKey(
-        AspectDescriptor.of(aspectClass2, parameters2),
-        ImmutableList.of(baseKey),
-        ConfiguredTargetKey.builder().setLabel(label).setConfiguration(baseConfiguration).build());
-  }
+        private fun createDerivedKey(
+            label: Label?,
+            baseConfiguration: BuildConfigurationValue?,
+            aspectClass1: NativeAspectClass?,
+            parameters1: AspectParameters?,
+            aspectClass2: NativeAspectClass?,
+            parameters2: AspectParameters?
+        ): SkyKey {
+            val baseKey: AspectKey = createKey(label, baseConfiguration, aspectClass1, parameters1)
+            return AspectKeyCreator.createAspectKey(
+                AspectDescriptor.of(aspectClass2, parameters2),
+                com.google.common.collect.ImmutableList.of<E?>(baseKey),
+                ConfiguredTargetKey.builder().setLabel(label).setConfiguration(baseConfiguration).build()
+            )
+        }
+    }
 }

@@ -12,170 +12,214 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.bazel.bzlmod;
+package com.google.devtools.build.lib.bazel.bzlmod
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.bazel.bzlmod.CompiledModuleFile.IncludeStatement
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.bazel.bzlmod.CompiledModuleFile.IncludeStatement;
-import net.starlark.java.syntax.Location;
-import net.starlark.java.syntax.ParserInput;
-import net.starlark.java.syntax.StarlarkFile;
-import net.starlark.java.syntax.SyntaxError;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public class CompiledModuleFileTest {
-
-  private static ImmutableList<IncludeStatement> checkSyntax(String str) throws Exception {
-    return CompiledModuleFile.checkModuleFileSyntax(
-        StarlarkFile.parse(ParserInput.fromString(str, "test file")));
-  }
-
-  @Test
-  public void checkSyntax_good() throws Exception {
-    String program =
-        """
+@RunWith(JUnit4::class)
+class CompiledModuleFileTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_good() {
+        val program: String =
+            """
         abc()
         include("hullo")
         foo = bar
-        """;
-    assertThat(checkSyntax(program))
-        .containsExactly(
-            new IncludeStatement("hullo", Location.fromFileLineColumn("test file", 2, 1)));
-  }
+        
+        """.trimIndent()
+        Truth.assertThat(checkSyntax(program))
+            .containsExactly(
+                IncludeStatement("hullo", net.starlark.java.syntax.Location.fromFileLineColumn("test file", 2, 1))
+            )
+    }
 
-  @Test
-  public void checkSyntax_good_multiple() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_good_multiple() {
+        val program: String =
+            """
         abc()
         include("hullo")
         foo = bar
         include('world')
-        """;
-    assertThat(checkSyntax(program))
-        .containsExactly(
-            new IncludeStatement("hullo", Location.fromFileLineColumn("test file", 2, 1)),
-            new IncludeStatement("world", Location.fromFileLineColumn("test file", 4, 1)));
-  }
+        
+        """.trimIndent()
+        Truth.assertThat(checkSyntax(program))
+            .containsExactly(
+                IncludeStatement("hullo", net.starlark.java.syntax.Location.fromFileLineColumn("test file", 2, 1)),
+                IncludeStatement("world", net.starlark.java.syntax.Location.fromFileLineColumn("test file", 4, 1))
+            )
+    }
 
-  @Test
-  public void checkSyntax_good_multilineLiteral() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_good_multilineLiteral() {
+        val program: String =
+            """
         abc()
         # Ludicrous as this may be, it's still valid syntax. Your funeral, etc...
-        include(\"""hullo
-        world\""")
-        """;
-    assertThat(checkSyntax(program))
-        .containsExactly(
-            new IncludeStatement("hullo\nworld", Location.fromFileLineColumn("test file", 3, 1)));
-  }
+        include(${'"'}""hullo
+        world${'"'}"")
+        
+        """.trimIndent()
+        Truth.assertThat(checkSyntax(program))
+            .containsExactly(
+                IncludeStatement(
+                    "hullo\nworld",
+                    net.starlark.java.syntax.Location.fromFileLineColumn("test file", 3, 1)
+                )
+            )
+    }
 
-  @Test
-  public void checkSyntax_good_benignUsageOfInclude() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_good_benignUsageOfInclude() {
+        val program: String =
+            """
         myext = use_extension('whatever')
         myext.include(include="hullo")
-        """;
-    assertThat(checkSyntax(program)).isEmpty();
-  }
+        
+        """.trimIndent()
+        Truth.assertThat(checkSyntax(program)).isEmpty()
+    }
 
-  @Test
-  public void checkSyntax_good_includeIdentifierReassigned() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_good_includeIdentifierReassigned() {
+        val program: String =
+            """
         include('world')
         include = print
         # from this point on, we no longer check anything about `include` usage.
         include('hello')
         str(include)
         exclude = include
-        """;
-    assertThat(checkSyntax(program))
-        .containsExactly(
-            new IncludeStatement("world", Location.fromFileLineColumn("test file", 1, 1)));
-  }
+        
+        """.trimIndent()
+        Truth.assertThat(checkSyntax(program))
+            .containsExactly(
+                IncludeStatement("world", net.starlark.java.syntax.Location.fromFileLineColumn("test file", 1, 1))
+            )
+    }
 
-  @Test
-  public void checkSyntax_bad_if() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_bad_if() {
+        val program: String =
+            """
         abc()
         if d > 3:
           pass
-        """;
-    var ex = assertThrows(SyntaxError.Exception.class, () -> checkSyntax(program));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("`if` statements are not allowed in MODULE.bazel files");
-  }
+        
+        """.trimIndent()
+        val ex: net.starlark.java.syntax.SyntaxError.Exception? =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception?>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable { checkSyntax(program) })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .contains("`if` statements are not allowed in MODULE.bazel files")
+    }
 
-  @Test
-  public void checkSyntax_bad_assignIncludeResult() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_bad_assignIncludeResult() {
+        val program: String =
+            """
         foo = include('hello')
-        """;
-    var ex = assertThrows(SyntaxError.Exception.class, () -> checkSyntax(program));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("the `include` directive MUST be called directly at the top-level");
-  }
+        
+        """.trimIndent()
+        val ex: net.starlark.java.syntax.SyntaxError.Exception? =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception?>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable { checkSyntax(program) })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .contains("the `include` directive MUST be called directly at the top-level")
+    }
 
-  @Test
-  public void checkSyntax_bad_assignIncludeIdentifier() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_bad_assignIncludeIdentifier() {
+        val program: String =
+            """
         foo = include
         foo('hello')
-        """;
-    var ex = assertThrows(SyntaxError.Exception.class, () -> checkSyntax(program));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("the `include` directive MUST be called directly at the top-level");
-  }
+        
+        """.trimIndent()
+        val ex: net.starlark.java.syntax.SyntaxError.Exception? =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception?>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable { checkSyntax(program) })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .contains("the `include` directive MUST be called directly at the top-level")
+    }
 
-  @Test
-  public void checkSyntax_bad_multipleArgumentsToInclude() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_bad_multipleArgumentsToInclude() {
+        val program: String =
+            """
         include('hello', 'world')
-        """;
-    var ex = assertThrows(SyntaxError.Exception.class, () -> checkSyntax(program));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("the `include` directive MUST be called with exactly one positional");
-  }
+        
+        """.trimIndent()
+        val ex: net.starlark.java.syntax.SyntaxError.Exception? =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception?>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable { checkSyntax(program) })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .contains("the `include` directive MUST be called with exactly one positional")
+    }
 
-  @Test
-  public void checkSyntax_bad_keywordArgumentToInclude() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_bad_keywordArgumentToInclude() {
+        val program: String =
+            """
         include(label='hello')
-        """;
-    var ex = assertThrows(SyntaxError.Exception.class, () -> checkSyntax(program));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("the `include` directive MUST be called with exactly one positional");
-  }
+        
+        """.trimIndent()
+        val ex: net.starlark.java.syntax.SyntaxError.Exception? =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception?>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable { checkSyntax(program) })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .contains("the `include` directive MUST be called with exactly one positional")
+    }
 
-  @Test
-  public void checkSyntax_bad_nonLiteralArgumentToInclude() throws Exception {
-    String program =
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkSyntax_bad_nonLiteralArgumentToInclude() {
+        val program: String =
+            """
         foo = 'hello'
         include(foo)
-        """;
-    var ex = assertThrows(SyntaxError.Exception.class, () -> checkSyntax(program));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("the `include` directive MUST be called with exactly one positional");
-  }
+        
+        """.trimIndent()
+        val ex: net.starlark.java.syntax.SyntaxError.Exception? =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception?>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable { checkSyntax(program) })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .contains("the `include` directive MUST be called with exactly one positional")
+    }
+
+    companion object {
+        @Throws(java.lang.Exception::class)
+        private fun checkSyntax(str: String?): com.google.common.collect.ImmutableList<IncludeStatement?> {
+            return CompiledModuleFile.checkModuleFileSyntax(
+                net.starlark.java.syntax.StarlarkFile.parse(
+                    net.starlark.java.syntax.ParserInput.fromString(
+                        str,
+                        "test file"
+                    )
+                )
+            )
+        }
+    }
 }

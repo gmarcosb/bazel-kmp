@@ -12,782 +12,868 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.bzlmod
 
-package com.google.devtools.build.lib.bazel.bzlmod;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static org.junit.Assert.fail;
+/** Tests for [Discovery].  */
+@RunWith(JUnit4::class)
+class DiscoveryTest : FoundationTestCase() {
+    private var workspaceRoot: Path? = null
+    private var evaluator: MemoizingEvaluator? = null
+    private var differencer: RecordingDifferencer? = null
+    private var evaluationContext: EvaluationContext? = null
+    private var registryFactory: com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry.Factory? = null
 
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.InterimModuleBuilder;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleFileValue.RootModuleFileValue;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionFunction;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionValue;
-import com.google.devtools.build.lib.bazel.repository.RepositoryFetchFunction;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode;
-import com.google.devtools.build.lib.bazel.repository.cache.LocalRepoContentsCache;
-import com.google.devtools.build.lib.bazel.repository.downloader.Checksum;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.skyframe.BazelSkyframeExecutorConstants;
-import com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.ExternalFileAction;
-import com.google.devtools.build.lib.skyframe.FileFunction;
-import com.google.devtools.build.lib.skyframe.FileStateFunction;
-import com.google.devtools.build.lib.skyframe.PrecomputedFunction;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.RecordingDifferencer;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    /**
+     * @param registryFileHashes Uses `Optional<String>` rather than `Optional<Checksum>`
+     * for easier testing (Checksum doesn't implement `equals()`).
+     */
+    internal class DiscoveryValue(
+        depGraph: com.google.common.collect.ImmutableMap<ModuleKey?, InterimModule?>?,
+        registryFileHashes: com.google.common.collect.ImmutableMap<String?, java.util.Optional<String?>?>?
+    ) : SkyValue {
+        val depGraph: com.google.common.collect.ImmutableMap<ModuleKey?, InterimModule?>?
+        val registryFileHashes: com.google.common.collect.ImmutableMap<String?, java.util.Optional<String?>?>?
 
-/** Tests for {@link Discovery}. */
-@RunWith(JUnit4.class)
-public class DiscoveryTest extends FoundationTestCase {
+        init {
+            this.depGraph = depGraph
+            this.registryFileHashes = registryFileHashes
+        }
 
-  private Path workspaceRoot;
-  private MemoizingEvaluator evaluator;
-  private RecordingDifferencer differencer;
-  private EvaluationContext evaluationContext;
-  private FakeRegistry.Factory registryFactory;
-
-  /**
-   * @param registryFileHashes Uses {@code Optional<String>} rather than {@code Optional<Checksum>}
-   *     for easier testing (Checksum doesn't implement {@code equals()}).
-   */
-  record DiscoveryValue(
-      ImmutableMap<ModuleKey, InterimModule> depGraph,
-      ImmutableMap<String, Optional<String>> registryFileHashes)
-      implements SkyValue {
-    static final SkyFunctionName FUNCTION_NAME = SkyFunctionName.createHermetic("test_discovery");
-    static final SkyKey KEY = () -> FUNCTION_NAME;
-  }
-
-  static class DiscoveryFunction implements SkyFunction {
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws SkyFunctionException, InterruptedException {
-      RootModuleFileValue root =
-          (RootModuleFileValue) env.getValue(ModuleFileValue.KEY_FOR_ROOT_MODULE);
-      if (root == null) {
-        return null;
-      }
-      Discovery.Result discoveryResult;
-      try {
-        discoveryResult = Discovery.run(env, root);
-      } catch (ExternalDepsException e) {
-        throw new BazelModuleResolutionFunction.BazelModuleResolutionFunctionException(
-            e, SkyFunctionException.Transience.PERSISTENT);
-      }
-      return discoveryResult == null
-          ? null
-          : new DiscoveryValue(
-              discoveryResult.depGraph(),
-              ImmutableMap.copyOf(
-                  Maps.transformValues(
-                      discoveryResult.registryFileHashes(),
-                      value -> value.map(Checksum::toString))));
+        companion object {
+            val FUNCTION_NAME: SkyFunctionName? = SkyFunctionName.createHermetic("test_discovery")
+            val KEY: SkyKey = SkyKey { FUNCTION_NAME }
+        }
     }
-  }
 
-  @Before
-  public void setup() throws Exception {
-    setUpWithBuiltinModules(ImmutableMap.of());
-  }
-
-  private void setUpWithBuiltinModules(ImmutableMap<String, NonRegistryOverride> builtinModules)
-      throws Exception {
-    workspaceRoot = scratch.dir("/ws");
-    differencer = new SequencedRecordingDifferencer();
-    evaluationContext =
-        EvaluationContext.newBuilder().setParallelism(8).setEventHandler(reporter).build();
-    registryFactory = new FakeRegistry.Factory();
-    AtomicReference<PathPackageLocator> packageLocator =
-        new AtomicReference<>(
-            new PathPackageLocator(
-                outputBase,
-                ImmutableList.of(Root.fromPath(rootDirectory)),
-                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            new ServerDirectories(rootDirectory, outputBase, rootDirectory),
-            rootDirectory,
-            AnalysisMock.get().getProductName());
-    ExternalFilesHelper externalFilesHelper =
-        ExternalFilesHelper.createForTesting(
-            packageLocator,
-            ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
-            directories);
-    ConfiguredRuleClassProvider ruleClassProvider = AnalysisMock.get().createRuleClassProvider();
-
-    evaluator =
-        new InMemoryMemoizingEvaluator(
-            ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-                .put(SkyFunctions.FILE, new FileFunction(packageLocator, directories))
-                .put(
-                    FileStateKey.FILE_STATE,
-                    new FileStateFunction(
-                        Suppliers.ofInstance(
-                            new TimestampGranularityMonitor(BlazeClock.instance())),
-                        SyscallCache.NO_CACHE,
-                        externalFilesHelper))
-                .put(DiscoveryValue.FUNCTION_NAME, new DiscoveryFunction())
-                .put(
-                    SkyFunctions.BAZEL_LOCK_FILE,
-                    new BazelLockFileFunction(rootDirectory, directories.getOutputBase()))
-                .put(
-                    SkyFunctions.MODULE_FILE,
-                    new ModuleFileFunction(
-                        ruleClassProvider.getBazelStarlarkEnvironment(),
-                        workspaceRoot,
-                        builtinModules))
-                .put(SkyFunctions.PRECOMPUTED, new PrecomputedFunction())
-                .put(
-                    SkyFunctions.REPOSITORY_DIRECTORY,
-                    new RepositoryFetchFunction(
-                        ImmutableMap::of,
-                        ImmutableMap::of,
-                        directories,
-                        new LocalRepoContentsCache()))
-                .put(RepoDefinitionValue.REPO_DEFINITION, new RepoDefinitionFunction(directories))
-                .put(
-                    SkyFunctions.REGISTRY,
-                    new RegistryFunction(registryFactory, directories.getWorkspace()))
-                .put(SkyFunctions.REPO_SPEC, new RepoSpecFunction())
-                .put(SkyFunctions.YANKED_VERSIONS, new YankedVersionsFunction())
-                .put(
-                    SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES,
-                    new ModuleExtensionRepoMappingEntriesFunction())
-                .put(
-                    SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE,
-                    new ClientEnvironmentFunction(new AtomicReference<>(ImmutableMap.of())))
-                .buildOrThrow(),
-            differencer);
-
-    PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT);
-    RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(differencer, ImmutableMap.of());
-    RepositoryDirectoryValue.FETCH_DISABLED.set(differencer, false);
-    RepositoryDirectoryValue.FORCE_FETCH.set(
-        differencer, RepositoryDirectoryValue.FORCE_FETCH_DISABLED);
-    RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, Optional.empty());
-
-    PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, packageLocator.get());
-    PrecomputedValue.REPO_ENV.set(differencer, ImmutableMap.of());
-    ModuleFileFunction.IGNORE_DEV_DEPS.set(differencer, false);
-    ModuleFileFunction.INJECTED_REPOSITORIES.set(differencer, ImmutableMap.of());
-    ModuleFileFunction.MODULE_OVERRIDES.set(differencer, ImmutableMap.of());
-    YankedVersionsUtil.ALLOWED_YANKED_VERSIONS.set(differencer, ImmutableList.of());
-    BazelLockFileFunction.LOCKFILE_MODE.set(differencer, LockfileMode.UPDATE);
-    RegistryFunction.MODULE_MIRRORS.set(differencer, ImmutableMap.of());
-  }
-
-  @Test
-  public void testSimpleDiamond() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='2.0')");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "1.0"),
-                "module(name='bbb', version='1.0');bazel_dep(name='ddd',version='3.0')")
-            .addModule(
-                createModuleKey("ccc", "2.0"),
-                "module(name='ccc', version='2.0');bazel_dep(name='ddd',version='3.0')")
-            .addModule(
-                createModuleKey("ddd", "3.0"),
-                // Add a random override here; it should be ignored
-                "module(name='ddd', version='3.0');local_path_override(module_name='ff',path='f')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
-
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+    internal class DiscoveryFunction : SkyFunction {
+        @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+        public override fun compute(skyKey: SkyKey?, env: Environment): SkyValue? {
+            val root: RootModuleFileValue? =
+                env.getValue(ModuleFileValue.KEY_FOR_ROOT_MODULE) as RootModuleFileValue?
+            if (root == null) {
+                return null
+            }
+            val discoveryResult: Discovery.Result?
+            try {
+                discoveryResult = Discovery.run(env, root)
+            } catch (e: ExternalDepsException) {
+                throw BazelModuleResolutionFunctionException(
+                    e, SkyFunctionException.Transience.PERSISTENT
+                )
+            }
+            return if (discoveryResult == null)
+                null
+            else
+                DiscoveryValue(
+                    discoveryResult.depGraph(),
+                    com.google.common.collect.ImmutableMap.copyOf(
+                        com.google.common.collect.Maps.transformValues(
+                            discoveryResult.registryFileHashes(),
+                            { value -> value.map(com.google.devtools.build.lib.bazel.repository.downloader.Checksum::toString) })
+                    )
+                )
+        }
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .addDep("ccc", createModuleKey("ccc", "2.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0")
-                .addDep("ddd", createModuleKey("ddd", "3.0"))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("ccc", "2.0")
-                .addDep("ddd", createModuleKey("ddd", "3.0"))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("ddd", "3.0").setRegistry(registry).buildEntry());
-    assertThat(discoveryValue.registryFileHashes())
-        .containsExactly(
-            registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel",
-            Optional.of("3f48e6d8694e0aa0d16617fd97b7d84da0e17ee9932c18cbc71888c12563372d"),
-            registry.getUrl() + "/modules/ccc/2.0/MODULE.bazel",
-            Optional.of("e613d4192495192c3d46ee444dc9882a176a9e7a243d1b5a840ab0f01553e8d6"),
-            registry.getUrl() + "/modules/ddd/3.0/MODULE.bazel",
-            Optional.of("f80d91453520d193b0b79f1501eb902b5b01a991762cc7fb659fc580b95648fd"))
-        .inOrder();
-  }
 
-  @Test
-  public void testDevDependency() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='1.0',dev_dependency=True)");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "1.0"),
-                "module(name='bbb', version='1.0')",
-                "bazel_dep(name='ccc',version='2.0',dev_dependency=True)")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
-            .addModule(createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
-
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setup() {
+        setUpWithBuiltinModules(com.google.common.collect.ImmutableMap.of<String?, NonRegistryOverride?>())
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .addDep("ccc", createModuleKey("ccc", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0").setRegistry(registry).buildEntry(),
-            InterimModuleBuilder.create("ccc", "1.0").setRegistry(registry).buildEntry());
-  }
 
-  @Test
-  public void testIgnoreDevDependency() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='1.0',dev_dependency=True)");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "1.0"),
-                "module(name='bbb', version='1.0')",
-                "bazel_dep(name='ccc',version='2.0',dev_dependency=True)")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
-            .addModule(createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
-    ModuleFileFunction.IGNORE_DEV_DEPS.set(differencer, true);
-    ModuleFileFunction.INJECTED_REPOSITORIES.set(differencer, ImmutableMap.of());
+    @Throws(java.lang.Exception::class)
+    private fun setUpWithBuiltinModules(builtinModules: com.google.common.collect.ImmutableMap<String?, NonRegistryOverride?>?) {
+        workspaceRoot = scratch.dir("/ws")
+        differencer = SequencedRecordingDifferencer()
+        evaluationContext =
+            EvaluationContext.newBuilder().setParallelism(8).setEventHandler(reporter).build()
+        registryFactory = com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry.Factory()
+        val packageLocator: AtomicReference<PathPackageLocator?> =
+            AtomicReference<PathPackageLocator?>(
+                PathPackageLocator(
+                    outputBase,
+                    com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(rootDirectory)),
+                    BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                )
+            )
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                ServerDirectories(rootDirectory, outputBase, rootDirectory),
+                rootDirectory,
+                AnalysisMock.Companion.get().getProductName()
+            )
+        val externalFilesHelper: ExternalFilesHelper? =
+            ExternalFilesHelper.createForTesting(
+                packageLocator,
+                ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
+                directories
+            )
+        val ruleClassProvider: ConfiguredRuleClassProvider = AnalysisMock.Companion.get().createRuleClassProvider()
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        evaluator =
+            InMemoryMemoizingEvaluator(
+                com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                    .put(SkyFunctions.FILE, FileFunction(packageLocator, directories))
+                    .put(
+                        FileStateKey.FILE_STATE,
+                        FileStateFunction(
+                            com.google.common.base.Suppliers.ofInstance<T?>(
+                                TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())
+                            ),
+                            SyscallCache.NO_CACHE,
+                            externalFilesHelper
+                        )
+                    )
+                    .put(DiscoveryValue.Companion.FUNCTION_NAME, DiscoveryFunction())
+                    .put(
+                        SkyFunctions.BAZEL_LOCK_FILE,
+                        BazelLockFileFunction(rootDirectory, directories.getOutputBase())
+                    )
+                    .put(
+                        SkyFunctions.MODULE_FILE,
+                        ModuleFileFunction(
+                            ruleClassProvider.getBazelStarlarkEnvironment(),
+                            workspaceRoot,
+                            builtinModules
+                        )
+                    )
+                    .put(SkyFunctions.PRECOMPUTED, PrecomputedFunction())
+                    .put(
+                        SkyFunctions.REPOSITORY_DIRECTORY,
+                        RepositoryFetchFunction(
+                            com.google.common.collect.ImmutableMap::of,
+                            com.google.common.collect.ImmutableMap::of,
+                            directories,
+                            LocalRepoContentsCache()
+                        )
+                    )
+                    .put(RepoDefinitionValue.REPO_DEFINITION, RepoDefinitionFunction(directories))
+                    .put(
+                        SkyFunctions.REGISTRY,
+                        RegistryFunction(registryFactory, directories.getWorkspace())
+                    )
+                    .put(SkyFunctions.REPO_SPEC, RepoSpecFunction())
+                    .put(SkyFunctions.YANKED_VERSIONS, YankedVersionsFunction())
+                    .put(
+                        SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES,
+                        ModuleExtensionRepoMappingEntriesFunction()
+                    )
+                    .put(
+                        SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE,
+                        ClientEnvironmentFunction(AtomicReference<V?>(com.google.common.collect.ImmutableMap.of<Any?, Any?>()))
+                    )
+                    .buildOrThrow(),
+                differencer
+            )
+
+        PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT)
+        RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(
+            differencer,
+            com.google.common.collect.ImmutableMap.of<K?, V?>()
+        )
+        RepositoryDirectoryValue.FETCH_DISABLED.set(differencer, false)
+        RepositoryDirectoryValue.FORCE_FETCH.set(
+            differencer, RepositoryDirectoryValue.FORCE_FETCH_DISABLED
+        )
+        RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, java.util.Optional.empty<T?>())
+
+        PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, packageLocator.get())
+        PrecomputedValue.REPO_ENV.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        ModuleFileFunction.IGNORE_DEV_DEPS.set(differencer, false)
+        ModuleFileFunction.INJECTED_REPOSITORIES.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        ModuleFileFunction.MODULE_OVERRIDES.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        YankedVersionsUtil.ALLOWED_YANKED_VERSIONS.set(differencer, com.google.common.collect.ImmutableList.of<E?>())
+        BazelLockFileFunction.LOCKFILE_MODE.set(differencer, LockfileMode.UPDATE)
+        RegistryFunction.MODULE_MIRRORS.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0").setRegistry(registry).buildEntry());
-  }
 
-  @Test
-  public void testNodep_unfulfilled() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='1.0',repo_name=None)");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(createModuleKey("bbb", "1.0"), "module(name='bbb', version='1.0')")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleDiamond() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='2.0')"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                    "module(name='bbb', version='1.0');bazel_dep(name='ddd',version='3.0')"
+                )
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("ccc", "2.0"),
+                    "module(name='ccc', version='2.0');bazel_dep(name='ddd',version='3.0')"
+                )
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("ddd", "3.0"),  // Add a random override here; it should be ignored
+                    "module(name='ddd', version='3.0');local_path_override(module_name='ff',path='f')"
+                )
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "2.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0")
+                    .addDep("ddd", BzlmodTestUtil.createModuleKey("ddd", "3.0"))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "2.0")
+                    .addDep("ddd", BzlmodTestUtil.createModuleKey("ddd", "3.0"))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ddd", "3.0").setRegistry(registry).buildEntry()
+            )
+        Truth.assertThat(discoveryValue.registryFileHashes)
+            .containsExactly(
+                registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel",
+                java.util.Optional.of<String?>("3f48e6d8694e0aa0d16617fd97b7d84da0e17ee9932c18cbc71888c12563372d"),
+                registry.getUrl() + "/modules/ccc/2.0/MODULE.bazel",
+                java.util.Optional.of<String?>("e613d4192495192c3d46ee444dc9882a176a9e7a243d1b5a840ab0f01553e8d6"),
+                registry.getUrl() + "/modules/ddd/3.0/MODULE.bazel",
+                java.util.Optional.of<String?>("f80d91453520d193b0b79f1501eb902b5b01a991762cc7fb659fc580b95648fd")
+            )
+            .inOrder()
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0").setRegistry(registry).buildEntry());
-    assertThat(discoveryValue.registryFileHashes().keySet())
-        .containsExactly(registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel");
-  }
 
-  @Test
-  public void testNodep_fulfilled() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='2.0',repo_name=None)");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "1.0"),
-                "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='1.0')")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
-            .addModule(createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDevDependency() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='1.0',dev_dependency=True)"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                    "module(name='bbb', version='1.0')",
+                    "bazel_dep(name='ccc',version='2.0',dev_dependency=True)"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0").setRegistry(registry).buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "1.0").setRegistry(registry).buildEntry()
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .addNodepDep(createModuleKey("ccc", "2.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0")
-                .addDep("ccc", createModuleKey("ccc", "1.0"))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("ccc", "1.0").setRegistry(registry).buildEntry(),
-            InterimModuleBuilder.create("ccc", "2.0").setRegistry(registry).buildEntry());
-    assertThat(discoveryValue.registryFileHashes().keySet())
-        .containsExactly(
-            registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel",
-            registry.getUrl() + "/modules/ccc/2.0/MODULE.bazel",
-            registry.getUrl() + "/modules/ccc/1.0/MODULE.bazel");
-  }
 
-  @Test
-  public void testNodep_fulfilled_manyRounds() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='2.0',repo_name=None)",
-        "bazel_dep(name='ddd',version='2.0',repo_name=None)");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "1.0"),
-                "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='1.0')")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
-            .addModule(
-                createModuleKey("ccc", "2.0"),
-                "module(name='ccc', version='2.0');bazel_dep(name='ddd',version='1.0')")
-            .addModule(createModuleKey("ddd", "1.0"), "module(name='ddd', version='1.0')")
-            .addModule(createModuleKey("ddd", "2.0"), "module(name='ddd', version='2.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIgnoreDevDependency() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='1.0',dev_dependency=True)"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                    "module(name='bbb', version='1.0')",
+                    "bazel_dep(name='ccc',version='2.0',dev_dependency=True)"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
+        ModuleFileFunction.IGNORE_DEV_DEPS.set(differencer, true)
+        ModuleFileFunction.INJECTED_REPOSITORIES.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0").setRegistry(registry).buildEntry()
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .addNodepDep(createModuleKey("ccc", "2.0"))
-                .addNodepDep(createModuleKey("ddd", "2.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0")
-                .addDep("ccc", createModuleKey("ccc", "1.0"))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("ccc", "1.0").setRegistry(registry).buildEntry(),
-            InterimModuleBuilder.create("ccc", "2.0")
-                .setRegistry(registry)
-                .addDep("ddd", createModuleKey("ddd", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("ddd", "1.0").setRegistry(registry).buildEntry(),
-            InterimModuleBuilder.create("ddd", "2.0").setRegistry(registry).buildEntry());
-    assertThat(discoveryValue.registryFileHashes().keySet())
-        .containsExactly(
-            registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel",
-            registry.getUrl() + "/modules/ccc/2.0/MODULE.bazel",
-            registry.getUrl() + "/modules/ddd/2.0/MODULE.bazel",
-            registry.getUrl() + "/modules/ccc/1.0/MODULE.bazel",
-            registry.getUrl() + "/modules/ddd/1.0/MODULE.bazel");
-  }
 
-  @Test
-  public void testNodep_fulfilled_withOverride() throws Exception {
-    // Regression test for https://github.com/bazelbuild/bazel/issues/26495
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')",
-        "bazel_dep(name='ccc',version='1.0')",
-        "single_version_override(module_name='bbb',version='2.0')");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(createModuleKey("bbb", "1.0"), "module(name='bbb', version='1.0')")
-            .addModule(createModuleKey("bbb", "2.0"), "module(name='bbb', version='2.0')")
-            .addModule(
-                createModuleKey("ccc", "1.0"),
-                "module(name='ccc', version='1.0')",
-                "bazel_dep(name='bbb', version='1.0', repo_name=None)");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNodep_unfulfilled() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='1.0',repo_name=None)"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(BzlmodTestUtil.createModuleKey("bbb", "1.0"), "module(name='bbb', version='1.0')")
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0").setRegistry(registry).buildEntry()
+            )
+        Truth.assertThat(discoveryValue.registryFileHashes.keys)
+            .containsExactly(registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel")
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "2.0"))
-                .addOriginalDep("bbb", createModuleKey("bbb", "1.0"))
-                .addDep("ccc", createModuleKey("ccc", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "2.0").setRegistry(registry).buildEntry(),
-            InterimModuleBuilder.create("ccc", "1.0")
-                .addNodepDep(createModuleKey("bbb", "2.0"))
-                .setRegistry(registry)
-                .buildEntry());
-    assertThat(discoveryValue.registryFileHashes().keySet())
-        .containsExactly(
-            registry.getUrl() + "/modules/bbb/2.0/MODULE.bazel",
-            registry.getUrl() + "/modules/ccc/1.0/MODULE.bazel");
-  }
 
-  @Test
-  public void testCircularDependency() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "1.0"),
-                "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')")
-            .addModule(
-                createModuleKey("ccc", "2.0"),
-                "module(name='ccc', version='2.0');bazel_dep(name='bbb',version='1.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNodep_fulfilled() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='2.0',repo_name=None)"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                    "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='1.0')"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0')")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .addNodepDep(BzlmodTestUtil.createModuleKey("ccc", "2.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0")
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "1.0"))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "1.0").setRegistry(registry).buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "2.0").setRegistry(registry).buildEntry()
+            )
+        Truth.assertThat(discoveryValue.registryFileHashes.keys)
+            .containsExactly(
+                registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel",
+                registry.getUrl() + "/modules/ccc/2.0/MODULE.bazel",
+                registry.getUrl() + "/modules/ccc/1.0/MODULE.bazel"
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0")
-                .addDep("ccc", createModuleKey("ccc", "2.0"))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("ccc", "2.0")
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .setRegistry(registry)
-                .buildEntry());
-  }
 
-  @Test
-  public void testCircularDependencyOnRootModule() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='1.0')");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "1.0"),
-                "module(name='bbb', version='1.0');bazel_dep(name='aaa',version='2.0')")
-            .addModule(createModuleKey("aaa", "2.0"), "module(name='aaa', version='2.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNodep_fulfilled_manyRounds() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='2.0',repo_name=None)",
+            "bazel_dep(name='ddd',version='2.0',repo_name=None)"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                    "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='1.0')"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0')")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("ccc", "2.0"),
+                    "module(name='ccc', version='2.0');bazel_dep(name='ddd',version='1.0')"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ddd", "1.0"), "module(name='ddd', version='1.0')")
+                .addModule(BzlmodTestUtil.createModuleKey("ddd", "2.0"), "module(name='ddd', version='2.0')")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .addNodepDep(BzlmodTestUtil.createModuleKey("ccc", "2.0"))
+                    .addNodepDep(BzlmodTestUtil.createModuleKey("ddd", "2.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0")
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "1.0"))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "1.0").setRegistry(registry).buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "2.0")
+                    .setRegistry(registry)
+                    .addDep("ddd", BzlmodTestUtil.createModuleKey("ddd", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ddd", "1.0").setRegistry(registry).buildEntry(),
+                InterimModuleBuilder.Companion.create("ddd", "2.0").setRegistry(registry).buildEntry()
+            )
+        Truth.assertThat(discoveryValue.registryFileHashes.keys)
+            .containsExactly(
+                registry.getUrl() + "/modules/bbb/1.0/MODULE.bazel",
+                registry.getUrl() + "/modules/ccc/2.0/MODULE.bazel",
+                registry.getUrl() + "/modules/ddd/2.0/MODULE.bazel",
+                registry.getUrl() + "/modules/ccc/1.0/MODULE.bazel",
+                registry.getUrl() + "/modules/ddd/1.0/MODULE.bazel"
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "1.0")
-                .addDep("aaa", ModuleKey.ROOT)
-                .addOriginalDep("aaa", createModuleKey("aaa", "2.0"))
-                .setRegistry(registry)
-                .buildEntry());
-  }
 
-  @Test
-  public void testSingleVersionOverride() throws Exception {
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='0.1')",
-        "single_version_override(module_name='ccc',version='2.0')");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "0.1"),
-                "module(name='bbb', version='0.1');bazel_dep(name='ccc',version='1.0')")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0');")
-            .addModule(createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0');");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNodep_fulfilled_withOverride() {
+        // Regression test for https://github.com/bazelbuild/bazel/issues/26495
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')",
+            "bazel_dep(name='ccc',version='1.0')",
+            "single_version_override(module_name='bbb',version='2.0')"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(BzlmodTestUtil.createModuleKey("bbb", "1.0"), "module(name='bbb', version='1.0')")
+                .addModule(BzlmodTestUtil.createModuleKey("bbb", "2.0"), "module(name='bbb', version='2.0')")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("ccc", "1.0"),
+                    "module(name='ccc', version='1.0')",
+                    "bazel_dep(name='bbb', version='1.0', repo_name=None)"
+                )
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "2.0"))
+                    .addOriginalDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "2.0").setRegistry(registry).buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "1.0")
+                    .addNodepDep(BzlmodTestUtil.createModuleKey("bbb", "2.0"))
+                    .setRegistry(registry)
+                    .buildEntry()
+            )
+        Truth.assertThat(discoveryValue.registryFileHashes.keys)
+            .containsExactly(
+                registry.getUrl() + "/modules/bbb/2.0/MODULE.bazel",
+                registry.getUrl() + "/modules/ccc/1.0/MODULE.bazel"
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "0.1"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "0.1")
-                .addDep("ccc", createModuleKey("ccc", "2.0"))
-                .addOriginalDep("ccc", createModuleKey("ccc", "1.0"))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("ccc", "2.0").setRegistry(registry).buildEntry());
-  }
 
-  @Test
-  public void testRegistryOverride() throws Exception {
-    FakeRegistry registry1 =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "0.1"),
-                "module(name='bbb', version='0.1');bazel_dep(name='ccc',version='1.0')")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0');");
-    FakeRegistry registry2 =
-        registryFactory
-            .newFakeRegistry("/bar")
-            .addModule(
-                createModuleKey("ccc", "1.0"),
-                "module(name='ccc', version='1.0');bazel_dep(name='bbb',version='0.1')");
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='0.1')",
-        "single_version_override(module_name='ccc',registry='" + registry2.getUrl() + "')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry1.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCircularDependency() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                    "module(name='bbb', version='1.0');bazel_dep(name='ccc',version='2.0')"
+                )
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("ccc", "2.0"),
+                    "module(name='ccc', version='2.0');bazel_dep(name='bbb',version='1.0')"
+                )
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0")
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "2.0"))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "2.0")
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .setRegistry(registry)
+                    .buildEntry()
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "0.1"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "0.1")
-                .addDep("ccc", createModuleKey("ccc", "1.0"))
-                .setRegistry(registry1)
-                .buildEntry(),
-            InterimModuleBuilder.create("ccc", "1.0")
-                .addDep("bbb", createModuleKey("bbb", "0.1"))
-                .setRegistry(registry2)
-                .buildEntry());
-  }
 
-  @Ignore(
-      "b/389163906 - figure out how to convert this class to BuildViewTestCase; the need for a"
-          + " custom SkyFunction kind of breaks it")
-  @Test
-  public void testLocalPathOverride() throws Exception {
-    Path pathToC = scratch.dir("/pathToC");
-    scratch.file(
-        pathToC.getRelative("MODULE.bazel").getPathString(), "module(name='ccc',version='2.0')");
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "module(name='aaa',version='0.1')",
-        "bazel_dep(name='bbb',version='0.1')",
-        "local_path_override(module_name='ccc',path='" + pathToC.getPathString() + "')");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(
-                createModuleKey("bbb", "0.1"),
-                "module(name='bbb', version='0.1');bazel_dep(name='ccc',version='1.0')")
-            .addModule(createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0');");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCircularDependencyOnRootModule() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='1.0')"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "1.0"),
+                    "module(name='bbb', version='1.0');bazel_dep(name='aaa',version='2.0')"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("aaa", "2.0"), "module(name='aaa', version='2.0')")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "1.0")
+                    .addDep("aaa", ModuleKey.ROOT)
+                    .addOriginalDep("aaa", BzlmodTestUtil.createModuleKey("aaa", "2.0"))
+                    .setRegistry(registry)
+                    .buildEntry()
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("aaa", "0.1")
-                .setKey(ModuleKey.ROOT)
-                .addDep("bbb", createModuleKey("bbb", "0.1"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bbb", "0.1")
-                .addDep("ccc", createModuleKey("ccc", ""))
-                .addOriginalDep("ccc", createModuleKey("ccc", "1.0"))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("ccc", "2.0")
-                .setKey(createModuleKey("ccc", ""))
-                .buildEntry());
-    assertThat(discoveryValue.registryFileHashes())
-        .containsExactly(
-            registry.getUrl() + "/modules/bbb/0.1/MODULE.bazel",
-            Optional.of("3f9e1a600b4adeee1c1a92b92df9d086eca4bbdde656c122872f48f8f3b874a3"))
-        .inOrder();
-  }
 
-  @Ignore(
-      "b/389163906 - figure out how to convert this class to BuildViewTestCase; the need for a"
-          + " custom SkyFunction kind of breaks it")
-  @Test
-  public void testBuiltinModules_forRoot() throws Exception {
-    ImmutableMap<String, NonRegistryOverride> builtinModules =
-        ImmutableMap.of(
-            "bazel_tools",
-            new NonRegistryOverride(
-                LocalPathRepoSpecs.create(rootDirectory.getRelative("tools").getPathString())),
-            "other_tools",
-            new NonRegistryOverride(
-                LocalPathRepoSpecs.create(
-                    rootDirectory.getRelative("other_tools").getPathString())));
-    setUpWithBuiltinModules(builtinModules);
-    scratch.file(
-        workspaceRoot.getRelative("MODULE.bazel").getPathString(),
-        "bazel_dep(name='foo',version='2.0')");
-    scratch.file(
-        rootDirectory.getRelative("tools/MODULE.bazel").getPathString(),
-        "module(name='bazel_tools',version='1.0')",
-        "bazel_dep(name='foo',version='1.0')");
-    scratch.file(
-        rootDirectory.getRelative("other_tools/MODULE.bazel").getPathString(),
-        "module(name='other_tools')");
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry("/foo")
-            .addModule(createModuleKey("foo", "1.0"), "module(name='foo', version='1.0')")
-            .addModule(createModuleKey("foo", "2.0"), "module(name='foo', version='2.0')");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleVersionOverride() {
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='0.1')",
+            "single_version_override(module_name='ccc',version='2.0')"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "0.1"),
+                    "module(name='bbb', version='0.1');bazel_dep(name='ccc',version='1.0')"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0');")
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "2.0"), "module(name='ccc', version='2.0');")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    EvaluationResult<DiscoveryValue> result =
-        evaluator.evaluate(ImmutableList.of(DiscoveryValue.KEY), evaluationContext);
-    if (result.hasError()) {
-      fail(result.getError().toString());
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "0.1"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "0.1")
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "2.0"))
+                    .addOriginalDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "1.0"))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "2.0").setRegistry(registry).buildEntry()
+            )
     }
-    DiscoveryValue discoveryValue = result.get(DiscoveryValue.KEY);
-    assertThat(discoveryValue.depGraph().entrySet())
-        .containsExactly(
-            InterimModuleBuilder.create("", "")
-                .addDep("bazel_tools", createModuleKey("bazel_tools", ""))
-                .addDep("other_tools", createModuleKey("other_tools", ""))
-                .addDep("foo", createModuleKey("foo", "2.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("bazel_tools", "1.0")
-                .setKey(createModuleKey("bazel_tools", ""))
-                .addDep("other_tools", createModuleKey("other_tools", ""))
-                .addDep("foo", createModuleKey("foo", "1.0"))
-                .buildEntry(),
-            InterimModuleBuilder.create("other_tools", "")
-                .setKey(createModuleKey("other_tools", ""))
-                .addDep("bazel_tools", createModuleKey("bazel_tools", ""))
-                .buildEntry(),
-            InterimModuleBuilder.create("foo", "1.0")
-                .addDep("bazel_tools", createModuleKey("bazel_tools", ""))
-                .addDep("other_tools", createModuleKey("other_tools", ""))
-                .setRegistry(registry)
-                .buildEntry(),
-            InterimModuleBuilder.create("foo", "2.0")
-                .addDep("bazel_tools", createModuleKey("bazel_tools", ""))
-                .addDep("other_tools", createModuleKey("other_tools", ""))
-                .setRegistry(registry)
-                .buildEntry());
 
-    assertThat(discoveryValue.registryFileHashes())
-        .containsExactly(
-            registry.getUrl() + "/modules/foo/2.0/MODULE.bazel",
-            Optional.of("76ecb05b455aecab4ec958c1deb17e4cbbe6e708d9c4e85fceda2317f6c86d7b"),
-            registry.getUrl() + "/modules/foo/1.0/MODULE.bazel",
-            Optional.of("4d887e8dfc1863861e3aa5601eeeebca5d8f110977895f1de4bdb2646e546fb5"))
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRegistryOverride() {
+        val registry1: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "0.1"),
+                    "module(name='bbb', version='0.1');bazel_dep(name='ccc',version='1.0')"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0');")
+        val registry2: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/bar")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("ccc", "1.0"),
+                    "module(name='ccc', version='1.0');bazel_dep(name='bbb',version='0.1')"
+                )
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='0.1')",
+            "single_version_override(module_name='ccc',registry='" + registry2.getUrl() + "')"
+        )
+        ModuleFileFunction.REGISTRIES.set(
+            differencer,
+            com.google.common.collect.ImmutableSet.of<E?>(registry1.getUrl())
+        )
+
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "0.1"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "0.1")
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "1.0"))
+                    .setRegistry(registry1)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "1.0")
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "0.1"))
+                    .setRegistry(registry2)
+                    .buildEntry()
+            )
+    }
+
+    @Ignore(
+        ("b/389163906 - figure out how to convert this class to BuildViewTestCase; the need for a"
+                + " custom SkyFunction kind of breaks it")
+    )
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLocalPathOverride() {
+        val pathToC: Path = scratch.dir("/pathToC")
+        scratch.file(
+            pathToC.getRelative("MODULE.bazel").getPathString(), "module(name='ccc',version='2.0')"
+        )
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "module(name='aaa',version='0.1')",
+            "bazel_dep(name='bbb',version='0.1')",
+            "local_path_override(module_name='ccc',path='" + pathToC.getPathString() + "')"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bbb", "0.1"),
+                    "module(name='bbb', version='0.1');bazel_dep(name='ccc',version='1.0')"
+                )
+                .addModule(BzlmodTestUtil.createModuleKey("ccc", "1.0"), "module(name='ccc', version='1.0');")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
+
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("aaa", "0.1")
+                    .setKey(ModuleKey.ROOT)
+                    .addDep("bbb", BzlmodTestUtil.createModuleKey("bbb", "0.1"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bbb", "0.1")
+                    .addDep("ccc", BzlmodTestUtil.createModuleKey("ccc", ""))
+                    .addOriginalDep("ccc", BzlmodTestUtil.createModuleKey("ccc", "1.0"))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("ccc", "2.0")
+                    .setKey(BzlmodTestUtil.createModuleKey("ccc", ""))
+                    .buildEntry()
+            )
+        Truth.assertThat(discoveryValue.registryFileHashes)
+            .containsExactly(
+                registry.getUrl() + "/modules/bbb/0.1/MODULE.bazel",
+                java.util.Optional.of<String?>("3f9e1a600b4adeee1c1a92b92df9d086eca4bbdde656c122872f48f8f3b874a3")
+            )
+            .inOrder()
+    }
+
+    @Ignore(
+        ("b/389163906 - figure out how to convert this class to BuildViewTestCase; the need for a"
+                + " custom SkyFunction kind of breaks it")
+    )
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuiltinModules_forRoot() {
+        val builtinModules: com.google.common.collect.ImmutableMap<String?, NonRegistryOverride?> =
+            com.google.common.collect.ImmutableMap.of<String?, NonRegistryOverride?>(
+                "bazel_tools",
+                NonRegistryOverride(
+                    LocalPathRepoSpecs.create(rootDirectory.getRelative("tools").getPathString())
+                ),
+                "other_tools",
+                NonRegistryOverride(
+                    LocalPathRepoSpecs.create(
+                        rootDirectory.getRelative("other_tools").getPathString()
+                    )
+                )
+            )
+        setUpWithBuiltinModules(builtinModules)
+        scratch.file(
+            workspaceRoot.getRelative("MODULE.bazel").getPathString(),
+            "bazel_dep(name='foo',version='2.0')"
+        )
+        scratch.file(
+            rootDirectory.getRelative("tools/MODULE.bazel").getPathString(),
+            "module(name='bazel_tools',version='1.0')",
+            "bazel_dep(name='foo',version='1.0')"
+        )
+        scratch.file(
+            rootDirectory.getRelative("other_tools/MODULE.bazel").getPathString(),
+            "module(name='other_tools')"
+        )
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry("/foo")
+                .addModule(BzlmodTestUtil.createModuleKey("foo", "1.0"), "module(name='foo', version='1.0')")
+                .addModule(BzlmodTestUtil.createModuleKey("foo", "2.0"), "module(name='foo', version='2.0')")
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
+
+        val result: EvaluationResult<DiscoveryValue?> =
+            evaluator.evaluate(
+                com.google.common.collect.ImmutableList.of<E?>(DiscoveryValue.Companion.KEY),
+                evaluationContext
+            )
+        if (result.hasError()) {
+            org.junit.Assert.fail(result.getError().toString())
+        }
+        val discoveryValue: DiscoveryValue = result.get(DiscoveryValue.Companion.KEY)
+        Truth.assertThat(discoveryValue.depGraph.entries)
+            .containsExactly(
+                InterimModuleBuilder.Companion.create("", "")
+                    .addDep("bazel_tools", BzlmodTestUtil.createModuleKey("bazel_tools", ""))
+                    .addDep("other_tools", BzlmodTestUtil.createModuleKey("other_tools", ""))
+                    .addDep("foo", BzlmodTestUtil.createModuleKey("foo", "2.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("bazel_tools", "1.0")
+                    .setKey(BzlmodTestUtil.createModuleKey("bazel_tools", ""))
+                    .addDep("other_tools", BzlmodTestUtil.createModuleKey("other_tools", ""))
+                    .addDep("foo", BzlmodTestUtil.createModuleKey("foo", "1.0"))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("other_tools", "")
+                    .setKey(BzlmodTestUtil.createModuleKey("other_tools", ""))
+                    .addDep("bazel_tools", BzlmodTestUtil.createModuleKey("bazel_tools", ""))
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("foo", "1.0")
+                    .addDep("bazel_tools", BzlmodTestUtil.createModuleKey("bazel_tools", ""))
+                    .addDep("other_tools", BzlmodTestUtil.createModuleKey("other_tools", ""))
+                    .setRegistry(registry)
+                    .buildEntry(),
+                InterimModuleBuilder.Companion.create("foo", "2.0")
+                    .addDep("bazel_tools", BzlmodTestUtil.createModuleKey("bazel_tools", ""))
+                    .addDep("other_tools", BzlmodTestUtil.createModuleKey("other_tools", ""))
+                    .setRegistry(registry)
+                    .buildEntry()
+            )
+
+        Truth.assertThat(discoveryValue.registryFileHashes)
+            .containsExactly(
+                registry.getUrl() + "/modules/foo/2.0/MODULE.bazel",
+                java.util.Optional.of<String?>("76ecb05b455aecab4ec958c1deb17e4cbbe6e708d9c4e85fceda2317f6c86d7b"),
+                registry.getUrl() + "/modules/foo/1.0/MODULE.bazel",
+                java.util.Optional.of<String?>("4d887e8dfc1863861e3aa5601eeeebca5d8f110977895f1de4bdb2646e546fb5")
+            )
+            .inOrder()
+    }
 }

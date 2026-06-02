@@ -12,377 +12,343 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package com.google.devtools.build.lib.bazel.repository
 
-package com.google.devtools.build.lib.bazel.repository;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
+/** Tests for [RepositoryFetchFunction]  */
+@RunWith(JUnit4::class)
+class RepositoryDelegatorTest : FoundationTestCase() {
+    private var overrideDirectory: Path? = null
+    private var evaluator: MemoizingEvaluator? = null
+    private var differencer: RecordingDifferencer? = null
+    private var rootPath: Path? = null
+    private var registryFactory: com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry.Factory? = null
 
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.hash.HashFunction;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelDepGraphFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelLockFileFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.BazelModuleResolutionFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionRepoMappingEntriesFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleFileFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.RegistryFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.RepoSpecFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.SingleExtensionEvalFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.SingleExtensionFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.SingleExtensionUsagesFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.YankedVersionsUtil;
-import com.google.devtools.build.lib.bazel.repository.RepositoryFunctionException.AlreadyReportedRepositoryAccessException;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.BazelCompatibilityMode;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.CheckDirectDepsMode;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.LockfileMode;
-import com.google.devtools.build.lib.bazel.repository.cache.LocalRepoContentsCache;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.packages.PackageLoadingListener;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue.Failure;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue.Success;
-import com.google.devtools.build.lib.skyframe.BazelSkyframeExecutorConstants;
-import com.google.devtools.build.lib.skyframe.BzlCompileFunction;
-import com.google.devtools.build.lib.skyframe.BzlLoadFunction;
-import com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction;
-import com.google.devtools.build.lib.skyframe.ContainingPackageLookupFunction;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.ExternalFileAction;
-import com.google.devtools.build.lib.skyframe.FileFunction;
-import com.google.devtools.build.lib.skyframe.FileStateFunction;
-import com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesFunction;
-import com.google.devtools.build.lib.skyframe.LocalRepositoryLookupFunction;
-import com.google.devtools.build.lib.skyframe.PackageFunction;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.skyframe.PrecomputedFunction;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.RepositoryMappingFunction;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.StarlarkBuiltinsFunction;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.RecordingDifferencer;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link RepositoryFetchFunction} */
-@RunWith(JUnit4.class)
-public class RepositoryDelegatorTest extends FoundationTestCase {
-  private Path overrideDirectory;
-  private MemoizingEvaluator evaluator;
-  private RecordingDifferencer differencer;
-  private Path rootPath;
-  private FakeRegistry.Factory registryFactory;
-
-  @Before
-  public void setupDelegator() throws Exception {
-    rootPath = scratch.dir("/outputbase");
-    scratch.file(
-        rootPath.getRelative("MODULE.bazel").getPathString(),
-        "module(name='test',version='0.1')",
-        "bazel_dep(name='bazel_tools',version='1.0')");
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            new ServerDirectories(rootPath, rootPath, rootPath),
-            rootPath,
-            TestConstants.PRODUCT_NAME);
-    RepositoryFetchFunction delegatorFunction =
-        new RepositoryFetchFunction(
-            ImmutableMap::of, ImmutableMap::of, directories, new LocalRepoContentsCache());
-    AtomicReference<PathPackageLocator> pkgLocator =
-        new AtomicReference<>(
-            new PathPackageLocator(
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setupDelegator() {
+        rootPath = scratch.dir("/outputbase")
+        scratch.file(
+            rootPath.getRelative("MODULE.bazel").getPathString(),
+            "module(name='test',version='0.1')",
+            "bazel_dep(name='bazel_tools',version='1.0')"
+        )
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                ServerDirectories(rootPath, rootPath, rootPath),
                 rootPath,
-                ImmutableList.of(Root.fromPath(rootPath)),
-                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-    ExternalFilesHelper externalFilesHelper =
-        ExternalFilesHelper.createForTesting(
-            pkgLocator,
-            ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
-            directories);
-    differencer = new SequencedRecordingDifferencer();
+                TestConstants.PRODUCT_NAME
+            )
+        val delegatorFunction: RepositoryFetchFunction =
+            RepositoryFetchFunction(
+                com.google.common.collect.ImmutableMap::of,
+                com.google.common.collect.ImmutableMap::of,
+                directories,
+                LocalRepoContentsCache()
+            )
+        val pkgLocator: AtomicReference<PathPackageLocator?> =
+            AtomicReference<PathPackageLocator?>(
+                PathPackageLocator(
+                    rootPath,
+                    com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(rootPath)),
+                    BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                )
+            )
+        val externalFilesHelper: ExternalFilesHelper? =
+            ExternalFilesHelper.createForTesting(
+                pkgLocator,
+                ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
+                directories
+            )
+        differencer = SequencedRecordingDifferencer()
 
-    ConfiguredRuleClassProvider ruleClassProvider = AnalysisMock.get().createRuleClassProvider();
+        val ruleClassProvider: ConfiguredRuleClassProvider = AnalysisMock.Companion.get().createRuleClassProvider()
 
-    registryFactory = new FakeRegistry.Factory();
-    FakeRegistry registry =
-        registryFactory
-            .newFakeRegistry(scratch.dir("modules").getPathString())
-            .addModule(
-                createModuleKey("bazel_tools", "1.0"),
-                "module(name='bazel_tools', version='1.0');");
-    ModuleFileFunction.REGISTRIES.set(differencer, ImmutableSet.of(registry.getUrl()));
+        registryFactory = com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry.Factory()
+        val registry: FakeRegistry =
+            registryFactory
+                .newFakeRegistry(scratch.dir("modules").getPathString())
+                .addModule(
+                    BzlmodTestUtil.createModuleKey("bazel_tools", "1.0"),
+                    "module(name='bazel_tools', version='1.0');"
+                )
+        ModuleFileFunction.REGISTRIES.set(differencer, com.google.common.collect.ImmutableSet.of<E?>(registry.getUrl()))
 
-    HashFunction hashFunction = fileSystem.getDigestFunction().getHashFunction();
-    evaluator =
-        new InMemoryMemoizingEvaluator(
-            ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-                .put(
-                    FileStateKey.FILE_STATE,
-                    new FileStateFunction(
-                        Suppliers.ofInstance(
-                            new TimestampGranularityMonitor(BlazeClock.instance())),
-                        SyscallCache.NO_CACHE,
-                        externalFilesHelper))
-                .put(SkyFunctions.FILE, new FileFunction(pkgLocator, directories))
-                .put(SkyFunctions.REPOSITORY_DIRECTORY, delegatorFunction)
-                .put(SkyFunctions.PACKAGE, PackageFunction.newBuilder().build())
-                .put(
-                    SkyFunctions.PACKAGE_LOOKUP,
-                    new PackageLookupFunction(
-                        new AtomicReference<>(ImmutableSet.of()),
-                        CrossRepositoryLabelViolationStrategy.ERROR,
-                        BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY))
-                .put(SkyFunctions.LOCAL_REPOSITORY_LOOKUP, new LocalRepositoryLookupFunction())
-                .put(SkyFunctions.PRECOMPUTED, new PrecomputedFunction())
-                .put(
-                    SkyFunctions.BZL_COMPILE,
-                    new BzlCompileFunction(
-                        ruleClassProvider.getBazelStarlarkEnvironment(),
-                        hashFunction,
-                        PackageLoadingListener.NOOP_LISTENER))
-                .put(
-                    SkyFunctions.BZL_LOAD,
-                    BzlLoadFunction.create(
-                        ruleClassProvider,
-                        directories,
-                        hashFunction,
-                        PackageLoadingListener.NOOP_LISTENER,
-                        Caffeine.newBuilder().build()))
-                .put(
-                    SkyFunctions.STARLARK_BUILTINS,
-                    new StarlarkBuiltinsFunction(ruleClassProvider.getBazelStarlarkEnvironment()))
-                .put(SkyFunctions.CONTAINING_PACKAGE_LOOKUP, new ContainingPackageLookupFunction())
-                .put(SkyFunctions.IGNORED_SUBDIRECTORIES, IgnoredSubdirectoriesFunction.NOOP)
-                .put(
-                    SkyFunctions.REPOSITORY_MAPPING,
-                    new RepositoryMappingFunction(ruleClassProvider))
-                .put(
-                    SkyFunctions.MODULE_FILE,
-                    new ModuleFileFunction(
-                        ruleClassProvider.getBazelStarlarkEnvironment(),
-                        rootPath,
-                        ImmutableMap.of()))
-                .put(SkyFunctions.BAZEL_DEP_GRAPH, new BazelDepGraphFunction())
-                .put(
-                    SkyFunctions.BAZEL_LOCK_FILE,
-                    new BazelLockFileFunction(rootDirectory, directories.getOutputBase()))
-                .put(SkyFunctions.BAZEL_MODULE_RESOLUTION, new BazelModuleResolutionFunction())
-                .put(RepoDefinitionValue.REPO_DEFINITION, new RepoDefinitionFunction(directories))
-                .put(
-                    SkyFunctions.REGISTRY,
-                    new RegistryFunction(registryFactory, directories.getWorkspace()))
-                .put(SkyFunctions.REPO_SPEC, new RepoSpecFunction())
-                .put(SkyFunctions.YANKED_VERSIONS, new YankedVersionsFunction())
-                .put(SkyFunctions.SINGLE_EXTENSION, new SingleExtensionFunction())
-                .put(
-                    SkyFunctions.SINGLE_EXTENSION_EVAL,
-                    new SingleExtensionEvalFunction(
-                        directories, ImmutableMap::of, ImmutableMap::of))
-                .put(SkyFunctions.SINGLE_EXTENSION_USAGES, new SingleExtensionUsagesFunction())
-                .put(
-                    SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES,
-                    new ModuleExtensionRepoMappingEntriesFunction())
-                .put(
-                    SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE,
-                    new ClientEnvironmentFunction(new AtomicReference<>(ImmutableMap.of())))
-                .build(),
-            differencer);
-    overrideDirectory = scratch.dir("/foo");
-    scratch.file("/foo/REPO.bazel");
-    RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(differencer, ImmutableMap.of());
-    RepositoryDirectoryValue.IS_VENDOR_COMMAND.set(differencer, false);
-    RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, Optional.empty());
-    RepositoryDirectoryValue.FETCH_DISABLED.set(differencer, false);
-    RepositoryDirectoryValue.FORCE_FETCH.set(
-        differencer, RepositoryDirectoryValue.FORCE_FETCH_DISABLED);
-    PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get());
-    StarlarkSemantics semantics = StarlarkSemantics.DEFAULT;
-    PrecomputedValue.STARLARK_SEMANTICS.set(differencer, semantics);
-    PrecomputedValue.REPO_ENV.set(differencer, ImmutableMap.of());
-    ModuleFileFunction.IGNORE_DEV_DEPS.set(differencer, false);
-    ModuleFileFunction.INJECTED_REPOSITORIES.set(differencer, ImmutableMap.of());
-    ModuleFileFunction.MODULE_OVERRIDES.set(differencer, ImmutableMap.of());
-    YankedVersionsUtil.ALLOWED_YANKED_VERSIONS.set(differencer, ImmutableList.of());
-    BazelModuleResolutionFunction.CHECK_DIRECT_DEPENDENCIES.set(
-        differencer, CheckDirectDepsMode.WARNING);
-    BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE.set(
-        differencer, BazelCompatibilityMode.ERROR);
-    BazelLockFileFunction.LOCKFILE_MODE.set(differencer, LockfileMode.UPDATE);
-  }
+        val hashFunction: com.google.common.hash.HashFunction? = fileSystem.getDigestFunction().getHashFunction()
+        evaluator =
+            InMemoryMemoizingEvaluator(
+                com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                    .put(
+                        FileStateKey.FILE_STATE,
+                        FileStateFunction(
+                            com.google.common.base.Suppliers.ofInstance<T?>(
+                                TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())
+                            ),
+                            SyscallCache.NO_CACHE,
+                            externalFilesHelper
+                        )
+                    )
+                    .put(SkyFunctions.FILE, FileFunction(pkgLocator, directories))
+                    .put(SkyFunctions.REPOSITORY_DIRECTORY, delegatorFunction)
+                    .put(SkyFunctions.PACKAGE, PackageFunction.newBuilder().build())
+                    .put(
+                        SkyFunctions.PACKAGE_LOOKUP,
+                        PackageLookupFunction(
+                            AtomicReference<V?>(com.google.common.collect.ImmutableSet.of<Any?>()),
+                            CrossRepositoryLabelViolationStrategy.ERROR,
+                            BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                        )
+                    )
+                    .put(SkyFunctions.LOCAL_REPOSITORY_LOOKUP, LocalRepositoryLookupFunction())
+                    .put(SkyFunctions.PRECOMPUTED, PrecomputedFunction())
+                    .put(
+                        SkyFunctions.BZL_COMPILE,
+                        BzlCompileFunction(
+                            ruleClassProvider.getBazelStarlarkEnvironment(),
+                            hashFunction,
+                            PackageLoadingListener.NOOP_LISTENER
+                        )
+                    )
+                    .put(
+                        SkyFunctions.BZL_LOAD,
+                        BzlLoadFunction.create(
+                            ruleClassProvider,
+                            directories,
+                            hashFunction,
+                            PackageLoadingListener.NOOP_LISTENER,
+                            Caffeine.newBuilder().build<K1?, V1?>()
+                        )
+                    )
+                    .put(
+                        SkyFunctions.STARLARK_BUILTINS,
+                        StarlarkBuiltinsFunction(ruleClassProvider.getBazelStarlarkEnvironment())
+                    )
+                    .put(SkyFunctions.CONTAINING_PACKAGE_LOOKUP, ContainingPackageLookupFunction())
+                    .put(SkyFunctions.IGNORED_SUBDIRECTORIES, IgnoredSubdirectoriesFunction.NOOP)
+                    .put(
+                        SkyFunctions.REPOSITORY_MAPPING,
+                        RepositoryMappingFunction(ruleClassProvider)
+                    )
+                    .put(
+                        SkyFunctions.MODULE_FILE,
+                        ModuleFileFunction(
+                            ruleClassProvider.getBazelStarlarkEnvironment(),
+                            rootPath,
+                            com.google.common.collect.ImmutableMap.of<K?, V?>()
+                        )
+                    )
+                    .put(SkyFunctions.BAZEL_DEP_GRAPH, BazelDepGraphFunction())
+                    .put(
+                        SkyFunctions.BAZEL_LOCK_FILE,
+                        BazelLockFileFunction(rootDirectory, directories.getOutputBase())
+                    )
+                    .put(SkyFunctions.BAZEL_MODULE_RESOLUTION, BazelModuleResolutionFunction())
+                    .put(RepoDefinitionValue.REPO_DEFINITION, RepoDefinitionFunction(directories))
+                    .put(
+                        SkyFunctions.REGISTRY,
+                        RegistryFunction(registryFactory, directories.getWorkspace())
+                    )
+                    .put(SkyFunctions.REPO_SPEC, RepoSpecFunction())
+                    .put(SkyFunctions.YANKED_VERSIONS, YankedVersionsFunction())
+                    .put(SkyFunctions.SINGLE_EXTENSION, SingleExtensionFunction())
+                    .put(
+                        SkyFunctions.SINGLE_EXTENSION_EVAL,
+                        SingleExtensionEvalFunction(
+                            directories,
+                            com.google.common.collect.ImmutableMap::of,
+                            com.google.common.collect.ImmutableMap::of
+                        )
+                    )
+                    .put(SkyFunctions.SINGLE_EXTENSION_USAGES, SingleExtensionUsagesFunction())
+                    .put(
+                        SkyFunctions.MODULE_EXTENSION_REPO_MAPPING_ENTRIES,
+                        ModuleExtensionRepoMappingEntriesFunction()
+                    )
+                    .put(
+                        SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE,
+                        ClientEnvironmentFunction(AtomicReference<V?>(com.google.common.collect.ImmutableMap.of<Any?, Any?>()))
+                    )
+                    .build(),
+                differencer
+            )
+        overrideDirectory = scratch.dir("/foo")
+        scratch.file("/foo/REPO.bazel")
+        RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(
+            differencer,
+            com.google.common.collect.ImmutableMap.of<K?, V?>()
+        )
+        RepositoryDirectoryValue.IS_VENDOR_COMMAND.set(differencer, false)
+        RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, java.util.Optional.empty<T?>())
+        RepositoryDirectoryValue.FETCH_DISABLED.set(differencer, false)
+        RepositoryDirectoryValue.FORCE_FETCH.set(
+            differencer, RepositoryDirectoryValue.FORCE_FETCH_DISABLED
+        )
+        PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get())
+        val semantics: StarlarkSemantics? = StarlarkSemantics.DEFAULT
+        PrecomputedValue.STARLARK_SEMANTICS.set(differencer, semantics)
+        PrecomputedValue.REPO_ENV.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        ModuleFileFunction.IGNORE_DEV_DEPS.set(differencer, false)
+        ModuleFileFunction.INJECTED_REPOSITORIES.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        ModuleFileFunction.MODULE_OVERRIDES.set(differencer, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        YankedVersionsUtil.ALLOWED_YANKED_VERSIONS.set(differencer, com.google.common.collect.ImmutableList.of<E?>())
+        BazelModuleResolutionFunction.CHECK_DIRECT_DEPENDENCIES.set(
+            differencer, CheckDirectDepsMode.WARNING
+        )
+        BazelModuleResolutionFunction.BAZEL_COMPATIBILITY_MODE.set(
+            differencer, BazelCompatibilityMode.ERROR
+        )
+        BazelLockFileFunction.LOCKFILE_MODE.set(differencer, LockfileMode.UPDATE)
+    }
 
-  @Test
-  public void testOverride() throws Exception {
-    RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(
-        differencer, ImmutableMap.of("foo", overrideDirectory.asFragment()));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOverride() {
+        RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(
+            differencer, com.google.common.collect.ImmutableMap.of<K?, V?>("foo", overrideDirectory.asFragment())
+        )
 
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    SkyKey key = RepositoryDirectoryValue.key(RepositoryName.createUnvalidated("foo"));
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(8)
-            .setEventHandler(eventHandler)
-            .build();
-    EvaluationResult<SkyValue> result =
-        evaluator.evaluate(ImmutableList.of(key), evaluationContext);
-    assertThat(result.hasError()).isFalse();
-    RepositoryDirectoryValue repositoryDirectoryValue = (RepositoryDirectoryValue) result.get(key);
-    Path expectedPath = scratch.dir("/outputbase/external/foo");
-    Path actualPath = ((Success) repositoryDirectoryValue).root().asPath();
-    assertThat(actualPath).isEqualTo(expectedPath);
-    assertThat(actualPath.isSymbolicLink()).isTrue();
-    assertThat(actualPath.readSymbolicLink()).isEqualTo(overrideDirectory.asFragment());
-  }
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        val key: SkyKey = RepositoryDirectoryValue.key(RepositoryName.createUnvalidated("foo"))
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(8)
+                .setEventHandler(eventHandler)
+                .build()
+        val result: EvaluationResult<SkyValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
+        assertThat(result.hasError()).isFalse()
+        val repositoryDirectoryValue: RepositoryDirectoryValue = result.get(key) as RepositoryDirectoryValue
+        val expectedPath: Path = scratch.dir("/outputbase/external/foo")
+        val actualPath: Path = (repositoryDirectoryValue as Success).root().asPath()
+        assertThat(actualPath).isEqualTo(expectedPath)
+        assertThat(actualPath.isSymbolicLink()).isTrue()
+        assertThat(actualPath.readSymbolicLink()).isEqualTo(overrideDirectory.asFragment())
+    }
 
-  @Test
-  public void testFetchRepositoryException_eventHandled() throws Exception {
-    scratch.file(
-        rootPath.getRelative("rule.bzl").getPathString(),
-        "def _impl(ctx):",
-        "    pass",
-        "sample = rule(",
-        "    implementation = _impl,",
-        "    toolchains = ['//:toolchain_type'],",
-        ")");
-    scratch.file(
-        rootPath.getRelative("BUILD").getPathString(),
-        "load('rule.bzl', 'sample')",
-        "toolchain_type(name = 'toolchain_type')",
-        "sample(name = 'sample')");
-    scratch.file(
-        rootPath.getRelative("repo_rule.bzl").getPathString(),
-        "def _impl(repo_ctx):",
-        "# Error: no file written",
-        "    pass",
-        "broken_repo = repository_rule(implementation = _impl)");
-    scratch.overwriteFile(
-        rootPath.getRelative("MODULE.bazel").getPathString(),
-        "broken_repo = use_repo_rule('//:repo_rule.bzl', 'broken_repo')",
-        "broken_repo(name = 'broken')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFetchRepositoryException_eventHandled() {
+        scratch.file(
+            rootPath.getRelative("rule.bzl").getPathString(),
+            "def _impl(ctx):",
+            "    pass",
+            "sample = rule(",
+            "    implementation = _impl,",
+            "    toolchains = ['//:toolchain_type'],",
+            ")"
+        )
+        scratch.file(
+            rootPath.getRelative("BUILD").getPathString(),
+            "load('rule.bzl', 'sample')",
+            "toolchain_type(name = 'toolchain_type')",
+            "sample(name = 'sample')"
+        )
+        scratch.file(
+            rootPath.getRelative("repo_rule.bzl").getPathString(),
+            "def _impl(repo_ctx):",
+            "# Error: no file written",
+            "    pass",
+            "broken_repo = repository_rule(implementation = _impl)"
+        )
+        scratch.overwriteFile(
+            rootPath.getRelative("MODULE.bazel").getPathString(),
+            "broken_repo = use_repo_rule('//:repo_rule.bzl', 'broken_repo')",
+            "broken_repo(name = 'broken')"
+        )
 
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    SkyKey key =
-        RepositoryDirectoryValue.key(RepositoryName.createUnvalidated("+broken_repo+broken"));
-    // Make it be evaluated every time, as we are testing evaluation.
-    differencer.invalidate(ImmutableSet.of(key));
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(8)
-            .setEventHandler(eventHandler)
-            .build();
-    EvaluationResult<SkyValue> result =
-        evaluator.evaluate(ImmutableList.of(key), evaluationContext);
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        val key: SkyKey =
+            RepositoryDirectoryValue.key(RepositoryName.createUnvalidated("+broken_repo+broken"))
+        // Make it be evaluated every time, as we are testing evaluation.
+        differencer.invalidate(com.google.common.collect.ImmutableSet.of<E?>(key))
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(8)
+                .setEventHandler(eventHandler)
+                .build()
+        val result: EvaluationResult<SkyValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
 
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException())
-        .isInstanceOf(AlreadyReportedRepositoryAccessException.class);
-    assertThat(eventHandler.hasErrors()).isTrue();
-    assertThat(eventHandler.getEvents()).hasSize(1);
-  }
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException())
+            .isInstanceOf(AlreadyReportedRepositoryAccessException::class.java)
+        Truth.assertThat(eventHandler.hasErrors()).isTrue()
+        Truth.assertThat(eventHandler.getEvents()).hasSize(1)
+    }
 
-  @Test
-  public void loadRepositoryNotDefined() throws Exception {
-    // WORKSPACE is empty
-    scratch.overwriteFile(rootPath.getRelative("MODULE.bazel").getPathString(), "");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun loadRepositoryNotDefined() {
+        // WORKSPACE is empty
+        scratch.overwriteFile(rootPath.getRelative("MODULE.bazel").getPathString(), "")
 
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    SkyKey key = RepositoryDirectoryValue.key(RepositoryName.createUnvalidated("foo"));
-    // Make it be evaluated every time, as we are testing evaluation.
-    differencer.invalidate(ImmutableSet.of(key));
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(8)
-            .setEventHandler(eventHandler)
-            .build();
-    EvaluationResult<SkyValue> result =
-        evaluator.evaluate(ImmutableList.of(key), evaluationContext);
-    assertThat(result.hasError()).isFalse();
-    RepositoryDirectoryValue repositoryDirectoryValue = (RepositoryDirectoryValue) result.get(key);
-    assertThat(repositoryDirectoryValue).isInstanceOf(Failure.class);
-    assertThat(((Failure) repositoryDirectoryValue).errorMsg)
-        .contains("Repository '@@foo' is not defined");
-  }
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        val key: SkyKey = RepositoryDirectoryValue.key(RepositoryName.createUnvalidated("foo"))
+        // Make it be evaluated every time, as we are testing evaluation.
+        differencer.invalidate(com.google.common.collect.ImmutableSet.of<E?>(key))
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(8)
+                .setEventHandler(eventHandler)
+                .build()
+        val result: EvaluationResult<SkyValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
+        assertThat(result.hasError()).isFalse()
+        val repositoryDirectoryValue: RepositoryDirectoryValue = result.get(key) as RepositoryDirectoryValue
+        assertThat(repositoryDirectoryValue).isInstanceOf(Failure::class.java)
+        com.google.common.truth.Subject.contains("Repository '@@foo' is not defined")
+    }
 
-  @Test
-  public void loadInvisibleRepository() throws Exception {
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    SkyKey key =
-        RepositoryDirectoryValue.key(
-            RepositoryName.createUnvalidated("foo")
-                .toNonVisible(RepositoryName.createUnvalidated("fake_owner_repo")));
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(8)
-            .setEventHandler(eventHandler)
-            .build();
-    EvaluationResult<SkyValue> result =
-        evaluator.evaluate(ImmutableList.of(key), evaluationContext);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun loadInvisibleRepository() {
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        val key: SkyKey =
+            RepositoryDirectoryValue.key(
+                RepositoryName.createUnvalidated("foo")
+                    .toNonVisible(RepositoryName.createUnvalidated("fake_owner_repo"))
+            )
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(8)
+                .setEventHandler(eventHandler)
+                .build()
+        val result: EvaluationResult<SkyValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
 
-    assertThat(result.hasError()).isFalse();
-    RepositoryDirectoryValue repositoryDirectoryValue = (RepositoryDirectoryValue) result.get(key);
-    assertThat(repositoryDirectoryValue).isInstanceOf(Failure.class);
-    assertThat(((Failure) repositoryDirectoryValue).errorMsg)
-        .contains("No repository visible as '@foo' from repository '@@fake_owner_repo'");
-  }
+        assertThat(result.hasError()).isFalse()
+        val repositoryDirectoryValue: RepositoryDirectoryValue = result.get(key) as RepositoryDirectoryValue
+        assertThat(repositoryDirectoryValue).isInstanceOf(Failure::class.java)
+        com.google.common.truth.Subject.contains("No repository visible as '@foo' from repository '@@fake_owner_repo'")
+    }
 
-  @Test
-  public void loadInvisibleRepositoryFromMain() throws Exception {
-    // Create the WORKSPACE file to trigger error message for WORKSPACE deprecation.
-    scratch.file(rootPath.getRelative("WORKSPACE").getPathString());
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    SkyKey key =
-        RepositoryDirectoryValue.key(
-            RepositoryName.createUnvalidated("foo").toNonVisible(RepositoryName.MAIN));
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(8)
-            .setEventHandler(eventHandler)
-            .build();
-    EvaluationResult<SkyValue> result =
-        evaluator.evaluate(ImmutableList.of(key), evaluationContext);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun loadInvisibleRepositoryFromMain() {
+        // Create the WORKSPACE file to trigger error message for WORKSPACE deprecation.
+        scratch.file(rootPath.getRelative("WORKSPACE").getPathString())
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        val key: SkyKey =
+            RepositoryDirectoryValue.key(
+                RepositoryName.createUnvalidated("foo").toNonVisible(RepositoryName.MAIN)
+            )
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(8)
+                .setEventHandler(eventHandler)
+                .build()
+        val result: EvaluationResult<SkyValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
 
-    assertThat(result.hasError()).isFalse();
-    RepositoryDirectoryValue repositoryDirectoryValue = (RepositoryDirectoryValue) result.get(key);
-    assertThat(repositoryDirectoryValue).isInstanceOf(Failure.class);
-    assertThat(((Failure) repositoryDirectoryValue).errorMsg)
-        .contains("No repository visible as '@foo' from main repository");
-  }
+        assertThat(result.hasError()).isFalse()
+        val repositoryDirectoryValue: RepositoryDirectoryValue = result.get(key) as RepositoryDirectoryValue
+        assertThat(repositoryDirectoryValue).isInstanceOf(Failure::class.java)
+        com.google.common.truth.Subject.contains("No repository visible as '@foo' from main repository")
+    }
 }

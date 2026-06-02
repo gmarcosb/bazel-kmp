@@ -11,42 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.tests.workspace
 
-package com.google.devtools.build.lib.blackbox.tests.workspace;
+import com.google.devtools.build.lib.vfs.FileSystem
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorDescriptor;
-import com.google.devtools.build.lib.bazel.repository.decompressor.TarFunction;
-import com.google.devtools.build.lib.blackbox.framework.BuilderRunner;
-import com.google.devtools.build.lib.blackbox.framework.PathUtils;
-import com.google.devtools.build.lib.blackbox.junit.AbstractBlackBoxTest;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
-import org.junit.Test;
-
-/** Tests pkg_tar and http_archive. */
-public class BazelEmbeddedStarlarkBlackBoxTest extends AbstractBlackBoxTest {
-
-  private static final String HELLO_FROM_EXTERNAL_REPOSITORY = "Hello from external repository!";
-  private static final String HELLO_FROM_MAIN_REPOSITORY = "Hello from main repository!";
-
-  @Test
-  public void testPkgTar() throws Exception {
-    context().write("main/foo.txt", "Hello World");
-    context().write("main/bar.txt", "Hello World, again");
-    context()
-        .write(
-            "main/BUILD",
-            """
+/** Tests pkg_tar and http_archive.  */
+class BazelEmbeddedStarlarkBlackBoxTest : AbstractBlackBoxTest() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPkgTar() {
+        context().write("main/foo.txt", "Hello World")
+        context().write("main/bar.txt", "Hello World, again")
+        context()
+            .write(
+                "main/BUILD",
+                """
             load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
 
             pkg_tar(
@@ -56,95 +35,118 @@ public class BazelEmbeddedStarlarkBlackBoxTest extends AbstractBlackBoxTest {
                     "foo.txt",
                 ],
             )
-            """);
+            
+            """.trimIndent()
+            )
 
-    BuilderRunner bazel = bazel();
-    bazel.build("...");
+        val bazel: BuilderRunner = bazel()
+        bazel.build("...")
 
-    Path dataTarPath = context().resolveBinPath(bazel, "main/data.tar");
-    assertThat(Files.exists(dataTarPath)).isTrue();
+        val dataTarPath: Path = context().resolveBinPath(bazel, "main/data.tar")
+        Truth.assertThat(java.nio.file.Files.exists(dataTarPath)).isTrue()
 
-    Path directory = decompress(dataTarPath);
-    assertThat(directory.toFile().exists()).isTrue();
+        val directory: Path = decompress(dataTarPath)
+        Truth.assertThat(directory.toFile().exists()).isTrue()
 
-    Map<String, Path> map =
-        Arrays.stream(Objects.requireNonNull(directory.toFile().listFiles()))
-            .collect(Collectors.toMap(File::getName, file -> Paths.get(file.getAbsolutePath())));
+        val map: MutableMap<String?, Path?> =
+            java.util.Arrays.stream<java.io.File?>(
+                java.util.Objects.requireNonNull<Array<java.io.File?>?>(
+                    directory.toFile().listFiles()
+                )
+            )
+                .collect(
+                    Collectors.toMap(
+                        java.util.function.Function { obj: java.io.File? -> obj.getName() },
+                        java.util.function.Function { file: java.io.File? -> Paths.get(file.getAbsolutePath()) })
+                )
 
-    WorkspaceTestUtils.assertLinesExactly(map.get("foo.txt"), "Hello World");
-    WorkspaceTestUtils.assertLinesExactly(map.get("bar.txt"), "Hello World, again");
-  }
+        WorkspaceTestUtils.assertLinesExactly(map.get("foo.txt"), "Hello World")
+        WorkspaceTestUtils.assertLinesExactly(map.get("bar.txt"), "Hello World, again")
+    }
 
-  @Test
-  public void testHttpArchive() throws Exception {
-    Path repo = context().getTmpDir().resolve("ext_repo");
-    RepoWithRuleWritingTextGenerator generator = new RepoWithRuleWritingTextGenerator(repo);
-    generator.withOutputText(HELLO_FROM_EXTERNAL_REPOSITORY).setupRepository();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHttpArchive() {
+        val repo: Path = context().getTmpDir().resolve("ext_repo")
+        val generator: RepoWithRuleWritingTextGenerator = RepoWithRuleWritingTextGenerator(repo)
+        generator.withOutputText(HELLO_FROM_EXTERNAL_REPOSITORY).setupRepository()
 
-    // file where we will manually copy the built archive
-    Path zipFile = context().getTmpDir().resolve("ext_repo.tar");
-    assertThat(Files.exists(zipFile)).isFalse();
+        // file where we will manually copy the built archive
+        val zipFile: Path = context().getTmpDir().resolve("ext_repo.tar")
+        Truth.assertThat(java.nio.file.Files.exists(zipFile)).isFalse()
 
-    context()
-        .write(
-            "MODULE.bazel",
-            "local_repository = use_repo_rule('@bazel_tools//tools/build_defs/repo:local.bzl',"
-                + " 'local_repository')",
-            String.format(
-                "local_repository(name=\"ext_local\", path=\"%s\",)",
-                PathUtils.pathForStarlarkFile(repo)),
-            "http_archive = use_repo_rule('@bazel_tools//tools/build_defs/repo:http.bzl',"
-                + " 'http_archive')",
-            String.format(
-                "http_archive(name=\"ext\", urls=[\"%s\"],)", PathUtils.pathToFileURI(zipFile)));
-
-    context()
-        .write(
-            "BUILD",
-            RepoWithRuleWritingTextGenerator.loadRule("@ext"),
-            RepoWithRuleWritingTextGenerator.callRule(
-                "call_from_main", "main_out.txt", HELLO_FROM_MAIN_REPOSITORY));
-
-    // first build the archive and copy it into zipFile
-    BuilderRunner bazel = bazel();
-    String tarTarget = generator.getPkgTarTarget();
-    bazel.build("@ext_local//:" + tarTarget);
-    Path packedFile =
         context()
-            .resolveBinPath(
-                bazel, String.format("external/+local_repository+ext_local/%s.tar", tarTarget));
-    Files.copy(packedFile, zipFile);
+            .write(
+                "MODULE.bazel",
+                "local_repository = use_repo_rule('@bazel_tools//tools/build_defs/repo:local.bzl',"
+                        + " 'local_repository')",
+                String.format(
+                    "local_repository(name=\"ext_local\", path=\"%s\",)",
+                    com.google.devtools.build.lib.blackbox.framework.PathUtils.pathForStarlarkFile(repo)
+                ),
+                "http_archive = use_repo_rule('@bazel_tools//tools/build_defs/repo:http.bzl',"
+                        + " 'http_archive')",
+                String.format(
+                    "http_archive(name=\"ext\", urls=[\"%s\"],)",
+                    com.google.devtools.build.lib.blackbox.framework.PathUtils.pathToFileURI(zipFile)
+                )
+            )
 
-    // now build the target from http_archive
-    bazel.build("@ext//:" + RepoWithRuleWritingTextGenerator.TARGET);
+        context()
+            .write(
+                "BUILD",
+                RepoWithRuleWritingTextGenerator.Companion.loadRule("@ext"),
+                RepoWithRuleWritingTextGenerator.Companion.callRule(
+                    "call_from_main", "main_out.txt", HELLO_FROM_MAIN_REPOSITORY
+                )
+            )
 
-    Path xPath = context().resolveBinPath(bazel, "external/+http_archive+ext/out");
-    WorkspaceTestUtils.assertLinesExactly(xPath, HELLO_FROM_EXTERNAL_REPOSITORY);
+        // first build the archive and copy it into zipFile
+        val bazel: BuilderRunner = bazel()
+        val tarTarget: String? = generator.getPkgTarTarget()
+        bazel.build("@ext_local//:" + tarTarget)
+        val packedFile: Path =
+            context()
+                .resolveBinPath(
+                    bazel, String.format("external/+local_repository+ext_local/%s.tar", tarTarget)
+                )
+        java.nio.file.Files.copy(packedFile, zipFile)
 
-    // and use the rule from http_archive in the main repository
-    bazel.build("//:call_from_main");
+        // now build the target from http_archive
+        bazel.build("@ext//:" + RepoWithRuleWritingTextGenerator.Companion.TARGET)
 
-    Path mainOutPath = context().resolveBinPath(bazel, "main_out.txt");
-    WorkspaceTestUtils.assertLinesExactly(mainOutPath, HELLO_FROM_MAIN_REPOSITORY);
-  }
+        val xPath: Path = context().resolveBinPath(bazel, "external/+http_archive+ext/out")
+        WorkspaceTestUtils.assertLinesExactly(xPath, HELLO_FROM_EXTERNAL_REPOSITORY)
 
-  private BuilderRunner bazel() {
-    return WorkspaceTestUtils.bazel(context());
-  }
+        // and use the rule from http_archive in the main repository
+        bazel.build("//:call_from_main")
 
-  private Path decompress(Path dataTarPath) throws Exception {
-    FileSystem fs = FileSystems.getNativeFileSystem();
-    com.google.devtools.build.lib.vfs.Path dataTarPathForDecompress =
-        fs.getPath(dataTarPath.toAbsolutePath().toString());
+        val mainOutPath: Path = context().resolveBinPath(bazel, "main_out.txt")
+        WorkspaceTestUtils.assertLinesExactly(mainOutPath, HELLO_FROM_MAIN_REPOSITORY)
+    }
 
-    com.google.devtools.build.lib.vfs.Path directory =
-        TarFunction.INSTANCE.decompress(
-            DecompressorDescriptor.builder()
-                .setArchivePath(dataTarPathForDecompress)
-                .setDestinationPath(dataTarPathForDecompress.getParentDirectory())
-                .build());
-    return Paths.get(directory.getPathString());
-  }
+    private fun bazel(): BuilderRunner {
+        return WorkspaceTestUtils.bazel(context())
+    }
 
-  // TODO(ichern) test tar quoting
+    @Throws(java.lang.Exception::class)
+    private fun decompress(dataTarPath: Path): Path {
+        val fs: FileSystem = com.google.devtools.build.lib.vfs.util.FileSystems.getNativeFileSystem()
+        val dataTarPathForDecompress: Path =
+            fs.getPath(dataTarPath.toAbsolutePath().toString())
+
+        val directory: Path =
+            TarFunction.INSTANCE.decompress(
+                DecompressorDescriptor.builder()
+                    .setArchivePath(dataTarPathForDecompress)
+                    .setDestinationPath(dataTarPathForDecompress.getParentDirectory())
+                    .build()
+            )
+        return Paths.get(directory.getPathString())
+    } // TODO(ichern) test tar quoting
+
+    companion object {
+        private const val HELLO_FROM_EXTERNAL_REPOSITORY = "Hello from external repository!"
+        private const val HELLO_FROM_MAIN_REPOSITORY = "Hello from main repository!"
+    }
 }

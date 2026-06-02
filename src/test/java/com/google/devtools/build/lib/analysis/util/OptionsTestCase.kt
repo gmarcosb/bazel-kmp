@@ -11,71 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.util;
+package com.google.devtools.build.lib.analysis.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Arrays.stream;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.analysis.config.BuildOptions
+import java.util.*
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.common.options.OptionsParser;
-import java.util.List;
+/** A base class for testing cacheKey related functionality of Option classes.  */
+abstract class OptionsTestCase<T : FragmentOptions?> {
+    protected abstract val optionsClass: Class<T?>
 
-/** A base class for testing cacheKey related functionality of Option classes. */
-public abstract class OptionsTestCase<T extends FragmentOptions> {
+    /** Construct options parsing the given arguments.  */
+    @Throws(Exception::class)
+    protected fun create(args: MutableList<String?>?): T? {
+        val cls = this.optionsClass
+        val parser: OptionsParser = OptionsParser.builder().optionsClasses(ImmutableList.of<E?>(cls)).build()
+        parser.parse(args)
+        return parser.getOptions<O?>(cls)
+    }
 
-  protected abstract Class<T> getOptionsClass();
+    /**
+     * Useful for options which are specified multiple times on the command line. `createWithPrefix("--abc=", "x", "y", "z")` is equivalent to `create("--abc=x", "--abc=y", "--abc=z")`
+     */
+    @Throws(Exception::class)
+    protected fun createWithPrefix(prefix: String?, vararg args: String?): T? {
+        return createWithPrefix(ImmutableList.of<String?>(), prefix, *args)
+    }
 
-  /** Construct options parsing the given arguments. */
-  protected T create(List<String> args) throws Exception {
-    Class<T> cls = getOptionsClass();
-    OptionsParser parser = OptionsParser.builder().optionsClasses(ImmutableList.of(cls)).build();
-    parser.parse(args);
-    return parser.getOptions(cls);
-  }
+    /**
+     * Variant of [.createWithPrefix] with additional fixed set of options.
+     */
+    @Throws(Exception::class)
+    protected fun createWithPrefix(fixed: ImmutableList<String?>, prefix: String?, vararg args: String?): T? {
+        val builder = ImmutableList.builder<String?>()
+        builder.addAll(fixed)
+        Arrays.stream<String?>(args).map<String?> { x: String? -> prefix + x }
+            .forEach { element: String? -> builder.add(element) }
+        return create(builder.build())
+    }
 
-  /**
-   * Useful for options which are specified multiple times on the command line. {@code
-   * createWithPrefix("--abc=", "x", "y", "z")} is equivalent to {@code create("--abc=x", "--abc=y",
-   * "--abc=z")}
-   */
-  protected T createWithPrefix(String prefix, String... args) throws Exception {
-    return createWithPrefix(ImmutableList.of(), prefix, args);
-  }
+    protected fun assertSame(one: T?, two: T?) {
+        // We normalize first, since that is what BuildOptions.checkSum() does.
+        // We do not use BuildOptions.checkSum() because in case of test failure,
+        // the diff on cacheKey is humanreadable.
+        val oneNormalized: FragmentOptions = one.getNormalized()
+        val twoNormalized: FragmentOptions = two.getNormalized()
+        assertThat(BuildOptions.optionsToCacheKey(oneNormalized))
+            .isEqualTo(BuildOptions.optionsToCacheKey(twoNormalized))
+        // Also check equality of toString() as that influences the ST-hash computation.
+        assertThat(oneNormalized.toString()).isEqualTo(twoNormalized.toString())
+    }
 
-  /**
-   * Variant of {@link #createWithPrefix(String, String...)} with additional fixed set of options.
-   */
-  protected T createWithPrefix(ImmutableList<String> fixed, String prefix, String... args)
-      throws Exception {
-    ImmutableList.Builder<String> builder = ImmutableList.builder();
-    builder.addAll(fixed);
-    stream(args).map(x -> prefix + x).forEach(builder::add);
-    return create(builder.build());
-  }
-
-  protected void assertSame(T one, T two) {
-    // We normalize first, since that is what BuildOptions.checkSum() does.
-    // We do not use BuildOptions.checkSum() because in case of test failure,
-    // the diff on cacheKey is humanreadable.
-    FragmentOptions oneNormalized = one.getNormalized();
-    FragmentOptions twoNormalized = two.getNormalized();
-    assertThat(BuildOptions.optionsToCacheKey(oneNormalized))
-        .isEqualTo(BuildOptions.optionsToCacheKey(twoNormalized));
-    // Also check equality of toString() as that influences the ST-hash computation.
-    assertThat(oneNormalized.toString()).isEqualTo(twoNormalized.toString());
-  }
-
-  protected void assertDifferent(T one, T two) {
-    // We normalize first, since that is what BuildOptions.checkSum() does.
-    // We do not use BuildOptions.checkSum() because in case of test failure,
-    // the diff on cacheKey is humanreadable.
-    FragmentOptions oneNormalized = one.getNormalized();
-    FragmentOptions twoNormalized = two.getNormalized();
-    assertThat(BuildOptions.optionsToCacheKey(oneNormalized))
-        .isNotEqualTo(BuildOptions.optionsToCacheKey(twoNormalized));
-    // Also check equality of toString() as that influences the ST-hash computation.
-    assertThat(oneNormalized.toString()).isNotEqualTo(twoNormalized.toString());
-  }
+    protected fun assertDifferent(one: T?, two: T?) {
+        // We normalize first, since that is what BuildOptions.checkSum() does.
+        // We do not use BuildOptions.checkSum() because in case of test failure,
+        // the diff on cacheKey is humanreadable.
+        val oneNormalized: FragmentOptions = one.getNormalized()
+        val twoNormalized: FragmentOptions = two.getNormalized()
+        assertThat(BuildOptions.optionsToCacheKey(oneNormalized))
+            .isNotEqualTo(BuildOptions.optionsToCacheKey(twoNormalized))
+        // Also check equality of toString() as that influences the ST-hash computation.
+        assertThat(oneNormalized.toString()).isNotEqualTo(twoNormalized.toString())
+    }
 }

@@ -11,87 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository
 
-package com.google.devtools.build.lib.bazel.repository;
-
-import static com.google.common.base.StandardSystemProperty.USER_HOME;
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.ModuleOverride;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.ModuleOverrideConverter;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.RepositoryOverride;
-import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.RepositoryOverrideConverter;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.bazel.repository.RepositoryOptions.ModuleOverride
 
 /**
- * Test for {@link RepositoryOptions}.
+ * Test for [RepositoryOptions].
  */
-@RunWith(JUnit4.class)
-public class RepositoryOptionsTest {
+@RunWith(JUnit4::class)
+class RepositoryOptionsTest {
+    private val converter: RepositoryOverrideConverter = RepositoryOverrideConverter()
 
-  private final RepositoryOverrideConverter converter = new RepositoryOverrideConverter();
+    @org.junit.Rule
+    var expectedException: org.junit.rules.ExpectedException = org.junit.rules.ExpectedException.none()
 
-  @Rule
-  public ExpectedException expectedException = ExpectedException.none();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOverrideConverter() {
+        val actual: RepositoryOverride = converter.convert("foo=/bar")
+        assertThat(actual.repositoryName).isEqualTo("foo")
+        assertThat(PathFragment.create(actual.path)).isEqualTo(PathFragment.create("/bar"))
+    }
 
-  @Test
-  public void testOverrideConverter() throws Exception {
-    RepositoryOverride actual = converter.convert("foo=/bar");
-    assertThat(actual.repositoryName).isEqualTo("foo");
-    assertThat(PathFragment.create(actual.path)).isEqualTo(PathFragment.create("/bar"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOverridePathWithEqualsSign() {
+        val actual: RepositoryOverride = converter.convert("foo=/bar=/baz")
+        assertThat(actual.repositoryName).isEqualTo("foo")
+        assertThat(PathFragment.create(actual.path)).isEqualTo(PathFragment.create("/bar=/baz"))
+    }
 
-  @Test
-  public void testOverridePathWithEqualsSign() throws Exception {
-    RepositoryOverride actual = converter.convert("foo=/bar=/baz");
-    assertThat(actual.repositoryName).isEqualTo("foo");
-    assertThat(PathFragment.create(actual.path)).isEqualTo(PathFragment.create("/bar=/baz"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOverridePathWithTilde() {
+        val actual: RepositoryOverride = converter.convert("foo=~/bar")
+        assertThat(actual.repositoryName).isEqualTo("foo")
+        assertThat(PathFragment.create(actual.path))
+            .isEqualTo(PathFragment.create(com.google.common.base.StandardSystemProperty.USER_HOME.value() + "/bar"))
+    }
 
-  @Test
-  public void testOverridePathWithTilde() throws Exception {
-    RepositoryOverride actual = converter.convert("foo=~/bar");
-    assertThat(actual.repositoryName).isEqualTo("foo");
-    assertThat(PathFragment.create(actual.path))
-        .isEqualTo(PathFragment.create(USER_HOME.value() + "/bar"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testModuleOverridePathWithTilde() {
+        val converter: ModuleOverrideConverter = ModuleOverrideConverter()
+        val actual: ModuleOverride = converter.convert("foo=~/bar")
+        assertThat(PathFragment.create(actual.path))
+            .isEqualTo(PathFragment.create(com.google.common.base.StandardSystemProperty.USER_HOME.value() + "/bar"))
+    }
 
-  @Test
-  public void testModuleOverridePathWithTilde() throws Exception {
-    var converter = new ModuleOverrideConverter();
-    ModuleOverride actual = converter.convert("foo=~/bar");
-    assertThat(PathFragment.create(actual.path))
-        .isEqualTo(PathFragment.create(USER_HOME.value() + "/bar"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testModuleOverrideRelativePath() {
+        val converter: ModuleOverrideConverter = ModuleOverrideConverter()
+        var actual: ModuleOverride = converter.convert("foo=%workspace%/bar")
+        assertThat(actual.path).isEqualTo("%workspace%/bar")
+        actual = converter.convert("foo=../../bar")
+        assertThat(actual.path).isEqualTo("../../bar")
+    }
 
-  @Test
-  public void testModuleOverrideRelativePath() throws Exception {
-    var converter = new ModuleOverrideConverter();
-    ModuleOverride actual = converter.convert("foo=%workspace%/bar");
-    assertThat(actual.path).isEqualTo("%workspace%/bar");
-    actual = converter.convert("foo=../../bar");
-    assertThat(actual.path).isEqualTo("../../bar");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInvalidOverride() {
+        expectedException.expect(OptionsParsingException::class.java)
+        expectedException.expectMessage(
+            "Repository overrides must be of the form 'repository-name=path'"
+        )
+        converter.convert("foo")
+    }
 
-  @Test
-  public void testInvalidOverride() throws Exception {
-    expectedException.expect(OptionsParsingException.class);
-    expectedException.expectMessage(
-        "Repository overrides must be of the form 'repository-name=path'");
-    converter.convert("foo");
-  }
-
-  @Test
-  public void testInvalidRepoOverride() throws Exception {
-    expectedException.expect(OptionsParsingException.class);
-    expectedException.expectMessage("Invalid repository name given to override");
-    converter.convert("foo/bar=/baz");
-  }
-
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInvalidRepoOverride() {
+        expectedException.expect(OptionsParsingException::class.java)
+        expectedException.expectMessage("Invalid repository name given to override")
+        converter.convert("foo/bar=/baz")
+    }
 }

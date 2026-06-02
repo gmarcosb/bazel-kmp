@@ -431,7 +431,7 @@ public final class ParserTest {
   @Test
   public void testSubstring() throws Exception {
     SliceExpression s = (SliceExpression) parseExpression("'FOO.CC'[:].lower()[1:]");
-    assertThat(((IntLiteral) s.getStart()).getValue()).isEqualTo(1);
+    assertThat(((IntLiteral) s.start).getValue()).isEqualTo(1);
 
     CallExpression e = (CallExpression) parseExpression("'FOO.CC'.lower()[1:].startswith('oo')");
     DotExpression dotExpression = (DotExpression) e.getFunction();
@@ -439,7 +439,7 @@ public final class ParserTest {
     assertThat(e.getArguments()).hasSize(1);
 
     s = (SliceExpression) parseExpression("'FOO.CC'[1:][:2]");
-    assertThat(((IntLiteral) s.getStop()).getValue()).isEqualTo(2);
+    assertThat(((IntLiteral) s.stop).getValue()).isEqualTo(2);
   }
 
   @Test
@@ -1207,7 +1207,7 @@ public final class ParserTest {
     assertThat(result.getComments()).hasSize(6);
     Comment lastComment = result.getComments().getLast();
     for (Comment comment : result.getComments()) {
-      assertThat(comment.getText()).doesNotContain("\n");
+      assertThat(comment.text).doesNotContain("\n");
       if (comment != lastComment) {
         assertThat(source.charAt(comment.getEndOffset())).isEqualTo('\n');
       }
@@ -1245,7 +1245,7 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(1);
     assertThat(result.getComments()).hasSize(2);
-    assertThat(getDocComment(result.getStatements().get(0)))
+    assertThat(getDocComment(result.statements.get(0)))
         .isEqualTo("Doc comment for a\nindent doesn't matter");
   }
 
@@ -1267,9 +1267,9 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(3);
     assertThat(result.getComments()).hasSize(6);
-    assertThat(getDocComment(result.getStatements().get(0))).isEqualTo("Doc comment for a and b");
-    assertThat(getDocComment(result.getStatements().get(1))).isEqualTo("Doc comment for c and d");
-    assertThat(getDocComment(result.getStatements().get(2))).isEqualTo("Doc comment for e and f");
+    assertThat(getDocComment(result.statements.get(0))).isEqualTo("Doc comment for a and b");
+    assertThat(getDocComment(result.statements.get(1))).isEqualTo("Doc comment for c and d");
+    assertThat(getDocComment(result.statements.get(2))).isEqualTo("Doc comment for e and f");
   }
 
   @Test
@@ -1294,10 +1294,10 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(4);
     assertThat(result.getComments()).hasSize(8);
-    assertThat(getDocComment(result.getStatements().get(0))).isNull();
-    assertThat(getDocComment(result.getStatements().get(1))).isNull();
-    assertThat(getDocComment(result.getStatements().get(2))).isEqualTo("Doc comment for c");
-    assertThat(getDocComment(result.getStatements().get(3))).isEqualTo("Doc comment for d");
+    assertThat(getDocComment(result.statements.get(0))).isNull();
+    assertThat(getDocComment(result.statements.get(1))).isNull();
+    assertThat(getDocComment(result.statements.get(2))).isEqualTo("Doc comment for c");
+    assertThat(getDocComment(result.statements.get(3))).isEqualTo("Doc comment for d");
   }
 
   @Test
@@ -1313,8 +1313,8 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(2);
     assertThat(result.getComments()).hasSize(4);
-    assertThat(getDocComment(result.getStatements().get(0))).isEqualTo("Doc comment for a");
-    assertThat(getDocComment(result.getStatements().get(1))).isEqualTo("Doc comment for b");
+    assertThat(getDocComment(result.statements.get(0))).isEqualTo("Doc comment for a");
+    assertThat(getDocComment(result.statements.get(1))).isEqualTo("Doc comment for b");
   }
 
   @Test
@@ -1328,10 +1328,10 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(4);
     assertThat(result.getComments()).hasSize(2);
-    assertThat(getDocComment(result.getStatements().get(0))).isNull();
-    assertThat(getDocComment(result.getStatements().get(1))).isNull();
-    assertThat(getDocComment(result.getStatements().get(2))).isEqualTo("Doc comment for c only");
-    assertThat(getDocComment(result.getStatements().get(3))).isNull();
+    assertThat(getDocComment(result.statements.get(0))).isNull();
+    assertThat(getDocComment(result.statements.get(1))).isNull();
+    assertThat(getDocComment(result.statements.get(2))).isEqualTo("Doc comment for c only");
+    assertThat(getDocComment(result.statements.get(3))).isNull();
   }
 
   @Test
@@ -1351,7 +1351,7 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(1);
     assertThat(result.getComments()).hasSize(9);
-    assertThat(getDocComment(result.getStatements().get(0))).isEqualTo("Doc comment for a");
+    assertThat(getDocComment(result.statements.get(0))).isEqualTo("Doc comment for a");
   }
 
   @Test
@@ -1366,7 +1366,7 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(1);
     assertThat(result.getComments()).hasSize(3);
-    assertThat(getDocComment(result.getStatements().get(0)))
+    assertThat(getDocComment(result.statements.get(0)))
         .isEqualTo(
             "zero or\n" //
                 + "one leading spaces\n" //
@@ -1390,11 +1390,11 @@ public final class ParserTest {
             """);
     assertThat(result.getStatements()).hasSize(2);
     assertThat(result.getComments()).hasSize(6);
-    ImmutableList<Statement> body = ((DefStatement) result.getStatements().getFirst()).getBody();
+    ImmutableList<Statement> body = ((DefStatement) result.statements.getFirst()).getBody();
     assertThat(body).hasSize(2);
     assertThat(getDocComment(body.get(0))).isEqualTo("Doc comment for a\nindent doesn't matter");
     assertThat(getDocComment(body.get(1))).isEqualTo("Doc comment for b ignores indentation");
-    assertThat(getDocComment(result.getStatements().get(1)))
+    assertThat(getDocComment(result.statements.get(1)))
         .isEqualTo("Applies to next statement\nindent doesn't matter");
   }
 
@@ -1430,8 +1430,8 @@ public final class ParserTest {
             ) #: ignored
             """);
     assertThat(result.getComments()).hasSize(25);
-    assertThat(getDocComment(result.getStatements().get(0))).isNull();
-    assertThat(getDocComment(result.getStatements().get(1))).isNull();
+    assertThat(getDocComment(result.statements.get(0))).isNull();
+    assertThat(getDocComment(result.statements.get(1))).isNull();
   }
 
   @Test
@@ -1510,20 +1510,20 @@ public final class ParserTest {
 
     assertThat(stmt.getParameters()).hasSize(5);
 
-    assertThat(stmt.getParameters().get(0).getName()).isEqualTo("a");
+    assertThat(stmt.parameters.get(0).getName()).isEqualTo("a");
     assertThat(stmt.getParameters().get(0)).isInstanceOf(Parameter.Mandatory.class);
 
-    assertThat(stmt.getParameters().get(1).getName()).isNull();
+    assertThat(stmt.parameters.get(1).getName()).isNull();
     assertThat(stmt.getParameters().get(1)).isInstanceOf(Parameter.Star.class);
 
-    assertThat(stmt.getParameters().get(2).getName()).isEqualTo("b");
+    assertThat(stmt.parameters.get(2).getName()).isEqualTo("b");
     assertThat(stmt.getParameters().get(2)).isInstanceOf(Parameter.Optional.class);
-    assertThat(stmt.getParameters().get(2).getDefaultValue().toString()).isEqualTo("1");
+    assertThat(stmt.parameters.get(2).getDefaultValue().toString()).isEqualTo("1");
 
-    assertThat(stmt.getParameters().get(3).getName()).isEqualTo("args");
+    assertThat(stmt.parameters.get(3).getName()).isEqualTo("args");
     assertThat(stmt.getParameters().get(3)).isInstanceOf(Parameter.Star.class);
 
-    assertThat(stmt.getParameters().get(4).getName()).isEqualTo("kwargs");
+    assertThat(stmt.parameters.get(4).getName()).isEqualTo("kwargs");
     assertThat(stmt.getParameters().get(4)).isInstanceOf(Parameter.StarStar.class);
   }
 
@@ -1620,7 +1620,7 @@ public final class ParserTest {
     // Annotations shouldn't consume adjacent params.
     Statement stmt = parseStatement("def f(p1 : x, p2): pass");
     assertThat(stmt.kind()).isEqualTo(Statement.Kind.DEF);
-    assertThat(((DefStatement) stmt).getParameters().stream().map(p -> p.getName()))
+    assertThat(((DefStatement) stmt).parameters.stream().map(p -> p.getName()))
         .containsExactly("p1", "p2")
         .inOrder();
   }
@@ -1708,7 +1708,7 @@ public final class ParserTest {
     assertThat(stmt.getIdentifier().getName()).isEqualTo("X");
     assertThat(stmt.getParameters()).isEmpty();
     assertThat(stmt.getDefinition()).isInstanceOf(Identifier.class);
-    assertThat(((Identifier) stmt.getDefinition()).getName()).isEqualTo("list");
+    assertThat(((Identifier) stmt.definition).getName()).isEqualTo("list");
   }
 
   @Test
@@ -1717,7 +1717,7 @@ public final class ParserTest {
     TypeAliasStatement stmt =
         (TypeAliasStatement) parseStatement("type my_nullable_dict[T, U] = dict[T, U] | None");
     assertThat(stmt.getIdentifier().getName()).isEqualTo("my_nullable_dict");
-    assertThat(stmt.getParameters().stream().map(p -> p.getName()))
+    assertThat(stmt.parameters.stream().map(p -> p.name))
         .containsExactly("T", "U")
         .inOrder();
     assertThat(stmt.getDefinition()).isInstanceOf(BinaryOperatorExpression.class);
@@ -2036,7 +2036,7 @@ public final class ParserTest {
     assertThat(bodyNone).hasSize(1);
 
     ReturnStatement returnNone = (ReturnStatement) bodyNone.get(0);
-    assertThat(((Identifier) returnNone.getResult()).getName()).isEqualTo("None");
+    assertThat(((Identifier) returnNone.result).getName()).isEqualTo("None");
 
     int i = 0;
     for (String end : new String[]{";", "\n"}) {
@@ -2048,7 +2048,7 @@ public final class ParserTest {
       assertThat(bodyNoExpr).hasSize(1);
 
       ReturnStatement returnNoExpr = (ReturnStatement) bodyNoExpr.get(0);
-      assertThat(returnNoExpr.getResult()).isNull();
+      assertThat(returnNoExpr.result).isNull();
     }
   }
 
@@ -2176,7 +2176,7 @@ public final class ParserTest {
 
     List<String> actualSymbolNames = new ArrayList<>();
     for (LoadStatement.Binding binding : stmt.getBindings()) {
-      actualSymbolNames.add(binding.getLocalName().getName());
+      actualSymbolNames.add(binding.localName.getName());
     }
     assertThat(actualSymbolNames).containsExactly((Object[]) expectedSymbols);
   }
@@ -2264,7 +2264,7 @@ public final class ParserTest {
         new NodeVisitor() {
           @Override
           public void visit(StringLiteral stringLiteral) {
-            uniqueStringInstances.add(stringLiteral.getValue());
+            uniqueStringInstances.add(stringLiteral.value);
           }
         };
     collectAllStringsInStringLiteralsVisitor.visit(file);

@@ -11,364 +11,392 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.authandtls
 
-package com.google.devtools.build.lib.authandtls;
+import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperEnvironment
 
-import static com.google.common.truth.Truth.assertThat;
+@RunWith(JUnit4::class)
+class GoogleAuthUtilsTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNetrc_emptyEnv_shouldIgnore() {
+        val clientEnv: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>()
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
 
-import com.google.auth.Credentials;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperEnvironment;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperProvider;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.runtime.CommandLinePathFactory;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.URI;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        assertThat(GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)).isEmpty()
+    }
 
-@RunWith(JUnit4.class)
-public class GoogleAuthUtilsTest {
-  @Test
-  public void testNetrc_emptyEnv_shouldIgnore() throws Exception {
-    ImmutableMap<String, String> clientEnv = ImmutableMap.of();
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNetrc_netrcNotExist_shouldIgnore() {
+        val home = "/home/foo"
+        val clientEnv: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("HOME", home)
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
 
-    assertThat(GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)).isEmpty();
-  }
+        assertThat(GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)).isEmpty()
+    }
 
-  @Test
-  public void testNetrc_netrcNotExist_shouldIgnore() throws Exception {
-    String home = "/home/foo";
-    ImmutableMap<String, String> clientEnv = ImmutableMap.of("HOME", home);
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNetrc_netrcExist_shouldUse() {
+        val home = "/home/foo"
+        val clientEnv: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("HOME", home)
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val scratch: Scratch = Scratch(fileSystem)
+        scratch.file(home + "/.netrc", "machine foo.example.org login foouser password foopass")
 
-    assertThat(GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)).isEmpty();
-  }
+        val credentials: java.util.Optional<com.google.auth.Credentials?>? =
+            GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)
 
-  @Test
-  public void testNetrc_netrcExist_shouldUse() throws Exception {
-    String home = "/home/foo";
-    ImmutableMap<String, String> clientEnv = ImmutableMap.of("HOME", home);
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Scratch scratch = new Scratch(fileSystem);
-    scratch.file(home + "/.netrc", "machine foo.example.org login foouser password foopass");
+        Truth.assertThat(credentials).isPresent()
+        assertRequestMetadata(
+            credentials.get().getRequestMetadata(java.net.URI.create("https://foo.example.org")),
+            "foouser",
+            "foopass"
+        )
+    }
 
-    Optional<Credentials> credentials =
-        GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNetrc_netrcFromNetrcEnvExist_shouldUse() {
+        val home = "/home/foo"
+        val netrc = "/.netrc"
+        val clientEnv: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("HOME", home, "NETRC", netrc)
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val scratch: Scratch = Scratch(fileSystem)
+        scratch.file(home + "/.netrc", "machine foo.example.org login foouser password foopass")
+        scratch.file(netrc, "machine foo.example.org login baruser password barpass")
 
-    assertThat(credentials).isPresent();
-    assertRequestMetadata(
-        credentials.get().getRequestMetadata(URI.create("https://foo.example.org")),
-        "foouser",
-        "foopass");
-  }
+        val credentials: java.util.Optional<com.google.auth.Credentials?>? =
+            GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)
 
-  @Test
-  public void testNetrc_netrcFromNetrcEnvExist_shouldUse() throws Exception {
-    String home = "/home/foo";
-    String netrc = "/.netrc";
-    ImmutableMap<String, String> clientEnv = ImmutableMap.of("HOME", home, "NETRC", netrc);
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Scratch scratch = new Scratch(fileSystem);
-    scratch.file(home + "/.netrc", "machine foo.example.org login foouser password foopass");
-    scratch.file(netrc, "machine foo.example.org login baruser password barpass");
+        Truth.assertThat(credentials).isPresent()
+        assertRequestMetadata(
+            credentials.get().getRequestMetadata(java.net.URI.create("https://foo.example.org")),
+            "baruser",
+            "barpass"
+        )
+    }
 
-    Optional<Credentials> credentials =
-        GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNetrc_netrcFromNetrcEnvNotExist_shouldIgnore() {
+        val home = "/home/foo"
+        val netrc = "/.netrc"
+        val clientEnv: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("HOME", home, "NETRC", netrc)
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val scratch: Scratch = Scratch(fileSystem)
+        scratch.file(home + "/.netrc", "machine foo.example.org login foouser password foopass")
 
-    assertThat(credentials).isPresent();
-    assertRequestMetadata(
-        credentials.get().getRequestMetadata(URI.create("https://foo.example.org")),
-        "baruser",
-        "barpass");
-  }
+        assertThat(GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)).isEmpty()
+    }
 
-  @Test
-  public void testNetrc_netrcFromNetrcEnvNotExist_shouldIgnore() throws Exception {
-    String home = "/home/foo";
-    String netrc = "/.netrc";
-    ImmutableMap<String, String> clientEnv = ImmutableMap.of("HOME", home, "NETRC", netrc);
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Scratch scratch = new Scratch(fileSystem);
-    scratch.file(home + "/.netrc", "machine foo.example.org login foouser password foopass");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCredentialHelperProvider() {
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
 
-    assertThat(GoogleAuthUtils.newCredentialsFromNetrc(clientEnv, fileSystem)).isEmpty();
-  }
+        val workspace: Path = fileSystem.getPath("/workspace")
+        val pathValue: Path = fileSystem.getPath("/usr/local/bin")
+        pathValue.createDirectoryAndParents()
 
-  @Test
-  public void testCredentialHelperProvider() throws Exception {
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
+        val credentialHelperEnvironment: CredentialHelperEnvironment? =
+            CredentialHelperEnvironment.newBuilder()
+                .setEventReporter(com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus()))
+                .setWorkspacePath(workspace)
+                .setClientEnvironment(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "PATH",
+                        pathValue.getPathString()
+                    )
+                )
+                .setHelperExecutionTimeout(java.time.Duration.ZERO)
+                .build()
+        val commandLinePathFactory: CommandLinePathFactory =
+            CommandLinePathFactory(
+                fileSystem,
+                com.google.common.collect.ImmutableMap.of<K?, V?>("workspace", workspace)
+            )
 
-    Path workspace = fileSystem.getPath("/workspace");
-    Path pathValue = fileSystem.getPath("/usr/local/bin");
-    pathValue.createDirectoryAndParents();
+        val unusedHelper: Path = createExecutable(fileSystem, "/unused/helper")
 
-    CredentialHelperEnvironment credentialHelperEnvironment =
-        CredentialHelperEnvironment.newBuilder()
-            .setEventReporter(new Reporter(EventBusEventHandler.createWithNewEventBus()))
-            .setWorkspacePath(workspace)
-            .setClientEnvironment(ImmutableMap.of("PATH", pathValue.getPathString()))
-            .setHelperExecutionTimeout(Duration.ZERO)
-            .build();
-    CommandLinePathFactory commandLinePathFactory =
-        new CommandLinePathFactory(fileSystem, ImmutableMap.of("workspace", workspace));
+        val defaultHelper: Path = createExecutable(fileSystem, "/default/helper")
+        val exampleComHelper: Path = createExecutable(fileSystem, "/example/com/helper")
+        val fooExampleComHelper: Path = createExecutable(fileSystem, "/foo/example/com/helper")
+        val exampleComWildcardHelper: Path = createExecutable(fileSystem, "/example/com/wildcard/helper")
 
-    Path unusedHelper = createExecutable(fileSystem, "/unused/helper");
+        val exampleOrgHelper: Path = createExecutable(workspace.getRelative("helpers/example-org"))
 
-    Path defaultHelper = createExecutable(fileSystem, "/default/helper");
-    Path exampleComHelper = createExecutable(fileSystem, "/example/com/helper");
-    Path fooExampleComHelper = createExecutable(fileSystem, "/foo/example/com/helper");
-    Path exampleComWildcardHelper = createExecutable(fileSystem, "/example/com/wildcard/helper");
+        // No helpers.
+        val credentialHelperProvider1: CredentialHelperProvider =
+            newCredentialHelperProvider(
+                credentialHelperEnvironment,
+                commandLinePathFactory,
+                com.google.common.collect.ImmutableList.of<String?>()
+            )
+        assertThat(credentialHelperProvider1.findCredentialHelper(java.net.URI.create("https://example.com")))
+            .isEmpty()
+        assertThat(
+            credentialHelperProvider1.findCredentialHelper(java.net.URI.create("https://foo.example.com"))
+        )
+            .isEmpty()
 
-    Path exampleOrgHelper = createExecutable(workspace.getRelative("helpers/example-org"));
-
-    // No helpers.
-    CredentialHelperProvider credentialHelperProvider1 =
-        newCredentialHelperProvider(
-            credentialHelperEnvironment, commandLinePathFactory, ImmutableList.of());
-    assertThat(credentialHelperProvider1.findCredentialHelper(URI.create("https://example.com")))
-        .isEmpty();
-    assertThat(
-            credentialHelperProvider1.findCredentialHelper(URI.create("https://foo.example.com")))
-        .isEmpty();
-
-    // Default helper only.
-    CredentialHelperProvider credentialHelperProvider2 =
-        newCredentialHelperProvider(
-            credentialHelperEnvironment,
-            commandLinePathFactory,
-            ImmutableList.of(defaultHelper.getPathString()));
-    assertThat(
+        // Default helper only.
+        val credentialHelperProvider2: CredentialHelperProvider =
+            newCredentialHelperProvider(
+                credentialHelperEnvironment,
+                commandLinePathFactory,
+                com.google.common.collect.ImmutableList.of<E?>(defaultHelper.getPathString())
+            )
+        assertThat(
             credentialHelperProvider2
-                .findCredentialHelper(URI.create("https://example.com"))
+                .findCredentialHelper(java.net.URI.create("https://example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(defaultHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(defaultHelper)
+        assertThat(
             credentialHelperProvider2
-                .findCredentialHelper(URI.create("https://foo.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://foo.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(defaultHelper);
+                .getPath()
+        )
+            .isEqualTo(defaultHelper)
 
-    // Default and exact match.
-    CredentialHelperProvider credentialHelperProvider3 =
-        newCredentialHelperProvider(
-            credentialHelperEnvironment,
-            commandLinePathFactory,
-            ImmutableList.of(
-                defaultHelper.getPathString(), "example.com=" + exampleComHelper.getPathString()));
-    assertThat(
+        // Default and exact match.
+        val credentialHelperProvider3: CredentialHelperProvider =
+            newCredentialHelperProvider(
+                credentialHelperEnvironment,
+                commandLinePathFactory,
+                com.google.common.collect.ImmutableList.of<E?>(
+                    defaultHelper.getPathString(), "example.com=" + exampleComHelper.getPathString()
+                )
+            )
+        assertThat(
             credentialHelperProvider3
-                .findCredentialHelper(URI.create("https://example.com"))
+                .findCredentialHelper(java.net.URI.create("https://example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComHelper)
+        assertThat(
             credentialHelperProvider3
-                .findCredentialHelper(URI.create("https://foo.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://foo.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(defaultHelper);
+                .getPath()
+        )
+            .isEqualTo(defaultHelper)
 
-    // Exact match without default.
-    CredentialHelperProvider credentialHelperProvider4 =
-        newCredentialHelperProvider(
-            credentialHelperEnvironment,
-            commandLinePathFactory,
-            ImmutableList.of("example.com=" + exampleComHelper.getPathString()));
-    assertThat(
+        // Exact match without default.
+        val credentialHelperProvider4: CredentialHelperProvider =
+            newCredentialHelperProvider(
+                credentialHelperEnvironment,
+                commandLinePathFactory,
+                com.google.common.collect.ImmutableList.of<String?>("example.com=" + exampleComHelper.getPathString())
+            )
+        assertThat(
             credentialHelperProvider4
-                .findCredentialHelper(URI.create("https://example.com"))
+                .findCredentialHelper(java.net.URI.create("https://example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(
-            credentialHelperProvider4.findCredentialHelper(URI.create("https://foo.example.com")))
-        .isEmpty();
+                .getPath()
+        )
+            .isEqualTo(exampleComHelper)
+        assertThat(
+            credentialHelperProvider4.findCredentialHelper(java.net.URI.create("https://foo.example.com"))
+        )
+            .isEmpty()
 
-    // Multiple scoped helpers with default.
-    CredentialHelperProvider credentialHelperProvider5 =
-        newCredentialHelperProvider(
-            credentialHelperEnvironment,
-            commandLinePathFactory,
-            ImmutableList.of(
-                defaultHelper.getPathString(),
-                "example.com=" + exampleComHelper.getPathString(),
-                "*.foo.example.com=" + fooExampleComHelper.getPathString(),
-                "*.example.com=" + exampleComWildcardHelper.getPathString(),
-                "example.org=%workspace%/helpers/example-org"));
-    assertThat(
+        // Multiple scoped helpers with default.
+        val credentialHelperProvider5: CredentialHelperProvider =
+            newCredentialHelperProvider(
+                credentialHelperEnvironment,
+                commandLinePathFactory,
+                com.google.common.collect.ImmutableList.of<E?>(
+                    defaultHelper.getPathString(),
+                    "example.com=" + exampleComHelper.getPathString(),
+                    "*.foo.example.com=" + fooExampleComHelper.getPathString(),
+                    "*.example.com=" + exampleComWildcardHelper.getPathString(),
+                    "example.org=%workspace%/helpers/example-org"
+                )
+            )
+        assertThat(
             credentialHelperProvider5
-                .findCredentialHelper(URI.create("https://anotherdomain.com"))
+                .findCredentialHelper(java.net.URI.create("https://anotherdomain.com"))
                 .get()
-                .getPath())
-        .isEqualTo(defaultHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(defaultHelper)
+        assertThat(
             credentialHelperProvider5
-                .findCredentialHelper(URI.create("https://example.com"))
+                .findCredentialHelper(java.net.URI.create("https://example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComHelper)
+        assertThat(
             credentialHelperProvider5
-                .findCredentialHelper(URI.create("https://foo.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://foo.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(fooExampleComHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(fooExampleComHelper)
+        assertThat(
             credentialHelperProvider5
-                .findCredentialHelper(URI.create("https://abc.foo.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://abc.foo.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(fooExampleComHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(fooExampleComHelper)
+        assertThat(
             credentialHelperProvider5
-                .findCredentialHelper(URI.create("https://bar.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://bar.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             credentialHelperProvider5
-                .findCredentialHelper(URI.create("https://abc.bar.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://abc.bar.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             credentialHelperProvider5
-                .findCredentialHelper(URI.create("https://example.org"))
+                .findCredentialHelper(java.net.URI.create("https://example.org"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleOrgHelper);
+                .getPath()
+        )
+            .isEqualTo(exampleOrgHelper)
 
-    // Helpers override.
-    CredentialHelperProvider credentialHelperProvider6 =
-        newCredentialHelperProvider(
-            credentialHelperEnvironment,
-            commandLinePathFactory,
-            ImmutableList.of(
-                // <system .bazelrc>
-                unusedHelper.getPathString(),
+        // Helpers override.
+        val credentialHelperProvider6: CredentialHelperProvider =
+            newCredentialHelperProvider(
+                credentialHelperEnvironment,
+                commandLinePathFactory,
+                com.google.common.collect.ImmutableList.of<E?>( // <system .bazelrc>
+                    unusedHelper.getPathString(),  // <user .bazelrc>
 
-                // <user .bazelrc>
-                defaultHelper.getPathString(),
-                "example.com=" + unusedHelper.getPathString(),
-                "*.example.com=" + unusedHelper.getPathString(),
-                "example.org=" + unusedHelper.getPathString(),
-                "*.example.org=" + exampleOrgHelper.getPathString(),
+                    defaultHelper.getPathString(),
+                    "example.com=" + unusedHelper.getPathString(),
+                    "*.example.com=" + unusedHelper.getPathString(),
+                    "example.org=" + unusedHelper.getPathString(),
+                    "*.example.org=" + exampleOrgHelper.getPathString(),  // <workspace .bazelrc>
 
-                // <workspace .bazelrc>
-                "*.example.com=" + exampleComWildcardHelper.getPathString(),
-                "example.org=" + exampleOrgHelper.getPathString(),
-                "*.foo.example.com=" + unusedHelper.getPathString(),
+                    "*.example.com=" + exampleComWildcardHelper.getPathString(),
+                    "example.org=" + exampleOrgHelper.getPathString(),
+                    "*.foo.example.com=" + unusedHelper.getPathString(),  // <command-line>
 
-                // <command-line>
-                "example.com=" + exampleComHelper.getPathString(),
-                "*.foo.example.com=" + fooExampleComHelper.getPathString()));
-    assertThat(
+                    "example.com=" + exampleComHelper.getPathString(),
+                    "*.foo.example.com=" + fooExampleComHelper.getPathString()
+                )
+            )
+        assertThat(
             credentialHelperProvider6
-                .findCredentialHelper(URI.create("https://anotherdomain.com"))
+                .findCredentialHelper(java.net.URI.create("https://anotherdomain.com"))
                 .get()
-                .getPath())
-        .isEqualTo(defaultHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(defaultHelper)
+        assertThat(
             credentialHelperProvider6
-                .findCredentialHelper(URI.create("https://example.com"))
+                .findCredentialHelper(java.net.URI.create("https://example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComHelper)
+        assertThat(
             credentialHelperProvider6
-                .findCredentialHelper(URI.create("https://foo.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://foo.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(fooExampleComHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(fooExampleComHelper)
+        assertThat(
             credentialHelperProvider6
-                .findCredentialHelper(URI.create("https://bar.example.com"))
+                .findCredentialHelper(java.net.URI.create("https://bar.example.com"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleComWildcardHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleComWildcardHelper)
+        assertThat(
             credentialHelperProvider6
-                .findCredentialHelper(URI.create("https://example.org"))
+                .findCredentialHelper(java.net.URI.create("https://example.org"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleOrgHelper);
-    assertThat(
+                .getPath()
+        )
+            .isEqualTo(exampleOrgHelper)
+        assertThat(
             credentialHelperProvider6
-                .findCredentialHelper(URI.create("https://foo.example.org"))
+                .findCredentialHelper(java.net.URI.create("https://foo.example.org"))
                 .get()
-                .getPath())
-        .isEqualTo(exampleOrgHelper);
-  }
-
-  private static Path createExecutable(FileSystem fileSystem, String path) throws IOException {
-    Preconditions.checkNotNull(fileSystem);
-    Preconditions.checkNotNull(path);
-
-    return createExecutable(fileSystem.getPath(path));
-  }
-
-  private static Path createExecutable(Path path) throws IOException {
-    Preconditions.checkNotNull(path);
-
-    path.getParentDirectory().createDirectoryAndParents();
-    try (OutputStream unused = path.getOutputStream()) {
-      // Nothing to do.
+                .getPath()
+        )
+            .isEqualTo(exampleOrgHelper)
     }
-    path.setExecutable(true);
 
-    return path;
-  }
+    companion object {
+        @Throws(IOException::class)
+        private fun createExecutable(fileSystem: FileSystem?, path: String?): Path {
+            com.google.common.base.Preconditions.checkNotNull<Any?>(fileSystem)
+            com.google.common.base.Preconditions.checkNotNull<String?>(path)
 
-  private static void assertRequestMetadata(
-      Map<String, List<String>> requestMetadata, String username, String password) {
-    assertThat(requestMetadata.keySet()).containsExactly("Authorization");
-    assertThat(Iterables.getOnlyElement(requestMetadata.values()))
-        .containsExactly(BasicHttpAuthenticationEncoder.encode(username, password));
-  }
+            return createExecutable(fileSystem.getPath(path))
+        }
 
-  private static CredentialHelperProvider newCredentialHelperProvider(
-      CredentialHelperEnvironment credentialHelperEnvironment,
-      CommandLinePathFactory commandLinePathFactory,
-      ImmutableList<String> inputs)
-      throws Exception {
-    Preconditions.checkNotNull(credentialHelperEnvironment);
-    Preconditions.checkNotNull(commandLinePathFactory);
-    Preconditions.checkNotNull(inputs);
+        @Throws(IOException::class)
+        private fun createExecutable(path: Path): Path {
+            com.google.common.base.Preconditions.checkNotNull<Any?>(path)
 
-    return GoogleAuthUtils.newCredentialHelperProvider(
-        credentialHelperEnvironment,
-        commandLinePathFactory,
-        ImmutableList.copyOf(Iterables.transform(inputs, s -> createCredentialHelperOption(s))));
-  }
+            path.getParentDirectory().createDirectoryAndParents()
+            path.getOutputStream().use { unused -> }
+            path.setExecutable(true)
 
-  private static AuthAndTLSOptions.CredentialHelperOption createCredentialHelperOption(
-      String input) {
-    Preconditions.checkNotNull(input);
+            return path
+        }
 
-    try {
-      return AuthAndTLSOptions.CredentialHelperOptionConverter.INSTANCE.convert(input);
-    } catch (OptionsParsingException e) {
-      throw new IllegalStateException(e);
+        private fun assertRequestMetadata(
+            requestMetadata: MutableMap<String?, MutableList<String?>?>, username: String?, password: String?
+        ) {
+            Truth.assertThat(requestMetadata.keys).containsExactly("Authorization")
+            Truth.assertThat(com.google.common.collect.Iterables.getOnlyElement<MutableList<String?>?>(requestMetadata.values))
+                .containsExactly(BasicHttpAuthenticationEncoder.encode(username, password))
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun newCredentialHelperProvider(
+            credentialHelperEnvironment: CredentialHelperEnvironment?,
+            commandLinePathFactory: CommandLinePathFactory?,
+            inputs: com.google.common.collect.ImmutableList<String?>?
+        ): CredentialHelperProvider {
+            com.google.common.base.Preconditions.checkNotNull<Any?>(credentialHelperEnvironment)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(commandLinePathFactory)
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<String?>?>(inputs)
+
+            return GoogleAuthUtils.newCredentialHelperProvider(
+                credentialHelperEnvironment,
+                commandLinePathFactory,
+                com.google.common.collect.ImmutableList.< E > copyOf < E ? > (com.google.common.collect.Iterables.transform<F?, T?>(
+                    inputs,
+                    com.google.common.base.Function { s: F? -> createCredentialHelperOption(s) }))
+            )
+        }
+
+        private fun createCredentialHelperOption(
+            input: String?
+        ): AuthAndTLSOptions.CredentialHelperOption {
+            com.google.common.base.Preconditions.checkNotNull<String?>(input)
+
+            try {
+                return AuthAndTLSOptions.CredentialHelperOptionConverter.INSTANCE.convert(input)
+            } catch (e: OptionsParsingException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
     }
-  }
 }

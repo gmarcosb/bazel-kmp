@@ -11,75 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableList
 
-/** Syntax node for a load statement. */
-public final class LoadStatement extends Statement {
+/** Syntax node for a load statement.  */
+class LoadStatement internal constructor(
+    locs: FileLocations?,
+    loadOffset: Int,
+    module: StringLiteral?,
+    bindings: ImmutableList<Binding?>?,
+    rparenOffset: Int
+) : Statement(locs, Kind.LOAD) {
+    /**
+     * Binding represents a binding in a load statement. load("...", local = "orig")
+     * 
+     * 
+     * If there's no alias, a single Identifier can be used for both local and orig.
+     * TODO(adonovan): don't do that; be faithful to source.
+     */
+    class Binding internal constructor(localName: Identifier?, originalName: Identifier?) {
+        @kotlin.jvm.JvmField
+        private val local: Identifier?
+        private val orig: Identifier?
 
-  /**
-   * Binding represents a binding in a load statement. load("...", local = "orig")
-   *
-   * <p>If there's no alias, a single Identifier can be used for both local and orig.
-   * TODO(adonovan): don't do that; be faithful to source.
-   */
-  public static final class Binding {
-    private final Identifier local;
-    private final Identifier orig;
+        fun getLocalName(): Identifier? {
+            return local
+        }
 
-    public Identifier getLocalName() {
-      return local;
+        fun getOriginalName(): Identifier? {
+            return orig
+        }
+
+        init {
+            this.local = localName
+            this.orig = originalName
+        }
     }
 
-    public Identifier getOriginalName() {
-      return orig;
+    private val loadOffset: Int
+    @kotlin.jvm.JvmField
+    private val module: StringLiteral?
+    @kotlin.jvm.JvmField
+    private val bindings: ImmutableList<Binding?>?
+    private val rparenOffset: Int
+
+    init {
+        this.loadOffset = loadOffset
+        this.module = module
+        this.bindings = bindings
+        this.rparenOffset = rparenOffset
     }
 
-    Binding(Identifier localName, Identifier originalName) {
-      this.local = localName;
-      this.orig = originalName;
+    fun getBindings(): ImmutableList<Binding?>? {
+        return bindings
     }
-  }
 
-  private final int loadOffset;
-  private final StringLiteral module;
-  private final ImmutableList<Binding> bindings;
-  private final int rparenOffset;
+    fun getImport(): StringLiteral? {
+        return module
+    }
 
-  LoadStatement(
-      FileLocations locs,
-      int loadOffset,
-      StringLiteral module,
-      ImmutableList<Binding> bindings,
-      int rparenOffset) {
-    super(locs, Kind.LOAD);
-    this.loadOffset = loadOffset;
-    this.module = module;
-    this.bindings = bindings;
-    this.rparenOffset = rparenOffset;
-  }
+    override fun getStartOffset(): Int {
+        return loadOffset
+    }
 
-  public ImmutableList<Binding> getBindings() {
-    return bindings;
-  }
+    override fun getEndOffset(): Int {
+        return rparenOffset + 1
+    }
 
-  public StringLiteral getImport() {
-    return module;
-  }
-
-  @Override
-  public int getStartOffset() {
-    return loadOffset;
-  }
-
-  @Override
-  public int getEndOffset() {
-    return rparenOffset + 1;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

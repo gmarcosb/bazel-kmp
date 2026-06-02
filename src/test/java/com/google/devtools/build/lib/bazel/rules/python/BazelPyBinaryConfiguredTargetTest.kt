@@ -11,33 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.rules.python
 
-package com.google.devtools.build.lib.bazel.rules.python;
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase
+import com.google.devtools.build.lib.rules.python.PythonTestUtils
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.rules.python.PythonTestUtils.getPyLoad;
-
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Bazel-specific tests for {@code py_binary}. */
-@RunWith(JUnit4.class)
-public class BazelPyBinaryConfiguredTargetTest extends BuildViewTestCase {
-
-  @Test
-  public void packageNameCanHaveHyphen() throws Exception {
-    scratch.file(
-        "pkg-hyphenated/BUILD",
-        getPyLoad("py_binary"),
-        """
+/** Bazel-specific tests for `py_binary`.  */
+@RunWith(JUnit4::class)
+class BazelPyBinaryConfiguredTargetTest : BuildViewTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun packageNameCanHaveHyphen() {
+        scratch.file(
+            "pkg-hyphenated/BUILD",
+            PythonTestUtils.getPyLoad("py_binary"),
+            """
         py_binary(
             name = "foo",
             srcs = ["foo.py"],
         )
-        """);
-    assertThat(getConfiguredTarget("//pkg-hyphenated:foo")).isNotNull();
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        assertThat(getConfiguredTarget("//pkg-hyphenated:foo")).isNotNull()
+        assertNoEvents()
+    }
 }

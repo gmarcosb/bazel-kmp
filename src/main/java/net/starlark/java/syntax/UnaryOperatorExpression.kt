@@ -11,53 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-/** A UnaryOperatorExpression represents a unary operator expression, 'op x'. */
-public final class UnaryOperatorExpression extends Expression {
+/** A UnaryOperatorExpression represents a unary operator expression, 'op x'.  */
+class UnaryOperatorExpression internal constructor(locs: FileLocations?, op: TokenKind, opOffset: Int, x: Expression) :
+    Expression(locs, Kind.UNARY_OPERATOR) {
+    @kotlin.jvm.JvmField
+    private val op: TokenKind // NOT, TILDE, MINUS or PLUS
+    private val opOffset: Int
+    @kotlin.jvm.JvmField
+    private val x: Expression
 
-  private final TokenKind op; // NOT, TILDE, MINUS or PLUS
-  private final int opOffset;
-  private final Expression x;
+    init {
+        this.op = op
+        this.opOffset = opOffset
+        this.x = x
+    }
 
-  UnaryOperatorExpression(FileLocations locs, TokenKind op, int opOffset, Expression x) {
-    super(locs, Kind.UNARY_OPERATOR);
-    this.op = op;
-    this.opOffset = opOffset;
-    this.x = x;
-  }
+    /** Returns the operator.  */
+    fun getOperator(): TokenKind {
+        return op
+    }
 
-  /** Returns the operator. */
-  public TokenKind getOperator() {
-    return op;
-  }
+    override fun getStartOffset(): Int {
+        return opOffset
+    }
 
-  @Override
-  public int getStartOffset() {
-    return opOffset;
-  }
+    override fun getEndOffset(): Int {
+        return x.getEndOffset()
+    }
 
-  @Override
-  public int getEndOffset() {
-    return x.getEndOffset();
-  }
+    /** Returns the operand.  */
+    fun getX(): Expression {
+        return x
+    }
 
-  /** Returns the operand. */
-  public Expression getX() {
-    return x;
-  }
+    override fun toString(): String {
+        // Note that this omits the parentheses for brevity, but is not correct in general due to
+        // operator precedence rules. For example, "(not False) in mylist" prints as
+        // "not False in mylist", which evaluates to opposite results in the case that mylist is empty.
+        // TODO(adonovan): record parentheses explicitly in syntax tree.
+        return (if (op == TokenKind.NOT) "not " else op.toString()) + x
+    }
 
-  @Override
-  public String toString() {
-    // Note that this omits the parentheses for brevity, but is not correct in general due to
-    // operator precedence rules. For example, "(not False) in mylist" prints as
-    // "not False in mylist", which evaluates to opposite results in the case that mylist is empty.
-    // TODO(adonovan): record parentheses explicitly in syntax tree.
-    return (op == TokenKind.NOT ? "not " : op.toString()) + x;
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

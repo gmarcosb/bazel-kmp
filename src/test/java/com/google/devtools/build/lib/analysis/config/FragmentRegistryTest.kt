@@ -11,90 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config
 
-package com.google.devtools.build.lib.analysis.config;
+import com.google.devtools.common.options.OptionsClass
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [FragmentRegistry].  */
+@RunWith(JUnit4::class)
+class FragmentRegistryTest {
+    @OptionsClass
+    private abstract class OptionsA : FragmentOptions()
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.common.options.OptionsClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @OptionsClass
+    private abstract class OptionsB : FragmentOptions()
 
-/** Tests for {@link FragmentRegistry}. */
-@RunWith(JUnit4.class)
-public final class FragmentRegistryTest {
+    @OptionsClass
+    private abstract class MoreOptions : FragmentOptions()
 
-  @OptionsClass
-  private abstract static class OptionsA extends FragmentOptions {}
+    @OptionsClass
+    private abstract class EvenMoreOptions : FragmentOptions()
 
-  @OptionsClass
-  private abstract static class OptionsB extends FragmentOptions {}
+    @RequiresOptions(options = OptionsA::class)
+    private class FragmentA : Fragment()
 
-  @OptionsClass
-  private abstract static class MoreOptions extends FragmentOptions {}
+    @RequiresOptions(options = OptionsB::class)
+    private class FragmentB : Fragment()
 
-  @OptionsClass
-  private abstract static class EvenMoreOptions extends FragmentOptions {}
+    @org.junit.Test
+    fun createsRegistry() {
+        val registry: FragmentRegistry =
+            FragmentRegistry.create( /*allFragments=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentA::class.java,
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java
+                ),  /*universalFragments=*/
+                com.google.common.collect.ImmutableList.of<E?>(com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java),  /*additionalOptions=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.MoreOptions::class.java,
+                    EvenMoreOptions::class.java
+                )
+            )
 
-  @RequiresOptions(options = OptionsA.class)
-  private static final class FragmentA extends Fragment {}
+        assertThat(registry.getAllFragments()).containsExactly(
+            com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentA::class.java,
+            com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java
+        )
+        assertThat(registry.getUniversalFragments()).containsExactly(com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java)
+        assertThat(registry.getOptionsClasses())
+            .containsExactly(
+                OptionsA::class.java,
+                OptionsB::class.java,
+                com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.MoreOptions::class.java,
+                EvenMoreOptions::class.java
+            )
+    }
 
-  @RequiresOptions(options = OptionsB.class)
-  private static final class FragmentB extends Fragment {}
+    @org.junit.Test
+    fun canonicalizesOrder() {
+        val registry1: FragmentRegistry =
+            FragmentRegistry.create( /*allFragments=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentA::class.java,
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java
+                ),  /*universalFragments=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentA::class.java,
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java
+                ),  /*additionalOptions=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.MoreOptions::class.java,
+                    EvenMoreOptions::class.java
+                )
+            )
+        val registry2: FragmentRegistry =
+            FragmentRegistry.create( /*allFragments=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java,
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentA::class.java
+                ),  /*universalFragments=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java,
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentA::class.java
+                ),  /*additionalOptions=*/
+                com.google.common.collect.ImmutableList.of<E?>(
+                    EvenMoreOptions::class.java,
+                    com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.MoreOptions::class.java
+                )
+            )
 
-  @Test
-  public void createsRegistry() {
-    FragmentRegistry registry =
-        FragmentRegistry.create(
-            /*allFragments=*/ ImmutableList.of(FragmentA.class, FragmentB.class),
-            /*universalFragments=*/ ImmutableList.of(FragmentB.class),
-            /*additionalOptions=*/ ImmutableList.of(MoreOptions.class, EvenMoreOptions.class));
+        assertThat(registry1.getAllFragments())
+            .containsAtLeastElementsIn(registry2.getAllFragments())
+            .inOrder()
+        assertThat(registry1.getUniversalFragments())
+            .containsAtLeastElementsIn(registry2.getUniversalFragments())
+            .inOrder()
+        assertThat(registry1.getOptionsClasses())
+            .containsAtLeastElementsIn(registry2.getOptionsClasses())
+            .inOrder()
+    }
 
-    assertThat(registry.getAllFragments()).containsExactly(FragmentA.class, FragmentB.class);
-    assertThat(registry.getUniversalFragments()).containsExactly(FragmentB.class);
-    assertThat(registry.getOptionsClasses())
-        .containsExactly(OptionsA.class, OptionsB.class, MoreOptions.class, EvenMoreOptions.class);
-  }
+    @org.junit.Test
+    fun allFragmentsMustContainUniversalFragments() {
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    FragmentRegistry.create( /*allFragments=*/
+                        com.google.common.collect.ImmutableList.of<E?>(com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentA::class.java),  /*universalFragments=*/
+                        com.google.common.collect.ImmutableList.of<E?>(com.google.devtools.build.lib.analysis.config.FragmentRegistryTest.FragmentB::class.java),  /*additionalOptions=*/
+                        com.google.common.collect.ImmutableList.of<E?>()
+                    )
+                })
 
-  @Test
-  public void canonicalizesOrder() {
-    FragmentRegistry registry1 =
-        FragmentRegistry.create(
-            /*allFragments=*/ ImmutableList.of(FragmentA.class, FragmentB.class),
-            /*universalFragments=*/ ImmutableList.of(FragmentA.class, FragmentB.class),
-            /*additionalOptions=*/ ImmutableList.of(MoreOptions.class, EvenMoreOptions.class));
-    FragmentRegistry registry2 =
-        FragmentRegistry.create(
-            /*allFragments=*/ ImmutableList.of(FragmentB.class, FragmentA.class),
-            /*universalFragments=*/ ImmutableList.of(FragmentB.class, FragmentA.class),
-            /*additionalOptions=*/ ImmutableList.of(EvenMoreOptions.class, MoreOptions.class));
-
-    assertThat(registry1.getAllFragments())
-        .containsAtLeastElementsIn(registry2.getAllFragments())
-        .inOrder();
-    assertThat(registry1.getUniversalFragments())
-        .containsAtLeastElementsIn(registry2.getUniversalFragments())
-        .inOrder();
-    assertThat(registry1.getOptionsClasses())
-        .containsAtLeastElementsIn(registry2.getOptionsClasses())
-        .inOrder();
-  }
-
-  @Test
-  public void allFragmentsMustContainUniversalFragments() {
-    Exception e =
-        assertThrows(
-            IllegalArgumentException.class,
-            () ->
-                FragmentRegistry.create(
-                    /*allFragments=*/ ImmutableList.of(FragmentA.class),
-                    /*universalFragments=*/ ImmutableList.of(FragmentB.class),
-                    /*additionalOptions=*/ ImmutableList.of()));
-
-    assertThat(e).hasMessageThat().contains("Missing universally required fragments");
-    assertThat(e).hasMessageThat().contains("FragmentB");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("Missing universally required fragments")
+        Truth.assertThat(e).hasMessageThat().contains("FragmentB")
+    }
 }

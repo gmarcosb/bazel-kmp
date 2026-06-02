@@ -11,182 +11,175 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.bazel.repository.downloader
 
-package com.google.devtools.build.lib.bazel.repository.downloader;
+import com.google.common.io.ByteStreams
+import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache.KeyType
+import com.google.devtools.build.lib.testutil.ManualClock
+import org.junit.After
+import org.junit.Assert
+import org.junit.Rule
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.rules.Timeout
+import java.net.URI
+import java.nio.charset.StandardCharsets
+import java.util.Optional
+import java.util.concurrent.Callable
+import java.util.concurrent.Future
 
-import static com.google.common.io.ByteStreams.toByteArray;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.repository.downloader.DownloaderTestUtils.sendLines;
-import static com.google.devtools.build.lib.bazel.repository.downloader.HttpParser.readHttpRequest;
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static java.util.Arrays.asList;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+/** Black box integration tests for [HttpConnectorMultiplexer].  */
+@RunWith(JUnit4::class)
+class HttpConnectorMultiplexerIntegrationTest {
+    @Rule
+    val globalTimeout: Timeout = Timeout.seconds(20)
 
-import com.google.devtools.build.lib.bazel.repository.cache.DownloadCache.KeyType;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.util.Sleeper;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.URI;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val proxyHelper: ProxyHelper = Mockito.mock<ProxyHelper>(ProxyHelper::class.java)
+    private val eventHandler: ExtendedEventHandler =
+        Mockito.mock<ExtendedEventHandler>(ExtendedEventHandler::class.java)
+    private val clock = ManualClock()
+    private val sleeper: Sleeper = Mockito.mock<Sleeper>(Sleeper::class.java)
+    private val locale: Locale = Locale.US
+    private val connector = HttpConnector(locale, eventHandler, proxyHelper, sleeper, 0.15f)
+    private val progressInputStreamFactory = ProgressInputStream.Factory(locale, clock, eventHandler)
+    private val httpStreamFactory = HttpStream.Factory(progressInputStreamFactory)
+    private val multiplexer = HttpConnectorMultiplexer(eventHandler, connector, httpStreamFactory)
 
-/** Black box integration tests for {@link HttpConnectorMultiplexer}. */
-@RunWith(JUnit4.class)
-public class HttpConnectorMultiplexerIntegrationTest {
-
-  @Rule public final Timeout globalTimeout = Timeout.seconds(20);
-
-  private final ExecutorService executor = Executors.newSingleThreadExecutor();
-  private final ProxyHelper proxyHelper = mock(ProxyHelper.class);
-  private final ExtendedEventHandler eventHandler = mock(ExtendedEventHandler.class);
-  private final ManualClock clock = new ManualClock();
-  private final Sleeper sleeper = mock(Sleeper.class);
-  private final Locale locale = Locale.US;
-  private final HttpConnector connector =
-      new HttpConnector(locale, eventHandler, proxyHelper, sleeper, 0.15f);
-  private final ProgressInputStream.Factory progressInputStreamFactory =
-      new ProgressInputStream.Factory(locale, clock, eventHandler);
-  private final HttpStream.Factory httpStreamFactory =
-      new HttpStream.Factory(progressInputStreamFactory);
-  private final HttpConnectorMultiplexer multiplexer =
-      new HttpConnectorMultiplexer(eventHandler, connector, httpStreamFactory);
-
-  private static Optional<Checksum> makeChecksum(String string) {
-    try {
-      return Optional.of(Checksum.fromString(KeyType.SHA256, string));
-    } catch (Checksum.InvalidChecksumException e) {
-      throw new IllegalStateException(e);
+    @Before
+    @Throws(Exception::class)
+    fun before() {
+        Mockito.`when`<ProxyInfo>(proxyHelper.createProxyIfNeeded(ArgumentMatchers.any<URI?>(URI::class.java)))
+            .thenReturn(ProxyInfo.NO_PROXY)
     }
-  }
 
-  private static final Optional<Checksum> HELLO_SHA256 =
-      makeChecksum("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
-
-  @Before
-  public void before() throws Exception {
-    when(proxyHelper.createProxyIfNeeded(any(URI.class))).thenReturn(ProxyInfo.NO_PROXY);
-  }
-
-  @After
-  public void after() throws Exception {
-    executor.shutdown();
-  }
-
-  @Test
-  public void successWithRetry() throws Exception {
-    CyclicBarrier barrier = new CyclicBarrier(2);
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> unused =
-          executor.submit(
-              () -> {
-                barrier.await();
-                for (String status : asList("503 MELTDOWN", "500 ERROR", "200 OK")) {
-                  try (Socket socket = server.accept()) {
-                    readHttpRequest(socket.getInputStream());
-                    sendLines(
-                        socket,
-                        "HTTP/1.1 " + status,
-                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                        "Connection: close",
-                        "",
-                        "hello");
-                  }
-                }
-                return null;
-              });
-      barrier.await();
-      try (HttpStream stream =
-          multiplexer.connect(
-              URI.create(String.format("http://localhost:%d", server.getLocalPort())),
-              HELLO_SHA256)) {
-        assertThat(toByteArray(stream)).isEqualTo("hello".getBytes(US_ASCII));
-      }
+    @After
+    @Throws(Exception::class)
+    fun after() {
+        executor.shutdown()
     }
-  }
 
-  @Test
-  public void captivePortal_isAvoided() throws Exception {
-    CyclicBarrier barrier = new CyclicBarrier(2);
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> unused =
-          executor.submit(
-              () -> {
-                barrier.await();
-                try (Socket socket = server.accept()) {
-                  readHttpRequest(socket.getInputStream());
-                  sendLines(
-                      socket,
-                      "HTTP/1.1 200 OK",
-                      "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                      "Connection: close",
-                      "",
-                      "Never gonna give you up etc.");
-                }
-                return null;
-              });
-      barrier.await();
-      IOException e =
-          assertThrows(
-              IOException.class,
-              () ->
-                  multiplexer.connect(
-                      URI.create(String.format("http://localhost:%d", server.getLocalPort())),
-                      HELLO_SHA256));
-      assertThat(e).hasMessageThat().containsMatch("Checksum was .+ but wanted");
+    @Test
+    @Throws(Exception::class)
+    fun successWithRetry() {
+        val barrier: CyclicBarrier = CyclicBarrier(2)
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val unused: Future<*>? =
+                executor.submit<Any?>(
+                    Callable {
+                        barrier.await()
+                        for (status in mutableListOf<String?>("503 MELTDOWN", "500 ERROR", "200 OK")) {
+                            server.accept().use { socket ->
+                                readHttpRequest(socket.getInputStream())
+                                DownloaderTestUtils.sendLines(
+                                    socket,
+                                    "HTTP/1.1 " + status,
+                                    "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                    "Connection: close",
+                                    "",
+                                    "hello"
+                                )
+                            }
+                        }
+                        null
+                    })
+            barrier.await()
+            multiplexer.connect(
+                URI.create(String.format("http://localhost:%d", server.getLocalPort())),
+                HELLO_SHA256
+            ).use { stream ->
+                Truth.assertThat(ByteStreams.toByteArray(stream)).isEqualTo(
+                    "hello".toByteArray(
+                        StandardCharsets.US_ASCII
+                    )
+                )
+            }
+        }
     }
-  }
 
-  @Test
-  public void retryButKeepsFailing() throws Exception {
-    CyclicBarrier barrier = new CyclicBarrier(2);
-    try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName(null))) {
-      @SuppressWarnings("unused")
-      Future<?> unused =
-          executor.submit(
-              () -> {
-                barrier.await();
-                while (true) {
-                  try (Socket socket = server.accept()) {
-                    readHttpRequest(socket.getInputStream());
-                    sendLines(
-                        socket,
-                        "HTTP/1.1 503 MELTDOWN",
-                        "Date: Fri, 31 Dec 1999 23:59:59 GMT",
-                        "Connection: close",
-                        "",
-                        "");
-                  }
-                }
-              });
-      barrier.await();
-      IOException e =
-          assertThrows(
-              IOException.class,
-              () ->
-                  multiplexer.connect(
-                      URI.create(String.format("http://localhost:%d", server.getLocalPort())),
-                      HELLO_SHA256));
-      assertThat(e).hasMessageThat().contains("GET returned 503 MELTDOWN");
+    @Test
+    @Throws(Exception::class)
+    fun captivePortal_isAvoided() {
+        val barrier: CyclicBarrier = CyclicBarrier(2)
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val unused: Future<*>? =
+                executor.submit<Any?>(
+                    Callable {
+                        barrier.await()
+                        server.accept().use { socket ->
+                            readHttpRequest(socket.getInputStream())
+                            DownloaderTestUtils.sendLines(
+                                socket,
+                                "HTTP/1.1 200 OK",
+                                "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                "Connection: close",
+                                "",
+                                "Never gonna give you up etc."
+                            )
+                        }
+                        null
+                    })
+            barrier.await()
+            val e: IOException? =
+                Assert.assertThrows<IOException?>(
+                    IOException::class.java,
+                    ThrowingRunnable {
+                        multiplexer.connect(
+                            URI.create(String.format("http://localhost:%d", server.getLocalPort())),
+                            HELLO_SHA256
+                        )
+                    })
+            Truth.assertThat(e).hasMessageThat().containsMatch("Checksum was .+ but wanted")
+        }
     }
-  }
+
+    @Test
+    @Throws(Exception::class)
+    fun retryButKeepsFailing() {
+        val barrier: CyclicBarrier = CyclicBarrier(2)
+        ServerSocket(0, 1, InetAddress.getByName(null)).use { server ->
+            @Suppress("unused") val unused: Future<*>? =
+                executor.submit<Any?>(
+                    Callable {
+                        barrier.await()
+                        while (true) {
+                            server.accept().use { socket ->
+                                readHttpRequest(socket.getInputStream())
+                                DownloaderTestUtils.sendLines(
+                                    socket,
+                                    "HTTP/1.1 503 MELTDOWN",
+                                    "Date: Fri, 31 Dec 1999 23:59:59 GMT",
+                                    "Connection: close",
+                                    "",
+                                    ""
+                                )
+                            }
+                        }
+                    })
+            barrier.await()
+            val e: IOException? =
+                Assert.assertThrows<IOException?>(
+                    IOException::class.java,
+                    ThrowingRunnable {
+                        multiplexer.connect(
+                            URI.create(String.format("http://localhost:%d", server.getLocalPort())),
+                            HELLO_SHA256
+                        )
+                    })
+            Truth.assertThat(e).hasMessageThat().contains("GET returned 503 MELTDOWN")
+        }
+    }
+
+    companion object {
+        private fun makeChecksum(string: String?): Optional<Checksum?> {
+            try {
+                return Optional.of<T?>(Checksum.fromString(KeyType.SHA256, string!!))
+            } catch (e: InvalidChecksumException) {
+                throw IllegalStateException(e)
+            }
+        }
+
+        private val HELLO_SHA256: Optional<Checksum?> =
+            makeChecksum("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+    }
 }

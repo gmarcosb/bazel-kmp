@@ -11,96 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-
-package com.google.devtools.build.lib.analysis;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.packages.AspectClass;
-import com.google.devtools.build.lib.packages.AspectDefinition;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.packages.AspectParameters;
-import com.google.devtools.build.lib.packages.NativeAspectClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.packages.AspectClass
 
 /**
  * Test for AspectDescriptor.
  */
-@RunWith(JUnit4.class)
-public class AspectDescriptorTest {
-
-  @Test
-  public void serializeDescriptorNoArguments() {
-    assertDescription("foobar", "foobar");
-  }
-
-  @Test
-  public void serializeDescriptorArgument() {
-    assertDescription("foobar[x=\"1\"]",
-        "foobar",
-        "x", "1");
-  }
-
-  @Test
-  public void serializeDescriptorArgumentEscaped() {
-    assertDescription("foobar[x=\"\\\"1\\\"\"]",
-        "foobar",
-        "x", "\"1\"");
-  }
-
-
-  @Test
-  public void serializeDescriptorTwoArguments() {
-    assertDescription("foobar[x=\"1\",y=\"2\"]",
-        "foobar",
-        "x", "1",
-        "y", "2");
-  }
-
-  @Test
-  public void serializeDescriptorTwoArgumentsMulti() {
-    assertDescription("foobar[x=\"1\",y=\"2\",y=\"3\"]",
-        "foobar",
-        "x", "1",
-        "y", "2",
-        "y", "3");
-  }
-
-  private static void assertDescription(
-      String description,
-      String aspectClassName,
-      String... params) {
-    assertThat(aspectDescriptor(aspectClass(aspectClassName), params).getDescription())
-        .isEqualTo(description);
-  }
-
-  private static AspectDescriptor aspectDescriptor(
-      AspectClass aspectClass,
-      String... parameters) {
-    assertThat(parameters.length % 2).isEqualTo(0);
-
-    AspectParameters.Builder params = new AspectParameters.Builder();
-    for (int i = 0; i < parameters.length; i += 2) {
-      params.addAttribute(parameters[i], parameters[i + 1]);
+@RunWith(JUnit4::class)
+class AspectDescriptorTest {
+    @org.junit.Test
+    fun serializeDescriptorNoArguments() {
+        assertDescription("foobar", "foobar")
     }
-    return AspectDescriptor.of(aspectClass, params.build());
-  }
 
-  private static AspectClass aspectClass(final String name) {
-    return new NativeAspectClass() {
+    @org.junit.Test
+    fun serializeDescriptorArgument() {
+        assertDescription(
+            "foobar[x=\"1\"]",
+            "foobar",
+            "x", "1"
+        )
+    }
 
-      @Override
-      public String getName() {
-        return name;
-      }
+    @org.junit.Test
+    fun serializeDescriptorArgumentEscaped() {
+        assertDescription(
+            "foobar[x=\"\\\"1\\\"\"]",
+            "foobar",
+            "x", "\"1\""
+        )
+    }
 
-      @Override
-      public AspectDefinition getDefinition(AspectParameters aspectParameters) {
-        throw new UnsupportedOperationException();
-      }
-    };
-  }
+
+    @org.junit.Test
+    fun serializeDescriptorTwoArguments() {
+        assertDescription(
+            "foobar[x=\"1\",y=\"2\"]",
+            "foobar",
+            "x", "1",
+            "y", "2"
+        )
+    }
+
+    @org.junit.Test
+    fun serializeDescriptorTwoArgumentsMulti() {
+        assertDescription(
+            "foobar[x=\"1\",y=\"2\",y=\"3\"]",
+            "foobar",
+            "x", "1",
+            "y", "2",
+            "y", "3"
+        )
+    }
+
+    companion object {
+        private fun assertDescription(
+            description: String?,
+            aspectClassName: String,
+            vararg params: String?
+        ) {
+            assertThat(aspectDescriptor(aspectClass(aspectClassName), *params).getDescription())
+                .isEqualTo(description)
+        }
+
+        private fun aspectDescriptor(
+            aspectClass: AspectClass?,
+            vararg parameters: String?
+        ): AspectDescriptor {
+            Truth.assertThat(parameters.size % 2).isEqualTo(0)
+
+            val params: AspectParameters.Builder = Builder()
+            var i = 0
+            while (i < parameters.size) {
+                params.addAttribute(parameters[i], parameters[i + 1])
+                i += 2
+            }
+            return AspectDescriptor.of(aspectClass, params.build())
+        }
+
+        private fun aspectClass(name: String): AspectClass {
+            return object : NativeAspectClass() {
+                public override fun getName(): String {
+                    return name
+                }
+
+                public override fun getDefinition(aspectParameters: AspectParameters?): AspectDefinition? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+            }
+        }
+    }
 }

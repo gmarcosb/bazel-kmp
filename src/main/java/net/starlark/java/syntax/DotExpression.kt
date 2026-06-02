@@ -11,47 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-/** Syntax node for a dot expression. e.g. obj.field, but not obj.method() */
-public final class DotExpression extends Expression {
+/** Syntax node for a dot expression. e.g. obj.field, but not obj.method()  */
+class DotExpression internal constructor(
+    locs: FileLocations?,
+    `object`: Expression,
+    dotOffset: Int,
+    field: Identifier
+) : Expression(locs, Kind.DOT) {
+    val `object`: Expression
+    private val dotOffset: Int
 
-  private final Expression object;
-  private final int dotOffset;
-  // This Identifier's `binding` is left null by the resolver.
-  private final Identifier field;
+    // This Identifier's `binding` is left null by the resolver.
+    @kotlin.jvm.JvmField
+    val field: Identifier
 
-  DotExpression(FileLocations locs, Expression object, int dotOffset, Identifier field) {
-    super(locs, Kind.DOT);
-    this.object = object;
-    this.dotOffset = dotOffset;
-    this.field = field;
-  }
+    init {
+        this.`object` = `object`
+        this.dotOffset = dotOffset
+        this.field = field
+    }
 
-  public Expression getObject() {
-    return object;
-  }
+    override fun getStartOffset(): Int {
+        return `object`.getStartOffset()
+    }
 
-  public Identifier getField() {
-    return field;
-  }
+    override fun getEndOffset(): Int {
+        return field.getEndOffset()
+    }
 
-  @Override
-  public int getStartOffset() {
-    return object.getStartOffset();
-  }
+    val dotLocation: Location
+        get() = locs.getLocation(dotOffset)
 
-  @Override
-  public int getEndOffset() {
-    return field.getEndOffset();
-  }
-
-  public Location getDotLocation() {
-    return locs.getLocation(dotOffset);
-  }
-
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

@@ -11,125 +11,175 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.authandtls;
+package com.google.devtools.build.lib.authandtls
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.authandtls.Netrc.Credential
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.authandtls.Netrc.Credential;
-import java.io.IOException;
-import java.net.URI;
-import java.util.List;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [NetrcCredentials].  */
+@RunWith(JUnit4::class)
+class NetrcCredentialsTest {
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val requestMetadata_emptyNetrc_returnEmpty: Unit
+        get() {
+            val netrc: Netrc? = Netrc.create(null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+            val netrcCredentials: NetrcCredentials = NetrcCredentials(netrc)
 
-/** Tests for {@link NetrcCredentials}. */
-@RunWith(JUnit4.class)
-public class NetrcCredentialsTest {
+            val requestMetadata: MutableMap<String?, MutableList<String?>?>? =
+                netrcCredentials.getRequestMetadata(java.net.URI.create("https://example.org"))
 
-  private static final String FOO_MACHINE = "foo.example.org";
-  private static final Credential FOO_CREDENTIAL =
-      Credential.builder(FOO_MACHINE).setLogin("foouser").setPassword("foopass").build();
-  private static final String BAR_MACHINE = "bar.example.org";
-  private static final Credential DEFAULT_CREDENTIAL =
-      Credential.builder("default").setLogin("defaultuser").setPassword("defaultpass").build();
+            Truth.assertThat(requestMetadata).isEmpty()
+        }
 
-  @Test
-  public void getRequestMetadata_emptyNetrc_returnEmpty() throws IOException {
-    Netrc netrc = Netrc.create(null, ImmutableMap.of());
-    NetrcCredentials netrcCredentials = new NetrcCredentials(netrc);
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val requestMetadata_matchedMachine_returnMatchedOne: Unit
+        get() {
+            val netrc: Netrc? = Netrc.create(
+                null,
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    FOO_MACHINE,
+                    FOO_CREDENTIAL
+                )
+            )
+            val netrcCredentials: NetrcCredentials = NetrcCredentials(netrc)
 
-    Map<String, List<String>> requestMetadata =
-        netrcCredentials.getRequestMetadata(URI.create("https://example.org"));
+            val fooRequestMetadata: MutableMap<String?, MutableList<String?>?> =
+                netrcCredentials.getRequestMetadata(java.net.URI.create("https://" + FOO_MACHINE))
 
-    assertThat(requestMetadata).isEmpty();
-  }
+            assertRequestMetadata(
+                fooRequestMetadata,
+                FOO_CREDENTIAL.login(),
+                FOO_CREDENTIAL.password()
+            )
+        }
 
-  @Test
-  public void getRequestMetadata_matchedMachine_returnMatchedOne() throws IOException {
-    Netrc netrc = Netrc.create(null, ImmutableMap.of(FOO_MACHINE, FOO_CREDENTIAL));
-    NetrcCredentials netrcCredentials = new NetrcCredentials(netrc);
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val requestMetadata_notMatchedMachine_returnEmpty: Unit
+        get() {
+            val netrc: Netrc? = Netrc.create(
+                null,
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    FOO_MACHINE,
+                    FOO_CREDENTIAL
+                )
+            )
+            val netrcCredentials: NetrcCredentials = NetrcCredentials(netrc)
 
-    Map<String, List<String>> fooRequestMetadata =
-        netrcCredentials.getRequestMetadata(URI.create("https://" + FOO_MACHINE));
+            val barRequestMetadata: MutableMap<String?, MutableList<String?>?>? =
+                netrcCredentials.getRequestMetadata(java.net.URI.create("https://" + BAR_MACHINE))
 
-    assertRequestMetadata(fooRequestMetadata, FOO_CREDENTIAL.login(), FOO_CREDENTIAL.password());
-  }
+            Truth.assertThat(barRequestMetadata).isEmpty()
+        }
 
-  @Test
-  public void getRequestMetadata_notMatchedMachine_returnEmpty() throws IOException {
-    Netrc netrc = Netrc.create(null, ImmutableMap.of(FOO_MACHINE, FOO_CREDENTIAL));
-    NetrcCredentials netrcCredentials = new NetrcCredentials(netrc);
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val requestMetadata_notMatchedMachine_returnDefault: Unit
+        get() {
+            val netrc: Netrc? = Netrc.create(
+                DEFAULT_CREDENTIAL,
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    FOO_MACHINE,
+                    FOO_CREDENTIAL
+                )
+            )
+            val netrcCredentials: NetrcCredentials = NetrcCredentials(netrc)
 
-    Map<String, List<String>> barRequestMetadata =
-        netrcCredentials.getRequestMetadata(URI.create("https://" + BAR_MACHINE));
+            val barRequestMetadata: MutableMap<String?, MutableList<String?>?> =
+                netrcCredentials.getRequestMetadata(java.net.URI.create("https://" + BAR_MACHINE))
 
-    assertThat(barRequestMetadata).isEmpty();
-  }
+            assertRequestMetadata(
+                barRequestMetadata,
+                DEFAULT_CREDENTIAL.login(),
+                DEFAULT_CREDENTIAL.password()
+            )
+        }
 
-  @Test
-  public void getRequestMetadata_notMatchedMachine_returnDefault() throws IOException {
-    Netrc netrc = Netrc.create(DEFAULT_CREDENTIAL, ImmutableMap.of(FOO_MACHINE, FOO_CREDENTIAL));
-    NetrcCredentials netrcCredentials = new NetrcCredentials(netrc);
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val requestMetadata_emptyLogin: Unit
+        get() {
+            val netrc: Netrc? =
+                Netrc.create(
+                    null,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        FOO_MACHINE,
+                        Credential.builder(FOO_MACHINE)
+                            .setPassword(FOO_CREDENTIAL.password()).build()
+                    )
+                )
+            val netrcCredentials: NetrcCredentials = NetrcCredentials(netrc)
 
-    Map<String, List<String>> barRequestMetadata =
-        netrcCredentials.getRequestMetadata(URI.create("https://" + BAR_MACHINE));
+            val fooRequestMetadata: MutableMap<String?, MutableList<String?>?> =
+                netrcCredentials.getRequestMetadata(java.net.URI.create("https://" + FOO_MACHINE))
 
-    assertRequestMetadata(
-        barRequestMetadata, DEFAULT_CREDENTIAL.login(), DEFAULT_CREDENTIAL.password());
-  }
+            assertRequestMetadata(
+                fooRequestMetadata,
+                "",
+                FOO_CREDENTIAL.password()
+            )
+        }
 
-  @Test
-  public void getRequestMetadata_emptyLogin() throws IOException {
-    Netrc netrc =
-        Netrc.create(
-            null,
-            ImmutableMap.of(
-                FOO_MACHINE,
-                Credential.builder(FOO_MACHINE).setPassword(FOO_CREDENTIAL.password()).build()));
-    NetrcCredentials netrcCredentials = new NetrcCredentials(netrc);
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val requestMetadata_emptyPassword: Unit
+        get() {
+            val netrc: Netrc? =
+                Netrc.create(
+                    null,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        FOO_MACHINE,
+                        Credential.builder(FOO_MACHINE)
+                            .setLogin(FOO_CREDENTIAL.login()).build()
+                    )
+                )
+            val netrcCredentials: NetrcCredentials = NetrcCredentials(netrc)
 
-    Map<String, List<String>> fooRequestMetadata =
-        netrcCredentials.getRequestMetadata(URI.create("https://" + FOO_MACHINE));
+            val fooRequestMetadata: MutableMap<String?, MutableList<String?>?> =
+                netrcCredentials.getRequestMetadata(java.net.URI.create("https://" + FOO_MACHINE))
 
-    assertRequestMetadata(fooRequestMetadata, "", FOO_CREDENTIAL.password());
-  }
+            assertRequestMetadata(
+                fooRequestMetadata,
+                FOO_CREDENTIAL.login(),
+                ""
+            )
+        }
 
-  @Test
-  public void getRequestMetadata_emptyPassword() throws IOException {
-    Netrc netrc =
-        Netrc.create(
-            null,
-            ImmutableMap.of(
-                FOO_MACHINE,
-                Credential.builder(FOO_MACHINE).setLogin(FOO_CREDENTIAL.login()).build()));
-    NetrcCredentials netrcCredentials = new NetrcCredentials(netrc);
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val requestMetadata_emptyLoginAndPassword: Unit
+        get() {
+            val netrc: Netrc? =
+                Netrc.create(
+                    null,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        FOO_MACHINE,
+                        Credential.builder(FOO_MACHINE).build()
+                    )
+                )
+            val netrcCredentials: NetrcCredentials = NetrcCredentials(netrc)
 
-    Map<String, List<String>> fooRequestMetadata =
-        netrcCredentials.getRequestMetadata(URI.create("https://" + FOO_MACHINE));
+            val fooRequestMetadata: MutableMap<String?, MutableList<String?>?> =
+                netrcCredentials.getRequestMetadata(java.net.URI.create("https://" + FOO_MACHINE))
 
-    assertRequestMetadata(fooRequestMetadata, FOO_CREDENTIAL.login(), "");
-  }
+            assertRequestMetadata(fooRequestMetadata, "", "")
+        }
 
-  @Test
-  public void getRequestMetadata_emptyLoginAndPassword() throws IOException {
-    Netrc netrc =
-        Netrc.create(null, ImmutableMap.of(FOO_MACHINE, Credential.builder(FOO_MACHINE).build()));
-    NetrcCredentials netrcCredentials = new NetrcCredentials(netrc);
+    companion object {
+        private const val FOO_MACHINE = "foo.example.org"
+        private val FOO_CREDENTIAL: Credential =
+            Credential.builder(FOO_MACHINE).setLogin("foouser").setPassword("foopass").build()
+        private const val BAR_MACHINE = "bar.example.org"
+        private val DEFAULT_CREDENTIAL: Credential =
+            Credential.builder("default").setLogin("defaultuser").setPassword("defaultpass").build()
 
-    Map<String, List<String>> fooRequestMetadata =
-        netrcCredentials.getRequestMetadata(URI.create("https://" + FOO_MACHINE));
-
-    assertRequestMetadata(fooRequestMetadata, "", "");
-  }
-
-  private static void assertRequestMetadata(
-      Map<String, List<String>> requestMetadata, String username, String password) {
-    assertThat(requestMetadata.keySet()).containsExactly("Authorization");
-    assertThat(Iterables.getOnlyElement(requestMetadata.values()))
-        .containsExactly(BasicHttpAuthenticationEncoder.encode(username, password));
-  }
+        private fun assertRequestMetadata(
+            requestMetadata: MutableMap<String?, MutableList<String?>?>, username: String?, password: String?
+        ) {
+            Truth.assertThat(requestMetadata.keys).containsExactly("Authorization")
+            Truth.assertThat(com.google.common.collect.Iterables.getOnlyElement<MutableList<String?>?>(requestMetadata.values))
+                .containsExactly(BasicHttpAuthenticationEncoder.encode(username, password))
+        }
+    }
 }

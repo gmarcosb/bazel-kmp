@@ -11,106 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.rules.cpp.CppOptions;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests of @link OptionsDiff}.  */
+@RunWith(JUnit4::class)
+class OptionsDiffTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun diff() {
+        val one: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=opt", "cpu=k8")
+        val two: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=dbg", "cpu=k8")
+        val three: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=dbg", "cpu=k8")
 
-/** Tests of @link OptionsDiff}. */
-@RunWith(JUnit4.class)
-public class OptionsDiffTest {
-  private static final ImmutableList<Class<? extends FragmentOptions>> BUILD_CONFIG_OPTIONS =
-      ImmutableList.of(CoreOptions.class);
+        val diffOneTwo: OptionsDiff = OptionsDiff.diff(one, two)
+        val diffTwoThree: OptionsDiff = OptionsDiff.diff(two, three)
 
-  @Test
-  public void diff() throws Exception {
-    BuildOptions one = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=opt", "cpu=k8");
-    BuildOptions two = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=dbg", "cpu=k8");
-    BuildOptions three = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=dbg", "cpu=k8");
+        assertThat(diffOneTwo.areSame()).isFalse()
+        assertThat(diffOneTwo.getFirst().keySet()).isEqualTo(diffOneTwo.getSecond().keySet())
+        com.google.common.truth.Subject.contains("opt")
+        com.google.common.truth.Subject.contains("dbg")
 
-    OptionsDiff diffOneTwo = OptionsDiff.diff(one, two);
-    OptionsDiff diffTwoThree = OptionsDiff.diff(two, three);
+        assertThat(diffTwoThree.areSame()).isTrue()
+    }
 
-    assertThat(diffOneTwo.areSame()).isFalse();
-    assertThat(diffOneTwo.getFirst().keySet()).isEqualTo(diffOneTwo.getSecond().keySet());
-    assertThat(diffOneTwo.prettyPrint()).contains("opt");
-    assertThat(diffOneTwo.prettyPrint()).contains("dbg");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun diff_differentFragments() {
+        val one: BuildOptions? = BuildOptions.of(com.google.common.collect.ImmutableList.of<E?>(CppOptions::class.java))
+        val two: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-    assertThat(diffTwoThree.areSame()).isTrue();
-  }
+        val diff: OptionsDiff = OptionsDiff.diff(one, two)
 
-  @Test
-  public void diff_differentFragments() throws Exception {
-    BuildOptions one = BuildOptions.of(ImmutableList.of(CppOptions.class));
-    BuildOptions two = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+        assertThat(diff.areSame()).isFalse()
+        assertThat(diff.getExtraFirstFragmentClassesForTesting()).containsExactly(CppOptions::class.java)
+        assertThat(
+            diff.getExtraSecondFragmentsForTesting().stream().map(FragmentOptions::getOptionsClass)
+        )
+            .containsExactlyElementsIn(BUILD_CONFIG_OPTIONS)
+    }
 
-    OptionsDiff diff = OptionsDiff.diff(one, two);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun biff_nullOptionsThrow() {
+        val options: BuildOptions? =
+            BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=opt", "cpu=k8")
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { OptionsDiff.diff(options, null) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { OptionsDiff.diff(null, options) })
+    }
 
-    assertThat(diff.areSame()).isFalse();
-    assertThat(diff.getExtraFirstFragmentClassesForTesting()).containsExactly(CppOptions.class);
-    assertThat(
-            diff.getExtraSecondFragmentsForTesting().stream().map(FragmentOptions::getOptionsClass))
-        .containsExactlyElementsIn(BUILD_CONFIG_OPTIONS);
-  }
+    @org.junit.Test
+    fun diff_sameStarlarkOptions() {
+        val flagName: Label = Label.parseCanonicalUnchecked("//foo/flag")
+        val flagValue = "value"
+        val one: BuildOptions? = BuildOptions.of(com.google.common.collect.ImmutableMap.of<K?, V?>(flagName, flagValue))
+        val two: BuildOptions? = BuildOptions.of(com.google.common.collect.ImmutableMap.of<K?, V?>(flagName, flagValue))
 
-  @Test
-  public void biff_nullOptionsThrow() throws Exception {
-    BuildOptions options =
-        BuildOptions.of(BUILD_CONFIG_OPTIONS, "--compilation_mode=opt", "cpu=k8");
-    assertThrows(NullPointerException.class, () -> OptionsDiff.diff(options, null));
-    assertThrows(NullPointerException.class, () -> OptionsDiff.diff(null, options));
-  }
+        assertThat(OptionsDiff.diff(one, two).areSame()).isTrue()
+    }
 
-  @Test
-  public void diff_sameStarlarkOptions() {
-    Label flagName = Label.parseCanonicalUnchecked("//foo/flag");
-    String flagValue = "value";
-    BuildOptions one = BuildOptions.of(ImmutableMap.of(flagName, flagValue));
-    BuildOptions two = BuildOptions.of(ImmutableMap.of(flagName, flagValue));
+    @org.junit.Test
+    fun diff_differentStarlarkOptions() {
+        val flagName: Label = Label.parseCanonicalUnchecked("//bar/flag")
+        val flagValueOne = "valueOne"
+        val flagValueTwo = "valueTwo"
+        val one: BuildOptions? =
+            BuildOptions.of(com.google.common.collect.ImmutableMap.of<K?, V?>(flagName, flagValueOne))
+        val two: BuildOptions? =
+            BuildOptions.of(com.google.common.collect.ImmutableMap.of<K?, V?>(flagName, flagValueTwo))
 
-    assertThat(OptionsDiff.diff(one, two).areSame()).isTrue();
-  }
+        val diff: OptionsDiff = OptionsDiff.diff(one, two)
 
-  @Test
-  public void diff_differentStarlarkOptions() {
-    Label flagName = Label.parseCanonicalUnchecked("//bar/flag");
-    String flagValueOne = "valueOne";
-    String flagValueTwo = "valueTwo";
-    BuildOptions one = BuildOptions.of(ImmutableMap.of(flagName, flagValueOne));
-    BuildOptions two = BuildOptions.of(ImmutableMap.of(flagName, flagValueTwo));
+        assertThat(diff.areSame()).isFalse()
+        assertThat(diff.getStarlarkFirstForTesting().keySet())
+            .isEqualTo(diff.getStarlarkSecondForTesting().keySet())
+        assertThat(diff.getStarlarkFirstForTesting().keySet()).containsExactly(flagName)
+        assertThat(diff.getStarlarkFirstForTesting().values()).containsExactly(flagValueOne)
+        assertThat(diff.getStarlarkSecondForTesting().values()).containsExactly(flagValueTwo)
+    }
 
-    OptionsDiff diff = OptionsDiff.diff(one, two);
+    @org.junit.Test
+    fun diff_extraStarlarkOptions() {
+        val flagNameOne: Label = Label.parseCanonicalUnchecked("//extra/flag/one")
+        val flagNameTwo: Label = Label.parseCanonicalUnchecked("//extra/flag/two")
+        val flagValue = "foo"
+        val one: BuildOptions? =
+            BuildOptions.of(com.google.common.collect.ImmutableMap.of<K?, V?>(flagNameOne, flagValue))
+        val two: BuildOptions? =
+            BuildOptions.of(com.google.common.collect.ImmutableMap.of<K?, V?>(flagNameTwo, flagValue))
 
-    assertThat(diff.areSame()).isFalse();
-    assertThat(diff.getStarlarkFirstForTesting().keySet())
-        .isEqualTo(diff.getStarlarkSecondForTesting().keySet());
-    assertThat(diff.getStarlarkFirstForTesting().keySet()).containsExactly(flagName);
-    assertThat(diff.getStarlarkFirstForTesting().values()).containsExactly(flagValueOne);
-    assertThat(diff.getStarlarkSecondForTesting().values()).containsExactly(flagValueTwo);
-  }
+        val diff: OptionsDiff = OptionsDiff.diff(one, two)
 
-  @Test
-  public void diff_extraStarlarkOptions() {
-    Label flagNameOne = Label.parseCanonicalUnchecked("//extra/flag/one");
-    Label flagNameTwo = Label.parseCanonicalUnchecked("//extra/flag/two");
-    String flagValue = "foo";
-    BuildOptions one = BuildOptions.of(ImmutableMap.of(flagNameOne, flagValue));
-    BuildOptions two = BuildOptions.of(ImmutableMap.of(flagNameTwo, flagValue));
+        assertThat(diff.areSame()).isFalse()
+        assertThat(diff.getExtraStarlarkOptionsFirstForTesting()).containsExactly(flagNameOne)
+        assertThat(diff.getExtraStarlarkOptionsSecondForTesting().entrySet())
+            .containsExactly(com.google.common.collect.Maps.immutableEntry<K?, V?>(flagNameTwo, flagValue))
+    }
 
-    OptionsDiff diff = OptionsDiff.diff(one, two);
-
-    assertThat(diff.areSame()).isFalse();
-    assertThat(diff.getExtraStarlarkOptionsFirstForTesting()).containsExactly(flagNameOne);
-    assertThat(diff.getExtraStarlarkOptionsSecondForTesting().entrySet())
-        .containsExactly(Maps.immutableEntry(flagNameTwo, flagValue));
-  }
+    companion object {
+        private val BUILD_CONFIG_OPTIONS: com.google.common.collect.ImmutableList<java.lang.Class<out FragmentOptions?>?> =
+            com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java)
+    }
 }

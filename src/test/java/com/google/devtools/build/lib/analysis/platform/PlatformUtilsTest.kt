@@ -11,91 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import build.bazel.remote.execution.v2.Platform
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.common.options.Options
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [PlatformUtils]  */
+@RunWith(JUnit4::class)
+class PlatformUtilsTest {
+    @Test
+    @Throws(Exception::class)
+    fun testParsePlatformSortsProperties() {
+        val expected: Platform? =
+            Platform.newBuilder()
+                .addProperties(Platform.Property.newBuilder().setName("a").setValue("1"))
+                .addProperties(Platform.Property.newBuilder().setName("b").setValue("2"))
+                .build()
+        val s: Spawn = SpawnBuilder("dummy").build()
+        assertThat(PlatformUtils.getPlatformProto(s, remoteOptions())).isEqualTo(expected)
+    }
 
-import build.bazel.remote.execution.v2.Platform;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.common.options.Options;
-import java.util.AbstractMap;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    @Throws(Exception::class)
+    fun testParsePlatformHandlesNull() {
+        val s: Spawn = SpawnBuilder("dummy").build()
+        assertThat(PlatformUtils.getPlatformProto(s, null)).isEqualTo(null)
+    }
 
-/** Tests for {@link PlatformUtils } */
-@RunWith(JUnit4.class)
-public final class PlatformUtilsTest {
+    @Test
+    @Throws(Exception::class)
+    fun testParsePlatformSortsProperties_execProperties() {
+        // execProperties are chosen even if there are remoteOptions
+        val map = ImmutableMap.of<String?, String?>("aa", "99", "zz", "66", "dd", "11")
+        val s: Spawn = SpawnBuilder("dummy").withCombinedExecProperties(map).build()
 
-  private static RemoteOptions remoteOptions() {
-    RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    remoteOptions.setRemoteDefaultExecPropertiesField(
-        ImmutableList.of(
-            new AbstractMap.SimpleEntry<>("b", "2"), new AbstractMap.SimpleEntry<>("a", "1")));
-    return remoteOptions;
-  }
+        val expected: Platform? =
+            Platform.newBuilder()
+                .addProperties(Platform.Property.newBuilder().setName("aa").setValue("99"))
+                .addProperties(Platform.Property.newBuilder().setName("dd").setValue("11"))
+                .addProperties(Platform.Property.newBuilder().setName("zz").setValue("66"))
+                .build()
+        // execProperties are sorted by key
+        assertThat(PlatformUtils.getPlatformProto(s, null)).isEqualTo(expected)
+    }
 
-  @Test
-  public void testParsePlatformSortsProperties() throws Exception {
-    Platform expected =
-        Platform.newBuilder()
-            .addProperties(Platform.Property.newBuilder().setName("a").setValue("1"))
-            .addProperties(Platform.Property.newBuilder().setName("b").setValue("2"))
-            .build();
-    Spawn s = new SpawnBuilder("dummy").build();
-    assertThat(PlatformUtils.getPlatformProto(s, remoteOptions())).isEqualTo(expected);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun getPlatformProto_mergeTargetExecPropertiesWithPlatform() {
+        val spawn: Spawn =
+            SpawnBuilder("dummy").withCombinedExecProperties(ImmutableMap.of<String?, String?>("c", "3")).build()
+        val expected: Platform? =
+            Platform.newBuilder()
+                .addProperties(Platform.Property.newBuilder().setName("a").setValue("1"))
+                .addProperties(Platform.Property.newBuilder().setName("b").setValue("2"))
+                .addProperties(Platform.Property.newBuilder().setName("c").setValue("3"))
+                .build()
+        assertThat(PlatformUtils.getPlatformProto(spawn, remoteOptions())).isEqualTo(expected)
+    }
 
-  @Test
-  public void testParsePlatformHandlesNull() throws Exception {
-    Spawn s = new SpawnBuilder("dummy").build();
-    assertThat(PlatformUtils.getPlatformProto(s, null)).isEqualTo(null);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun getPlatformProto_targetExecPropertiesConflictWithPlatform_override() {
+        val spawn: Spawn =
+            SpawnBuilder("dummy").withCombinedExecProperties(ImmutableMap.of<String?, String?>("b", "3")).build()
+        val expected: Platform? =
+            Platform.newBuilder()
+                .addProperties(Platform.Property.newBuilder().setName("a").setValue("1"))
+                .addProperties(Platform.Property.newBuilder().setName("b").setValue("3"))
+                .build()
+        assertThat(PlatformUtils.getPlatformProto(spawn, remoteOptions())).isEqualTo(expected)
+    }
 
-  @Test
-  public void testParsePlatformSortsProperties_execProperties() throws Exception {
-    // execProperties are chosen even if there are remoteOptions
-    ImmutableMap<String, String> map = ImmutableMap.of("aa", "99", "zz", "66", "dd", "11");
-    Spawn s = new SpawnBuilder("dummy").withCombinedExecProperties(map).build();
-
-    Platform expected =
-        Platform.newBuilder()
-            .addProperties(Platform.Property.newBuilder().setName("aa").setValue("99"))
-            .addProperties(Platform.Property.newBuilder().setName("dd").setValue("11"))
-            .addProperties(Platform.Property.newBuilder().setName("zz").setValue("66"))
-            .build();
-    // execProperties are sorted by key
-    assertThat(PlatformUtils.getPlatformProto(s, null)).isEqualTo(expected);
-  }
-
-  @Test
-  public void getPlatformProto_mergeTargetExecPropertiesWithPlatform() throws Exception {
-    Spawn spawn =
-        new SpawnBuilder("dummy").withCombinedExecProperties(ImmutableMap.of("c", "3")).build();
-    Platform expected =
-        Platform.newBuilder()
-            .addProperties(Platform.Property.newBuilder().setName("a").setValue("1"))
-            .addProperties(Platform.Property.newBuilder().setName("b").setValue("2"))
-            .addProperties(Platform.Property.newBuilder().setName("c").setValue("3"))
-            .build();
-    assertThat(PlatformUtils.getPlatformProto(spawn, remoteOptions())).isEqualTo(expected);
-  }
-
-  @Test
-  public void getPlatformProto_targetExecPropertiesConflictWithPlatform_override()
-      throws Exception {
-    Spawn spawn =
-        new SpawnBuilder("dummy").withCombinedExecProperties(ImmutableMap.of("b", "3")).build();
-    Platform expected =
-        Platform.newBuilder()
-            .addProperties(Platform.Property.newBuilder().setName("a").setValue("1"))
-            .addProperties(Platform.Property.newBuilder().setName("b").setValue("3"))
-            .build();
-    assertThat(PlatformUtils.getPlatformProto(spawn, remoteOptions())).isEqualTo(expected);
-  }
+    companion object {
+        private fun remoteOptions(): RemoteOptions {
+            val remoteOptions: RemoteOptions = Options.getDefaults<O>(RemoteOptions::class.java)
+            remoteOptions.setRemoteDefaultExecPropertiesField(
+                ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>(
+                    AbstractMap.SimpleEntry<String?, String?>("b", "2"),
+                    AbstractMap.SimpleEntry<String?, String?>("a", "1")
+                )
+            )
+            return remoteOptions
+        }
+    }
 }

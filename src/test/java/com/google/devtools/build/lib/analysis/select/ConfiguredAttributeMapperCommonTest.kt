@@ -11,27 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.select;
+package com.google.devtools.build.lib.analysis.select
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.packages.AbstractAttributeMapper;
-import com.google.devtools.build.lib.packages.ConfiguredAttributeMapper;
-import com.google.devtools.build.lib.packages.Rule;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.packages.AbstractAttributeMapper
 
 /**
- * Tests that {@link ConfiguredAttributeMapper} fulfills all behavior expected of {@link
- * AbstractAttributeMapper}.
- *
- * <p>This is distinct from {@link ConfiguredAttributeMapperTest} because the latter needs to
- * inherit from {@link com.google.devtools.build.lib.analysis.util.BuildViewTestCase} to run tests
+ * Tests that [ConfiguredAttributeMapper] fulfills all behavior expected of [ ].
+ * 
+ * 
+ * This is distinct from [ConfiguredAttributeMapperTest] because the latter needs to
+ * inherit from [com.google.devtools.build.lib.analysis.util.BuildViewTestCase] to run tests
  * with build configurations.
  */
-@RunWith(JUnit4.class)
-public class ConfiguredAttributeMapperCommonTest extends AbstractAttributeMapperTest {
-  @Override
-  protected AbstractAttributeMapper createMapper(Rule rule) {
-    return ConfiguredAttributeMapper.of(rule, ImmutableMap.of(), targetConfig);
-  }
+@RunWith(JUnit4::class)
+class ConfiguredAttributeMapperCommonTest : AbstractAttributeMapperTest() {
+    override fun createMapper(rule: Rule?): AbstractAttributeMapper {
+        return ConfiguredAttributeMapper.of(rule, ImmutableMap.of<K?, V?>(), targetConfig)
+    }
 }

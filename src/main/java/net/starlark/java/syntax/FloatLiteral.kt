@@ -11,41 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
 /**
  * Syntax node for a float literal. The literal's value may be negative, since the parser simplifies
  * a unary minus operation applied on a positive float literal into a negative float literal.
  */
-public final class FloatLiteral extends Expression {
-  private final int tokenOffset;
-  private final int endOffset;
-  private final double value;
+class FloatLiteral internal constructor(locs: FileLocations?, tokenOffset: Int, endOffset: Int, value: Double) :
+    Expression(locs, Kind.FLOAT_LITERAL) {
+    private val tokenOffset: Int
+    private val endOffset: Int
 
-  FloatLiteral(FileLocations locs, int tokenOffset, int endOffset, double value) {
-    super(locs, Kind.FLOAT_LITERAL);
-    this.tokenOffset = tokenOffset;
-    this.endOffset = endOffset;
-    this.value = value;
-  }
+    /** Returns the value denoted by this literal.  */
+    @kotlin.jvm.JvmField
+    val value: Double
 
-  /** Returns the value denoted by this literal. */
-  public double getValue() {
-    return value;
-  }
+    init {
+        this.tokenOffset = tokenOffset
+        this.endOffset = endOffset
+        this.value = value
+    }
 
-  @Override
-  public int getStartOffset() {
-    return tokenOffset;
-  }
+    override fun getStartOffset(): Int {
+        return tokenOffset
+    }
 
-  @Override
-  public int getEndOffset() {
-    return endOffset;
-  }
+    override fun getEndOffset(): Int {
+        return endOffset
+    }
 
-  @Override
-  public void accept(NodeVisitor visitor) {
-    visitor.visit(this);
-  }
+    override fun accept(visitor: NodeVisitor) {
+        visitor.visit(this)
+    }
 }

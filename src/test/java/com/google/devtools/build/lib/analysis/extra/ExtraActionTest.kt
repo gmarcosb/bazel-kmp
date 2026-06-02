@@ -11,267 +11,238 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.extra;
+package com.google.devtools.build.lib.analysis.extra
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_LABEL;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.ensureMemoizedIsInitializedIsSet;
-import static com.google.devtools.build.lib.skyframe.serialization.testutils.Dumper.dumpStructureWithEquivalenceReduction;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionEnvironment;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.BuildConfigurationEvent;
-import com.google.devtools.build.lib.actions.CommandLine;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnStrategy;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.actions.extra.ExtraActionInfo;
-import com.google.devtools.build.lib.actions.extra.JavaCompileInfo;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.InputDiscoveringNullAction;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.NullAction;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.exec.BlazeExecutor;
-import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.skyframe.serialization.ArrayCodec;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationDepsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.util.HashMap;
-import java.util.Map;
-import net.starlark.java.syntax.Location;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentMatchers;
-import org.mockito.Mockito;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache
+import com.google.devtools.build.lib.skyframe.serialization.testutils.Dumper.dumpStructureWithEquivalenceReduction
+import net.starlark.java.syntax.Location
+import org.junit.Test
 
 /**
  * Unit tests for ExtraAction class.
  */
-@RunWith(JUnit4.class)
-public class ExtraActionTest extends FoundationTestCase {
+@RunWith(JUnit4::class)
+class ExtraActionTest : FoundationTestCase() {
+    private val actionKeyContext: ActionKeyContext = ActionKeyContext()
 
-  private final ActionKeyContext actionKeyContext = new ActionKeyContext();
+    private class SpecifiedInfoAction(info: ExtraActionInfo) : NullAction() {
+        private val info: ExtraActionInfo
 
-  private static class SpecifiedInfoAction extends NullAction {
-    private final ExtraActionInfo info;
+        init {
+            this.info = info
+        }
 
-    private SpecifiedInfoAction(ExtraActionInfo info) {
-      this.info = info;
+        public override fun getExtraActionInfo(actionKeyContext: ActionKeyContext?): ExtraActionInfo.Builder {
+            return info.toBuilder()
+        }
     }
 
-    @Override
-    public ExtraActionInfo.Builder getExtraActionInfo(ActionKeyContext actionKeyContext) {
-      return info.toBuilder();
+    @Test
+    @Throws(Exception::class)
+    fun testExtraActionInfoAffectsMnemonic() {
+        val infoOne: ExtraActionInfo = ExtraActionInfo.newBuilder()
+            .setExtension(
+                JavaCompileInfo.javaCompileInfo,
+                JavaCompileInfo.newBuilder().addSourceFile("one").build()
+            )
+            .build()
+
+        val infoTwo: ExtraActionInfo = ExtraActionInfo.newBuilder()
+            .setExtension(
+                JavaCompileInfo.javaCompileInfo,
+                JavaCompileInfo.newBuilder().addSourceFile("two").build()
+            )
+            .build()
+
+        val execRoot: Path? = scratch.getFileSystem().getPath("/")
+        val root: ArtifactRoot? = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out")
+        val output: Artifact? = ActionsTestUtil.Companion.createArtifact(root, scratch.file("/out/test.out"))
+        val actionOne: Action = ExtraActionInfoFileWriteAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER, output,
+            SpecifiedInfoAction(infoOne)
+        )
+        val actionTwo: Action = ExtraActionInfoFileWriteAction(
+            ActionsTestUtil.Companion.NULL_ACTION_OWNER, output,
+            SpecifiedInfoAction(infoTwo)
+        )
+
+        assertThat(actionOne.getKey(actionKeyContext,  /* inputMetadataProvider= */null))
+            .isNotEqualTo(actionTwo.getKey(actionKeyContext,  /* inputMetadataProvider= */null))
     }
-  }
 
-  @Test
-  public void testExtraActionInfoAffectsMnemonic() throws Exception {
-    ExtraActionInfo infoOne = ExtraActionInfo.newBuilder()
-        .setExtension(
-            JavaCompileInfo.javaCompileInfo,
-            JavaCompileInfo.newBuilder().addSourceFile("one").build())
-        .build();
+    /**
+     * Regression test. The Spawn created for extra actions needs to pass the environment of the extra
+     * action by getting the result of SpawnAction.getEnvironment() method instead of relying on the
+     * default field value of BaseSpawn.environment.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testEnvironmentPassedOnOverwrite() {
+        val execRoot: Path? = scratch.getFileSystem().getPath("/")
+        val out: ArtifactRoot? = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out")
+        val extraAction: ExtraAction =
+            ExtraAction(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),
+                ImmutableSet.of<E?>(
+                    ActionsTestUtil.Companion.createArtifact(
+                        out,
+                        scratch.file("/out/test.out")
+                    ) as Artifact.DerivedArtifact?
+                ),
+                NullAction(),
+                false,
+                CommandLine.of(ImmutableList.of<E?>("one", "two", "thee")),
+                ActionEnvironment.create(ImmutableMap.of<K?, V?>("TEST", "TEST_VALUE")),
+                ImmutableMap.of<K?, V?>(),
+                "Executing extra action bla bla",
+                "bla bla"
+            )
 
-    ExtraActionInfo infoTwo = ExtraActionInfo.newBuilder()
-        .setExtension(
-            JavaCompileInfo.javaCompileInfo,
-            JavaCompileInfo.newBuilder().addSourceFile("two").build())
-        .build();
+        val spawnEnvironment: MutableMap<String?, String?> = HashMap<String?, String?>()
+        val fakeSpawnStrategy: SpawnStrategy =
+            object : SpawnStrategy() {
+                public override fun exec(
+                    spawn: Spawn, actionExecutionContext: ActionExecutionContext?
+                ): ImmutableList<SpawnResult?> {
+                    spawnEnvironment.putAll(spawn.getEnvironment())
+                    return ImmutableList.of<SpawnResult?>()
+                }
 
-    Path execRoot = scratch.getFileSystem().getPath("/");
-    ArtifactRoot root = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out");
-    Artifact output = ActionsTestUtil.createArtifact(root, scratch.file("/out/test.out"));
-    Action actionOne = new ExtraActionInfoFileWriteAction(ActionsTestUtil.NULL_ACTION_OWNER, output,
-        new SpecifiedInfoAction(infoOne));
-    Action actionTwo = new ExtraActionInfoFileWriteAction(ActionsTestUtil.NULL_ACTION_OWNER, output,
-        new SpecifiedInfoAction(infoTwo));
+                public override fun canExec(
+                    spawn: Spawn?, actionContextRegistry: ActionContext.ActionContextRegistry?
+                ): Boolean {
+                    return true
+                }
+            }
 
-    assertThat(actionOne.getKey(actionKeyContext, /* inputMetadataProvider= */ null))
-        .isNotEqualTo(actionTwo.getKey(actionKeyContext, /* inputMetadataProvider= */ null));
-  }
+        val testExecutor: BlazeExecutor? =
+            TestExecutorBuilder(fileSystem, execRoot)
+                .addStrategy(fakeSpawnStrategy, "fake")
+                .setDefaultStrategies("fake")
+                .build()
 
-  /**
-   * Regression test. The Spawn created for extra actions needs to pass the environment of the extra
-   * action by getting the result of SpawnAction.getEnvironment() method instead of relying on the
-   * default field value of BaseSpawn.environment.
-   */
-  @Test
-  public void testEnvironmentPassedOnOverwrite() throws Exception {
-    Path execRoot = scratch.getFileSystem().getPath("/");
-    ArtifactRoot out = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out");
-    ExtraAction extraAction =
-        new ExtraAction(
-            NULL_ACTION_OWNER,
-            NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            ImmutableSet.of(
-                (Artifact.DerivedArtifact)
-                    ActionsTestUtil.createArtifact(out, scratch.file("/out/test.out"))),
-            new NullAction(),
-            false,
-            CommandLine.of(ImmutableList.of("one", "two", "thee")),
-            ActionEnvironment.create(ImmutableMap.of("TEST", "TEST_VALUE")),
-            ImmutableMap.of(),
-            "Executing extra action bla bla",
-            "bla bla");
+        val actionResult: ActionResult =
+            extraAction.execute(
+                ActionExecutionContext(
+                    testExecutor,
+                    FakeActionInputFileCache(),
+                    ActionInputPrefetcher.NONE,
+                    actionKeyContext,  /* outputMetadataStore= */
+                    null,  /* rewindingEnabled= */
+                    false,
+                    LostInputsCheck.NONE,  /* fileOutErr= */
+                    null,  /* eventHandler= */
+                    null,  /* clientEnv= */
+                    ImmutableMap.of<K?, V?>(),  /* actionFileSystem= */
+                    null,
+                    DiscoveredModulesPruner.DEFAULT,
+                    SyscallCache.NO_CACHE,
+                    ThreadStateReceiver.NULL_INSTANCE
+                )
+            )
+        assertThat(actionResult.spawnResults()).isEmpty()
+        Truth.assertThat(spawnEnvironment.get("TEST")).isNotNull()
+        Truth.assertThat(spawnEnvironment).containsEntry("TEST", "TEST_VALUE")
+    }
 
-    final Map<String, String> spawnEnvironment = new HashMap<>();
-    SpawnStrategy fakeSpawnStrategy =
-        new SpawnStrategy() {
-          @Override
-          public ImmutableList<SpawnResult> exec(
-              Spawn spawn, ActionExecutionContext actionExecutionContext) {
-            spawnEnvironment.putAll(spawn.getEnvironment());
-            return ImmutableList.of();
-          }
+    @Test
+    @Throws(Exception::class)
+    fun testUpdateInputsNotPassedToShadowedAction() {
+        val execRoot: Path? = scratch.getFileSystem().getPath("/")
+        val out: ArtifactRoot? = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out")
+        val src: ArtifactRoot? = ArtifactRoot.asSourceRoot(Root.fromPath(scratch.dir("/src")))
+        val extraIn: Artifact? = ActionsTestUtil.Companion.createArtifact(src, scratch.file("/src/extra.in"))
+        val discoveredIn: Artifact? = ActionsTestUtil.Companion.createArtifact(src, scratch.file("/src/discovered.in"))
+        val shadowedAction: Action = Mockito.mock<Action>(Action::class.java)
+        Mockito.`when`<T?>(shadowedAction.discoversInputs()).thenReturn(true)
+        Mockito.`when`<T?>(shadowedAction.getInputs()).thenReturn(NestedSetBuilder.emptySet(Order.STABLE_ORDER))
+        Mockito.`when`<T?>(shadowedAction.inputsKnown()).thenReturn(true)
+        val extraAction: ExtraAction =
+            ExtraAction(
+                ActionsTestUtil.Companion.NULL_ACTION_OWNER,
+                NestedSetBuilder.create(Order.STABLE_ORDER, extraIn),
+                ImmutableSet.of<E?>(
+                    ActionsTestUtil.Companion.createArtifact(
+                        out,
+                        scratch.file("/out/test.out")
+                    ) as Artifact.DerivedArtifact?
+                ),
+                shadowedAction,
+                false,
+                CommandLine.of(ImmutableList.of<E?>()),
+                ActionEnvironment.EMPTY,
+                ImmutableMap.of<K?, V?>(),
+                "Executing extra action bla bla",
+                "bla bla"
+            )
+        extraAction.updateInputs(NestedSetBuilder.create(Order.STABLE_ORDER, extraIn, discoveredIn))
+        Mockito.verify<Any?>(shadowedAction, Mockito.never()).updateInputs(ArgumentMatchers.any<T?>())
+    }
 
-          @Override
-          public boolean canExec(
-              Spawn spawn, ActionContext.ActionContextRegistry actionContextRegistry) {
-            return true;
-          }
-        };
+    @Test
+    @Throws(Exception::class)
+    fun testSerializationRoundTrip_resetsInputs() {
+        val execRoot: Path? = scratch.getFileSystem().getPath("/")
+        val out: ArtifactRoot? = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out")
+        val src: ArtifactRoot? = ArtifactRoot.asSourceRoot(Root.fromPath(scratch.dir("/src")))
+        val extraInput: Artifact? = ActionsTestUtil.Companion.createArtifact(src, scratch.file("/src/extra.in"))
+        val discoveredInput: Artifact? =
+            ActionsTestUtil.Companion.createArtifact(src, scratch.file("/src/discovered.in"))
+        val output: Artifact.DerivedArtifact =
+            ActionsTestUtil.Companion.createArtifact(out, scratch.file("/out/test.out")) as Artifact.DerivedArtifact
+        output.setGeneratingActionKey(ActionsTestUtil.Companion.NULL_ACTION_LOOKUP_DATA)
+        // Note that this differs from NULL_ACTION_OWNER in that it has non-empty execProperties, which
+        // are important for testing.
+        val dummyActionOwner: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ActionOwner.createDummy(
+                ActionsTestUtil.Companion.NULL_LABEL,
+                Location("dummy-file", 0, 0),  /* targetKind= */
+                "dummy-kind",  /* buildConfigurationMnemonic= */
+                "dummy-configuration-mnemonic",  /* configurationChecksum= */
+                "dummy-configuration",
+                BuildConfigurationEvent(
+                    BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
+                    BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+                ),  /* isToolConfiguration= */
+                false,  /* executionPlatform= */
+                PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+                ImmutableList.of<E?>(),  /* execProperties= */
+                ImmutableMap.of<K?, V?>("property1", "value1", "property2", "value2")
+            )
+        val extraAction: ExtraAction =
+            ExtraAction(
+                dummyActionOwner,
+                NestedSetBuilder.create(Order.STABLE_ORDER, extraInput),
+                ImmutableSet.of<E?>(output),  /* shadowedAction= */
+                InputDiscoveringNullAction(),  /* createDummyOutput= */
+                false,
+                CommandLine.of(ImmutableList.of<E?>()),
+                ActionEnvironment.EMPTY,  /* executionInfo= */
+                ImmutableMap.of<K?, V?>("xyz", "2", "abc", "1"),
+                "Executing extra action bla bla",
+                "bla bla"
+            )
+        ActionsTestUtil.Companion.ensureMemoizedIsInitializedIsSet(extraAction)
+        val originalStructure: String? = dumpStructureWithEquivalenceReduction(extraAction)
 
-    BlazeExecutor testExecutor =
-        new TestExecutorBuilder(fileSystem, execRoot)
-            .addStrategy(fakeSpawnStrategy, "fake")
-            .setDefaultStrategies("fake")
-            .build();
+        extraAction.updateInputs(
+            NestedSetBuilder.create(Order.STABLE_ORDER, extraInput, discoveredInput)
+        )
 
-    ActionResult actionResult =
-        extraAction.execute(
-            new ActionExecutionContext(
-                testExecutor,
-                new FakeActionInputFileCache(),
-                ActionInputPrefetcher.NONE,
-                actionKeyContext,
-                /* outputMetadataStore= */ null,
-                /* rewindingEnabled= */ false,
-                LostInputsCheck.NONE,
-                /* fileOutErr= */ null,
-                /* eventHandler= */ null,
-                /* clientEnv= */ ImmutableMap.of(),
-                /* actionFileSystem= */ null,
-                DiscoveredModulesPruner.DEFAULT,
-                SyscallCache.NO_CACHE,
-                ThreadStateReceiver.NULL_INSTANCE));
-    assertThat(actionResult.spawnResults()).isEmpty();
-    assertThat(spawnEnvironment.get("TEST")).isNotNull();
-    assertThat(spawnEnvironment).containsEntry("TEST", "TEST_VALUE");
-  }
-
-  @Test
-  public void testUpdateInputsNotPassedToShadowedAction() throws Exception {
-    Path execRoot = scratch.getFileSystem().getPath("/");
-    ArtifactRoot out = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out");
-    ArtifactRoot src = ArtifactRoot.asSourceRoot(Root.fromPath(scratch.dir("/src")));
-    Artifact extraIn = ActionsTestUtil.createArtifact(src, scratch.file("/src/extra.in"));
-    Artifact discoveredIn = ActionsTestUtil.createArtifact(src, scratch.file("/src/discovered.in"));
-    Action shadowedAction = mock(Action.class);
-    when(shadowedAction.discoversInputs()).thenReturn(true);
-    when(shadowedAction.getInputs()).thenReturn(NestedSetBuilder.emptySet(Order.STABLE_ORDER));
-    when(shadowedAction.inputsKnown()).thenReturn(true);
-    ExtraAction extraAction =
-        new ExtraAction(
-            NULL_ACTION_OWNER,
-            NestedSetBuilder.create(Order.STABLE_ORDER, extraIn),
-            ImmutableSet.of(
-                (Artifact.DerivedArtifact)
-                    ActionsTestUtil.createArtifact(out, scratch.file("/out/test.out"))),
-            shadowedAction,
-            false,
-            CommandLine.of(ImmutableList.of()),
-            ActionEnvironment.EMPTY,
-            ImmutableMap.of(),
-            "Executing extra action bla bla",
-            "bla bla");
-    extraAction.updateInputs(NestedSetBuilder.create(Order.STABLE_ORDER, extraIn, discoveredIn));
-    verify(shadowedAction, Mockito.never()).updateInputs(ArgumentMatchers.any());
-  }
-
-  @Test
-  public void testSerializationRoundTrip_resetsInputs() throws Exception {
-    Path execRoot = scratch.getFileSystem().getPath("/");
-    ArtifactRoot out = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out");
-    ArtifactRoot src = ArtifactRoot.asSourceRoot(Root.fromPath(scratch.dir("/src")));
-    Artifact extraInput = ActionsTestUtil.createArtifact(src, scratch.file("/src/extra.in"));
-    Artifact discoveredInput =
-        ActionsTestUtil.createArtifact(src, scratch.file("/src/discovered.in"));
-    var output =
-        (Artifact.DerivedArtifact)
-            ActionsTestUtil.createArtifact(out, scratch.file("/out/test.out"));
-    output.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
-    // Note that this differs from NULL_ACTION_OWNER in that it has non-empty execProperties, which
-    // are important for testing.
-    var dummyActionOwner =
-        ActionOwner.createDummy(
-            NULL_LABEL,
-            new Location("dummy-file", 0, 0),
-            /* targetKind= */ "dummy-kind",
-            /* buildConfigurationMnemonic= */ "dummy-configuration-mnemonic",
-            /* configurationChecksum= */ "dummy-configuration",
-            new BuildConfigurationEvent(
-                BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-                BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-            /* isToolConfiguration= */ false,
-            /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-            /* aspectDescriptors= */ ImmutableList.of(),
-            /* execProperties= */ ImmutableMap.of("property1", "value1", "property2", "value2"));
-    ExtraAction extraAction =
-        new ExtraAction(
-            dummyActionOwner,
-            NestedSetBuilder.create(Order.STABLE_ORDER, extraInput),
-            ImmutableSet.of(output),
-            /* shadowedAction= */ new InputDiscoveringNullAction(),
-            /* createDummyOutput= */ false,
-            CommandLine.of(ImmutableList.of()),
-            ActionEnvironment.EMPTY,
-            /* executionInfo= */ ImmutableMap.of("xyz", "2", "abc", "1"),
-            "Executing extra action bla bla",
-            "bla bla");
-    ensureMemoizedIsInitializedIsSet(extraAction);
-    String originalStructure = dumpStructureWithEquivalenceReduction(extraAction);
-
-    extraAction.updateInputs(
-        NestedSetBuilder.create(Order.STABLE_ORDER, extraInput, discoveredInput));
-
-    new SerializationTester(extraAction)
-        .makeMemoizingAndAllowFutureBlocking(/* allowFutureBlocking= */ true)
-        .addCodec(ArrayCodec.forComponentType(Artifact.class))
-        .setVerificationFunction(
-            (unusedInput, deserialized) ->
-                assertThat(dumpStructureWithEquivalenceReduction(deserialized))
-                    .isEqualTo(originalStructure))
-        .addDependencies(getCommonSerializationDependencies())
-        .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
-        .runTests();
-  }
+        SerializationTester(extraAction)
+            .makeMemoizingAndAllowFutureBlocking( /* allowFutureBlocking= */true)
+            .addCodec(ArrayCodec.forComponentType(Artifact::class.java))
+            .setVerificationFunction(
+                { unusedInput, deserialized ->
+                    assertThat(dumpStructureWithEquivalenceReduction(deserialized))
+                        .isEqualTo(originalStructure)
+                })
+            .addDependencies(getCommonSerializationDependencies())
+            .addDependencies(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
+            .runTests()
+    }
 }

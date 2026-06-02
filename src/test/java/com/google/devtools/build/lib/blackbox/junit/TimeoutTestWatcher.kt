@@ -11,84 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.junit
 
-package com.google.devtools.build.lib.blackbox.junit;
-
-import java.util.concurrent.TimeoutException;
-import org.junit.rules.TestWatcher;
-import org.junit.rules.Timeout;
-import org.junit.runner.Description;
-import org.junit.runners.model.Statement;
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorDescriptor.Builder.build
+import com.google.devtools.build.lib.bazel.repository.decompressor.PatchUtil.apply
+import com.google.devtools.build.lib.blackbox.junit.TimeoutTestWatcher
+import org.junit.rules.TestWatcher
 
 /**
  * Test watcher, which sets a timeout for the JUnit test and allows to execute some action on
  * timeout. Uses JUnit's org.junit.rules.Timeout rule to set up a timeout; catches timeout exception
- * thrown fromTimeout rule, calls the {@link onTimeout} method, and re-throws the exception.
- *
- * <p>Useful to dump test state information before failing on timeout.
+ * thrown fromTimeout rule, calls the [onTimeout] method, and re-throws the exception.
+ * 
+ * 
+ * Useful to dump test state information before failing on timeout.
  */
-public abstract class TimeoutTestWatcher extends TestWatcher {
-  private String name;
+abstract class TimeoutTestWatcher : TestWatcher() {
+    var name: String? = null
+        private set
 
-  protected abstract long getTimeoutMillis();
+    protected abstract val timeoutMillis: Long
 
-  protected abstract boolean onTimeout();
+    protected abstract fun onTimeout(): Boolean
 
-  @Override
-  protected void starting(Description description) {
-    name = description.getMethodName();
-  }
-
-  @Override
-  protected void finished(Description description) {
-    name = null;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  @Override
-  public Statement apply(Statement base, Description description) {
-    // we are using exception wrapping, because unfortunately JUnit's Timeout throws
-    // java.util.Exception on timeout, which is hard to distinguish from other cases
-    Statement wrapper =
-        new Statement() {
-          @Override
-          public void evaluate() throws Throwable {
-            try {
-              base.evaluate();
-            } catch (Throwable th) {
-              throw new ExceptionWrapper(th);
-            }
-          }
-        };
-
-    return new Statement() {
-      @Override
-      public void evaluate() throws Throwable {
-        try {
-          new Timeout((int) getTimeoutMillis()).apply(wrapper, description).evaluate();
-        } catch (ExceptionWrapper wrapper) {
-          // original test exception
-          throw wrapper.getCause();
-        } catch (Exception e) {
-          // timeout exception
-          if (!onTimeout()) {
-            throw new TimeoutException(e.getMessage());
-          }
-        }
-      }
-    };
-  }
-
-  /**
-   * Exception wrapper wrap-and-caught any exception from the test; this guarantees that we
-   * differentiate timeout exception thrown just as java.util.Exception from the test exceptions
-   */
-  private static class ExceptionWrapper extends Throwable {
-    ExceptionWrapper(Throwable cause) {
-      super(cause);
+    override fun starting(description: org.junit.runner.Description) {
+        name = description.getMethodName()
     }
-  }
+
+    override fun finished(description: org.junit.runner.Description?) {
+        name = null
+    }
+
+    override fun apply(
+        base: org.junit.runners.model.Statement,
+        description: org.junit.runner.Description?
+    ): org.junit.runners.model.Statement {
+        // we are using exception wrapping, because unfortunately JUnit's Timeout throws
+        // java.util.Exception on timeout, which is hard to distinguish from other cases
+        val wrapper: org.junit.runners.model.Statement =
+            object : org.junit.runners.model.Statement() {
+                @Throws(Throwable::class)
+                override fun evaluate() {
+                    try {
+                        base.evaluate()
+                    } catch (th: Throwable) {
+                        throw com.google.devtools.build.lib.blackbox.junit.TimeoutTestWatcher.ExceptionWrapper(th)
+                    }
+                }
+            }
+
+        return object : org.junit.runners.model.Statement() {
+            @Throws(Throwable::class)
+            override fun evaluate() {
+                try {
+                    org.junit.rules.Timeout(this.timeoutMillis.toInt()).apply(wrapper, description).evaluate()
+                } catch (wrapper: ExceptionWrapper) {
+                    // original test exception
+                    throw wrapper.cause
+                } catch (e: java.lang.Exception) {
+                    // timeout exception
+                    if (!onTimeout()) {
+                        throw java.util.concurrent.TimeoutException(e.message)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Exception wrapper wrap-and-caught any exception from the test; this guarantees that we
+     * differentiate timeout exception thrown just as java.util.Exception from the test exceptions
+     */
+    private class ExceptionWrapper(cause: Throwable?) : Throwable(cause)
 }

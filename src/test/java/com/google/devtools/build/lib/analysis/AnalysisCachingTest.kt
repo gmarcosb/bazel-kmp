@@ -11,93 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.Action
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ObjectArrays;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.NoTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.util.AnalysisCachingTestBase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.rules.java.JavaInfo;
-import com.google.devtools.build.lib.rules.java.JavaSourceJarsProvider;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestConstants.InternalTestExecutionMode;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDefinition;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import java.io.IOException;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Analysis caching tests.  */
+@RunWith(JUnit4::class)
+class AnalysisCachingTest : AnalysisCachingTestBase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setup() {
+        useConfiguration()
+    }
 
-/** Analysis caching tests. */
-@RunWith(JUnit4.class)
-public class AnalysisCachingTest extends AnalysisCachingTestBase {
-  private static final String CACHE_DISCARD_WARNING =
-      "discarding analysis cache (this can be expensive, see"
-          + " https://bazel.build/advanced/performance/iteration-speed).";
+    @Throws(java.lang.Exception::class)
+    override fun useConfiguration(vararg args: String?) {
+        super.useConfiguration(
+            *com.google.common.collect.ObjectArrays.concat<String?>(
+                args,
+                "--experimental_google_legacy_api"
+            )
+        )
+    }
 
-  @Before
-  public void setup() throws Exception {
-    useConfiguration();
-  }
-
-  @Override
-  public void useConfiguration(String... args) throws Exception {
-    super.useConfiguration(ObjectArrays.concat(args, "--experimental_google_legacy_api"));
-  }
-
-  @Test
-  public void testSimpleCleanAnalysis() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleCleanAnalysis() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
         )
-        """);
-    update("//java/a:A");
-    ConfiguredTarget javaTest = getConfiguredTarget("//java/a:A");
-    assertThat(javaTest).isNotNull();
-    assertThat(JavaInfo.getProvider(JavaSourceJarsProvider.class, javaTest)).isNotNull();
-  }
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        val javaTest: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        assertThat(javaTest).isNotNull()
+        assertThat(JavaInfo.getProvider<T?>(JavaSourceJarsProvider::class.java, javaTest)).isNotNull()
+    }
 
-  @Test
-  public void testTickTock() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTickTock() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
@@ -108,35 +70,41 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "B",
             srcs = ["B.java"],
         )
-        """);
-    update("//java/a:A");
-    update("//java/a:B");
-    update("//java/a:A");
-  }
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        update("//java/a:B")
+        update("//java/a:A")
+    }
 
-  @Test
-  public void testFullyCached() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFullyCached() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
         )
-        """);
-    update("//java/a:A");
-    ConfiguredTarget old = getConfiguredTarget("//java/a:A");
-    update("//java/a:A");
-    ConfiguredTarget current = getConfiguredTarget("//java/a:A");
-    assertThat(current).isSameInstanceAs(old);
-  }
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        val old: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        update("//java/a:A")
+        val current: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        assertThat(current).isSameInstanceAs(old)
+    }
 
-  @Test
-  public void testSubsetCached() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubsetCached() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
@@ -147,56 +115,66 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "B",
             srcs = ["B.java"],
         )
-        """);
-    update("//java/a:A", "//java/a:B");
-    ConfiguredTarget old = getConfiguredTarget("//java/a:A");
-    update("//java/a:A");
-    ConfiguredTarget current = getConfiguredTarget("//java/a:A");
-    assertThat(current).isSameInstanceAs(old);
-  }
+        
+        """.trimIndent()
+        )
+        update("//java/a:A", "//java/a:B")
+        val old: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        update("//java/a:A")
+        val current: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        assertThat(current).isSameInstanceAs(old)
+    }
 
-  @Test
-  public void testDependencyChanged() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDependencyChanged() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
             deps = ["//java/b"],
         )
-        """);
-    scratch.file(
-        "java/b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "java/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "b",
             srcs = ["B.java"],
         )
-        """);
-    update("//java/a:A");
-    ConfiguredTarget old = getConfiguredTarget("//java/a:A");
-    scratch.overwriteFile(
-        "java/b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        val old: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        scratch.overwriteFile(
+            "java/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "b",
             srcs = ["C.java"],
         )
-        """);
-    update("//java/a:A");
-    ConfiguredTarget current = getConfiguredTarget("//java/a:A");
-    assertThat(current).isNotSameInstanceAs(old);
-  }
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        val current: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        assertThat(current).isNotSameInstanceAs(old)
+    }
 
-  @Test
-  public void testAspectHintsChanged() throws Exception {
-    scratch.file(
-        "foo/rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectHintsChanged() {
+        scratch.file(
+            "foo/rule.bzl",
+            """
         def _rule_impl(ctx):
             return []
 
@@ -207,10 +185,12 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
                 "srcs": attr.label_list(allow_files = True),
             },
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//foo:rule.bzl", "my_rule")
 
         my_rule(
@@ -222,85 +202,99 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "bar",
             aspect_hints = ["//aspect_hint:hint"],
         )
-        """);
-    scratch.file(
-        "aspect_hint/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "aspect_hint/BUILD",
+            """
         load("//foo:rule.bzl", "my_rule")
 
         my_rule(
             name = "hint",
             srcs = ["baz.h"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update("//foo:foo");
-    ConfiguredTarget old = getConfiguredTarget("//foo:foo");
-    scratch.overwriteFile(
-        "aspect_hint/BUILD",
-        """
+        update("//foo:foo")
+        val old: ConfiguredTarget = getConfiguredTarget("//foo:foo")
+        scratch.overwriteFile(
+            "aspect_hint/BUILD",
+            """
         load("//foo:rule.bzl", "my_rule")
 
         my_rule(
             name = "hint",
             srcs = ["qux.h"],
         )
-        """);
-    update("//foo:foo");
-    ConfiguredTarget current = getConfiguredTarget("//foo:foo");
+        
+        """.trimIndent()
+        )
+        update("//foo:foo")
+        val current: ConfiguredTarget = getConfiguredTarget("//foo:foo")
 
-    assertThat(current).isNotSameInstanceAs(old);
-  }
+        assertThat(current).isNotSameInstanceAs(old)
+    }
 
-  @Test
-  public void testTopLevelChanged() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTopLevelChanged() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
             deps = ["//java/b"],
         )
-        """);
-    scratch.file(
-        "java/b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "java/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "b",
             srcs = ["B.java"],
         )
-        """);
-    update("//java/a:A");
-    ConfiguredTarget old = getConfiguredTarget("//java/a:A");
-    scratch.overwriteFile(
-        "java/a/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        val old: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        scratch.overwriteFile(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
         )
-        """);
-    update("//java/a:A");
-    ConfiguredTarget current = getConfiguredTarget("//java/a:A");
-    assertThat(current).isNotSameInstanceAs(old);
-  }
-
-  // Regression test for:
-  // "action conflict detection is incorrect if conflict is in non-top-level configured targets".
-  @Test
-  public void testActionConflictInDependencyImpliesTopLevelTargetFailure() throws Exception {
-    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
-      // TODO(b/67529176): conflicts not detected.
-      return;
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        val current: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        assertThat(current).isNotSameInstanceAs(old)
     }
-    useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL);
-    scratch.file(
-        "conflict_non_top_level/BUILD",
-        """
+
+    // Regression test for:
+    // "action conflict detection is incorrect if conflict is in non-top-level configured targets".
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConflictInDependencyImpliesTopLevelTargetFailure() {
+        if (AnalysisTestCase.getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
+            // TODO(b/67529176): conflicts not detected.
+            return
+        }
+        useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL)
+        scratch.file(
+            "conflict_non_top_level/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -319,28 +313,31 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             data = ["_objs/x/foo.o"],
             deps = ["x"],
         )
-        """);
-    reporter.removeHandler(failFastHandler); // expect errors
-    update(defaultFlags().with(Flag.KEEP_GOING), "//conflict_non_top_level:foo");
-    assertContainsEvent("file 'conflict_non_top_level/_objs/x/foo.o' " + CONFLICT_MSG);
-    assertThat(getAnalysisResult().getTargetsToBuild()).isEmpty();
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler) // expect errors
+        update(defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING), "//conflict_non_top_level:foo")
+        assertContainsEvent("file 'conflict_non_top_level/_objs/x/foo.o' " + AnalysisCachingTestBase.CONFLICT_MSG)
+        assertThat(getAnalysisResult().getTargetsToBuild()).isEmpty()
+    }
 
-  /**
-   * Generating the same output from two targets is ok if we build them on successive builds and
-   * invalidate the first target before we build the second target. This is a strictly weaker test
-   * than if we didn't invalidate the first target, but since Skyframe can't pass then, this test
-   * could be useful for it. Actually, since Skyframe makes multiple update calls, it manages to
-   * unregister actions even when it shouldn't, and so this test can incorrectly pass. However,
-   * {@code SkyframeExecutorTest#testNoActionConflictWithInvalidatedTarget} tests it more
-   * rigorously.
-   */
-  @Test
-  public void testNoActionConflictWithInvalidatedTarget() throws Exception {
-    useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL);
-    scratch.file(
-        "conflict/BUILD",
-        """
+    /**
+     * Generating the same output from two targets is ok if we build them on successive builds and
+     * invalidate the first target before we build the second target. This is a strictly weaker test
+     * than if we didn't invalidate the first target, but since Skyframe can't pass then, this test
+     * could be useful for it. Actually, since Skyframe makes multiple update calls, it manages to
+     * unregister actions even when it shouldn't, and so this test can incorrectly pass. However,
+     * `SkyframeExecutorTest#testNoActionConflictWithInvalidatedTarget` tests it more
+     * rigorously.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoActionConflictWithInvalidatedTarget() {
+        useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL)
+        scratch.file(
+            "conflict/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
@@ -352,14 +349,16 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "_objs/x/foo.o",
             srcs = ["bar.cc"],
         )
-        """);
-    update("//conflict:x");
-    ConfiguredTarget conflict = getConfiguredTarget("//conflict:x");
-    Action oldAction = getGeneratingAction(getBinArtifact("_objs/x/foo.o", conflict));
-    assertThat(oldAction.getOwner().getLabel().toString()).isEqualTo("//conflict:x");
-    scratch.overwriteFile(
-        "conflict/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        update("//conflict:x")
+        val conflict: ConfiguredTarget = getConfiguredTarget("//conflict:x")
+        val oldAction: Action = getGeneratingAction(getBinArtifact("_objs/x/foo.o", conflict))
+        assertThat(oldAction.getOwner().getLabel().toString()).isEqualTo("//conflict:x")
+        scratch.overwriteFile(
+            "conflict/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         # Rename target.
@@ -372,24 +371,27 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "_objs/x/foo.o",
             srcs = ["bar.cc"],
         )
-        """);
-    update(defaultFlags(), "//conflict:_objs/x/foo.o");
-    ConfiguredTarget objsConflict = getConfiguredTarget("//conflict:_objs/x/foo.o");
-    Action newAction = getGeneratingAction(getBinArtifact("_objs/x/foo.o", objsConflict));
-    assertThat(newAction.getOwner().getLabel().toString()).isEqualTo("//conflict:_objs/x/foo.o");
-  }
-
-  /** Generating the same output from multiple actions is causing an error. */
-  @Test
-  public void testActionConflictCausesError() throws Exception {
-    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
-      // TODO(b/67529176): conflicts not detected.
-      return;
+        
+        """.trimIndent()
+        )
+        update(defaultFlags(), "//conflict:_objs/x/foo.o")
+        val objsConflict: ConfiguredTarget = getConfiguredTarget("//conflict:_objs/x/foo.o")
+        val newAction: Action = getGeneratingAction(getBinArtifact("_objs/x/foo.o", objsConflict))
+        assertThat(newAction.getOwner().getLabel().toString()).isEqualTo("//conflict:_objs/x/foo.o")
     }
-    useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL);
-    scratch.file(
-        "conflict/BUILD",
-        """
+
+    /** Generating the same output from multiple actions is causing an error.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConflictCausesError() {
+        if (AnalysisTestCase.getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
+            // TODO(b/67529176): conflicts not detected.
+            return
+        }
+        useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL)
+        scratch.file(
+            "conflict/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -402,22 +404,25 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "_objs/x/foo.o",
             srcs = ["bar.cc"],
         )
-        """);
-    reporter.removeHandler(failFastHandler); // expect errors
-    update(defaultFlags().with(Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o");
-    assertContainsEvent("file 'conflict/_objs/x/foo.o' " + CONFLICT_MSG);
-  }
-
-  @Test
-  public void testNoActionConflictErrorAfterClearedAnalysis() throws Exception {
-    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
-      // TODO(b/67529176): conflicts not detected.
-      return;
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler) // expect errors
+        update(defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o")
+        assertContainsEvent("file 'conflict/_objs/x/foo.o' " + AnalysisCachingTestBase.CONFLICT_MSG)
     }
-    useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL);
-    scratch.file(
-        "conflict/BUILD",
-        """
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoActionConflictErrorAfterClearedAnalysis() {
+        if (AnalysisTestCase.getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
+            // TODO(b/67529176): conflicts not detected.
+            return
+        }
+        useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL)
+        scratch.file(
+            "conflict/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -430,17 +435,22 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "_objs/x/foo.o",
             srcs = ["bar.cc"],
         )
-        """);
-    reporter.removeHandler(failFastHandler); // expect errors
-    update(defaultFlags().with(Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o");
-    // We want to force a "dropConfiguredTargetsNow" operation, which won't inform the
-    // invalidation receiver about the dropped configured targets.
-    skyframeExecutor.clearAnalysisCache(ImmutableSet.of(), ImmutableSet.of());
-    assertContainsEvent("file 'conflict/_objs/x/foo.o' " + CONFLICT_MSG);
-    eventCollector.clear();
-    scratch.overwriteFile(
-        "conflict/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler) // expect errors
+        update(defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o")
+        // We want to force a "dropConfiguredTargetsNow" operation, which won't inform the
+        // invalidation receiver about the dropped configured targets.
+        skyframeExecutor.clearAnalysisCache(
+            com.google.common.collect.ImmutableSet.of<E?>(),
+            com.google.common.collect.ImmutableSet.of<E?>()
+        )
+        assertContainsEvent("file 'conflict/_objs/x/foo.o' " + AnalysisCachingTestBase.CONFLICT_MSG)
+        eventCollector.clear()
+        scratch.overwriteFile(
+            "conflict/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
@@ -452,25 +462,28 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "_objs/x/foo.o",
             srcs = ["bar.cc"],
         )
-        """);
-    update(defaultFlags().with(Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o");
-    assertNoEvents();
-  }
-
-  /**
-   * For two conflicting actions whose primary inputs are different, no list diff detail should be
-   * part of the output.
-   */
-  @Test
-  public void testConflictingArtifactsErrorWithNoListDetail() throws Exception {
-    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
-      // TODO(b/67529176): conflicts not detected.
-      return;
+        
+        """.trimIndent()
+        )
+        update(defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o")
+        assertNoEvents()
     }
-    useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL);
-    scratch.file(
-        "conflict/BUILD",
-        """
+
+    /**
+     * For two conflicting actions whose primary inputs are different, no list diff detail should be
+     * part of the output.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConflictingArtifactsErrorWithNoListDetail() {
+        if (AnalysisTestCase.getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
+            // TODO(b/67529176): conflicts not detected.
+            return
+        }
+        useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL)
+        scratch.file(
+            "conflict/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -483,67 +496,74 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "_objs/x/foo.o",
             srcs = ["bar.cc"],
         )
-        """);
-    reporter.removeHandler(failFastHandler); // expect errors
-    update(defaultFlags().with(Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o");
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler) // expect errors
+        update(defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.o")
 
-    assertContainsEvent("file 'conflict/_objs/x/foo.o' " + CONFLICT_MSG);
-    assertDoesNotContainEvent("MandatoryInputs");
-    assertDoesNotContainEvent("Outputs");
-  }
-
-  /**
-   * For two conflicted actions whose primary inputs are the same, list diff (max 5) should be part
-   * of the output.
-   */
-  @Test
-  public void testConflictingArtifactsWithListDetail() throws Exception {
-    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
-      // TODO(b/67529176): conflicts not detected.
-      return;
-    }
-    useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL);
-    scratch.file(
-        "conflict/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='x', srcs=['foo1.cc'])",
-        "genrule(name = 'foo', outs=['_objs/x/foo1.o'], srcs=['foo1.cc', 'foo2.cc', "
-            + "'foo3.cc', 'foo4.cc', 'foo5.cc', 'foo6.cc'], cmd='', output_to_bindir=1)");
-    reporter.removeHandler(failFastHandler); // expect errors
-    update(defaultFlags().with(Flag.KEEP_GOING), "//conflict:x", "//conflict:foo");
-
-    Event event = assertContainsEvent("file 'conflict/_objs/x/foo1.o' " + CONFLICT_MSG);
-    assertContainsEvent("MandatoryInputs");
-    assertContainsEvent("Outputs");
-
-    // Validate that maximum of 5 artifacts in MandatoryInputs are part of output.
-    Pattern pattern = Pattern.compile("\tconflict\\/foo[2-6].cc");
-    Matcher matcher = pattern.matcher(event.getMessage());
-    int matchCount = 0;
-    while (matcher.find()) {
-      matchCount++;
+        assertContainsEvent("file 'conflict/_objs/x/foo.o' " + AnalysisCachingTestBase.CONFLICT_MSG)
+        assertDoesNotContainEvent("MandatoryInputs")
+        assertDoesNotContainEvent("Outputs")
     }
 
-    assertWithMessage(
-            "Event does not contain expected number of file conflicts:\n%s", event.getMessage())
-        .that(matchCount)
-        .isEqualTo(5);
-  }
+    /**
+     * For two conflicted actions whose primary inputs are the same, list diff (max 5) should be part
+     * of the output.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConflictingArtifactsWithListDetail() {
+        if (AnalysisTestCase.getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
+            // TODO(b/67529176): conflicts not detected.
+            return
+        }
+        useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL)
+        scratch.file(
+            "conflict/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='x', srcs=['foo1.cc'])",
+            "genrule(name = 'foo', outs=['_objs/x/foo1.o'], srcs=['foo1.cc', 'foo2.cc', "
+                    + "'foo3.cc', 'foo4.cc', 'foo5.cc', 'foo6.cc'], cmd='', output_to_bindir=1)"
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler) // expect errors
+        update(defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING), "//conflict:x", "//conflict:foo")
 
-  /**
-   * The current action conflict detection code will only mark one of the targets as having an
-   * error, and with multi-threaded analysis it is not deterministic which one that will be.
-   */
-  @Test
-  public void testActionConflictMarksTargetInvalid() throws Exception {
-    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
-      // TODO(b/67529176): conflicts not detected.
-      return;
+        val event: com.google.devtools.build.lib.events.Event =
+            assertContainsEvent("file 'conflict/_objs/x/foo1.o' " + AnalysisCachingTestBase.CONFLICT_MSG)
+        assertContainsEvent("MandatoryInputs")
+        assertContainsEvent("Outputs")
+
+        // Validate that maximum of 5 artifacts in MandatoryInputs are part of output.
+        val pattern: java.util.regex.Pattern = java.util.regex.Pattern.compile("\tconflict\\/foo[2-6].cc")
+        val matcher: java.util.regex.Matcher = pattern.matcher(event.getMessage())
+        var matchCount = 0
+        while (matcher.find()) {
+            matchCount++
+        }
+
+        Truth.assertWithMessage(
+            "Event does not contain expected number of file conflicts:\n%s", event.getMessage()
+        )
+            .that(matchCount)
+            .isEqualTo(5)
     }
-    useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL);
-    scratch.file(
-        "conflict/BUILD",
-        """
+
+    /**
+     * The current action conflict detection code will only mark one of the targets as having an
+     * error, and with multi-threaded analysis it is not deterministic which one that will be.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConflictMarksTargetInvalid() {
+        if (AnalysisTestCase.getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
+            // TODO(b/67529176): conflicts not detected.
+            return
+        }
+        useConfiguration("--platforms=" + TestConstants.PLATFORM_LABEL)
+        scratch.file(
+            "conflict/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -556,30 +576,39 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "_objs/x/foo.o",
             srcs = ["bar.cc"],
         )
-        """);
-    reporter.removeHandler(failFastHandler); // expect errors
-    int successfulAnalyses =
-        update(defaultFlags().with(Flag.KEEP_GOING), "//conflict:x", "//conflict:_objs/x/foo.pic.o")
-            .getTargetsToBuild()
-            .size();
-    assertThat(successfulAnalyses).isEqualTo(1);
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler) // expect errors
+        val successfulAnalyses: Int =
+            update(
+                defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING),
+                "//conflict:x",
+                "//conflict:_objs/x/foo.pic.o"
+            )
+                .getTargetsToBuild()
+                .size()
+        Truth.assertThat(successfulAnalyses).isEqualTo(1)
+    }
 
-  @Test
-  public void aliasConflict() throws Exception {
-    scratch.file(
-        "conflict/conflict.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aliasConflict() {
+        scratch.file(
+            "conflict/conflict.bzl",
+            """
         def _conflict(ctx):
             file = ctx.actions.declare_file("single_file")
             ctx.actions.write(output = file, content = ctx.attr.name)
             return [DefaultInfo(files = depset([file]))]
 
         my_rule = rule(implementation = _conflict)
-        """);
-    scratch.file(
-        "conflict/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "conflict/BUILD",
+            """
         load(":conflict.bzl", "my_rule")
 
         my_rule(name = "conflict1")
@@ -590,18 +619,21 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "aliased",
             actual = ":conflict2",
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    assertThrows(
-        ViewCreationFailedException.class,
-        () -> update("//conflict:conflict1", "//conflict:aliased"));
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//conflict:conflict1", "//conflict:aliased") })
+    }
 
-  @Test
-  public void actionConflictFromSameTarget() throws Exception {
-    scratch.file(
-        "conflict/conflict.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionConflictFromSameTarget() {
+        scratch.file(
+            "conflict/conflict.bzl",
+            """
         def _conflict(ctx):
             file = ctx.actions.declare_file("single_file")
             ctx.actions.write(output = file, content = "a")
@@ -609,24 +641,31 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             return [DefaultInfo(files = depset([file]))]
 
         my_rule = rule(implementation = _conflict)
-        """);
-    scratch.file(
-        "conflict/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "conflict/BUILD",
+            """
         load(":conflict.bzl", "my_rule")
 
         my_rule(name = "conflict")
-        """);
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//conflict"));
-    assertContainsEvent("file 'conflict/single_file' is generated by these conflicting actions:");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//conflict") })
+        assertContainsEvent("file 'conflict/single_file' is generated by these conflicting actions:")
+    }
 
-  @Test
-  public void actionConflictWithDependentRule() throws IOException {
-    scratch.file(
-        "conflict/conflict.bzl",
-        """
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun actionConflictWithDependentRule() {
+        scratch.file(
+            "conflict/conflict.bzl",
+            """
         def _dep(ctx):
             file = ctx.actions.declare_file("file")
             ctx.actions.write(output = file, content = "")
@@ -643,10 +682,12 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             implementation = _top,
             attrs = {"src": attr.label(mandatory = True, allow_single_file = True)},
         )
-        """);
-    scratch.file(
-        "conflict/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "conflict/BUILD",
+            """
         load(":conflict.bzl", "dep_rule", "top_rule")
 
         top_rule(
@@ -655,100 +696,118 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
         )
 
         dep_rule(name = "dep")
-        """);
-    reporter.removeHandler(failFastHandler);
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//conflict:top"));
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//conflict:top") })
 
-    assertContainsEvent(
-        "in top_rule rule //conflict:top: File 'conflict/file' is produced by action 'Writing file"
-            + " conflict/file' but is already generated by rule //conflict:dep");
-  }
-
-  /** BUILD file involved in BUILD-file cycle is changed */
-  @Test
-  public void testBuildFileInCycleChanged() throws Exception {
-    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
-      // TODO(b/67412276): cycles not properly handled.
-      return;
+        assertContainsEvent(
+            "in top_rule rule //conflict:top: File 'conflict/file' is produced by action 'Writing file"
+                    + " conflict/file' but is already generated by rule //conflict:dep"
+        )
     }
-    scratch.file(
-        "java/a/BUILD",
-        """
+
+    /** BUILD file involved in BUILD-file cycle is changed  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildFileInCycleChanged() {
+        if (AnalysisTestCase.getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {
+            // TODO(b/67412276): cycles not properly handled.
+            return
+        }
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
             deps = ["//java/b"],
         )
-        """);
-    scratch.file(
-        "java/b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "java/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "b",
             srcs = ["B.java"],
             deps = ["//java/c"],
         )
-        """);
-    scratch.file(
-        "java/c/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "java/c/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "c",
             srcs = ["C.java"],
             deps = ["//java/b"],
         )
-        """);
-    // expect error
-    reporter.removeHandler(failFastHandler);
-    update(defaultFlags().with(Flag.KEEP_GOING), "//java/a:A");
-    ConfiguredTarget old = getConfiguredTarget("//java/a:A");
-    // drop dependency on from b to c
-    scratch.overwriteFile(
-        "java/b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        // expect error
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        update(defaultFlags().with(AnalysisTestCase.Flag.KEEP_GOING), "//java/a:A")
+        val old: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        // drop dependency on from b to c
+        scratch.overwriteFile(
+            "java/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "b",
             srcs = ["B.java"],
         )
-        """);
-    eventCollector.clear();
-    reporter.addHandler(failFastHandler);
-    update("//java/a:A");
-    ConfiguredTarget current = getConfiguredTarget("//java/a:A");
-    assertThat(current).isNotSameInstanceAs(old);
-  }
+        
+        """.trimIndent()
+        )
+        eventCollector.clear()
+        reporter.addHandler(FoundationTestCase.failFastHandler)
+        update("//java/a:A")
+        val current: ConfiguredTarget = getConfiguredTarget("//java/a:A")
+        assertThat(current).isNotSameInstanceAs(old)
+    }
 
-  private void assertNoTargetsVisited() {
-    Set<?> analyzedTargets = getSkyframeEvaluatedTargetKeys();
-    assertWithMessage(analyzedTargets.toString()).that(analyzedTargets.size()).isEqualTo(0);
-  }
+    private fun assertNoTargetsVisited() {
+        val analyzedTargets: MutableSet<*> = getSkyframeEvaluatedTargetKeys()
+        Truth.assertWithMessage(analyzedTargets.toString()).that(analyzedTargets.size()).isEqualTo(0)
+    }
 
-  @Test
-  public void testSecondRunAllCacheHits() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSecondRunAllCacheHits() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
         )
-        """);
-    update("//java/a:A");
-    update("//java/a:A");
-    assertNoTargetsVisited();
-  }
+        
+        """.trimIndent()
+        )
+        update("//java/a:A")
+        update("//java/a:A")
+        assertNoTargetsVisited()
+    }
 
-  @Test
-  public void testDependencyAllCacheHits() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDependencyAllCacheHits() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "x",
@@ -760,22 +819,25 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "y",
             srcs = ["B.java"],
         )
-        """);
-    update("//java/a:x");
-    Set<?> oldAnalyzedTargets = getSkyframeEvaluatedTargetKeys();
-    assertThat(oldAnalyzedTargets.size()).isAtLeast(2); // could be greater due to implicit deps
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:x")).isEqualTo(1);
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:y")).isEqualTo(1);
+        
+        """.trimIndent()
+        )
+        update("//java/a:x")
+        val oldAnalyzedTargets: MutableSet<*> = getSkyframeEvaluatedTargetKeys()
+        Truth.assertThat(oldAnalyzedTargets.size()).isAtLeast(2) // could be greater due to implicit deps
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:x")).isEqualTo(1)
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:y")).isEqualTo(1)
 
-    update("//java/a:y");
-    assertThat(getSkyframeEvaluatedTargetKeys()).isEmpty();
-  }
+        update("//java/a:y")
+        Truth.assertThat(getSkyframeEvaluatedTargetKeys()).isEmpty()
+    }
 
-  @Test
-  public void testSupersetNotAllCacheHits() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSupersetNotAllCacheHits() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         # It's important that all targets are of the same rule class, otherwise the second update
         # call might analyze more than one extra target because of potential implicit dependencies.
@@ -795,41 +857,48 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "z",
             srcs = ["C.java"],
         )
-        """);
-    update("//java/a:y");
-    Set<?> oldAnalyzedTargets = getSkyframeEvaluatedTargetKeys();
-    assertThat(oldAnalyzedTargets.size()).isAtLeast(3); // could be greater due to implicit deps
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:x")).isEqualTo(0);
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:y")).isEqualTo(1);
-    update("//java/a:x");
-    Set<?> newAnalyzedTargets = getSkyframeEvaluatedTargetKeys();
-    // Source target and x.
-    assertThat(newAnalyzedTargets).hasSize(2);
-    assertThat(countObjectsPartiallyMatchingRegex(newAnalyzedTargets, "//java/a:x")).isEqualTo(1);
-    assertThat(countObjectsPartiallyMatchingRegex(newAnalyzedTargets, "//java/a:y")).isEqualTo(0);
-  }
+        
+        """.trimIndent()
+        )
+        update("//java/a:y")
+        val oldAnalyzedTargets: MutableSet<*> = getSkyframeEvaluatedTargetKeys()
+        Truth.assertThat(oldAnalyzedTargets.size()).isAtLeast(3) // could be greater due to implicit deps
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:x")).isEqualTo(0)
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:y")).isEqualTo(1)
+        update("//java/a:x")
+        val newAnalyzedTargets: MutableSet<*> = getSkyframeEvaluatedTargetKeys()
+        // Source target and x.
+        Truth.assertThat(newAnalyzedTargets).hasSize(2)
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(newAnalyzedTargets, "//java/a:x")).isEqualTo(1)
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(newAnalyzedTargets, "//java/a:y")).isEqualTo(0)
+    }
 
-  @Test
-  public void testExtraActions() throws Exception {
-    scratch.file(
-        "java/com/google/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExtraActions() {
+        scratch.file(
+            "java/com/google/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(name='a', srcs=['A.java'])
-        """);
-    scratch.file(
-        "java/com/google/b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "java/com/google/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(name='b', srcs=['B.java'])
-        """);
-    scratch.file(
-        "extra/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "extra/BUILD",
+            """
         extra_action(
             name = "extra",
             cmd = "",
-            out_templates = ["$(OWNER_LABEL_DIGEST)_$(ACTION_ID).tst"],
+            out_templates = ["${'$'}(OWNER_LABEL_DIGEST)_${'$'}(ACTION_ID).tst"],
         )
 
         action_listener(
@@ -837,28 +906,33 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             extra_actions = [":extra"],
             mnemonics = ["Javac"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--experimental_action_listener=//extra:listener");
-    update("//java/com/google/a:a");
-    update("//java/com/google/b:b");
-  }
+        useConfiguration("--experimental_action_listener=//extra:listener")
+        update("//java/com/google/a:a")
+        update("//java/com/google/b:b")
+    }
 
-  @Test
-  public void testExtraActionsCaching() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExtraActionsCaching() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(name='a', srcs=['A.java'])
-        """);
-    scratch.file(
-        "extra/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "extra/BUILD",
+            """
         extra_action(
             name = "extra",
-            cmd = "echo $(EXTRA_ACTION_FILE)",
-            out_templates = ["$(OWNER_LABEL_DIGEST)_$(ACTION_ID).tst"],
+            cmd = "echo ${'$'}(EXTRA_ACTION_FILE)",
+            out_templates = ["${'$'}(OWNER_LABEL_DIGEST)_${'$'}(ACTION_ID).tst"],
         )
 
         action_listener(
@@ -866,20 +940,22 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             extra_actions = [":extra"],
             mnemonics = ["Javac"],
         )
-        """);
-    useConfiguration("--experimental_action_listener=//extra:listener");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--experimental_action_listener=//extra:listener")
 
-    update("//java/a:a");
-    getConfiguredTarget("//java/a:a");
+        update("//java/a:a")
+        getConfiguredTarget("//java/a:a")
 
-    scratch.overwriteFile(
-        "extra/BUILD",
-        """
+        scratch.overwriteFile(
+            "extra/BUILD",
+            """
         extra_action(
             name = "extra",
             # <-- change here
-            cmd = "echo $(BUG)",
-            out_templates = ["$(OWNER_LABEL_DIGEST)_$(ACTION_ID).tst"],
+            cmd = "echo ${'$'}(BUG)",
+            out_templates = ["${'$'}(OWNER_LABEL_DIGEST)_${'$'}(ACTION_ID).tst"],
         )
 
         action_listener(
@@ -887,123 +963,143 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             extra_actions = [":extra"],
             mnemonics = ["Javac"],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    ViewCreationFailedException e =
-        assertThrows(ViewCreationFailedException.class, () -> update("//java/a:a"));
-    assertThat(e).hasMessageThat().contains("Analysis of target '//java/a:a' failed");
-    assertContainsEvent("$(BUG) not defined");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        val e: ViewCreationFailedException? =
+            org.junit.Assert.assertThrows<T?>(
+                ViewCreationFailedException::class.java,
+                org.junit.function.ThrowingRunnable { update("//java/a:a") })
+        assertThat(e).hasMessageThat().contains("Analysis of target '//java/a:a' failed")
+        assertContainsEvent("$(BUG) not defined")
+    }
 
-  @Test
-  public void testConfigurationCachingWithWarningReplay() throws Exception {
-    useConfiguration("--strip=always", "--copt=-g");
-    update();
-    assertContainsEvent("Debug information will be generated and then stripped away");
-    eventCollector.clear();
-    update();
-    assertContainsEvent("Debug information will be generated and then stripped away");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationCachingWithWarningReplay() {
+        useConfiguration("--strip=always", "--copt=-g")
+        update()
+        assertContainsEvent("Debug information will be generated and then stripped away")
+        eventCollector.clear()
+        update()
+        assertContainsEvent("Debug information will be generated and then stripped away")
+    }
 
-  @Test
-  public void testSkyframeCacheInvalidationBuildFileChange() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSkyframeCacheInvalidationBuildFileChange() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
         )
-        """);
-    String aTarget = "//java/a:A";
-    update(aTarget);
-    ConfiguredTarget firstCT = getConfiguredTarget(aTarget);
+        
+        """.trimIndent()
+        )
+        val aTarget = "//java/a:A"
+        update(aTarget)
+        val firstCT: ConfiguredTarget = getConfiguredTarget(aTarget)
 
-    scratch.overwriteFile(
-        "java/a/BUILD",
-        """
+        scratch.overwriteFile(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["B.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update(aTarget);
-    ConfiguredTarget updatedCT = getConfiguredTarget(aTarget);
-    assertThat(updatedCT).isNotSameInstanceAs(firstCT);
+        update(aTarget)
+        val updatedCT: ConfiguredTarget = getConfiguredTarget(aTarget)
+        assertThat(updatedCT).isNotSameInstanceAs(firstCT)
 
-    update(aTarget);
-    ConfiguredTarget updated2CT = getConfiguredTarget(aTarget);
-    assertThat(updated2CT).isSameInstanceAs(updatedCT);
-  }
+        update(aTarget)
+        val updated2CT: ConfiguredTarget = getConfiguredTarget(aTarget)
+        assertThat(updated2CT).isSameInstanceAs(updatedCT)
+    }
 
-  @Test
-  public void testSkyframeDifferentPackagesInvalidation() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSkyframeDifferentPackagesInvalidation() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "A",
             srcs = ["A.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "java/b/BUILD",
-        """
+        scratch.file(
+            "java/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "B",
             srcs = ["B.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    String aTarget = "//java/a:A";
-    update(aTarget);
-    ConfiguredTarget oldAConfTarget = getConfiguredTarget(aTarget);
-    String bTarget = "//java/b:B";
-    update(bTarget);
-    ConfiguredTarget oldBConfTarget = getConfiguredTarget(bTarget);
+        val aTarget = "//java/a:A"
+        update(aTarget)
+        val oldAConfTarget: ConfiguredTarget = getConfiguredTarget(aTarget)
+        val bTarget = "//java/b:B"
+        update(bTarget)
+        val oldBConfTarget: ConfiguredTarget = getConfiguredTarget(bTarget)
 
-    scratch.overwriteFile(
-        "java/b/BUILD",
-        """
+        scratch.overwriteFile(
+            "java/b/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_test")
         java_test(
             name = "B",
             srcs = ["C.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update(aTarget);
-    // Check that 'A' was not invalidated because 'B' was modified and invalidated.
-    ConfiguredTarget newAConfTarget = getConfiguredTarget(aTarget);
-    ConfiguredTarget newBConfTarget = getConfiguredTarget(bTarget);
+        update(aTarget)
+        // Check that 'A' was not invalidated because 'B' was modified and invalidated.
+        val newAConfTarget: ConfiguredTarget = getConfiguredTarget(aTarget)
+        val newBConfTarget: ConfiguredTarget = getConfiguredTarget(bTarget)
 
-    assertThat(newAConfTarget).isSameInstanceAs(oldAConfTarget);
-    assertThat(newBConfTarget).isNotSameInstanceAs(oldBConfTarget);
-  }
-
-  private int countObjectsPartiallyMatchingRegex(
-      Iterable<? extends Object> elements, String toStringMatching) {
-    toStringMatching = ".*" + toStringMatching + ".*";
-    int result = 0;
-    for (Object o : elements) {
-      if (o.toString().matches(toStringMatching)) {
-        ++result;
-      }
+        assertThat(newAConfTarget).isSameInstanceAs(oldAConfTarget)
+        assertThat(newBConfTarget).isNotSameInstanceAs(oldBConfTarget)
     }
-    return result;
-  }
 
-  @Test
-  public void testGetSkyframeEvaluatedTargetKeysOmitsCachedTargets() throws Exception {
-    scratch.file(
-        "java/a/BUILD",
-        """
+    private fun countObjectsPartiallyMatchingRegex(
+        elements: Iterable<out Any>, toStringMatching: String?
+    ): Int {
+        var toStringMatching = toStringMatching
+        toStringMatching = ".*" + toStringMatching + ".*"
+        var result = 0
+        for (o in elements) {
+            if (o.toString().matches(toStringMatching)) {
+                ++result
+            }
+        }
+        return result
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetSkyframeEvaluatedTargetKeysOmitsCachedTargets() {
+        scratch.file(
+            "java/a/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "x",
@@ -1032,136 +1128,142 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
             name = "w",
             srcs = ["D.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update("//java/a:x");
-    Set<?> oldAnalyzedTargets = getSkyframeEvaluatedTargetKeys();
-    assertThat(oldAnalyzedTargets.size()).isAtLeast(2); // could be greater due to implicit deps
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:x")).isEqualTo(1);
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:y")).isEqualTo(0);
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:z")).isEqualTo(1);
-    assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:w")).isEqualTo(1);
+        update("//java/a:x")
+        val oldAnalyzedTargets: MutableSet<*> = getSkyframeEvaluatedTargetKeys()
+        Truth.assertThat(oldAnalyzedTargets.size()).isAtLeast(2) // could be greater due to implicit deps
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:x")).isEqualTo(1)
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:y")).isEqualTo(0)
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:z")).isEqualTo(1)
+        Truth.assertThat(countObjectsPartiallyMatchingRegex(oldAnalyzedTargets, "//java/a:w")).isEqualTo(1)
 
-    // Unless the build is not fully cached, we get notified about newly evaluated targets, as well
-    // as cached top-level targets. For the two tests above to work correctly, we need to ensure
-    // that getSkyframeEvaluatedTargetKeys() doesn't return these.
-    update("//java/a:x", "//java/a:y", "//java/a:z");
-    assertNumberOfAnalyzedConfigurationsOfTargets(
-        ImmutableMap.<String, Integer>builder()
-            .put("//java/a:y", 1) // Newly requested.
-            .put("//java/a:B.java", 1)
-            .put("//java/a:z", 0) // Fully cached.
-            .buildOrThrow());
-  }
+        // Unless the build is not fully cached, we get notified about newly evaluated targets, as well
+        // as cached top-level targets. For the two tests above to work correctly, we need to ensure
+        // that getSkyframeEvaluatedTargetKeys() doesn't return these.
+        update("//java/a:x", "//java/a:y", "//java/a:z")
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+                .put("//java/a:y", 1) // Newly requested.
+                .put("//java/a:B.java", 1)
+                .put("//java/a:z", 0) // Fully cached.
+                .buildOrThrow()
+        )
+    }
 
-  /** Test options class for testing diff-based analysis cache resetting. */
-  @OptionsClass
-  public abstract static class DiffResetOptions extends FragmentOptions {
-    public static final OptionDefinition PROBABLY_IRRELEVANT_OPTION =
-        OptionsParser.getOptionDefinitionByName(DiffResetOptions.class, "probably_irrelevant");
-    public static final OptionDefinition ALSO_IRRELEVANT_OPTION =
-        OptionsParser.getOptionDefinitionByName(DiffResetOptions.class, "also_irrelevant");
-    public static final PatchTransition CLEAR_IRRELEVANT =
-        new PatchTransition() {
-          @Override
-          public ImmutableSet<Class<? extends FragmentOptions>> requiresOptionFragments() {
-            return ImmutableSet.of(DiffResetOptions.class);
-          }
+    /** Test options class for testing diff-based analysis cache resetting.  */
+    @OptionsClass
+    abstract class DiffResetOptions : FragmentOptions() {
+        @com.google.devtools.common.options.Option(
+            name = "probably_irrelevant",
+            defaultValue = "(unset)",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.UNKNOWN],
+            help = "This option is irrelevant to non-uses_irrelevant targets and is trimmed from them."
+        )
+        abstract fun getProbablyIrrelevantOption(): String?
 
-          @Override
-          public BuildOptions patch(BuildOptionsView options, EventHandler eventHandler) {
-            if (options.underlying().hasNoConfig()) {
-              return options.underlying();
+        abstract fun setProbablyIrrelevantOption(value: String?)
+
+        @com.google.devtools.common.options.Option(
+            name = "also_irrelevant",
+            defaultValue = "(unset)",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.UNKNOWN],
+            help = "This option is irrelevant to non-uses_irrelevant targets and is trimmed from them."
+        )
+        abstract fun getAlsoIrrelevantOption(): String?
+
+        abstract fun setAlsoIrrelevantOption(value: String?)
+
+        @com.google.devtools.common.options.Option(
+            name = "definitely_relevant",
+            defaultValue = "(unset)",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.UNKNOWN],
+            help = "This option is not trimmed and is used by all targets."
+        )
+        abstract fun getDefinitelyRelevantOption(): String?
+
+        @com.google.devtools.common.options.Option(
+            name = "also_relevant",
+            defaultValue = "(unset)",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.UNKNOWN],
+            help = "This option is not trimmed and is used by all targets."
+        )
+        abstract fun getAlsoRelevantOption(): String?
+
+        @com.google.devtools.common.options.Option(
+            name = "host_relevant",
+            defaultValue = "(unset)",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.UNKNOWN],
+            help = "This option is not trimmed and is used by all host targets."
+        )
+        abstract fun getHostRelevantOption(): String?
+
+        companion object {
+            val PROBABLY_IRRELEVANT_OPTION: OptionDefinition =
+                OptionsParser.getOptionDefinitionByName(DiffResetOptions::class.java, "probably_irrelevant")
+            val ALSO_IRRELEVANT_OPTION: OptionDefinition =
+                OptionsParser.getOptionDefinitionByName(DiffResetOptions::class.java, "also_irrelevant")
+            val CLEAR_IRRELEVANT: PatchTransition = object : PatchTransition() {
+                public override fun requiresOptionFragments(): com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> {
+                    return com.google.common.collect.ImmutableSet.of<E?>(DiffResetOptions::class.java)
+                }
+
+                public override fun patch(
+                    options: BuildOptionsView,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): BuildOptions {
+                    if (options.underlying().hasNoConfig()) {
+                        return options.underlying()
+                    }
+                    val cloned: BuildOptionsView = options.clone()
+                    cloned.get(DiffResetOptions::class.java).setProbablyIrrelevantOption("(cleared)")
+                    cloned.get(DiffResetOptions::class.java).setAlsoIrrelevantOption("(cleared)")
+                    return cloned.underlying()
+                }
             }
-            BuildOptionsView cloned = options.clone();
-            cloned.get(DiffResetOptions.class).setProbablyIrrelevantOption("(cleared)");
-            cloned.get(DiffResetOptions.class).setAlsoIrrelevantOption("(cleared)");
-            return cloned.underlying();
-          }
-        };
+        }
+    }
 
-    @Option(
-        name = "probably_irrelevant",
-        defaultValue = "(unset)",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help = "This option is irrelevant to non-uses_irrelevant targets and is trimmed from them.")
-    public abstract String getProbablyIrrelevantOption();
+    /** Test fragment.  */
+    @StarlarkBuiltin(name = "test_diff_fragment", doc = "fragment for testing differy fragments")
+    @RequiresOptions(options = [DiffResetOptions::class])
+    class DiffResetFragment(buildOptions: BuildOptions?) : Fragment(), StarlarkValue
 
-    public abstract void setProbablyIrrelevantOption(String value);
+    @Throws(java.lang.Exception::class)
+    private fun setupDiffResetTesting() {
+        val optionsThatCanChange: com.google.common.collect.ImmutableSet<OptionDefinition?> =
+            com.google.common.collect.ImmutableSet.of<OptionDefinition?>(
+                DiffResetOptions.Companion.PROBABLY_IRRELEVANT_OPTION, DiffResetOptions.Companion.ALSO_IRRELEVANT_OPTION
+            )
+        val builder: ConfiguredRuleClassProvider.Builder = Builder()
+        TestRuleClassProvider.addStandardRules(builder)
+        builder.addConfigurationFragment(DiffResetFragment::class.java)
+        builder.overrideShouldInvalidateCacheForOptionDiffForTesting(
+            { newOptions, changedOption, oldValue, newValue -> !optionsThatCanChange.contains(changedOption) })
+        builder.overrideTrimmingTransitionFactoryForTesting(
+            object : TransitionFactory() {
+                public override fun create(ruleData: RuleTransitionData): ConfigurationTransition {
+                    if (ruleData.rule().getRuleClassObject().getName().equals("uses_irrelevant")) {
+                        return NoTransition.INSTANCE
+                    }
+                    return DiffResetOptions.Companion.CLEAR_IRRELEVANT
+                }
 
-    @Option(
-        name = "also_irrelevant",
-        defaultValue = "(unset)",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help = "This option is irrelevant to non-uses_irrelevant targets and is trimmed from them.")
-    public abstract String getAlsoIrrelevantOption();
-
-    public abstract void setAlsoIrrelevantOption(String value);
-
-    @Option(
-        name = "definitely_relevant",
-        defaultValue = "(unset)",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help = "This option is not trimmed and is used by all targets.")
-    public abstract String getDefinitelyRelevantOption();
-
-    @Option(
-        name = "also_relevant",
-        defaultValue = "(unset)",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help = "This option is not trimmed and is used by all targets.")
-    public abstract String getAlsoRelevantOption();
-
-    @Option(
-        name = "host_relevant",
-        defaultValue = "(unset)",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help = "This option is not trimmed and is used by all host targets.")
-    public abstract String getHostRelevantOption();
-  }
-
-  /** Test fragment. */
-  @StarlarkBuiltin(name = "test_diff_fragment", doc = "fragment for testing differy fragments")
-  @RequiresOptions(options = {DiffResetOptions.class})
-  public static final class DiffResetFragment extends Fragment implements StarlarkValue {
-    public DiffResetFragment(BuildOptions buildOptions) {}
-  }
-
-  private void setupDiffResetTesting() throws Exception {
-    ImmutableSet<OptionDefinition> optionsThatCanChange =
-        ImmutableSet.of(
-            DiffResetOptions.PROBABLY_IRRELEVANT_OPTION, DiffResetOptions.ALSO_IRRELEVANT_OPTION);
-    ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
-    TestRuleClassProvider.addStandardRules(builder);
-    builder.addConfigurationFragment(DiffResetFragment.class);
-    builder.overrideShouldInvalidateCacheForOptionDiffForTesting(
-        (newOptions, changedOption, oldValue, newValue) -> {
-          return !optionsThatCanChange.contains(changedOption);
-        });
-    builder.overrideTrimmingTransitionFactoryForTesting(
-        new TransitionFactory<>() {
-          @Override
-          public ConfigurationTransition create(RuleTransitionData ruleData) {
-            if (ruleData.rule().getRuleClassObject().getName().equals("uses_irrelevant")) {
-              return NoTransition.INSTANCE;
-            }
-            return DiffResetOptions.CLEAR_IRRELEVANT;
-          }
-
-          @Override
-          public TransitionType transitionType() {
-            return TransitionType.RULE;
-          }
-        });
-    useRuleClassProvider(builder.build());
-    scratch.file(
-        "test/lib.bzl",
-        """
+                public override fun transitionType(): TransitionType {
+                    return TransitionType.RULE
+                }
+            })
+        useRuleClassProvider(builder.build())
+        scratch.file(
+            "test/lib.bzl",
+            """
         def _empty_impl(ctx):
             pass
 
@@ -1181,16 +1283,19 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
                 "host_deps": attr.label_list(cfg = "exec"),
             },
         )
-        """);
-    update();
-  }
+        
+        """.trimIndent()
+        )
+        update()
+    }
 
-  @Test
-  public void cacheNotClearedWhenOptionsStaySame() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheNotClearedWhenOptionsStaySame() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib", "uses_irrelevant")
 
         uses_irrelevant(
@@ -1199,19 +1304,22 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
         )
 
         normal_lib(name = "shared")
-        """);
-    useConfiguration("--definitely_relevant=Testing");
-    update("//test:top");
-    update("//test:top");
-    assertNoTargetsVisited();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--definitely_relevant=Testing")
+        update("//test:top")
+        update("//test:top")
+        assertNoTargetsVisited()
+    }
 
-  @Test
-  public void cacheClearedWhenNonAllowedOptionsChange() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearedWhenNonAllowedOptionsChange() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib", "uses_irrelevant")
 
         uses_irrelevant(
@@ -1220,28 +1328,32 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
         )
 
         normal_lib(name = "shared")
-        """);
-    useConfiguration("--definitely_relevant=Test 1");
-    update("//test:top");
-    useConfiguration("--definitely_relevant=Test 2");
-    update("//test:top");
-    useConfiguration("--definitely_relevant=Test 1");
-    update("//test:top");
-    // these targets needed to be reanalyzed even though we built them in this configuration
-    // just a moment ago
-    assertNumberOfAnalyzedConfigurationsOfTargets(
-        ImmutableMap.<String, Integer>builder()
-            .put("//test:top", 1)
-            .put("//test:shared", 1)
-            .buildOrThrow());
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--definitely_relevant=Test 1")
+        update("//test:top")
+        useConfiguration("--definitely_relevant=Test 2")
+        update("//test:top")
+        useConfiguration("--definitely_relevant=Test 1")
+        update("//test:top")
+        // these targets needed to be reanalyzed even though we built them in this configuration
+        // just a moment ago
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+                .put("//test:top", 1)
+                .put("//test:shared", 1)
+                .buildOrThrow()
+        )
+    }
 
-  @Test
-  public void cacheNotClearedForExecWhenNonExecOptionsChange() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheNotClearedForExecWhenNonExecOptionsChange() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib", "uses_irrelevant")
 
         uses_irrelevant(
@@ -1250,26 +1362,30 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
         )
 
         normal_lib(name = "shared")
-        """);
-    useConfiguration("--host_relevant=Test 1");
-    update("//test:top");
-    useConfiguration("--host_relevant=Test 2");
-    update("//test:top");
-    // //test:shared is in the exec configuration, and --host_relevant is not part of the exec
-    // configuration. Therefore, //test:shared is not reanalyzed, even though //test:top is.
-    assertNumberOfAnalyzedConfigurationsOfTargets(
-        ImmutableMap.<String, Integer>builder()
-            .put("//test:top", 1)
-            .put("//test:shared", 0)
-            .buildOrThrow());
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--host_relevant=Test 1")
+        update("//test:top")
+        useConfiguration("--host_relevant=Test 2")
+        update("//test:top")
+        // //test:shared is in the exec configuration, and --host_relevant is not part of the exec
+        // configuration. Therefore, //test:shared is not reanalyzed, even though //test:top is.
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+                .put("//test:top", 1)
+                .put("//test:shared", 0)
+                .buildOrThrow()
+        )
+    }
 
-  @Test
-  public void cacheClearedForExecWhenExecOptionsChange() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearedForExecWhenExecOptionsChange() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib", "uses_irrelevant")
 
         uses_irrelevant(
@@ -1278,39 +1394,44 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
         )
 
         normal_lib(name = "shared")
-        """);
-    // --host_compilation_mode is part of the exec configuration.
-    useConfiguration("--host_compilation_mode=opt");
-    update("//test:top");
-    useConfiguration("--host_compilation_mode=dbg");
-    update("//test:top");
+        
+        """.trimIndent()
+        )
+        // --host_compilation_mode is part of the exec configuration.
+        useConfiguration("--host_compilation_mode=opt")
+        update("//test:top")
+        useConfiguration("--host_compilation_mode=dbg")
+        update("//test:top")
 
-    // Now, //test:shared is reanalyzed, because --host_compilation_mode is part of the exec
-    // configuration.
-    assertNumberOfAnalyzedConfigurationsOfTargets(
-        ImmutableMap.<String, Integer>builder()
-            .put("//test:top", 1)
-            .put("//test:shared", 1)
-            .buildOrThrow());
+        // Now, //test:shared is reanalyzed, because --host_compilation_mode is part of the exec
+        // configuration.
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+                .put("//test:top", 1)
+                .put("//test:shared", 1)
+                .buildOrThrow()
+        )
 
-    // Return to the original configuration and check that the cache is not cleared.
-    useConfiguration("--host_compilation_mode=opt");
-    update("//test:top");
-    // these targets needed to be reanalyzed even though we built them in this configuration
-    // just a moment ago
-    assertNumberOfAnalyzedConfigurationsOfTargets(
-        ImmutableMap.<String, Integer>builder()
-            .put("//test:top", 1)
-            .put("//test:shared", 1)
-            .buildOrThrow());
-  }
+        // Return to the original configuration and check that the cache is not cleared.
+        useConfiguration("--host_compilation_mode=opt")
+        update("//test:top")
+        // these targets needed to be reanalyzed even though we built them in this configuration
+        // just a moment ago
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+                .put("//test:top", 1)
+                .put("//test:shared", 1)
+                .buildOrThrow()
+        )
+    }
 
-  @Test
-  public void cacheNotClearedWhenAllowedOptionsChange() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheNotClearedWhenAllowedOptionsChange() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib", "uses_irrelevant")
 
         uses_irrelevant(
@@ -1319,444 +1440,528 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
         )
 
         normal_lib(name = "shared")
-        """);
-    useConfiguration("--definitely_relevant=Testing", "--probably_irrelevant=Test 1");
-    update("//test:top");
-    useConfiguration("--definitely_relevant=Testing", "--probably_irrelevant=Test 2");
-    update("//test:top");
-    // the shared library got to reuse the cached value, while the entry point had to be rebuilt in
-    // the new configuration
-    assertNumberOfAnalyzedConfigurationsOfTargets(
-        ImmutableMap.<String, Integer>builder()
-            .put("//test:top", 1)
-            .put("//test:shared", 0)
-            .buildOrThrow());
-    useConfiguration("--definitely_relevant=Testing", "--probably_irrelevant=Test 1");
-    update("//test:top");
-    // now we're back to the old configuration with no cache clears, so no work needed to be done
-    assertNumberOfAnalyzedConfigurationsOfTargets(
-        ImmutableMap.<String, Integer>builder()
-            .put("//test:top", 0)
-            .put("//test:shared", 0)
-            .buildOrThrow());
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--definitely_relevant=Testing", "--probably_irrelevant=Test 1")
+        update("//test:top")
+        useConfiguration("--definitely_relevant=Testing", "--probably_irrelevant=Test 2")
+        update("//test:top")
+        // the shared library got to reuse the cached value, while the entry point had to be rebuilt in
+        // the new configuration
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+                .put("//test:top", 1)
+                .put("//test:shared", 0)
+                .buildOrThrow()
+        )
+        useConfiguration("--definitely_relevant=Testing", "--probably_irrelevant=Test 1")
+        update("//test:top")
+        // now we're back to the old configuration with no cache clears, so no work needed to be done
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+                .put("//test:top", 0)
+                .put("//test:shared", 0)
+                .buildOrThrow()
+        )
+    }
 
-  @Test
-  public void cacheNotClearedWhenRedundantDefinesChange() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheNotClearedWhenRedundantDefinesChange() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--define=a=1", "--define=a=2");
-    update("//test:top");
-    useConfiguration("--define=a=2");
-    update("//test:top");
-    assertNumberOfAnalyzedConfigurationsOfTargets(ImmutableMap.of("//test:top", 0));
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--define=a=1", "--define=a=2")
+        update("//test:top")
+        useConfiguration("--define=a=2")
+        update("//test:top")
+        assertNumberOfAnalyzedConfigurationsOfTargets(
+            com.google.common.collect.ImmutableMap.of<String?, Int?>(
+                "//test:top",
+                0
+            )
+        )
+    }
 
-  @Test
-  public void noCacheClearMessageAfterCleanWithSameOptions() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCacheClearMessageAfterCleanWithSameOptions() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration();
-    update("//test:top");
-    cleanSkyframe();
-    eventCollector.clear();
-    update("//test:top");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration()
+        update("//test:top")
+        cleanSkyframe()
+        eventCollector.clear()
+        update("//test:top")
+        assertNoEvents()
+    }
 
-  @Test
-  public void noCacheClearMessageAfterCleanWithDifferentOptions() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCacheClearMessageAfterCleanWithDifferentOptions() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--definitely_relevant=before");
-    update("//test:top");
-    cleanSkyframe();
-    useConfiguration("--definitely_relevant=after");
-    eventCollector.clear();
-    update("//test:top");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--definitely_relevant=before")
+        update("//test:top")
+        cleanSkyframe()
+        useConfiguration("--definitely_relevant=after")
+        eventCollector.clear()
+        update("//test:top")
+        assertNoEvents()
+    }
 
-  @Test
-  public void noCacheClearMessageAfterDiscardAnalysisCacheThenCleanWithSameOptions()
-      throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCacheClearMessageAfterDiscardAnalysisCacheThenCleanWithSameOptions() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--discard_analysis_cache");
-    update("//test:top");
-    cleanSkyframe();
-    eventCollector.clear();
-    update("//test:top");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--discard_analysis_cache")
+        update("//test:top")
+        cleanSkyframe()
+        eventCollector.clear()
+        update("//test:top")
+        assertNoEvents()
+    }
 
-  @Test
-  public void noCacheClearMessageAfterDiscardAnalysisCacheThenCleanWithChangedOptions()
-      throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCacheClearMessageAfterDiscardAnalysisCacheThenCleanWithChangedOptions() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--definitely_relevant=before", "--discard_analysis_cache");
-    update("//test:top");
-    cleanSkyframe();
-    useConfiguration("--definitely_relevant=after", "--discard_analysis_cache");
-    eventCollector.clear();
-    update("//test:top");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--definitely_relevant=before", "--discard_analysis_cache")
+        update("//test:top")
+        cleanSkyframe()
+        useConfiguration("--definitely_relevant=after", "--discard_analysis_cache")
+        eventCollector.clear()
+        update("//test:top")
+        assertNoEvents()
+    }
 
-  @Test
-  public void cacheClearMessageAfterDiscardAnalysisCacheBuild() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterDiscardAnalysisCacheBuild() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=-1",
-        "--probably_irrelevant=yeah",
-        "--discard_analysis_cache");
-    update("//test:top");
-    eventCollector.clear();
-    update("//test:top");
-    assertContainsEvent("--discard_analysis_cache");
-    assertDoesNotContainEvent("Build option");
-    assertContainsEvent("discarding analysis cache");
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=-1",
+            "--probably_irrelevant=yeah",
+            "--discard_analysis_cache"
+        )
+        update("//test:top")
+        eventCollector.clear()
+        update("//test:top")
+        assertContainsEvent("--discard_analysis_cache")
+        assertDoesNotContainEvent("Build option")
+        assertContainsEvent("discarding analysis cache")
+    }
 
-  @Test
-  public void noCacheClearMessageAfterNonDiscardAnalysisCacheBuild() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCacheClearMessageAfterNonDiscardAnalysisCacheBuild() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--max_config_changes_to_show=-1", "--discard_analysis_cache");
-    update("//test:top");
-    useConfiguration("--max_config_changes_to_show=-1");
-    update("//test:top");
-    eventCollector.clear();
-    update("//test:top");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--max_config_changes_to_show=-1", "--discard_analysis_cache")
+        update("//test:top")
+        useConfiguration("--max_config_changes_to_show=-1")
+        update("//test:top")
+        eventCollector.clear()
+        update("//test:top")
+        assertNoEvents()
+    }
 
-  @Test
-  public void noCacheClearMessageAfterIrrelevantOptionChanges() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCacheClearMessageAfterIrrelevantOptionChanges() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--max_config_changes_to_show=-1", "--probably_irrelevant=old");
-    update("//test:top");
-    useConfiguration("--max_config_changes_to_show=-1", "--probably_irrelevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--max_config_changes_to_show=-1", "--probably_irrelevant=old")
+        update("//test:top")
+        useConfiguration("--max_config_changes_to_show=-1", "--probably_irrelevant=new")
+        eventCollector.clear()
+        update("//test:top")
+        assertNoEvents()
+    }
 
-  @Test
-  public void noCacheClearMessageAfterIrrelevantOptionChangesWithDiffDisabled() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCacheClearMessageAfterIrrelevantOptionChangesWithDiffDisabled() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--max_config_changes_to_show=0", "--probably_irrelevant=old");
-    update("//test:top");
-    useConfiguration("--max_config_changes_to_show=0", "--probably_irrelevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--max_config_changes_to_show=0", "--probably_irrelevant=old")
+        update("//test:top")
+        useConfiguration("--max_config_changes_to_show=0", "--probably_irrelevant=new")
+        eventCollector.clear()
+        update("//test:top")
+        assertNoEvents()
+    }
 
-  @Test
-  public void cacheClearMessageAfterChangingPlatform() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterChangingPlatform() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--platforms=" + TestConstants.PLATFORM_LABEL);
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--platforms=" + TestConstants.PIII_PLATFORM_LABEL);
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent("Build option --platforms has changed, " + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--platforms=" + TestConstants.PLATFORM_LABEL
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--platforms=" + TestConstants.PIII_PLATFORM_LABEL
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent("Build option --platforms has changed, " + CACHE_DISCARD_WARNING)
+    }
 
-  @Test
-  public void cacheClearMessageAfterSingleRelevantOptionChanges() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterSingleRelevantOptionChanges() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--max_config_changes_to_show=-1", "--definitely_relevant=old");
-    update("//test:top");
-    useConfiguration("--max_config_changes_to_show=-1", "--definitely_relevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent("Build option --definitely_relevant has changed, " + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--max_config_changes_to_show=-1", "--definitely_relevant=old")
+        update("//test:top")
+        useConfiguration("--max_config_changes_to_show=-1", "--definitely_relevant=new")
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent("Build option --definitely_relevant has changed, " + CACHE_DISCARD_WARNING)
+    }
 
-  @Test
-  public void cacheClearMessageDoesNotIncludeIrrelevantOptions() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageDoesNotIncludeIrrelevantOptions() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=-1",
-        "--definitely_relevant=old",
-        "--probably_irrelevant=old",
-        "--also_irrelevant=old");
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=-1",
-        "--definitely_relevant=new",
-        "--probably_irrelevant=new",
-        "--also_irrelevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent("Build option --definitely_relevant has changed, " + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=-1",
+            "--definitely_relevant=old",
+            "--probably_irrelevant=old",
+            "--also_irrelevant=old"
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=-1",
+            "--definitely_relevant=new",
+            "--probably_irrelevant=new",
+            "--also_irrelevant=new"
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent("Build option --definitely_relevant has changed, " + CACHE_DISCARD_WARNING)
+    }
 
-  @Test
-  public void cacheClearMessageDoesNotIncludeUnchangedOptions() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageDoesNotIncludeUnchangedOptions() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--definitely_relevant=old", "--also_relevant=fixed");
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--definitely_relevant=new", "--also_relevant=fixed");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent("Build option --definitely_relevant has changed, " + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--definitely_relevant=old", "--also_relevant=fixed"
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--definitely_relevant=new", "--also_relevant=fixed"
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent("Build option --definitely_relevant has changed, " + CACHE_DISCARD_WARNING)
+    }
 
-  @Test
-  public void cacheClearMessageAfterRelevantOptionChangeWithDiffDisabled() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterRelevantOptionChangeWithDiffDisabled() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--max_config_changes_to_show=0", "--definitely_relevant=old");
-    update("//test:top");
-    useConfiguration("--max_config_changes_to_show=0", "--definitely_relevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent("Build options have changed, " + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--max_config_changes_to_show=0", "--definitely_relevant=old")
+        update("//test:top")
+        useConfiguration("--max_config_changes_to_show=0", "--definitely_relevant=new")
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent("Build options have changed, " + CACHE_DISCARD_WARNING)
+    }
 
-  @Test
-  public void cacheClearMessageAfterTwoRelevantOptionsChange() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterTwoRelevantOptionsChange() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--definitely_relevant=old", "--also_relevant=old");
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--definitely_relevant=new", "--also_relevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent(
-        "Build options --also_relevant and --definitely_relevant have changed, "
-            + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--definitely_relevant=old", "--also_relevant=old"
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--definitely_relevant=new", "--also_relevant=new"
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent(
+            "Build options --also_relevant and --definitely_relevant have changed, "
+                    + CACHE_DISCARD_WARNING
+        )
+    }
 
-  @Test
-  public void cacheClearMessageAfterMultipleRelevantOptionsChange() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterMultipleRelevantOptionsChange() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=-1",
-        "--definitely_relevant=old",
-        "--also_relevant=old",
-        "--host_relevant=old");
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=-1",
-        "--definitely_relevant=new",
-        "--also_relevant=new",
-        "--host_relevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent(
-        "Build options --also_relevant, --definitely_relevant, and --host_relevant have changed, "
-            + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=-1",
+            "--definitely_relevant=old",
+            "--also_relevant=old",
+            "--host_relevant=old"
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=-1",
+            "--definitely_relevant=new",
+            "--also_relevant=new",
+            "--host_relevant=new"
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent(
+            "Build options --also_relevant, --definitely_relevant, and --host_relevant have changed, "
+                    + CACHE_DISCARD_WARNING
+        )
+    }
 
-  @Test
-  public void cacheClearMessageAfterMultipleRelevantOptionsChangeWithDiffLimit() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterMultipleRelevantOptionsChangeWithDiffLimit() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=2",
-        "--definitely_relevant=old",
-        "--also_relevant=old",
-        "--host_relevant=old");
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=2",
-        "--definitely_relevant=new",
-        "--also_relevant=new",
-        "--host_relevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent(
-        "Build options --also_relevant, --definitely_relevant, and 1 more have changed, "
-            + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=2",
+            "--definitely_relevant=old",
+            "--also_relevant=old",
+            "--host_relevant=old"
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=2",
+            "--definitely_relevant=new",
+            "--also_relevant=new",
+            "--host_relevant=new"
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent(
+            "Build options --also_relevant, --definitely_relevant, and 1 more have changed, "
+                    + CACHE_DISCARD_WARNING
+        )
+    }
 
-  @Test
-  public void cacheClearMessageAfterMultipleRelevantOptionsChangeWithSingleDiffLimit()
-      throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterMultipleRelevantOptionsChangeWithSingleDiffLimit() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=1",
-        "--definitely_relevant=old",
-        "--also_relevant=old",
-        "--host_relevant=old");
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=1",
-        "--definitely_relevant=new",
-        "--also_relevant=new",
-        "--host_relevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertDoesNotContainEvent("--discard_analysis_cache");
-    assertContainsEvent(
-        "Build options --also_relevant and 2 more have changed, " + CACHE_DISCARD_WARNING);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=1",
+            "--definitely_relevant=old",
+            "--also_relevant=old",
+            "--host_relevant=old"
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=1",
+            "--definitely_relevant=new",
+            "--also_relevant=new",
+            "--host_relevant=new"
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertDoesNotContainEvent("--discard_analysis_cache")
+        assertContainsEvent(
+            "Build options --also_relevant and 2 more have changed, " + CACHE_DISCARD_WARNING
+        )
+    }
 
-  @Test
-  public void cacheClearMessageAfterDiscardAnalysisCacheBuildWithRelevantOptionChanges()
-      throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheClearMessageAfterDiscardAnalysisCacheBuildWithRelevantOptionChanges() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--discard_analysis_cache", "--definitely_relevant=old");
-    update("//test:top");
-    useConfiguration(
-        "--max_config_changes_to_show=-1", "--discard_analysis_cache", "--definitely_relevant=new");
-    eventCollector.clear();
-    update("//test:top");
-    assertContainsEvent("--discard_analysis_cache");
-    assertDoesNotContainEvent("Build option");
-    assertContainsEvent("discarding analysis cache");
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--discard_analysis_cache", "--definitely_relevant=old"
+        )
+        update("//test:top")
+        useConfiguration(
+            "--max_config_changes_to_show=-1", "--discard_analysis_cache", "--definitely_relevant=new"
+        )
+        eventCollector.clear()
+        update("//test:top")
+        assertContainsEvent("--discard_analysis_cache")
+        assertDoesNotContainEvent("Build option")
+        assertContainsEvent("discarding analysis cache")
+    }
 
-  @Test
-  public void throwsIfAnalysisCacheIsDiscardedWhenOptionSet_nativeOption() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun throwsIfAnalysisCacheIsDiscardedWhenOptionSet_nativeOption() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(
@@ -1765,106 +1970,130 @@ public class AnalysisCachingTest extends AnalysisCachingTestBase {
         )
 
         normal_lib(name = "exec")
-        """);
-    useConfiguration("--definitely_relevant=old");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--definitely_relevant=old")
 
-    // Set up the analysis cache
-    update("//test:top");
+        // Set up the analysis cache
+        update("//test:top")
 
-    // Check if things work if the build options are not changed
-    useConfiguration("--noallow_analysis_cache_discard", "--definitely_relevant=old");
-    update("//test:top");
-    var topTargetBefore =
-        skyframeExecutor
-            .getEvaluator()
-            .getExistingValue(
-                ConfiguredTargetKey.builder()
-                    .setLabel(Label.parseCanonicalUnchecked("//test:top"))
-                    .setConfiguration(getTargetConfiguration())
-                    .build());
-    assertThat(topTargetBefore).isNotNull();
+        // Check if things work if the build options are not changed
+        useConfiguration("--noallow_analysis_cache_discard", "--definitely_relevant=old")
+        update("//test:top")
+        val topTargetBefore: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor
+                .getEvaluator()
+                .getExistingValue(
+                    ConfiguredTargetKey.builder()
+                        .setLabel(Label.parseCanonicalUnchecked("//test:top"))
+                        .setConfiguration(getTargetConfiguration())
+                        .build()
+                )
+        assertThat(topTargetBefore).isNotNull()
 
-    // Check if an error is raised when the build options are changed. Do it twice because
-    // had already had a bug that the second invocation erroneously worked. See
-    // https://github.com/bazelbuild/bazel/issues/23491 .
-    useConfiguration("--noallow_analysis_cache_discard", "--definitely_relevant=new");
-    Throwable t = assertThrows(InvalidConfigurationException.class, () -> update("//test:top"));
-    assertThat(t.getMessage().contains("analysis cache would have been discarded")).isTrue();
-    var topTargetAfter =
-        skyframeExecutor
-            .getEvaluator()
-            .getExistingValue(
-                ConfiguredTargetKey.builder()
-                    .setLabel(Label.parseCanonicalUnchecked("//test:top"))
-                    .setConfiguration(getTargetConfiguration())
-                    .build());
-    assertThat(topTargetAfter).isSameInstanceAs(topTargetBefore);
+        // Check if an error is raised when the build options are changed. Do it twice because
+        // had already had a bug that the second invocation erroneously worked. See
+        // https://github.com/bazelbuild/bazel/issues/23491 .
+        useConfiguration("--noallow_analysis_cache_discard", "--definitely_relevant=new")
+        var t: Throwable = org.junit.Assert.assertThrows<T>(
+            InvalidConfigurationException::class.java,
+            org.junit.function.ThrowingRunnable { update("//test:top") })
+        Truth.assertThat(t.getMessage().contains("analysis cache would have been discarded")).isTrue()
+        val topTargetAfter: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor
+                .getEvaluator()
+                .getExistingValue(
+                    ConfiguredTargetKey.builder()
+                        .setLabel(Label.parseCanonicalUnchecked("//test:top"))
+                        .setConfiguration(getTargetConfiguration())
+                        .build()
+                )
+        assertThat(topTargetAfter).isSameInstanceAs(topTargetBefore)
 
-    t = assertThrows(InvalidConfigurationException.class, () -> update("//test:top"));
-    assertThat(t.getMessage()).contains("analysis cache would have been discarded");
+        t = org.junit.Assert.assertThrows<T>(
+            InvalidConfigurationException::class.java,
+            org.junit.function.ThrowingRunnable { update("//test:top") })
+        Truth.assertThat(t.getMessage()).contains("analysis cache would have been discarded")
 
-    // Check if going back to the original configuration works.
-    useConfiguration("--noallow_analysis_cache_discard", "--definitely_relevant=old");
-    update("//test:top");
+        // Check if going back to the original configuration works.
+        useConfiguration("--noallow_analysis_cache_discard", "--definitely_relevant=old")
+        update("//test:top")
 
-    // Now check if removing --noallow_analysis_cache_discard in fact allows discarding the cache.
-    useConfiguration("--definitely_relevant=new");
-    update("//test:top");
-  }
+        // Now check if removing --noallow_analysis_cache_discard in fact allows discarding the cache.
+        useConfiguration("--definitely_relevant=new")
+        update("//test:top")
+    }
 
-  @Test
-  public void throwsIfAnalysisCacheIsDiscardedWhenOptionSet_starlarkFlag() throws Exception {
-    setupDiffResetTesting();
-    scratch.file(
-        "test_flags/build_setting.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun throwsIfAnalysisCacheIsDiscardedWhenOptionSet_starlarkFlag() {
+        setupDiffResetTesting()
+        scratch.file(
+            "test_flags/build_setting.bzl",
+            """
         bool_flag = rule(
             implementation = lambda ctx: [],
             build_setting = config.bool(flag = True),
         )
-        """);
-    scratch.file(
-        "test_flags/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test_flags/BUILD",
+            """
         load(":build_setting.bzl", "bool_flag")
 
         bool_flag(
             name = "my_flag",
             build_setting_default = False,
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(":lib.bzl", "normal_lib")
 
         normal_lib(name = "top")
-        """);
-    useConfiguration("--no//test_flags:my_flag");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--no//test_flags:my_flag")
 
-    // Set up the analysis cache
-    update("//test:top");
+        // Set up the analysis cache
+        update("//test:top")
 
-    // Check if things work if the build options are not changed
-    useConfiguration("--noallow_analysis_cache_discard", "--no//test_flags:my_flag");
-    update("//test:top");
+        // Check if things work if the build options are not changed
+        useConfiguration("--noallow_analysis_cache_discard", "--no//test_flags:my_flag")
+        update("//test:top")
 
-    // Check if an error is raised when the build options are changed. Do it twice because
-    // had already had a bug that the second invocation erroneously worked. See
-    // https://github.com/bazelbuild/bazel/issues/23491 .
-    useConfiguration("--noallow_analysis_cache_discard", "--//test_flags:my_flag");
-    Throwable t = assertThrows(InvalidConfigurationException.class, () -> update("//test:top"));
-    assertThat(t.getMessage()).contains("analysis cache would have been discarded");
+        // Check if an error is raised when the build options are changed. Do it twice because
+        // had already had a bug that the second invocation erroneously worked. See
+        // https://github.com/bazelbuild/bazel/issues/23491 .
+        useConfiguration("--noallow_analysis_cache_discard", "--//test_flags:my_flag")
+        var t: Throwable = org.junit.Assert.assertThrows<T>(
+            InvalidConfigurationException::class.java,
+            org.junit.function.ThrowingRunnable { update("//test:top") })
+        Truth.assertThat(t.getMessage()).contains("analysis cache would have been discarded")
 
-    t = assertThrows(InvalidConfigurationException.class, () -> update("//test:top"));
-    assertThat(t).hasMessageThat().contains("analysis cache would have been discarded");
+        t = org.junit.Assert.assertThrows<T>(
+            InvalidConfigurationException::class.java,
+            org.junit.function.ThrowingRunnable { update("//test:top") })
+        Truth.assertThat(t).hasMessageThat().contains("analysis cache would have been discarded")
 
-    // Check if going back to the original configuration works.
-    useConfiguration("--noallow_analysis_cache_discard", "--no//test_flags:my_flag");
-    update("//test:top");
+        // Check if going back to the original configuration works.
+        useConfiguration("--noallow_analysis_cache_discard", "--no//test_flags:my_flag")
+        update("//test:top")
 
-    // Now check if removing --noallow_analysis_cache_discard in fact allows discarding the cache.
-    useConfiguration("--//test_flags:my_flag");
-    update("//test:top");
-  }
+        // Now check if removing --noallow_analysis_cache_discard in fact allows discarding the cache.
+        useConfiguration("--//test_flags:my_flag")
+        update("//test:top")
+    }
+
+    companion object {
+        private val CACHE_DISCARD_WARNING = ("discarding analysis cache (this can be expensive, see"
+                + " https://bazel.build/advanced/performance/iteration-speed).")
+    }
 }

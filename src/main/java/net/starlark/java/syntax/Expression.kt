@@ -11,86 +11,86 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
 /**
  * Base class for all expression nodes in the AST.
- *
- * <p>The only expressions permitted on the left-hand side of an assignment (such as 'lhs=rhs' or
+ * 
+ * 
+ * The only expressions permitted on the left-hand side of an assignment (such as 'lhs=rhs' or
  * 'for lhs in expr') are identifiers, dot expressions (x.y), list expressions ([expr, ...]), tuple
  * expressions ((expr, ...)), or parenthesized variants of those. In particular and unlike Python,
  * slice expressions and starred expressions cannot appear on the LHS. TODO(bazel-team): Add support
  * for assigning to slices (e.g. a[2:6] = [3]).
  */
-public abstract class Expression extends Node {
+abstract class Expression internal constructor(locs: FileLocations?, kind: Kind?) : Node(locs) {
+    /**
+     * Kind of the expression. This is similar to using instanceof, except that it's more efficient
+     * and can be used in a switch/case.
+     */
+    enum class Kind {
+        BINARY_OPERATOR,
+        CALL,
+        CAST,
+        COMPREHENSION,
+        CONDITIONAL,
+        DICT_EXPR,
+        DOT,
+        ELLIPSIS,
+        FLOAT_LITERAL,
+        IDENTIFIER,
+        INDEX,
+        INT_LITERAL,
+        ISINSTANCE,
+        LAMBDA,
+        LIST_EXPR,
+        SLICE,
+        STRING_LITERAL,
+        UNARY_OPERATOR,
+        TYPE_APPLICATION,
+    }
 
-  /**
-   * Kind of the expression. This is similar to using instanceof, except that it's more efficient
-   * and can be used in a switch/case.
-   */
-  public enum Kind {
-    BINARY_OPERATOR,
-    CALL,
-    CAST,
-    COMPREHENSION,
-    CONDITIONAL,
-    DICT_EXPR,
-    DOT,
-    ELLIPSIS,
-    FLOAT_LITERAL,
-    IDENTIFIER,
-    INDEX,
-    INT_LITERAL,
-    ISINSTANCE,
-    LAMBDA,
-    LIST_EXPR,
-    SLICE,
-    STRING_LITERAL,
-    UNARY_OPERATOR,
-    TYPE_APPLICATION,
-  }
+    // Materialize kind as a field so its accessor can be non-virtual.
+    private val kind: Kind?
 
-  // Materialize kind as a field so its accessor can be non-virtual.
-  private final Kind kind;
+    init {
+        this.kind = kind
+    }
 
-  Expression(FileLocations locs, Kind kind) {
-    super(locs);
-    this.kind = kind;
-  }
+    /**
+     * Kind of the expression. This is similar to using instanceof, except that it's more efficient
+     * and can be used in a switch/case.
+     */
+    // Final to avoid cost of virtual call (see #12967).
+    fun kind(): Kind? {
+        return kind
+    }
 
-  /**
-   * Kind of the expression. This is similar to using instanceof, except that it's more efficient
-   * and can be used in a switch/case.
-   */
-  // Final to avoid cost of virtual call (see #12967).
-  public final Kind kind() {
-    return kind;
-  }
+    companion object {
+        /** Parses an expression.  */
+        /** Parses an expression with default options.  */
+        @kotlin.jvm.JvmStatic
+        @kotlin.jvm.JvmOverloads
+        @Throws(SyntaxError.Exception::class)
+        fun parse(input: ParserInput?, options: FileOptions? = FileOptions.Companion.DEFAULT): Expression? {
+            return Parser.Companion.parseExpression(input, options)
+        }
 
-  /** Parses an expression. */
-  public static Expression parse(ParserInput input, FileOptions options)
-      throws SyntaxError.Exception {
-    return Parser.parseExpression(input, options);
-  }
-
-  /** Parses an expression with default options. */
-  public static Expression parse(ParserInput input) throws SyntaxError.Exception {
-    return parse(input, FileOptions.DEFAULT);
-  }
-
-  /**
-   * Parses a type expression.
-   *
-   * @param options parsing options; note that {@link FileOptions#allowStarlarkTypeSyntax} doesn't
-   *     need to be set - this method supports Starlark types implicitly.
-   */
-  public static Expression parseTypeExpression(ParserInput input, FileOptions options)
-      throws SyntaxError.Exception {
-    return Parser.parseTypeExpression(input, options);
-  }
-
-  /** Parses a type expression with default options. */
-  public static Expression parseTypeExpression(ParserInput input) throws SyntaxError.Exception {
-    return parseTypeExpression(input, FileOptions.DEFAULT);
-  }
+        /**
+         * Parses a type expression.
+         * 
+         * @param options parsing options; note that [FileOptions.allowStarlarkTypeSyntax] doesn't
+         * need to be set - this method supports Starlark types implicitly.
+         */
+        /** Parses a type expression with default options.  */
+        @kotlin.jvm.JvmStatic
+        @kotlin.jvm.JvmOverloads
+        @Throws(SyntaxError.Exception::class)
+        fun parseTypeExpression(
+            input: ParserInput?,
+            options: FileOptions? = FileOptions.Companion.DEFAULT
+        ): Expression? {
+            return Parser.Companion.parseTypeExpression(input, options)
+        }
+    }
 }

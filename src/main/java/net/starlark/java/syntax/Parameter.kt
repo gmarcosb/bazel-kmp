@@ -11,154 +11,138 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.base.Preconditions;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
 
 /**
  * Syntax node for a parameter in a function definition.
- *
- * <p>Parameters may be of four forms, as in {@code def f(a, b=c, *args, **kwargs)}. They are
+ * 
+ * 
+ * Parameters may be of four forms, as in `def f(a, b=c, *args, **kwargs)`. They are
  * represented by the subclasses Mandatory, Optional, Star, and StarStar.
- *
- * <p>Each parameter may have a type annotation. Star parameter without id/name, `(..., *, ...)`,
+ * 
+ * 
+ * Each parameter may have a type annotation. Star parameter without id/name, `(..., *, ...)`,
  * cannot be annotated.
  */
-public abstract class Parameter extends Node {
+abstract class Parameter private constructor(locs: FileLocations?, id: Identifier?, type: Expression?) : Node(locs) {
+    // Null in the case of a bare * parameter, non-null for any other case.
+    @kotlin.jvm.JvmField
+    private val id: Identifier?
 
-  // Null in the case of a bare * parameter, non-null for any other case.
-  @Nullable private final Identifier id;
+    private val type: Expression?
 
-  @Nullable private final Expression type;
-
-  private Parameter(FileLocations locs, @Nullable Identifier id, @Nullable Expression type) {
-    super(locs);
-    this.id = id;
-    this.type = type;
-  }
-
-  @Nullable
-  public String getName() {
-    return id != null ? id.getName() : null;
-  }
-
-  @Nullable
-  public Identifier getIdentifier() {
-    return id;
-  }
-
-  @Nullable
-  public Expression getDefaultValue() {
-    return null;
-  }
-
-  @Nullable
-  public Expression getType() {
-    return type;
-  }
-
-  /**
-   * Syntax node for a mandatory parameter, {@code f(id)}. It may be positional or keyword-only
-   * depending on its position.
-   */
-  public static final class Mandatory extends Parameter {
-    Mandatory(FileLocations locs, Identifier id, @Nullable Expression type) {
-      super(locs, id, type);
+    init {
+        this.id = id
+        this.type = type
     }
 
-    @Override
-    public int getStartOffset() {
-      return getIdentifier().getStartOffset();
+    fun getName(): String? {
+        return if (id != null) id.getName() else null
     }
 
-    @Override
-    public int getEndOffset() {
-      return getType() != null ? getType().getEndOffset() : getIdentifier().getEndOffset();
-    }
-  }
-
-  /**
-   * Syntax node for an optional parameter, {@code f(id=expr).}. It may be positional or
-   * keyword-only depending on its position.
-   */
-  public static final class Optional extends Parameter {
-
-    public final Expression defaultValue;
-
-    Optional(
-        FileLocations locs, Identifier id, @Nullable Expression type, Expression defaultValue) {
-      super(locs, id, type);
-      this.defaultValue = defaultValue;
+    fun getIdentifier(): Identifier? {
+        return id
     }
 
-    @Override
-    @Nullable
-    public Expression getDefaultValue() {
-      return defaultValue;
+    open fun getDefaultValue(): Expression? {
+        return null
     }
 
-    @Override
-    public int getStartOffset() {
-      return getIdentifier().getStartOffset();
+    fun getType(): Expression? {
+        return type
     }
 
-    @Override
-    public int getEndOffset() {
-      return getDefaultValue().getEndOffset();
+    /**
+     * Syntax node for a mandatory parameter, `f(id)`. It may be positional or keyword-only
+     * depending on its position.
+     */
+    class Mandatory internal constructor(locs: FileLocations?, id: Identifier?, type: Expression?) :
+        Parameter(locs, id, type) {
+        override fun getStartOffset(): Int {
+            return getIdentifier()!!.getStartOffset()
+        }
+
+        override fun getEndOffset(): Int {
+            return if (getType() != null) getType()!!.getEndOffset() else getIdentifier()!!.getEndOffset()
+        }
     }
 
-    @Override
-    public String toString() {
-      return getName() + "=" + defaultValue;
-    }
-  }
+    /**
+     * Syntax node for an optional parameter, `f(id=expr).`. It may be positional or
+     * keyword-only depending on its position.
+     */
+    class Optional internal constructor(
+        locs: FileLocations?,
+        id: Identifier?,
+        type: Expression?,
+        defaultValue: Expression?
+    ) : Parameter(locs, id, type) {
+        val defaultValue: Expression?
 
-  /** Syntax node for a star parameter, {@code f(*id)} or {@code f(..., *, ...)}. */
-  public static final class Star extends Parameter {
-    private final int starOffset;
+        init {
+            this.defaultValue = defaultValue
+        }
 
-    Star(FileLocations locs, int starOffset, @Nullable Identifier id, @Nullable Expression type) {
-      super(locs, id, type);
-      Preconditions.checkArgument(
-          id != null || type == null, "Star parameter without id cannot have a type");
-      this.starOffset = starOffset;
-    }
+        override fun getDefaultValue(): Expression? {
+            return defaultValue
+        }
 
-    @Override
-    public int getStartOffset() {
-      return starOffset;
-    }
+        override fun getStartOffset(): Int {
+            return getIdentifier()!!.getStartOffset()
+        }
 
-    @Override
-    public int getEndOffset() {
-      return getType() != null ? getType().getEndOffset() : getIdentifier().getEndOffset();
-    }
-  }
+        override fun getEndOffset(): Int {
+            return getDefaultValue()!!.getEndOffset()
+        }
 
-  /** Syntax node for a parameter of the form {@code f(**id)}. */
-  public static final class StarStar extends Parameter {
-    private final int starStarOffset;
-
-    StarStar(FileLocations locs, int starStarOffset, Identifier id, @Nullable Expression type) {
-      super(locs, id, type);
-      this.starStarOffset = starStarOffset;
+        override fun toString(): String {
+            return getName() + "=" + defaultValue
+        }
     }
 
-    @Override
-    public int getStartOffset() {
-      return starStarOffset;
+    /** Syntax node for a star parameter, `f(*id)` or `f(..., *, ...)`.  */
+    class Star internal constructor(locs: FileLocations?, starOffset: Int, id: Identifier?, type: Expression?) :
+        Parameter(locs, id, type) {
+        private val starOffset: Int
+
+        init {
+            Preconditions.checkArgument(
+                id != null || type == null, "Star parameter without id cannot have a type"
+            )
+            this.starOffset = starOffset
+        }
+
+        override fun getStartOffset(): Int {
+            return starOffset
+        }
+
+        override fun getEndOffset(): Int {
+            return if (getType() != null) getType()!!.getEndOffset() else getIdentifier()!!.getEndOffset()
+        }
     }
 
-    @Override
-    public int getEndOffset() {
-      return getType() != null ? getType().getEndOffset() : getIdentifier().getEndOffset();
-    }
-  }
+    /** Syntax node for a parameter of the form `f(**id)`.  */
+    class StarStar internal constructor(locs: FileLocations?, starStarOffset: Int, id: Identifier?, type: Expression?) :
+        Parameter(locs, id, type) {
+        private val starStarOffset: Int
 
-  @Override
-  public final void accept(NodeVisitor visitor) {
-    // All Parameter subclasses dispatch to NodeVisitor#visit(Parameter).
-    visitor.visit(this);
-  }
+        init {
+            this.starStarOffset = starStarOffset
+        }
+
+        override fun getStartOffset(): Int {
+            return starStarOffset
+        }
+
+        override fun getEndOffset(): Int {
+            return if (getType() != null) getType()!!.getEndOffset() else getIdentifier()!!.getEndOffset()
+        }
+    }
+
+    override fun accept(visitor: NodeVisitor) {
+        // All Parameter subclasses dispatch to NodeVisitor#visit(Parameter).
+        visitor.visit(this)
+    }
 }

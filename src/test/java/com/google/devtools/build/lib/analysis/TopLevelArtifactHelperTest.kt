@@ -11,109 +11,92 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.analysis.OutputGroupInfo.HIDDEN_OUTPUT_GROUP_PREFIX
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.analysis.OutputGroupInfo.HIDDEN_OUTPUT_GROUP_PREFIX;
-import static com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.getAllArtifactsToBuild;
-import static java.util.Arrays.asList;
+/** Tests for [TopLevelArtifactHelper].  */
+@RunWith(JUnit4::class)
+class TopLevelArtifactHelperTest {
+    private var ctx: TopLevelArtifactContext? = null
+    private var groupProvider: OutputGroupInfo? = null
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.ArtifactsInOutputGroup;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.ArtifactsToBuild;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.TreeMap;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private var path: Path? = null
+    private var root: ArtifactRoot? = null
+    private var artifactIdx = 0
 
-/** Tests for {@link TopLevelArtifactHelper}. */
-@RunWith(JUnit4.class)
-public class TopLevelArtifactHelperTest {
-
-  private TopLevelArtifactContext ctx;
-  private OutputGroupInfo groupProvider;
-
-  private Path path;
-  private ArtifactRoot root;
-  private int artifactIdx;
-
-  @Before
-  public final void setRootDir() throws Exception {
-    Scratch scratch = new Scratch();
-    Path execRoot = scratch.getFileSystem().getPath("/");
-    root = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "blaze-out");
-    path = scratch.dir("/blaze-out/foo");
-  }
-
-  private void setup(Iterable<Pair<String, Integer>> groups) {
-    TreeMap<String, NestedSetBuilder<Artifact>> outputGroups = new TreeMap<>();
-    for (var pair : groups) {
-      outputGroups.put(pair.first, newArtifacts(pair.second));
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setRootDir() {
+        val scratch: Scratch = Scratch()
+        val execRoot: Path? = scratch.getFileSystem().getPath("/")
+        root = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "blaze-out")
+        path = scratch.dir("/blaze-out/foo")
     }
-    groupProvider = OutputGroupInfo.fromBuilders(outputGroups);
-    ctx = new TopLevelArtifactContext(false, false, ImmutableSortedSet.copyOf(groupProvider));
-  }
 
-  @Test
-  public void artifactsShouldBeSeparateByGroup() {
-    setup(asList(Pair.of("foo", 3), Pair.of("bar", 2)));
-
-    ArtifactsToBuild allArtifacts = getAllArtifactsToBuild(groupProvider, null, ctx);
-    assertThat(allArtifacts.getAllArtifacts().toList()).hasSize(5);
-    assertThat(allArtifacts.getImportantArtifacts().toList()).hasSize(5);
-
-    ImmutableMap<String, ArtifactsInOutputGroup> artifactsByGroup =
-        allArtifacts.getAllArtifactsByOutputGroup();
-    // Two groups
-    assertThat(artifactsByGroup.keySet()).containsExactly("foo", "bar");
-    assertThat(artifactsByGroup.get("foo").getArtifacts().toList()).hasSize(3);
-    assertThat(artifactsByGroup.get("bar").getArtifacts().toList()).hasSize(2);
-  }
-
-  @Test
-  public void emptyGroupsShouldBeIgnored() {
-    setup(asList(Pair.of("foo", 1), Pair.of("bar", 0)));
-
-    ArtifactsToBuild allArtifacts = getAllArtifactsToBuild(groupProvider, null, ctx);
-    assertThat(allArtifacts.getAllArtifacts().toList()).hasSize(1);
-    assertThat(allArtifacts.getImportantArtifacts().toList()).hasSize(1);
-
-    ImmutableMap<String, ArtifactsInOutputGroup> artifactsByGroup =
-        allArtifacts.getAllArtifactsByOutputGroup();
-    // The bar list should not appear here, as it contains no artifacts.
-    assertThat(artifactsByGroup.keySet()).containsExactly("foo");
-  }
-
-  @Test
-  public void importantArtifacts() {
-    setup(asList(Pair.of(HIDDEN_OUTPUT_GROUP_PREFIX + "notimportant", 1), Pair.of("important", 2)));
-
-    ArtifactsToBuild allArtifacts = getAllArtifactsToBuild(groupProvider, null, ctx);
-    assertThat(allArtifacts.getAllArtifacts().toList()).hasSize(3);
-    assertThat(allArtifacts.getImportantArtifacts().toList()).hasSize(2);
-  }
-
-  private NestedSetBuilder<Artifact> newArtifacts(int num) {
-    NestedSetBuilder<Artifact> builder = NestedSetBuilder.newBuilder(Order.STABLE_ORDER);
-    for (int i = 0; i < num; i++) {
-      builder.add(newArtifact());
+    private fun setup(groups: Iterable<Pair<String?, Int?>>) {
+        val outputGroups: TreeMap<String?, NestedSetBuilder<Artifact?>?> =
+            TreeMap<String?, NestedSetBuilder<Artifact?>?>()
+        for (pair in groups) {
+            outputGroups.put(pair.first, newArtifacts(pair.second))
+        }
+        groupProvider = OutputGroupInfo.fromBuilders(outputGroups)
+        ctx = TopLevelArtifactContext(false, false, com.google.common.collect.ImmutableSortedSet.copyOf(groupProvider))
     }
-    return builder;
-  }
 
-  private Artifact newArtifact() {
-    return ActionsTestUtil.createArtifact(root, path.getRelative(Integer.toString(artifactIdx++)));
-  }
+    @org.junit.Test
+    fun artifactsShouldBeSeparateByGroup() {
+        setup(java.util.Arrays.asList<T?>(Pair.of("foo", 3), Pair.of("bar", 2)))
+
+        val allArtifacts: ArtifactsToBuild = getAllArtifactsToBuild(groupProvider, null, ctx)
+        assertThat(allArtifacts.getAllArtifacts().toList()).hasSize(5)
+        assertThat(allArtifacts.getImportantArtifacts().toList()).hasSize(5)
+
+        val artifactsByGroup: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?> =
+            allArtifacts.getAllArtifactsByOutputGroup()
+        // Two groups
+        Truth.assertThat(artifactsByGroup.keys).containsExactly("foo", "bar")
+        assertThat(artifactsByGroup.get("foo").getArtifacts().toList()).hasSize(3)
+        assertThat(artifactsByGroup.get("bar").getArtifacts().toList()).hasSize(2)
+    }
+
+    @org.junit.Test
+    fun emptyGroupsShouldBeIgnored() {
+        setup(java.util.Arrays.asList<T?>(Pair.of("foo", 1), Pair.of("bar", 0)))
+
+        val allArtifacts: ArtifactsToBuild = getAllArtifactsToBuild(groupProvider, null, ctx)
+        assertThat(allArtifacts.getAllArtifacts().toList()).hasSize(1)
+        assertThat(allArtifacts.getImportantArtifacts().toList()).hasSize(1)
+
+        val artifactsByGroup: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?> =
+            allArtifacts.getAllArtifactsByOutputGroup()
+        // The bar list should not appear here, as it contains no artifacts.
+        Truth.assertThat(artifactsByGroup.keys).containsExactly("foo")
+    }
+
+    @org.junit.Test
+    fun importantArtifacts() {
+        setup(
+            java.util.Arrays.asList<T?>(
+                Pair.of(HIDDEN_OUTPUT_GROUP_PREFIX + "notimportant", 1),
+                Pair.of("important", 2)
+            )
+        )
+
+        val allArtifacts: ArtifactsToBuild = getAllArtifactsToBuild(groupProvider, null, ctx)
+        assertThat(allArtifacts.getAllArtifacts().toList()).hasSize(3)
+        assertThat(allArtifacts.getImportantArtifacts().toList()).hasSize(2)
+    }
+
+    private fun newArtifacts(num: Int): NestedSetBuilder<Artifact?> {
+        val builder: NestedSetBuilder<Artifact?> = NestedSetBuilder.newBuilder(Order.STABLE_ORDER)
+        for (i in 0..<num) {
+            builder.add(newArtifact())
+        }
+        return builder
+    }
+
+    private fun newArtifact(): Artifact {
+        return ActionsTestUtil.createArtifact(root, path.getRelative((artifactIdx++).toString()))
+    }
 }

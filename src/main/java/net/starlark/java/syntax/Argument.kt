@@ -11,114 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.base.Preconditions;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
 
 /**
  * Syntax node for an argument to a function.
- *
- * <p>Arguments may be of four forms, as in {@code f(expr, id=expr, *expr, **expr)}. These are
+ * 
+ * 
+ * Arguments may be of four forms, as in `f(expr, id=expr, *expr, **expr)`. These are
  * represented by the subclasses Positional, Keyword, Star, and StarStar.
  */
-public abstract class Argument extends Node {
+abstract class Argument internal constructor(locs: FileLocations?, value: Expression?) : Node(locs) {
+    @kotlin.jvm.JvmField
+    val value: Expression
 
-  protected final Expression value;
-
-  Argument(FileLocations locs, Expression value) {
-    super(locs);
-    this.value = Preconditions.checkNotNull(value);
-  }
-
-  public final Expression getValue() {
-    return value;
-  }
-
-  @Override
-  public int getEndOffset() {
-    return value.getEndOffset();
-  }
-
-  /** Return the name of this argument's parameter, or null if it is not a Keyword argument. */
-  @Nullable
-  public String getName() {
-    return null;
-  }
-
-  /** Syntax node for a positional argument, {@code f(expr)}. */
-  public static final class Positional extends Argument {
-    Positional(FileLocations locs, Expression value) {
-      super(locs, value);
+    init {
+        this.value = Preconditions.checkNotNull<Expression>(value)
     }
 
-    @Override
-    public int getStartOffset() {
-      return value.getStartOffset();
-    }
-  }
-
-  /** Syntax node for a keyword argument, {@code f(id=expr)}. */
-  public static final class Keyword extends Argument {
-
-    // Unlike in Python, keyword arguments in Bazel BUILD files
-    // are about 10x more numerous than positional arguments.
-
-    final Identifier id;
-
-    Keyword(FileLocations locs, Identifier id, Expression value) {
-      super(locs, value);
-      this.id = id;
+    override fun getEndOffset(): Int {
+        return value.getEndOffset()
     }
 
-    public Identifier getIdentifier() {
-      return id;
+    open val name: String?
+        /** Return the name of this argument's parameter, or null if it is not a Keyword argument.  */
+        get() = null
+
+    /** Syntax node for a positional argument, `f(expr)`.  */
+    class Positional internal constructor(locs: FileLocations?, value: Expression?) : Argument(locs, value) {
+        override fun getStartOffset(): Int {
+            return value.getStartOffset()
+        }
     }
 
-    @Override
-    public String getName() {
-      return id.getName();
+    /** Syntax node for a keyword argument, `f(id=expr)`.  */
+    class Keyword internal constructor(
+        locs: FileLocations?, // Unlike in Python, keyword arguments in Bazel BUILD files
+        // are about 10x more numerous than positional arguments.
+        val identifier: Identifier, value: Expression?
+    ) : Argument(locs, value) {
+        override fun getName(): String? {
+            return identifier.getName()
+        }
+
+        override fun getStartOffset(): Int {
+            return identifier.getStartOffset()
+        }
     }
 
-    @Override
-    public int getStartOffset() {
-      return id.getStartOffset();
-    }
-  }
-
-  /** Syntax node for an argument of the form {@code f(*expr)}. */
-  public static final class Star extends Argument {
-    private final int starOffset;
-
-    Star(FileLocations locs, int starOffset, Expression value) {
-      super(locs, value);
-      this.starOffset = starOffset;
+    /** Syntax node for an argument of the form `f(*expr)`.  */
+    class Star internal constructor(locs: FileLocations?, private val starOffset: Int, value: Expression?) :
+        Argument(locs, value) {
+        override fun getStartOffset(): Int {
+            return starOffset
+        }
     }
 
-    @Override
-    public int getStartOffset() {
-      return starOffset;
-    }
-  }
-
-  /** Syntax node for an argument of the form {@code f(**expr)}. */
-  public static final class StarStar extends Argument {
-    private final int starStarOffset;
-
-    StarStar(FileLocations locs, int starStarOffset, Expression value) {
-      super(locs, value);
-      this.starStarOffset = starStarOffset;
+    /** Syntax node for an argument of the form `f(**expr)`.  */
+    class StarStar internal constructor(locs: FileLocations?, private val starStarOffset: Int, value: Expression?) :
+        Argument(locs, value) {
+        override fun getStartOffset(): Int {
+            return starStarOffset
+        }
     }
 
-    @Override
-    public int getStartOffset() {
-      return starStarOffset;
+    override fun accept(visitor: NodeVisitor) {
+        // All Argument subclasses dispatch to NodeVisitor#visit(Argument).
+        visitor.visit(this)
     }
-  }
-
-  @Override
-  public final void accept(NodeVisitor visitor) {
-    // All Argument subclasses dispatch to NodeVisitor#visit(Argument).
-    visitor.visit(this);
-  }
 }

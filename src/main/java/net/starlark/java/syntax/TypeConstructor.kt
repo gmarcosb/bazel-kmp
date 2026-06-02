@@ -11,109 +11,101 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Map;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.errorprone.annotations.CanIgnoreReturnValue
 
 /**
- * A factory for creating {@link StarlarkType}s, parameterized by zero or more type arguments.
- *
- * <p>Conceptually, a type constructor corresponds to what the user informally thinks of as "a
- * type": a program symbol, like {@code list}, that can appear within a type expression. The usage
- * of a constructor in a type expression yields an actual type, like {@code list[int]}. In the case
- * of basic types like {@code None} that are not parameterized, there is both a trivial nullary type
+ * A factory for creating [StarlarkType]s, parameterized by zero or more type arguments.
+ * 
+ * 
+ * Conceptually, a type constructor corresponds to what the user informally thinks of as "a
+ * type": a program symbol, like `list`, that can appear within a type expression. The usage
+ * of a constructor in a type expression yields an actual type, like `list[int]`. In the case
+ * of basic types like `None` that are not parameterized, there is both a trivial nullary type
  * constructor and an underlying singleton type, where the constructor just wraps the underlying
  * type.
  */
-public interface TypeConstructor {
+interface TypeConstructor {
+    /** Exception thrown when a [TypeConstructor] is called with invalid arguments.  */
+    class Failure internal constructor(message: String?) : Exception(message)
 
-  /** Exception thrown when a {@link TypeConstructor} is called with invalid arguments. */
-  class Failure extends Exception {
-    Failure(String message) {
-      super(message);
-    }
-  }
-
-  /**
-   * An argument to a type constructor's {@link #createStarlarkType} method.
-   *
-   * <p>Conceptually, a type argument is the result of evaluating a subexpression of a type
-   * expression. Whereas the overall type expression must yield a {@link StarlarkType}, a
-   * subexpression can also yield other objects such as an ellipsis or a list of other arguments.
-   * These are needed for type expressions like {@code tuple[Any, ...]} and {@code Callable[[int],
-   * bool]}.
-   */
-  // TODO: #27370 - Support other type arguments besides StarlarkType, Ellipsis, and EmptyTuple when
-  // we need them
-  sealed interface Arg permits StarlarkType, Arg.Ellipsis, Arg.EmptyTuple, Arg.TypeDict {
-    public static final Ellipsis ELLIPSIS = new Ellipsis();
-    public static final EmptyTuple EMPTY_TUPLE = new EmptyTuple();
-
-    /** An ellipsis type argument, {@code ...}. */
-    public static final class Ellipsis implements Arg {
-      private Ellipsis() {}
-
-      @Override
-      public String toString() {
-        return "...";
-      }
-    }
-
-    /** An empty tuple type argument, {@code ()}. */
-    public static final class EmptyTuple implements Arg {
-      private EmptyTuple() {}
-
-      @Override
-      public String toString() {
-        return "()";
-      }
-    }
-
-    /** A dictionary with string keys and type values, e.g. {@code {"foo": T, "bar": U}}. */
-    public static final class TypeDict implements Arg {
-      private final ImmutableMap<String, StarlarkType> types;
-
-      TypeDict(ImmutableMap<String, StarlarkType> types) {
-        this.types = types;
-      }
-
-      public ImmutableMap<String, StarlarkType> getTypes() {
-        return types;
-      }
-
-      @CanIgnoreReturnValue
-      static StringBuilder print(StringBuilder buf, ImmutableMap<String, StarlarkType> types) {
-        buf.append('{');
-        boolean first = true;
-        for (Map.Entry<String, StarlarkType> entry : types.entrySet()) {
-          if (!first) {
-            buf.append(", ");
-          }
-          NodePrinter.printStringLiteral(buf, entry.getKey());
-          buf.append(": ");
-          buf.append(entry.getValue());
-          first = false;
+    /**
+     * An argument to a type constructor's [.createStarlarkType] method.
+     * 
+     * 
+     * Conceptually, a type argument is the result of evaluating a subexpression of a type
+     * expression. Whereas the overall type expression must yield a [StarlarkType], a
+     * subexpression can also yield other objects such as an ellipsis or a list of other arguments.
+     * These are needed for type expressions like `tuple[Any, ...]` and `Callable[[int], bool]`.
+     */
+    // TODO: #27370 - Support other type arguments besides StarlarkType, Ellipsis, and EmptyTuple when
+    // we need them
+    interface Arg {
+        /** An ellipsis type argument, `...`.  */
+        class Ellipsis private constructor() : Arg {
+            override fun toString(): String {
+                return "..."
+            }
         }
-        buf.append('}');
-        return buf;
-      }
 
-      @Override
-      public String toString() {
-        return print(new StringBuilder(), types).toString();
-      }
+        /** An empty tuple type argument, `()`.  */
+        class EmptyTuple private constructor() : Arg {
+            override fun toString(): String {
+                return "()"
+            }
+        }
+
+        /** A dictionary with string keys and type values, e.g. `{"foo": T, "bar": U}`.  */
+        class TypeDict internal constructor(types: ImmutableMap<String?, StarlarkType?>) : Arg {
+            private val types: ImmutableMap<String?, StarlarkType?>
+
+            init {
+                this.types = types
+            }
+
+            fun getTypes(): ImmutableMap<String?, StarlarkType?> {
+                return types
+            }
+
+            override fun toString(): String {
+                return print(StringBuilder(), types).toString()
+            }
+
+            companion object {
+                @CanIgnoreReturnValue
+                fun print(buf: StringBuilder, types: ImmutableMap<String?, StarlarkType?>): StringBuilder {
+                    buf.append('{')
+                    var first = true
+                    for (entry in types.entrySet()) {
+                        if (!first) {
+                            buf.append(", ")
+                        }
+                        NodePrinter.Companion.printStringLiteral(buf, entry.getKey())
+                        buf.append(": ")
+                        buf.append(entry.getValue())
+                        first = false
+                    }
+                    buf.append('}')
+                    return buf
+                }
+            }
+        }
+
+        companion object {
+            val ELLIPSIS: Ellipsis = Arg.Ellipsis()
+            val EMPTY_TUPLE: EmptyTuple = Arg.EmptyTuple()
+        }
     }
-  }
 
-  /**
-   * Returns the result of applying this constructor to the given type arguments
-   *
-   * @throws Failure if the usage of this constructor is invalid (typically due to a mismatch in the
-   *     number of arguments)
-   */
-  StarlarkType createStarlarkType(ImmutableList<Arg> argsTuple) throws Failure;
+    /**
+     * Returns the result of applying this constructor to the given type arguments
+     * 
+     * @throws Failure if the usage of this constructor is invalid (typically due to a mismatch in the
+     * number of arguments)
+     */
+    @Throws(Failure::class)
+    fun createStarlarkType(argsTuple: ImmutableList<Arg?>?): StarlarkType?
 }

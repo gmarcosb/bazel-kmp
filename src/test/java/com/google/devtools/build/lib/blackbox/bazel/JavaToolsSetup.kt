@@ -11,33 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.bazel
 
-package com.google.devtools.build.lib.blackbox.bazel;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext
+import com.google.devtools.build.lib.blackbox.framework.ToolsSetup
+import com.google.devtools.build.lib.vfs.Path
+import java.io.IOException
+import java.nio.file.Path
+import java.util.stream.Collectors
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext;
-import com.google.devtools.build.lib.blackbox.framework.ToolsSetup;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.stream.Collectors;
-
-/** Setup for Bazel Java tools */
-public class JavaToolsSetup implements ToolsSetup {
-  @Override
-  public void setup(BlackBoxTestContext context) throws IOException {
-    Path jdkDirectory = context.getWorkDir().resolve("tools/jdk");
-    List<Path> buildFiles =
-        Files.list(jdkDirectory)
-            .filter(path -> path.getFileName().toString().startsWith("BUILD."))
-            .collect(Collectors.toList());
-    assertThat(buildFiles.size()).isAtMost(1);
-    if (!buildFiles.isEmpty()) {
-      Path buildFile = jdkDirectory.resolve("BUILD");
-      Files.copy(buildFiles.get(0), buildFile);
-      assertThat(buildFile.toFile().setWritable(true)).isTrue();
+/** Setup for Bazel Java tools  */
+class JavaToolsSetup : ToolsSetup {
+    @Throws(IOException::class)
+    override fun setup(context: BlackBoxTestContext) {
+        val jdkDirectory: Path = context.getWorkDir().resolve("tools/jdk")
+        val buildFiles: MutableList<Path?> =
+            java.nio.file.Files.list(jdkDirectory)
+                .filter { path: Path? -> path.getFileName().toString().startsWith("BUILD.") }
+                .collect(Collectors.toList())
+        Truth.assertThat(buildFiles.size).isAtMost(1)
+        if (!buildFiles.isEmpty()) {
+            val buildFile: Path = jdkDirectory.resolve("BUILD")
+            java.nio.file.Files.copy(buildFiles.get(0), buildFile)
+            Truth.assertThat(buildFile.toFile().setWritable(true)).isTrue()
+        }
     }
-  }
 }

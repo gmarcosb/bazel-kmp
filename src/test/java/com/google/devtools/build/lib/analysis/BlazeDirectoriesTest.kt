@@ -11,36 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for [BlazeDirectories].  */
+@RunWith(JUnit4::class)
+class BlazeDirectoriesTest : FoundationTestCase() {
+    private val directories: BlazeDirectories = BlazeDirectories(
+        ServerDirectories(
+            FsUtils.TEST_FILESYSTEM.getPath("/install_base"),
+            FsUtils.TEST_FILESYSTEM.getPath("/output_base"),
+            FsUtils.TEST_FILESYSTEM.getPath("/user_root")
+        ),
+        FsUtils.TEST_FILESYSTEM.getPath("/workspace"),  /* productName= */
+        "bazel"
+    )
 
-/** Unit tests for {@link BlazeDirectories}. */
-@RunWith(JUnit4.class)
-public final class BlazeDirectoriesTest extends FoundationTestCase {
+    @org.junit.Test
+    fun noBlazeExecRootInBazel() {
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            directories::getBlazeExecRoot
+        )
+    }
 
-  private final BlazeDirectories directories =
-      new BlazeDirectories(
-          new ServerDirectories(
-              FsUtils.TEST_FILESYSTEM.getPath("/install_base"),
-              FsUtils.TEST_FILESYSTEM.getPath("/output_base"),
-              FsUtils.TEST_FILESYSTEM.getPath("/user_root")),
-          FsUtils.TEST_FILESYSTEM.getPath("/workspace"),
-          /* productName= */ "bazel");
-
-  @Test
-  public void noBlazeExecRootInBazel() {
-    assertThrows(NullPointerException.class, directories::getBlazeExecRoot);
-  }
-
-  @Test
-  public void noBlazeOutputPathInBazel() {
-    assertThrows(NullPointerException.class, directories::getBlazeOutputPath);
-  }
+    @org.junit.Test
+    fun noBlazeOutputPathInBazel() {
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            directories::getBlazeOutputPath
+        )
+    }
 }

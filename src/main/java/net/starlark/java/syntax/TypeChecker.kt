@@ -11,1436 +11,1541 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.errorprone.annotations.FormatMethod;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
-import javax.annotation.Nullable;
-import net.starlark.java.spelling.SpellChecker;
+import com.google.common.base.Joiner
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSet
+import com.google.errorprone.annotations.FormatMethod
+import net.starlark.java.spelling.SpellChecker.didYouMean
+import java.lang.String
+import java.util.*
+import java.util.function.Function
+import java.util.stream.Collectors
+import kotlin.Any
+import kotlin.AssertionError
+import kotlin.Boolean
+import kotlin.IllegalArgumentException
+import kotlin.Int
 
 /**
  * A visitor for validating that expressions and statements respect the types of the symbols
  * appearing within them, as determined by the type tagger.
- *
- * <p>In addition, this visitor modifies the function type on the {@link Resolver.Function} objects
- * of {@link LambdaExpression}s in the {@link TypeTable} (originally populated by the {@link
- * TypeTagger}) to have a more precise return type, if possible; and populates the types of the
- * {@link Resolver.Binding} objects of untyped variables with the inferred types of their values in
+ * 
+ * 
+ * In addition, this visitor modifies the function type on the [Resolver.Function] objects
+ * of [LambdaExpression]s in the [TypeTable] (originally populated by the [ ]) to have a more precise return type, if possible; and populates the types of the
+ * [Resolver.Binding] objects of untyped variables with the inferred types of their values in
  * their first assignments in typed code.
- *
- * <p>Type annotations are not traversed by this visitor.
+ * 
+ * 
+ * Type annotations are not traversed by this visitor.
  */
-public final class TypeChecker extends NodeVisitor {
+class TypeChecker private constructor(typeTable: TypeTable, typeContext: TypeContext) : NodeVisitor() {
+    private val typeTable: TypeTable
+    private val typeContext: TypeContext
 
-  private final TypeTable typeTable;
-  private final TypeContext typeContext;
+    // Empty if we were invoked via inferTypeOf() to type-check an expression (since inside
+    // an expression, no function definitions are allowed). Populated and mutated by visitation.
+    private val functionStack = ArrayDeque<Resolver.Function>()
 
-  // Empty if we were invoked via inferTypeOf() to type-check an expression (since inside
-  // an expression, no function definitions are allowed). Populated and mutated by visitation.
-  private final ArrayDeque<Resolver.Function> functionStack = new ArrayDeque<>();
-
-  // Formats and reports an error at the start of the specified node.
-  @FormatMethod
-  private void errorf(Node node, String format, Object... args) {
-    errorf(node.getStartLocation(), format, args);
-  }
-
-  // Formats and reports an error at the specified location.
-  @FormatMethod
-  private void errorf(Location loc, String format, Object... args) {
-    typeTable.errors.add(new SyntaxError(loc, String.format(format, args)));
-  }
-
-  private void binaryOperatorError(
-      StarlarkType xType,
-      TokenKind operator,
-      Location operatorLocation,
-      StarlarkType yType,
-      boolean augmentedAssignment,
-      String extraMessage) {
-    // TODO: #28037 - better error message if LHS and/or RHS are unions?
-    errorf(
-        operatorLocation,
-        "operator '%s%s' cannot be applied to types '%s' and '%s'%s",
-        operator,
-        augmentedAssignment ? "=" : "",
-        xType,
-        yType,
-        extraMessage.isEmpty() ? "" : ": " + extraMessage);
-  }
-
-  private void binaryOperatorError(
-      StarlarkType xType,
-      TokenKind operator,
-      Location operatorLocation,
-      StarlarkType yType,
-      boolean augmentedAssignment) {
-    binaryOperatorError(xType, operator, operatorLocation, yType, augmentedAssignment, "");
-  }
-
-  private static String plural(int n) {
-    return n == 1 ? "" : "s";
-  }
-
-  private TypeChecker(TypeTable typeTable, TypeContext typeContext) {
-    this.typeTable = typeTable;
-    this.typeContext = typeContext;
-  }
-
-  /**
-   * Returns the annotated type of an identifier's symbol, asserting that the binding information is
-   * present.
-   *
-   * <p>If a type is not set on the binding it is taken to be {@code Any}.
-   */
-  // TODO: #27370 - An unannotated variable should either be treated as Any or else inferred from
-  // its first binding occurrence, depending on how the var is introduced and whether it's in typed
-  // code.
-  private StarlarkType getType(Identifier id) {
-    Resolver.Binding binding = id.getBinding();
-    checkNotNull(binding);
-    StarlarkType type =
-        switch (binding.getScope()) {
-          case UNIVERSAL -> checkNotNull(typeContext.getUniversalSymbolType(binding.getName()));
-          case PREDECLARED -> checkNotNull(typeContext.getPredeclaredSymbolType(binding.getName()));
-          default -> typeTable.getType(binding);
-        };
-    return type != null ? type : Types.ANY;
-  }
-
-  private void errorIfKeyNotInt(IndexExpression index, StarlarkType objType, StarlarkType keyType) {
-    if (!StarlarkType.assignableFrom(Types.INT, keyType)) {
-      errorf(
-          index.getLbracketLocation(),
-          "'%s' of type '%s' must be indexed by an integer, but got '%s'",
-          index.getObject(),
-          objType,
-          keyType);
+    // Formats and reports an error at the start of the specified node.
+    @FormatMethod
+    private fun errorf(node: Node, format: String, vararg args: Any?) {
+        errorf(node.getStartLocation(), format, *args)
     }
-  }
 
-  /**
-   * Infers the type of an expression from a bottom-up traversal, relying on type information stored
-   * in identifier bindings by the {@link TypeTagger}.
-   *
-   * <p>May not be called on type expressions (annotations, var statements, type alias statements).
-   */
-  private StarlarkType infer(Expression expr) {
-    switch (expr.kind()) {
-      case IDENTIFIER -> {
-        return getType((Identifier) expr);
-      }
-      case STRING_LITERAL -> {
-        return Types.STR;
-      }
-      case INT_LITERAL -> {
-        return Types.INT;
-      }
-      case FLOAT_LITERAL -> {
-        return Types.FLOAT;
-      }
-      case CAST -> {
-        var cast = (CastExpression) expr;
-        var unused = infer(cast.getValue()); // only to verify the value expr is well-typed
-        return cast.getStarlarkType();
-      }
-      case DOT -> {
-        return inferDot((DotExpression) expr);
-      }
-      case INDEX -> {
-        return inferIndex((IndexExpression) expr);
-      }
-      case SLICE -> {
-        return inferSlice((SliceExpression) expr);
-      }
-      case LAMBDA -> {
-        var lambda = (LambdaExpression) expr;
-        StarlarkType inferedReturnType = infer(lambda.getBody());
-        Types.CallableType originalType =
-            checkNotNull(
-                typeTable.getType(lambda.getResolvedFunction()),
-                "type tagger should have set type for lambda expr '%s'",
-                lambda);
-        if (!originalType.getReturnType().equals(inferedReturnType)) {
-          // Update the lambda function type with a more precise return type.
-          typeTable.setType(
-              lambda.getResolvedFunction(),
-              Types.callable(
-                  originalType.getParameterNames(),
-                  originalType.getParameterTypes(),
-                  originalType.getNumPositionalOnlyParameters(),
-                  originalType.getNumPositionalParameters(),
-                  originalType.getMandatoryParameters(),
-                  originalType.getVarargsType(),
-                  originalType.getKwargsType(),
-                  inferedReturnType));
-        }
-        return typeTable.getType(lambda.getResolvedFunction());
-      }
-      case LIST_EXPR -> {
-        var list = (ListExpression) expr;
-        List<StarlarkType> elementTypes = new ArrayList<>();
-        for (Expression element : list.getElements()) {
-          elementTypes.add(infer(element));
-        }
-        return list.isTuple()
-            ? Types.tuple(ImmutableList.copyOf(elementTypes))
-            : Types.listRvalue(Types.union(elementTypes));
-      }
-      case DICT_EXPR -> {
-        var dict = (DictExpression) expr;
-        List<StarlarkType> keyTypes = new ArrayList<>();
-        List<StarlarkType> valueTypes = new ArrayList<>();
-        for (var entry : dict.getEntries()) {
-          keyTypes.add(infer(entry.getKey()));
-          valueTypes.add(infer(entry.getValue()));
-        }
-        return Types.dictRvalue(Types.union(keyTypes), Types.union(valueTypes));
-      }
-      case CALL -> {
-        // TODO: #27370 - we could special-case set literals; e.g. check if a call expression is
-        // `set()`, verifying using typeContext that `set` is the set type constructor.
-        return inferCall((CallExpression) expr);
-      }
-      case CONDITIONAL -> {
-        var cond = (ConditionalExpression) expr;
-        return Types.union(infer(cond.getThenCase()), infer(cond.getElseCase()));
-      }
-      case BINARY_OPERATOR -> {
-        var binop = (BinaryOperatorExpression) expr;
-        StarlarkType xType = infer(binop.getX());
-        StarlarkType yType = infer(binop.getY());
-        return inferBinaryOperator(
-            binop.getX(),
+    // Formats and reports an error at the specified location.
+    @FormatMethod
+    private fun errorf(loc: Location?, format: String, vararg args: Any?) {
+        typeTable.errors.add(SyntaxError(loc, String.format(format, *args)))
+    }
+
+    private fun binaryOperatorError(
+        xType: StarlarkType?,
+        operator: TokenKind?,
+        operatorLocation: Location?,
+        yType: StarlarkType?,
+        augmentedAssignment: Boolean,
+        extraMessage: kotlin.String = ""
+    ) {
+        // TODO: #28037 - better error message if LHS and/or RHS are unions?
+        errorf(
+            operatorLocation,
+            "operator '%s%s' cannot be applied to types '%s' and '%s'%s",
+            operator,
+            if (augmentedAssignment) "=" else "",
             xType,
-            binop.getOperator(),
-            binop.getOperatorLocation(),
-            binop.getY(),
             yType,
-            /* augmentedAssignment= */ false);
-      }
-      case UNARY_OPERATOR -> {
-        var unop = (UnaryOperatorExpression) expr;
-        if (unop.getOperator() == TokenKind.NOT) {
-          // NOT always returns a boolean (even if applied to Any or unions).
-          return Types.BOOL;
-        }
-        StarlarkType xType = infer(unop.getX());
-        if (xType.equals(Types.ANY)
-            || ((unop.getOperator() == TokenKind.MINUS || unop.getOperator() == TokenKind.PLUS)
-                && StarlarkType.assignableFrom(Types.NUMERIC, xType))
-            || (unop.getOperator() == TokenKind.TILDE && xType.equals(Types.INT))) {
-          // Unary operators other than NOT preserve the type of their operand.
-          return xType;
-        }
-        errorf(
-            unop.getStartLocation(),
-            "operator '%s' cannot be applied to type '%s'",
-            unop.getOperator(),
-            xType);
-        return Types.ANY;
-      }
-      case COMPREHENSION -> {
-        return inferComprehension((Comprehension) expr);
-      }
-      default -> {
-        // TODO: #28037 - support isinstance expressions.
-        errorf(expr, "UNSUPPORTED: cannot typecheck %s expression", expr.kind());
-        return Types.ANY;
-      }
-    }
-  }
-
-  /**
-   * Returns the integer value of an expression if it's an integer value which can be exactly
-   * represented as a Java integer, or null otherwise (in particular, if the expression itself is
-   * null).
-   */
-  @Nullable
-  private static Integer getIntValueExact(@Nullable Expression expr) {
-    if (expr instanceof IntLiteral intLiteral) {
-      return intLiteral.getIntValueExact();
-    }
-    return null;
-  }
-
-  private StarlarkType inferDot(DotExpression dot) {
-    return Types.union(inferDotUnfolded(dot, infer(dot.getObject())));
-  }
-
-  /**
-   * Infers the non-flattened unfolded list of possible types of a dot expression.
-   *
-   * <p>For example, given if field f has type int for type T, and type str|bool for type U, this
-   * function will return the list {@code [int, str|bool]} for x.f where x has type T|U.
-   *
-   * <p>When a dot expression is used as a value, one should take the union type of the returned
-   * types. But when a dot expression is used as the LHS of an assignment, one should take their
-   * meet.
-   */
-  private ImmutableList<StarlarkType> inferDotUnfolded(DotExpression dot, StarlarkType objType) {
-    String name = dot.getField().getName();
-
-    if (objType.equals(Types.ANY)) {
-      return ImmutableList.of(Types.ANY);
+            if (extraMessage.isEmpty()) "" else ": " + extraMessage
+        )
     }
 
-    ImmutableCollection<StarlarkType> objElemTypes = Types.unfoldUnion(objType);
-    ImmutableList.Builder<StarlarkType> resultTypes =
-        ImmutableList.builderWithExpectedSize(objElemTypes.size());
-    for (StarlarkType objElemType : objElemTypes) {
-      StarlarkType fieldType = objElemType.getField(name, typeContext);
-      if (fieldType == null) {
-        errorf(
-            dot.getDotLocation(),
-            "'%s' of type '%s' does not have field '%s'",
-            dot.getObject(),
-            objType,
-            name);
-        return ImmutableList.of(Types.ANY);
-      }
-      resultTypes.add(fieldType);
-    }
-    return resultTypes.build();
-  }
-
-  private StarlarkType inferIndex(IndexExpression index) {
-    return Types.union(inferIndexUnfolded(index, infer(index.getObject()), infer(index.getKey())));
-  }
-
-  /**
-   * Infers the non-flattened unfolded list of possible types of an index expression.
-   *
-   * <p>For example, given object type {@code list[int] | list[str|bool]}, this function will return
-   * the list {@code [int, str|bool]}.
-   *
-   * <p>When an index expression is used as a value, one should take the union type of the returned
-   * types. But when an index expression is used as the LHS of an assignment, one should take their
-   * meet.
-   */
-  private ImmutableList<StarlarkType> inferIndexUnfolded(
-      IndexExpression index, StarlarkType objType, StarlarkType keyType) {
-    Expression obj = index.getObject();
-    Expression key = index.getKey();
-
-    if (objType.equals(Types.ANY)) {
-      return ImmutableList.of(Types.ANY);
+    init {
+        this.typeTable = typeTable
+        this.typeContext = typeContext
     }
 
-    ImmutableCollection<StarlarkType> objElemTypes = Types.unfoldUnion(objType);
-    ImmutableList.Builder<StarlarkType> resultTypes =
-        ImmutableList.builderWithExpectedSize(objElemTypes.size());
-    for (StarlarkType objElemType : objElemTypes) {
-      if (objElemType.equals(Types.ANY)) {
-        resultTypes.add(Types.ANY);
+    /**
+     * Returns the annotated type of an identifier's symbol, asserting that the binding information is
+     * present.
+     * 
+     * 
+     * If a type is not set on the binding it is taken to be `Any`.
+     */
+    // TODO: #27370 - An unannotated variable should either be treated as Any or else inferred from
+    // its first binding occurrence, depending on how the var is introduced and whether it's in typed
+    // code.
+    private fun getType(id: Identifier): StarlarkType {
+        val binding = id.getBinding()
+        Preconditions.checkNotNull<Resolver.Binding?>(binding)
+        val type =
+            when (binding!!.getScope()) {
+                Resolver.Scope.UNIVERSAL -> Preconditions.checkNotNull<StarlarkType?>(
+                    typeContext.getUniversalSymbolType(
+                        binding.getName()
+                    )
+                )
 
-      } else if (objElemType instanceof Types.FixedLengthTupleType tupleType) {
-        errorIfKeyNotInt(index, objElemType, keyType);
-        var elementTypes = tupleType.getElementTypes();
-        StarlarkType resultType = null;
-        // Project out the type of the specific component if we can statically determine the index.
-        Integer intKey = getIntValueExact(key);
-        if (intKey != null) {
-          int i = intKey;
-          if (i < 0) {
-            // Same logic as for EvalUtils#getSequenceIndex.
-            i += elementTypes.size();
-          }
-          if (0 <= i && i < elementTypes.size()) {
-            resultType = elementTypes.get(i);
-          } else {
+                Resolver.Scope.PREDECLARED -> Preconditions.checkNotNull<StarlarkType?>(
+                    typeContext.getPredeclaredSymbolType(
+                        binding.getName()
+                    )
+                )
+
+                else -> typeTable.getType(binding)
+            }
+        return if (type != null) type else Types.ANY
+    }
+
+    private fun errorIfKeyNotInt(index: IndexExpression, objType: StarlarkType?, keyType: StarlarkType?) {
+        if (!StarlarkType.Companion.assignableFrom(Types.INT, keyType)) {
             errorf(
                 index.getLbracketLocation(),
-                "'%s' of type '%s' is indexed by integer %s, which is out-of-range",
-                obj,
+                "'%s' of type '%s' must be indexed by an integer, but got '%s'",
+                index.getObject(),
                 objType,
-                intKey);
-            // Don't complain about uses of the result type when we don't even know what result type
-            // the user wanted.
-            return ImmutableList.of(Types.ANY);
-          }
+                keyType
+            )
         }
-        if (resultType == null) {
-          resultType = tupleType.toHomogeneous().getElementType();
-        }
-        resultTypes.add(resultType);
-
-      } else if (objElemType instanceof Types.AbstractSequenceType sequenceType) {
-        errorIfKeyNotInt(index, objType, keyType); // fall through on error
-        resultTypes.add(sequenceType.getElementType());
-
-      } else if (objElemType instanceof Types.AbstractMappingType mappingType) {
-        if (!StarlarkType.assignableFrom(mappingType.getKeyType(), keyType)) {
-          errorf(
-              index.getLbracketLocation(),
-              "'%s' of type '%s' requires key type '%s', but got '%s'",
-              obj,
-              objType,
-              mappingType.getKeyType(),
-              keyType);
-          // Fall through to returning the value type.
-        }
-        resultTypes.add(mappingType.getValueType());
-
-      } else if (objElemType.equals(Types.STR)) {
-        errorIfKeyNotInt(index, objType, keyType); // fall through on error
-        resultTypes.add(Types.STR);
-
-      } else {
-        errorf(index.getLbracketLocation(), "cannot index '%s' of type '%s'", obj, objType);
-        return ImmutableList.of(Types.ANY);
-      }
-    }
-    return resultTypes.build();
-  }
-
-  private StarlarkType inferSlice(SliceExpression slice) {
-    @Nullable Integer step = getIntValueExact(slice.getStep());
-    if (step == null) {
-      step = 1;
-      if (slice.getStep() != null) {
-        StarlarkType stepType = infer(slice.getStep());
-        if (!StarlarkType.assignableFrom(Types.INT, stepType)) {
-          errorf(slice.getStep(), "got '%s' for slice step, want int", stepType);
-          return Types.ANY;
-        }
-      }
-    } else if (step == 0) {
-      errorf(slice.getStep(), "slice step cannot be zero");
-      return Types.ANY;
-    }
-    if (slice.getStart() != null) {
-      StarlarkType startType = infer(slice.getStart());
-      if (!StarlarkType.assignableFrom(Types.INT, startType)) {
-        errorf(slice.getStart(), "got '%s' for start index, want int", startType);
-        return Types.ANY;
-      }
-    }
-    if (slice.getStop() != null) {
-      StarlarkType stopType = infer(slice.getStop());
-      if (!StarlarkType.assignableFrom(Types.INT, stopType)) {
-        errorf(slice.getStop(), "got '%s' for stop index, want int", stopType);
-        return Types.ANY;
-      }
-    }
-
-    StarlarkType objType = infer(slice.getObject());
-    if (objType.equals(Types.ANY)) {
-      return Types.ANY;
-    }
-    ArrayList<StarlarkType> resultTypes = new ArrayList<>();
-    for (StarlarkType objElemType : Types.unfoldUnion(objType)) {
-      if (objElemType.equals(Types.ANY)) {
-        resultTypes.add(Types.ANY);
-      } else if (objElemType.equals(Types.STR)) {
-        resultTypes.add(Types.STR);
-      } else if (objElemType instanceof Types.FixedLengthTupleType tupleType) {
-        ImmutableList<StarlarkType> tupleElementTypes = tupleType.getElementTypes();
-        int len = tupleElementTypes.size();
-        @Nullable Integer start = getIntValueExact(slice.getStart());
-        @Nullable Integer stop = getIntValueExact(slice.getStop());
-        ImmutableList.Builder<StarlarkType> resultTupleElementTypes = ImmutableList.builder();
-        if (step != null
-            && haveExactSliceBound(slice.getStart(), start)
-            && haveExactSliceBound(slice.getStop(), stop)) {
-          if (step > 0) {
-            int startClamped = start != null ? SyntaxUtils.toSliceBound(start, len) : 0;
-            int stopClamped = stop != null ? SyntaxUtils.toSliceBound(stop, len) : len;
-            for (long i = startClamped; i < stopClamped && (int) i == i; i += step) {
-              resultTupleElementTypes.add(tupleElementTypes.get((int) i));
-            }
-          } else {
-            int startClamped =
-                start != null ? SyntaxUtils.toReverseSliceBound(start, len) : len - 1;
-            int stopClamped = stop != null ? SyntaxUtils.toReverseSliceBound(stop, len) : -1;
-            for (long i = startClamped; i > stopClamped && (int) i == i; i += step) {
-              resultTupleElementTypes.add(tupleElementTypes.get((int) i));
-            }
-          }
-          resultTypes.add(Types.tuple(resultTupleElementTypes.build()));
-        } else {
-          resultTypes.add(tupleType.toHomogeneous());
-        }
-      } else if (objElemType instanceof Types.AbstractSequenceType sequenceType) {
-        resultTypes.add(sequenceType);
-      } else {
-        errorf(
-            slice.getLbracketLocation(),
-            "invalid slice operand '%s' of type '%s', expected Sequence or str",
-            slice.getObject(),
-            objElemType);
-        resultTypes.add(Types.ANY);
-      }
-    }
-    return Types.union(resultTypes);
-  }
-
-  private static boolean haveExactSliceBound(
-      @Nullable Expression expr, @Nullable Integer exprIntValueExact) {
-    if (expr == null) {
-      // Bound not specified, so we know its exact value (the default value)
-      return true;
-    }
-    if (exprIntValueExact != null) {
-      // Bound is specified and is a 32-bit integer literal (or negation)
-      return true;
-    }
-    return false;
-  }
-
-  private StarlarkType inferBinaryOperator(
-      Expression xExpr,
-      StarlarkType xType,
-      TokenKind operator,
-      Location operatorLocation,
-      Expression yExpr,
-      StarlarkType yType,
-      boolean augmentedAssignment) {
-    // TokenKind operator = binop.getOperator();
-    switch (operator) {
-      case AND, OR, EQUALS_EQUALS, NOT_EQUALS -> {
-        // Boolean regardless of LHS and RHS.
-        return Types.BOOL;
-      }
-      case LESS, LESS_EQUALS, GREATER, GREATER_EQUALS -> {
-        // Boolean or type error.
-        if (StarlarkType.comparable(xType, yType)) {
-          return Types.BOOL;
-        }
-        binaryOperatorError(xType, operator, operatorLocation, yType, augmentedAssignment);
-        return Types.ANY;
-      }
-      default -> {
-        // Take the union of all types inferred by crossing the left and right union elements
-        // (each of which must be a valid combination of rhs and lhs for the operator).
-        ImmutableCollection<StarlarkType> xTypes = Types.unfoldUnion(xType);
-        ImmutableCollection<StarlarkType> yTypes = Types.unfoldUnion(yType);
-        ArrayList<StarlarkType> resultTypes = new ArrayList<>();
-        for (StarlarkType xElemType : xTypes) {
-          for (StarlarkType yElemType : yTypes) {
-            @Nullable
-            StarlarkType resultType = xElemType.inferBinaryOperator(operator, yElemType, true);
-            if (resultType == null) {
-              resultType = yElemType.inferBinaryOperator(operator, xElemType, false);
-            }
-            if (resultType == null && operator == TokenKind.STAR) {
-              // Tuple repetition is the only case where we need to examine the expressions.
-              // TODO: #28037 - We can get rid of the tuple repetition special case if we
-              // introduce ConstantIntType for integer constants.
-              if (StarlarkType.assignableFrom(Types.INT, xElemType)
-                  && yElemType instanceof Types.TupleType tuple) {
-                resultType = inferTupleRepetition(tuple, xExpr);
-              } else if (StarlarkType.assignableFrom(Types.INT, yElemType)
-                  && xElemType instanceof Types.TupleType tuple) {
-                resultType = inferTupleRepetition(tuple, yExpr);
-              }
-            }
-            if (resultType == null) {
-              binaryOperatorError(xType, operator, operatorLocation, yType, augmentedAssignment);
-              return Types.ANY;
-            }
-            resultTypes.add(resultType);
-          }
-        }
-        return Types.union(resultTypes);
-      }
-    }
-  }
-
-  private StarlarkType inferCall(CallExpression call) {
-    // Collect and check the shape of the call's *args/**kwargs. (This check is independent of
-    // callFunctionType.)
-    @Nullable VarargsArgument varargs = null;
-    @Nullable KwargsArgument kwargs = null;
-    int numArgs = call.getArguments().size();
-    if (numArgs > 0 && call.getArguments().get(numArgs - 1) instanceof Argument.StarStar arg) {
-      kwargs = KwargsArgument.of(arg, this);
-      if (kwargs == null) {
-        // error already reported
-        return Types.ANY;
-      }
-      numArgs--;
-    }
-    if (numArgs > 0 && call.getArguments().get(numArgs - 1) instanceof Argument.Star arg) {
-      varargs = VarargsArgument.of(arg, this);
-      if (varargs == null) {
-        // error already reported
-        return Types.ANY;
-      }
-      numArgs--;
-    }
-
-    StarlarkType callFunctionType = infer(call.getFunction());
-    if (callFunctionType.equals(Types.ANY)) {
-      return Types.ANY;
-    }
-
-    // Collect call's argument types (excluding *args and **kwargs).
-    ImmutableList<StarlarkType> argTypes =
-        call.getArguments().stream()
-            .limit(numArgs)
-            .map(arg -> infer(arg.getValue()))
-            .collect(toImmutableList());
-
-    ImmutableCollection<StarlarkType> callFunctionTypes = Types.unfoldUnion(callFunctionType);
-    ArrayList<StarlarkType> returnTypes = new ArrayList<>();
-    for (StarlarkType callFunctionElemType : callFunctionTypes) {
-      if (callFunctionElemType.equals(Types.ANY)) {
-        // Nothing we can check.
-        returnTypes.add(Types.ANY);
-        continue;
-      }
-      @Nullable Types.CallableType callable = toCallableType(callFunctionElemType);
-      if (callable == null) {
-        errorf(
-            call.getFunction(),
-            "'%s' is not callable; got type '%s'",
-            call.getFunction(),
-            callFunctionType);
-        return Types.ANY;
-      }
-
-      // TODO: #28043 - Some of the checks below can be used to implement
-      // Types.CallableType.assignableFromHook().
-
-      // Indices of residual arguments in call.getArguments() and their corresponding types in
-      // argTypes. (Micro-optimization to avoid allocating <Argument, StarlarkType> pairs.)
-      ArrayList<Integer> residualPositional = new ArrayList<>(0);
-      ArrayList<Integer> residualNamed = new ArrayList<>(0);
-      // Names of mandatory parameters (both positional and named) having a corresponding argument.
-      ArrayList<String> seenMandatoryParameters =
-          new ArrayList<>(callable.getMandatoryParameters().size());
-      for (int i = 0; i < numArgs; i++) {
-        Argument arg = call.getArguments().get(i);
-        int parameterIndex;
-        if (i < call.getNumPositionalArguments()) {
-          // positional argument
-          if (i < callable.getNumPositionalParameters()) {
-            parameterIndex = i;
-          } else {
-            residualPositional.add(i);
-            continue;
-          }
-        } else {
-          // keyword argument
-          parameterIndex = callable.getParameterNames().indexOf(arg.getName());
-          if (parameterIndex < callable.getNumPositionalOnlyParameters()) {
-            // Either no param was found (i<0) or it's positional-only (0<=i<numPosOnly).
-            residualNamed.add(i);
-            continue;
-          }
-        }
-        // Argument is not residual; check it against the corresponding parameter.
-        String parameterName = callable.getParameterNames().get(parameterIndex);
-        StarlarkType parameterType = callable.getParameterTypeByPos(parameterIndex);
-        if (callable.getMandatoryParameters().contains(parameterName)) {
-          seenMandatoryParameters.add(parameterName);
-        }
-        if (!StarlarkType.assignableFrom(parameterType, argTypes.get(i))) {
-          errorf(
-              call.getArguments().get(i),
-              "in call to '%s()', parameter '%s' got value of type '%s', want '%s'",
-              call.getFunction(),
-              parameterName,
-              argTypes.get(i),
-              parameterType);
-          return Types.ANY;
-        }
-      }
-      if (!checkCallResidualPositionals(residualPositional, call, callable, argTypes)
-          || !checkCallResidualNamed(residualNamed, call, callable, argTypes)) {
-        return Types.ANY;
-      }
-      if (!checkCallMissingMandatoryArgs(
-          seenMandatoryParameters,
-          /* callHasVarargs= */ varargs != null,
-          /* callHasKwargs= */ kwargs != null,
-          call,
-          callable)) {
-        return Types.ANY;
-      }
-      // Like mypy, we check that the call's *args/**kwargs values are assignable to the callable's
-      // varargs/kwargs type. This is useful for the common case of a wrapper around a function
-      // which forwards its *args/**kwargs to the wrapped function unchanged; but it also raises
-      // failures for some legitimate uses: `def f(x: Any, **kwargs: str): ... ; f(**{"x" : 42})`.
-      // In that case, the caller can bypass the check by casting to Any: `f(**(cast(Any, ...)))`.
-      // We skip the check if the callable doesn't accept *args/**kwargs because the call's
-      // *args/**kwargs may be used to set any remaining unset arguments, or may be empty.
-      if (varargs != null
-          && !checkAssignable(
-              callable.getVarargsType(),
-              varargs.elementType(),
-              call,
-              varargs.expr(),
-              "elements of argument after *")) {
-        return Types.ANY;
-      }
-      if (kwargs != null
-          && !checkAssignable(
-              callable.getKwargsType(),
-              kwargs.valueType(),
-              call,
-              kwargs.expr(),
-              "values of argument after **")) {
-        return Types.ANY;
-      }
-      returnTypes.add(callable.getReturnType());
-    }
-    return Types.union(returnTypes);
-  }
-
-  private static record VarargsArgument(Expression expr, StarlarkType elementType) {
-    @Nullable
-    static VarargsArgument of(Argument.Star arg, TypeChecker checker) {
-      Expression varargs = arg.getValue();
-      StarlarkType varargsType = checker.infer(varargs);
-      StarlarkType varargsElementType = findElementType(varargsType);
-      if (varargsElementType == null) {
-        checker.errorf(varargs, "argument after * must be a sequence, not '%s'", varargsType);
-        return null;
-      }
-      return new VarargsArgument(varargs, varargsElementType);
     }
 
     /**
-     * Finds the smallest {@code Sequence[E]} type which is a supertype of the given type, and
-     * return E; or null if the given type does not have such a supertype.
+     * Infers the type of an expression from a bottom-up traversal, relying on type information stored
+     * in identifier bindings by the [TypeTagger].
+     * 
+     * 
+     * May not be called on type expressions (annotations, var statements, type alias statements).
      */
-    @Nullable
-    private static StarlarkType findElementType(StarlarkType maybeSequence) {
-      if (maybeSequence.equals(Types.ANY)) {
-        return Types.ANY;
-      }
-      ImmutableCollection<StarlarkType> unfolded = Types.unfoldUnion(maybeSequence);
-      ArrayList<StarlarkType> elements = new ArrayList<>(unfolded.size());
-      for (StarlarkType unfoldedElem : unfolded) {
-        // TODO: #28037 - Check getSubtypes() instead of relying purely on Java inheritance.
-        if (unfoldedElem instanceof Types.AbstractSequenceType sequence) {
-          elements.add(sequence.getElementType());
-        } else {
-          return null;
-        }
-      }
-      return Types.union(elements);
-    }
-  }
+    private fun infer(expr: Expression): StarlarkType? {
+        when (expr.kind()) {
+            Expression.Kind.IDENTIFIER -> {
+                return getType(expr as Identifier)
+            }
 
-  private static record KwargsArgument(Expression expr, StarlarkType valueType) {
-    @Nullable
-    static KwargsArgument of(Argument.StarStar arg, TypeChecker checker) {
-      Expression kwargs = arg.getValue();
-      StarlarkType kwargsType = checker.infer(kwargs);
-      StarlarkType kwargsValueType = findValueType(kwargsType);
-      if (kwargsValueType == null) {
-        checker.errorf(
-            kwargs, "argument after ** must be a dict with string keys, not '%s'", kwargsType);
-        return null;
-      }
-      return new KwargsArgument(kwargs, kwargsValueType);
+            Expression.Kind.STRING_LITERAL -> {
+                return Types.STR
+            }
+
+            Expression.Kind.INT_LITERAL -> {
+                return Types.INT
+            }
+
+            Expression.Kind.FLOAT_LITERAL -> {
+                return Types.FLOAT
+            }
+
+            Expression.Kind.CAST -> {
+                val cast = expr as CastExpression
+                val unused = infer(cast.getValue()) // only to verify the value expr is well-typed
+                return cast.getStarlarkType()
+            }
+
+            Expression.Kind.DOT -> {
+                return inferDot(expr as DotExpression)
+            }
+
+            Expression.Kind.INDEX -> {
+                return inferIndex(expr as IndexExpression)
+            }
+
+            Expression.Kind.SLICE -> {
+                return inferSlice(expr as SliceExpression)
+            }
+
+            Expression.Kind.LAMBDA -> {
+                val lambda = expr as LambdaExpression
+                val inferedReturnType = infer(lambda.getBody())
+                val originalType =
+                    Preconditions.checkNotNull<Types.CallableType>(
+                        typeTable.getType(lambda.getResolvedFunction()),
+                        "type tagger should have set type for lambda expr '%s'",
+                        lambda
+                    )
+                if (originalType.getReturnType() != inferedReturnType) {
+                    // Update the lambda function type with a more precise return type.
+                    typeTable.setType(
+                        lambda.getResolvedFunction(),
+                        Types.callable(
+                            originalType.getParameterNames(),
+                            originalType.getParameterTypes(),
+                            originalType.getNumPositionalOnlyParameters(),
+                            originalType.getNumPositionalParameters(),
+                            originalType.getMandatoryParameters(),
+                            originalType.getVarargsType(),
+                            originalType.getKwargsType(),
+                            inferedReturnType
+                        )
+                    )
+                }
+                return typeTable.getType(lambda.getResolvedFunction())
+            }
+
+            Expression.Kind.LIST_EXPR -> {
+                val list = expr as ListExpression
+                val elementTypes: MutableList<StarlarkType> = ArrayList<StarlarkType>()
+                for (element in list.getElements()) {
+                    elementTypes.add(infer(element)!!)
+                }
+                return if (list.isTuple())
+                    Types.tuple(ImmutableList.copyOf<StarlarkType?>(elementTypes))
+                else
+                    Types.listRvalue(Types.union(elementTypes))
+            }
+
+            Expression.Kind.DICT_EXPR -> {
+                val dict = expr as DictExpression
+                val keyTypes: MutableList<StarlarkType> = ArrayList<StarlarkType>()
+                val valueTypes: MutableList<StarlarkType> = ArrayList<StarlarkType>()
+                for (entry in dict.getEntries()) {
+                    keyTypes.add(infer(entry.getKey())!!)
+                    valueTypes.add(infer(entry.getValue())!!)
+                }
+                return Types.dictRvalue(Types.union(keyTypes), Types.union(valueTypes))
+            }
+
+            Expression.Kind.CALL -> {
+                // TODO: #27370 - we could special-case set literals; e.g. check if a call expression is
+                // `set()`, verifying using typeContext that `set` is the set type constructor.
+                return inferCall(expr as CallExpression)
+            }
+
+            Expression.Kind.CONDITIONAL -> {
+                val cond = expr as ConditionalExpression
+                return Types.union(infer(cond.getThenCase()), infer(cond.getElseCase()))
+            }
+
+            Expression.Kind.BINARY_OPERATOR -> {
+                val binop = expr as BinaryOperatorExpression
+                val xType = infer(binop.getX())
+                val yType = infer(binop.getY())
+                return inferBinaryOperator(
+                    binop.getX(),
+                    xType!!,
+                    binop.getOperator(),
+                    binop.getOperatorLocation(),
+                    binop.getY(),
+                    yType,  /* augmentedAssignment= */
+                    false
+                )
+            }
+
+            Expression.Kind.UNARY_OPERATOR -> {
+                val unop = expr as UnaryOperatorExpression
+                if (unop.getOperator() == TokenKind.NOT) {
+                    // NOT always returns a boolean (even if applied to Any or unions).
+                    return Types.BOOL
+                }
+                val xType = infer(unop.getX())
+                if (xType == Types.ANY
+                    || ((unop.getOperator() == TokenKind.MINUS || unop.getOperator() == TokenKind.PLUS)
+                            && StarlarkType.Companion.assignableFrom(Types.NUMERIC, xType))
+                    || (unop.getOperator() == TokenKind.TILDE && xType == Types.INT)
+                ) {
+                    // Unary operators other than NOT preserve the type of their operand.
+                    return xType
+                }
+                errorf(
+                    unop.getStartLocation(),
+                    "operator '%s' cannot be applied to type '%s'",
+                    unop.getOperator(),
+                    xType
+                )
+                return Types.ANY
+            }
+
+            Expression.Kind.COMPREHENSION -> {
+                return inferComprehension(expr as Comprehension)
+            }
+
+            else -> {
+                // TODO: #28037 - support isinstance expressions.
+                errorf(expr, "UNSUPPORTED: cannot typecheck %s expression", expr.kind())
+                return Types.ANY
+            }
+        }
+    }
+
+    private fun inferDot(dot: DotExpression): StarlarkType {
+        return Types.union(inferDotUnfolded(dot, infer(dot.getObject())!!))
     }
 
     /**
-     * Finds the smallest {@code Mapping[K, V]} type which is a supertype of the given type such
-     * that K is (a consistent-subtype-of?) str, and returns V; or null if the given type does not
-     * have such a supertype.
+     * Infers the non-flattened unfolded list of possible types of a dot expression.
+     * 
+     * 
+     * For example, given if field f has type int for type T, and type str|bool for type U, this
+     * function will return the list `[int, str|bool]` for x.f where x has type T|U.
+     * 
+     * 
+     * When a dot expression is used as a value, one should take the union type of the returned
+     * types. But when a dot expression is used as the LHS of an assignment, one should take their
+     * meet.
      */
-    @Nullable
-    private static StarlarkType findValueType(StarlarkType maybeMapping) {
-      if (maybeMapping.equals(Types.ANY)) {
-        return Types.ANY;
-      }
-      ImmutableCollection<StarlarkType> unfolded = Types.unfoldUnion(maybeMapping);
-      ArrayList<StarlarkType> values = new ArrayList<>(unfolded.size());
-      for (StarlarkType unfoldedElem : unfolded) {
-        // TODO: #28037 - Check getSubtypes() instead of relying purely on Java inheritance.
-        if (unfoldedElem instanceof Types.AbstractMappingType mapping
-            && StarlarkType.assignableFrom(Types.STR, mapping.getKeyType())) {
-          values.add(mapping.getValueType());
+    private fun inferDotUnfolded(dot: DotExpression, objType: StarlarkType): ImmutableList<StarlarkType> {
+        val name = dot.getField().getName()
+
+        if (objType == Types.ANY) {
+            return ImmutableList.of<StarlarkType?>(Types.ANY)
+        }
+
+        val objElemTypes = Types.unfoldUnion(objType)
+        val resultTypes =
+            ImmutableList.builderWithExpectedSize<StarlarkType?>(objElemTypes.size())
+        for (objElemType in objElemTypes) {
+            val fieldType = objElemType.getField(name, typeContext)
+            if (fieldType == null) {
+                errorf(
+                    dot.getDotLocation(),
+                    "'%s' of type '%s' does not have field '%s'",
+                    dot.getObject(),
+                    objType,
+                    name
+                )
+                return ImmutableList.of<StarlarkType?>(Types.ANY)
+            }
+            resultTypes.add(fieldType)
+        }
+        return resultTypes.build()
+    }
+
+    private fun inferIndex(index: IndexExpression): StarlarkType {
+        return Types.union(inferIndexUnfolded(index, infer(index.getObject())!!, infer(index.getKey())))
+    }
+
+    /**
+     * Infers the non-flattened unfolded list of possible types of an index expression.
+     * 
+     * 
+     * For example, given object type `list[int] | list[str|bool]`, this function will return
+     * the list `[int, str|bool]`.
+     * 
+     * 
+     * When an index expression is used as a value, one should take the union type of the returned
+     * types. But when an index expression is used as the LHS of an assignment, one should take their
+     * meet.
+     */
+    private fun inferIndexUnfolded(
+        index: IndexExpression, objType: StarlarkType, keyType: StarlarkType?
+    ): ImmutableList<StarlarkType> {
+        val obj = index.getObject()
+        val key = index.getKey()
+
+        if (objType == Types.ANY) {
+            return ImmutableList.of<StarlarkType?>(Types.ANY)
+        }
+
+        val objElemTypes = Types.unfoldUnion(objType)
+        val resultTypes =
+            ImmutableList.builderWithExpectedSize<StarlarkType?>(objElemTypes.size())
+        for (objElemType in objElemTypes) {
+            if (objElemType == Types.ANY) {
+                resultTypes.add(Types.ANY)
+            } else if (objElemType is Types.FixedLengthTupleType) {
+                errorIfKeyNotInt(index, objElemType, keyType)
+                val elementTypes = objElemType.getElementTypes()
+                var resultType: StarlarkType? = null
+                // Project out the type of the specific component if we can statically determine the index.
+                val intKey: Int? = getIntValueExact(key)
+                if (intKey != null) {
+                    var i = intKey
+                    if (i < 0) {
+                        // Same logic as for EvalUtils#getSequenceIndex.
+                        i += elementTypes.size()
+                    }
+                    if (0 <= i && i < elementTypes.size()) {
+                        resultType = elementTypes.get(i)
+                    } else {
+                        errorf(
+                            index.getLbracketLocation(),
+                            "'%s' of type '%s' is indexed by integer %s, which is out-of-range",
+                            obj,
+                            objType,
+                            intKey
+                        )
+                        // Don't complain about uses of the result type when we don't even know what result type
+                        // the user wanted.
+                        return ImmutableList.of<StarlarkType?>(Types.ANY)
+                    }
+                }
+                if (resultType == null) {
+                    resultType = objElemType.toHomogeneous().getElementType()
+                }
+                resultTypes.add(resultType)
+            } else if (objElemType is Types.AbstractSequenceType) {
+                errorIfKeyNotInt(index, objType, keyType) // fall through on error
+                resultTypes.add(objElemType.getElementType())
+            } else if (objElemType is Types.AbstractMappingType) {
+                if (!StarlarkType.Companion.assignableFrom(objElemType.getKeyType(), keyType)) {
+                    errorf(
+                        index.getLbracketLocation(),
+                        "'%s' of type '%s' requires key type '%s', but got '%s'",
+                        obj,
+                        objType,
+                        objElemType.getKeyType(),
+                        keyType
+                    )
+                    // Fall through to returning the value type.
+                }
+                resultTypes.add(objElemType.getValueType())
+            } else if (objElemType == Types.STR) {
+                errorIfKeyNotInt(index, objType, keyType) // fall through on error
+                resultTypes.add(Types.STR)
+            } else {
+                errorf(index.getLbracketLocation(), "cannot index '%s' of type '%s'", obj, objType)
+                return ImmutableList.of<StarlarkType?>(Types.ANY)
+            }
+        }
+        return resultTypes.build()
+    }
+
+    private fun inferSlice(slice: SliceExpression): StarlarkType {
+        var step: Int? = getIntValueExact(slice.getStep())
+        if (step == null) {
+            step = 1
+            if (slice.getStep() != null) {
+                val stepType = infer(slice.getStep()!!)
+                if (!StarlarkType.Companion.assignableFrom(Types.INT, stepType)) {
+                    errorf(slice.getStep()!!, "got '%s' for slice step, want int", stepType)
+                    return Types.ANY
+                }
+            }
+        } else if (step == 0) {
+            errorf(slice.getStep()!!, "slice step cannot be zero")
+            return Types.ANY
+        }
+        if (slice.getStart() != null) {
+            val startType = infer(slice.getStart()!!)
+            if (!StarlarkType.Companion.assignableFrom(Types.INT, startType)) {
+                errorf(slice.getStart()!!, "got '%s' for start index, want int", startType)
+                return Types.ANY
+            }
+        }
+        if (slice.getStop() != null) {
+            val stopType = infer(slice.getStop()!!)
+            if (!StarlarkType.Companion.assignableFrom(Types.INT, stopType)) {
+                errorf(slice.getStop()!!, "got '%s' for stop index, want int", stopType)
+                return Types.ANY
+            }
+        }
+
+        val objType = infer(slice.getObject())
+        if (objType == Types.ANY) {
+            return Types.ANY
+        }
+        val resultTypes = ArrayList<StarlarkType>()
+        for (objElemType in Types.unfoldUnion(objType)) {
+            if (objElemType == Types.ANY) {
+                resultTypes.add(Types.ANY)
+            } else if (objElemType == Types.STR) {
+                resultTypes.add(Types.STR)
+            } else if (objElemType is Types.FixedLengthTupleType) {
+                val tupleElementTypes = objElemType.getElementTypes()
+                val len: Int = tupleElementTypes.size()
+                val start: Int? = getIntValueExact(slice.getStart())
+                val stop: Int? = getIntValueExact(slice.getStop())
+                val resultTupleElementTypes = ImmutableList.builder<StarlarkType?>()
+                if (step != null && haveExactSliceBound(slice.getStart(), start)
+                    && haveExactSliceBound(slice.getStop(), stop)
+                ) {
+                    if (step > 0) {
+                        val startClamped = if (start != null) SyntaxUtils.toSliceBound(start, len) else 0
+                        val stopClamped = if (stop != null) SyntaxUtils.toSliceBound(stop, len) else len
+                        var i = startClamped.toLong()
+                        while (i < stopClamped && i.toInt().toLong() == i) {
+                            resultTupleElementTypes.add(tupleElementTypes.get(i.toInt()))
+                            i += step.toLong()
+                        }
+                    } else {
+                        val startClamped =
+                            if (start != null) SyntaxUtils.toReverseSliceBound(start, len) else len - 1
+                        val stopClamped = if (stop != null) SyntaxUtils.toReverseSliceBound(stop, len) else -1
+                        var i = startClamped.toLong()
+                        while (i > stopClamped && i.toInt().toLong() == i) {
+                            resultTupleElementTypes.add(tupleElementTypes.get(i.toInt()))
+                            i += step.toLong()
+                        }
+                    }
+                    resultTypes.add(Types.tuple(resultTupleElementTypes.build()))
+                } else {
+                    resultTypes.add(objElemType.toHomogeneous())
+                }
+            } else if (objElemType is Types.AbstractSequenceType) {
+                resultTypes.add(objElemType)
+            } else {
+                errorf(
+                    slice.getLbracketLocation(),
+                    "invalid slice operand '%s' of type '%s', expected Sequence or str",
+                    slice.getObject(),
+                    objElemType
+                )
+                resultTypes.add(Types.ANY)
+            }
+        }
+        return Types.union(resultTypes)
+    }
+
+    private fun inferBinaryOperator(
+        xExpr: Expression?,
+        xType: StarlarkType,
+        operator: TokenKind,
+        operatorLocation: Location?,
+        yExpr: Expression?,
+        yType: StarlarkType?,
+        augmentedAssignment: Boolean
+    ): StarlarkType? {
+        // TokenKind operator = binop.getOperator();
+        when (operator) {
+            TokenKind.AND, TokenKind.OR, TokenKind.EQUALS_EQUALS, TokenKind.NOT_EQUALS -> {
+                // Boolean regardless of LHS and RHS.
+                return Types.BOOL
+            }
+
+            TokenKind.LESS, TokenKind.LESS_EQUALS, TokenKind.GREATER, TokenKind.GREATER_EQUALS -> {
+                // Boolean or type error.
+                if (StarlarkType.Companion.comparable(xType, yType)) {
+                    return Types.BOOL
+                }
+                binaryOperatorError(xType, operator, operatorLocation, yType, augmentedAssignment)
+                return Types.ANY
+            }
+
+            else -> {
+                // Take the union of all types inferred by crossing the left and right union elements
+                // (each of which must be a valid combination of rhs and lhs for the operator).
+                val xTypes = Types.unfoldUnion(xType)
+                val yTypes = Types.unfoldUnion(yType)
+                val resultTypes = ArrayList<StarlarkType>()
+                for (xElemType in xTypes) {
+                    for (yElemType in yTypes) {
+                        var resultType = xElemType.inferBinaryOperator(operator, yElemType, true)
+                        if (resultType == null) {
+                            resultType = yElemType.inferBinaryOperator(operator, xElemType, false)
+                        }
+                        if (resultType == null && operator == TokenKind.STAR) {
+                            // Tuple repetition is the only case where we need to examine the expressions.
+                            // TODO: #28037 - We can get rid of the tuple repetition special case if we
+                            // introduce ConstantIntType for integer constants.
+                            if (StarlarkType.Companion.assignableFrom(Types.INT, xElemType)
+                                && yElemType is Types.TupleType
+                            ) {
+                                resultType = inferTupleRepetition(yElemType, xExpr)
+                            } else if (StarlarkType.Companion.assignableFrom(Types.INT, yElemType)
+                                && xElemType is Types.TupleType
+                            ) {
+                                resultType = inferTupleRepetition(xElemType, yExpr)
+                            }
+                        }
+                        if (resultType == null) {
+                            binaryOperatorError(xType, operator, operatorLocation, yType, augmentedAssignment)
+                            return Types.ANY
+                        }
+                        resultTypes.add(resultType)
+                    }
+                }
+                return Types.union(resultTypes)
+            }
+        }
+    }
+
+    private fun inferCall(call: CallExpression): StarlarkType {
+        // Collect and check the shape of the call's *args/**kwargs. (This check is independent of
+        // callFunctionType.)
+        var varargs: VarargsArgument? = null
+        var kwargs: KwargsArgument? = null
+        var numArgs: Int = call.getArguments().size()
+        if (numArgs > 0 && call.getArguments().get(numArgs - 1) is Argument.StarStar) {
+            kwargs = KwargsArgument.Companion.of(arg, this)
+            if (kwargs == null) {
+                // error already reported
+                return Types.ANY
+            }
+            numArgs--
+        }
+        if (numArgs > 0 && call.getArguments().get(numArgs - 1) is Argument.Star) {
+            varargs = VarargsArgument.Companion.of(arg, this)
+            if (varargs == null) {
+                // error already reported
+                return Types.ANY
+            }
+            numArgs--
+        }
+
+        val callFunctionType = infer(call.getFunction())
+        if (callFunctionType == Types.ANY) {
+            return Types.ANY
+        }
+
+        // Collect call's argument types (excluding *args and **kwargs).
+        val argTypes =
+            call.getArguments().stream()
+                .limit(numArgs.toLong())
+                .map<StarlarkType?>(Function { arg: Argument? -> infer(arg!!.getValue()) })
+                .collect(ImmutableList.toImmutableList<StarlarkType?>())
+
+        val callFunctionTypes = Types.unfoldUnion(callFunctionType)
+        val returnTypes = ArrayList<StarlarkType>()
+        for (callFunctionElemType in callFunctionTypes) {
+            if (callFunctionElemType == Types.ANY) {
+                // Nothing we can check.
+                returnTypes.add(Types.ANY)
+                continue
+            }
+            val callable = toCallableType(callFunctionElemType)
+            if (callable == null) {
+                errorf(
+                    call.getFunction(),
+                    "'%s' is not callable; got type '%s'",
+                    call.getFunction(),
+                    callFunctionType
+                )
+                return Types.ANY
+            }
+
+            // TODO: #28043 - Some of the checks below can be used to implement
+            // Types.CallableType.assignableFromHook().
+
+            // Indices of residual arguments in call.getArguments() and their corresponding types in
+            // argTypes. (Micro-optimization to avoid allocating <Argument, StarlarkType> pairs.)
+            val residualPositional = ArrayList<Int?>(0)
+            val residualNamed = ArrayList<Int?>(0)
+            // Names of mandatory parameters (both positional and named) having a corresponding argument.
+            val seenMandatoryParameters: ArrayList<kotlin.String?> =
+                ArrayList<kotlin.String?>(callable.getMandatoryParameters().size())
+            for (i in 0..<numArgs) {
+                val arg = call.getArguments().get(i)
+                val parameterIndex: Int
+                if (i < call.getNumPositionalArguments()) {
+                    // positional argument
+                    if (i < callable.getNumPositionalParameters()) {
+                        parameterIndex = i
+                    } else {
+                        residualPositional.add(i)
+                        continue
+                    }
+                } else {
+                    // keyword argument
+                    parameterIndex = callable.getParameterNames().indexOf(arg.getName())
+                    if (parameterIndex < callable.getNumPositionalOnlyParameters()) {
+                        // Either no param was found (i<0) or it's positional-only (0<=i<numPosOnly).
+                        residualNamed.add(i)
+                        continue
+                    }
+                }
+                // Argument is not residual; check it against the corresponding parameter.
+                val parameterName = callable.getParameterNames().get(parameterIndex)
+                val parameterType = callable.getParameterTypeByPos(parameterIndex)
+                if (callable.getMandatoryParameters().contains(parameterName)) {
+                    seenMandatoryParameters.add(parameterName)
+                }
+                if (!StarlarkType.Companion.assignableFrom(parameterType, argTypes.get(i))) {
+                    errorf(
+                        call.getArguments().get(i),
+                        "in call to '%s()', parameter '%s' got value of type '%s', want '%s'",
+                        call.getFunction(),
+                        parameterName,
+                        argTypes.get(i),
+                        parameterType
+                    )
+                    return Types.ANY
+                }
+            }
+            if (!checkCallResidualPositionals(residualPositional, call, callable, argTypes)
+                || !checkCallResidualNamed(residualNamed, call, callable, argTypes)
+            ) {
+                return Types.ANY
+            }
+            if (!checkCallMissingMandatoryArgs(
+                    seenMandatoryParameters,  /* callHasVarargs= */
+                    varargs != null,  /* callHasKwargs= */
+                    kwargs != null,
+                    call,
+                    callable
+                )
+            ) {
+                return Types.ANY
+            }
+            // Like mypy, we check that the call's *args/**kwargs values are assignable to the callable's
+            // varargs/kwargs type. This is useful for the common case of a wrapper around a function
+            // which forwards its *args/**kwargs to the wrapped function unchanged; but it also raises
+            // failures for some legitimate uses: `def f(x: Any, **kwargs: str): ... ; f(**{"x" : 42})`.
+            // In that case, the caller can bypass the check by casting to Any: `f(**(cast(Any, ...)))`.
+            // We skip the check if the callable doesn't accept *args/**kwargs because the call's
+            // *args/**kwargs may be used to set any remaining unset arguments, or may be empty.
+            if (varargs != null
+                && !checkAssignable(
+                    callable.getVarargsType(),
+                    varargs.elementType,
+                    call,
+                    varargs.expr!!,
+                    "elements of argument after *"
+                )
+            ) {
+                return Types.ANY
+            }
+            if (kwargs != null
+                && !checkAssignable(
+                    callable.getKwargsType(),
+                    kwargs.valueType,
+                    call,
+                    kwargs.expr!!,
+                    "values of argument after **"
+                )
+            ) {
+                return Types.ANY
+            }
+            returnTypes.add(callable.getReturnType())
+        }
+        return Types.union(returnTypes)
+    }
+
+    @kotlin.jvm.JvmRecord
+    private data class VarargsArgument(expr: Expression?, elementType: StarlarkType?) {
+        val expr: Expression?
+        val elementType: StarlarkType?
+
+        init {
+            this.expr = expr
+            this.elementType = elementType
+        }
+
+        companion object {
+            fun of(arg: Argument.Star, checker: TypeChecker): VarargsArgument? {
+                val varargs = arg.getValue()
+                val varargsType = checker.infer(varargs)
+                val varargsElementType: StarlarkType? = Companion.findElementType(varargsType!!)
+                if (varargsElementType == null) {
+                    checker.errorf(varargs, "argument after * must be a sequence, not '%s'", varargsType)
+                    return null
+                }
+                return VarargsArgument(varargs, varargsElementType)
+            }
+
+            /**
+             * Finds the smallest `Sequence[E]` type which is a supertype of the given type, and
+             * return E; or null if the given type does not have such a supertype.
+             */
+            private fun findElementType(maybeSequence: StarlarkType): StarlarkType? {
+                if (maybeSequence == Types.ANY) {
+                    return Types.ANY
+                }
+                val unfolded = Types.unfoldUnion(maybeSequence)
+                val elements: ArrayList<StarlarkType> = ArrayList<StarlarkType>(unfolded.size())
+                for (unfoldedElem in unfolded) {
+                    // TODO: #28037 - Check getSubtypes() instead of relying purely on Java inheritance.
+                    if (unfoldedElem is Types.AbstractSequenceType) {
+                        elements.add(unfoldedElem.getElementType())
+                    } else {
+                        return null
+                    }
+                }
+                return Types.union(elements)
+            }
+        }
+    }
+
+    @kotlin.jvm.JvmRecord
+    private data class KwargsArgument(expr: Expression?, valueType: StarlarkType?) {
+        val expr: Expression?
+        val valueType: StarlarkType?
+
+        init {
+            this.expr = expr
+            this.valueType = valueType
+        }
+
+        companion object {
+            fun of(arg: Argument.StarStar, checker: TypeChecker): KwargsArgument? {
+                val kwargs = arg.getValue()
+                val kwargsType = checker.infer(kwargs)
+                val kwargsValueType: StarlarkType? = Companion.findValueType(kwargsType!!)
+                if (kwargsValueType == null) {
+                    checker.errorf(
+                        kwargs, "argument after ** must be a dict with string keys, not '%s'", kwargsType
+                    )
+                    return null
+                }
+                return KwargsArgument(kwargs, kwargsValueType)
+            }
+
+            /**
+             * Finds the smallest `Mapping[K, V]` type which is a supertype of the given type such
+             * that K is (a consistent-subtype-of?) str, and returns V; or null if the given type does not
+             * have such a supertype.
+             */
+            private fun findValueType(maybeMapping: StarlarkType): StarlarkType? {
+                if (maybeMapping == Types.ANY) {
+                    return Types.ANY
+                }
+                val unfolded = Types.unfoldUnion(maybeMapping)
+                val values: ArrayList<StarlarkType> = ArrayList<StarlarkType>(unfolded.size())
+                for (unfoldedElem in unfolded) {
+                    // TODO: #28037 - Check getSubtypes() instead of relying purely on Java inheritance.
+                    if (unfoldedElem is Types.AbstractMappingType
+                        && StarlarkType.Companion.assignableFrom(Types.STR, unfoldedElem.getKeyType())
+                    ) {
+                        values.add(unfoldedElem.getValueType())
+                    } else {
+                        return null
+                    }
+                }
+                return Types.union(values)
+            }
+        }
+    }
+
+    /**
+     * Returns `t` if it is a [Types.CallableType]; or its callable supertype otherwise
+     * (e.g. for self-call builtins); or null if it is not callable.
+     */
+    private fun toCallableType(t: StarlarkType): Types.CallableType? {
+        if (t is Types.CallableType) {
+            return t
+        }
+        for (supertype in t.getSupertypes()) {
+            if (supertype is Types.CallableType) {
+                return supertype
+            }
+        }
+        return null
+    }
+
+    /**
+     * Returns true if the call's residual positional arguments (if any) satisfy the type checker.
+     * Otherwise, reports an error and returns false.
+     */
+    private fun checkCallResidualPositionals(
+        residualPositional: MutableList<Int?>,
+        call: CallExpression,
+        callable: Types.CallableType,
+        argTypes: MutableList<StarlarkType?>
+    ): Boolean {
+        if (residualPositional.isEmpty()) {
+            return true
+        } else if (callable.getVarargsType() == null) {
+            // callable cannot accept residual positional args
+            if (callable.getNumPositionalParameters() > 0) {
+                errorf(
+                    call.getArguments().get(callable.getNumPositionalParameters()),
+                    "'%s()' accepts no more than %d positional argument%s but got %d",
+                    call.getFunction(),
+                    callable.getNumPositionalParameters(),
+                    plural(callable.getNumPositionalParameters()),
+                    call.getNumPositionalArguments()
+                )
+            } else {
+                errorf(
+                    call.getArguments().getFirst(),
+                    "'%s()' does not accept positional arguments, but got %d",
+                    call.getFunction(),
+                    call.getNumPositionalArguments()
+                )
+            }
+            return false
         } else {
-          return null;
+            // residual positional args go into callable's varargs
+            for (argIndex in residualPositional) {
+                val arg = call.getArguments().get(argIndex!!)
+                val argType = argTypes.get(argIndex)
+                if (!checkAssignable(
+                        callable.getVarargsType(), argType, call, arg, "residual positional arguments"
+                    )
+                ) {
+                    return false
+                }
+            }
         }
-      }
-      return Types.union(values);
-    }
-  }
-
-  /**
-   * Returns {@code t} if it is a {@link Types.CallableType}; or its callable supertype otherwise
-   * (e.g. for self-call builtins); or null if it is not callable.
-   */
-  @Nullable
-  private Types.CallableType toCallableType(StarlarkType t) {
-    if (t instanceof Types.CallableType callableType) {
-      return callableType;
-    }
-    for (StarlarkType supertype : t.getSupertypes()) {
-      if (supertype instanceof Types.CallableType callableType) {
-        return callableType;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Returns true if the call's residual positional arguments (if any) satisfy the type checker.
-   * Otherwise, reports an error and returns false.
-   */
-  private boolean checkCallResidualPositionals(
-      List<Integer> residualPositional,
-      CallExpression call,
-      Types.CallableType callable,
-      List<StarlarkType> argTypes) {
-    if (residualPositional.isEmpty()) {
-      return true;
-    } else if (callable.getVarargsType() == null) {
-      // callable cannot accept residual positional args
-      if (callable.getNumPositionalParameters() > 0) {
-        errorf(
-            call.getArguments().get(callable.getNumPositionalParameters()),
-            "'%s()' accepts no more than %d positional argument%s but got %d",
-            call.getFunction(),
-            callable.getNumPositionalParameters(),
-            plural(callable.getNumPositionalParameters()),
-            call.getNumPositionalArguments());
-      } else {
-        errorf(
-            call.getArguments().getFirst(),
-            "'%s()' does not accept positional arguments, but got %d",
-            call.getFunction(),
-            call.getNumPositionalArguments());
-      }
-      return false;
-    } else {
-      // residual positional args go into callable's varargs
-      for (int argIndex : residualPositional) {
-        Argument arg = call.getArguments().get(argIndex);
-        StarlarkType argType = argTypes.get(argIndex);
-        if (!checkAssignable(
-            callable.getVarargsType(), argType, call, arg, "residual positional arguments")) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  /**
-   * Returns true if the call's residual named arguments (if any) satisfy the type checker.
-   * Otherwise, reports an error and returns false.
-   */
-  private boolean checkCallResidualNamed(
-      List<Integer> residualNamed,
-      CallExpression call,
-      Types.CallableType callable,
-      List<StarlarkType> argTypes) {
-    if (residualNamed.isEmpty()) {
-      return true;
-    } else if (callable.getKwargsType() == null) {
-      // callable cannot accept residual named args
-      ImmutableList<Argument> residualNamedArgs =
-          residualNamed.stream().map(i -> call.getArguments().get(i)).collect(toImmutableList());
-      errorf(
-          residualNamedArgs.getFirst(),
-          "'%s()' got unexpected keyword argument%s: %s%s",
-          call.getFunction(),
-          plural(residualNamedArgs.size()),
-          residualNamedArgs.stream().map(Argument::getName).collect(joining(", ")),
-          // If there are multiple residual named args, it's likely due to calling the wrong
-          // function or misunderstanding the API, so arg spelling suggestions would not help.
-          residualNamedArgs.size() == 1
-              ? SpellChecker.didYouMean(
-                  residualNamedArgs.getFirst().getName(),
-                  callable
-                      .getParameterNames()
-                      .subList(
-                          callable.getNumPositionalOnlyParameters(),
-                          callable.getParameterNames().size()))
-              : "");
-      return false;
-    } else {
-      // residual named args go into callable's kwargs
-      for (int argIndex : residualNamed) {
-        Argument arg = call.getArguments().get(argIndex);
-        StarlarkType argType = argTypes.get(argIndex);
-        if (!checkAssignable(
-            callable.getKwargsType(), argType, call, arg, "residual keyword arguments")) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  /**
-   * Returns true if all mandatory parameters were explicitly supplied by the call or potentially
-   * supplied through *args or **kwargs. Otherwise, reports an error and returns false.
-   */
-  private boolean checkCallMissingMandatoryArgs(
-      List<String> seenMandatoryParameters,
-      boolean callHasVarargs,
-      boolean callHasKwargs,
-      CallExpression call,
-      Types.CallableType callable) {
-    if (seenMandatoryParameters.size() < callable.getMandatoryParameters().size()) {
-      ImmutableSet<String> seenMandatorySet = ImmutableSet.copyOf(seenMandatoryParameters);
-      // Identify mandatory parameters which were not seen and which cannot be possibly supplied
-      // from the call's *args or **kwargs.
-      // TODO: #28037 - Perhaps report an error if no element of varargsElementTypes /
-      // kwargsValueTypes is assignable to a missing parameter's type.
-      ArrayList<String> missingMandatory = new ArrayList<>(0);
-      for (int i = 0; i < callable.getParameterNames().size(); i++) {
-        String name = callable.getParameterNames().get(i);
-        if (!callable.getMandatoryParameters().contains(name)) {
-          continue;
-        }
-        if (!seenMandatorySet.contains(name)) {
-          if (i < callable.getNumPositionalOnlyParameters() && !callHasVarargs) {
-            missingMandatory.add(name);
-          } else if (i < callable.getNumPositionalParameters()
-              && !callHasVarargs
-              && !callHasKwargs) {
-            missingMandatory.add(name);
-          } else if (i >= callable.getNumPositionalParameters() && !callHasKwargs) {
-            missingMandatory.add(name);
-          }
-        }
-      }
-      if (!missingMandatory.isEmpty()) {
-        errorf(
-            call.getLparenLocation(),
-            "'%s()' missing %d required argument%s: %s",
-            call.getFunction(),
-            missingMandatory.size(),
-            plural(missingMandatory.size()),
-            Joiner.on(", ").join(missingMandatory));
-        return false;
-      }
-    }
-    return true;
-  }
-
-  private StarlarkType inferComprehension(Comprehension comp) {
-    for (Comprehension.Clause clause : comp.getClauses()) {
-      switch (clause) {
-        case Comprehension.For forClause -> {
-          checkForClause(
-              forClause.getVars(), forClause.getIterable(), "comprehension 'for' clause");
-        }
-        case Comprehension.If ifClause -> {
-          // Infer only to type-check. Condition is evaluated as truthy/falsy, which is valid for
-          // every type.
-          var unused = infer(ifClause.getCondition());
-        }
-      }
-    }
-    if (comp.isDict()) {
-      DictExpression.Entry bodyEntry = (DictExpression.Entry) comp.getBody();
-      return Types.dict(infer(bodyEntry.getKey()), infer(bodyEntry.getValue()));
-    } else {
-      Expression bodyElement = (Expression) comp.getBody();
-      return Types.list(infer(bodyElement));
-    }
-  }
-
-  /** Recursively type-checks the vars and the iterable, and assigns the vars to the iterable. */
-  private void checkForClause(Expression vars, Expression iterable, String what) {
-    StarlarkType iterableType = infer(iterable);
-    StarlarkType varsRhsType; // The type of the value assigned to the vars expression.
-    if (iterableType.equals(Types.ANY)) {
-      varsRhsType = Types.ANY;
-    } else {
-      ArrayList<StarlarkType> varUnionElements = new ArrayList<>();
-      for (StarlarkType iterableUnionElement : Types.unfoldUnion(iterableType)) {
-        // TODO: #28037 - Replace with inferring T when assigning iterableType to Collection[T]
-        // TODO: #28037 - Introduce an Iterable type and use it here to match language spec.
-        if (iterableUnionElement.equals(Types.ANY)) {
-          varUnionElements.add(Types.ANY);
-        } else if (iterableUnionElement instanceof Types.AbstractCollectionType collection) {
-          varUnionElements.add(collection.getElementType());
-        } else {
-          errorf(iterable, "%s operand must be an iterable, got '%s'", what, iterableType);
-        }
-      }
-      varsRhsType = Types.union(varUnionElements);
-    }
-    assign(vars, varsRhsType);
-  }
-
-  private boolean checkAssignable(
-      @Nullable StarlarkType lhs,
-      @Nullable StarlarkType rhs,
-      CallExpression call,
-      Node node,
-      String nodeDescription) {
-    if (lhs != null && rhs != null) {
-      if (!StarlarkType.assignableFrom(lhs, rhs)) {
-        errorf(
-            node,
-            "in call to '%s()', %s must be '%s', not '%s'",
-            call.getFunction(),
-            nodeDescription,
-            lhs,
-            rhs);
-        return false;
-      }
-    }
-    return true;
-  }
-
-  private static StarlarkType inferTupleRepetition(Types.TupleType tuple, Expression timesExpr) {
-    @Nullable Integer times = getIntValueExact(timesExpr);
-    if (times != null) {
-      return tuple.repeat(times);
-    }
-    return tuple.toHomogeneous();
-  }
-
-  /**
-   * Returns the inferred type of an expression.
-   *
-   * <p>The expression must have already been resolved and successfully type-tagged, i.e.
-   * identifiers must have their bindings set and these bindings must contain type information.
-   *
-   * @throws SyntaxError.Exception if a static type error is present in the expression.
-   */
-  static StarlarkType inferTypeOf(Expression expr, TypeTable typeTable, TypeContext typeContext)
-      throws SyntaxError.Exception {
-    TypeChecker tc = new TypeChecker(typeTable, typeContext);
-    StarlarkType result = tc.infer(expr);
-    if (!typeTable.ok()) {
-      throw new SyntaxError.Exception(typeTable.errors());
-    }
-    return result;
-  }
-
-  /**
-   * Recursively typechecks the assignment of type {@code rhsType} to the target expression {@code
-   * lhs}.
-   *
-   * <p>Mutates the types on the {@link Resolver.Binding} objects of untyped variables by setting
-   * them to their inferred type (if this is the first assignment to that variable in typed code).
-   *
-   * <p>The asymmetry of the parameter types comes from the fact that this helper recursively
-   * decomposes the LHS syntactically, whereas the RHS has already been fully evaluated to a type.
-   * For instance, {@code x, y = (1, 2)} and {@code x, y = my_pair} both trigger the same behavior
-   * in this method. Decomposing the LHS syntactically rather than by type is what allows {@code (x,
-   * y) = [1, 2]} to succeed, even though assignment of a list to a tuple type is illegal (as in
-   * {@code t : Tuple[int, int] = [1, 2]}).
-   */
-  private void assign(Expression lhs, StarlarkType rhsType) {
-    checkState(usesTypeSyntax());
-
-    if (lhs.kind() == Expression.Kind.LIST_EXPR) {
-      assignSequence((ListExpression) lhs, rhsType);
-      return;
+        return true
     }
 
-    ImmutableList<StarlarkType> lhsMeet = inferIndividualAssignmentTarget(lhs);
-    for (StarlarkType lhsType : lhsMeet) {
-      if (!StarlarkType.assignableFrom(lhsType, rhsType)) {
-        errorf(lhs, "cannot assign type '%s' to %s", rhsType, formatExprWithMeetType(lhs, lhsMeet));
-        break;
-      }
-    }
-
-    if (lhs instanceof Identifier id && typeTable.getType(id.getBinding()) == null) {
-      // If a variable has not been typed, infer its type from the rhs of the first assignment.
-      typeTable.setInferredType(id.getBinding(), rhsType.toLvalue());
-    }
-  }
-
-  private static String formatExprWithMeetType(Expression expr, ImmutableList<StarlarkType> types) {
-    if (types.size() == 1) {
-      return String.format("'%s' of type '%s'", expr, types.getFirst());
-    } else {
-      return String.format(
-          "'%s' which expects a value satisfying all of the %d types [%s]",
-          expr,
-          types.size(),
-          types.stream().map(t -> String.format("'%s'", t)).collect(joining(", ")));
-    }
-  }
-
-  /**
-   * Verifies that the expression can be used as the target of a non-sequence assignment (or
-   * augmented assignment). Returns a non-flattened unfolded list of LHS acceptor types, each of
-   * which must be checked for being assignable by the assignment's RHS type.
-   *
-   * <p>In type theory terms, the returned list represents the meet of its type elements; however,
-   * meet types don't (yet) exist in the Starlark type system.
-   *
-   * <p>If the LHS is an index or dot expression whose object is of a union type, then each of the
-   * possible acceptor types must be assignable. We want to distinguish between the valid case
-   * {@code x: list[int|str]; x[0] = 1} (where there is a single LHS acceptor type, int|str) and the
-   * invalid case {@code y: list[int] | list[str]; y[0] = 1} (which has a pair of LHS acceptor
-   * types, int and str, the latter of which is not assignable from 1).
-   */
-  private ImmutableList<StarlarkType> inferIndividualAssignmentTarget(Expression lhs) {
-    switch (lhs.kind()) {
-      case Expression.Kind.INDEX -> {
-        IndexExpression indexExpr = (IndexExpression) lhs;
-        StarlarkType objectType = infer(indexExpr.getObject());
-        StarlarkType keyType = infer(indexExpr.getKey());
-        if (!objectType.hasSetIndex()) {
-          errorf(
-              lhs,
-              "%s of type '%s' does not support item assignment",
-              indexExpr.getObject(),
-              objectType);
-        }
-        return inferIndexUnfolded(indexExpr, objectType, keyType);
-      }
-      case Expression.Kind.DOT -> {
-        DotExpression dotExpr = (DotExpression) lhs;
-        StarlarkType objectType = infer(dotExpr.getObject());
-        if (!objectType.hasSetField()) {
-          errorf(
-              lhs,
-              "%s of type '%s' does not support field assignment",
-              dotExpr.getObject(),
-              objectType);
-        }
-        return inferDotUnfolded(dotExpr, objectType);
-      }
-      case Expression.Kind.IDENTIFIER -> {
-        return ImmutableList.of(infer(lhs));
-      }
-      default -> {
-        StarlarkType lhsType = infer(lhs);
-        errorf(lhs, "%s of type '%s' is not a valid target for assignment", lhs, lhsType);
-        return ImmutableList.of(Types.ANY);
-      }
-    }
-  }
-
-  private void assignSequence(ListExpression lhs, StarlarkType rhsType) {
-    if (rhsType.equals(Types.ANY)) {
-      for (Expression element : lhs.getElements()) {
-        assign(element, Types.ANY);
-      }
-      return;
-    }
-
-    // We effectively need to transform what may be a union of iterables into a fixed-length tuple
-    // of unions; e.g. list[int] | tuple[str, bool] => tuple[int | str, int | bool].
-    // (Of course, any tuples in the rhsType union must be of the expected length.)
-    ImmutableCollection<StarlarkType> rhsUnionElements = Types.unfoldUnion(rhsType);
-    for (StarlarkType rhsUnionElement : rhsUnionElements) {
-      if (rhsUnionElement instanceof Types.FixedLengthTupleType rhsTuple) {
-        if (lhs.getElements().size() != rhsTuple.getElementTypes().size()) {
-          errorf(
-              lhs,
-              "cannot assign type '%s' to '%s'; want %d-element sequence",
-              rhsType,
-              lhs,
-              lhs.getElements().size());
-          return;
-        }
-      } else if (!Types.isCollection(rhsType)) {
-        // TODO: #28043 - consider checking for an Iterable type (as it is in the eval layer)
-        errorf(lhs, "cannot assign non-iterable type '%s' to '%s'", rhsType, lhs);
-        return;
-      }
-    }
-    for (int i = 0; i < lhs.getElements().size(); i++) {
-      ArrayList<StarlarkType> rhsElementTypes = new ArrayList<>(rhsUnionElements.size());
-      for (StarlarkType rhsUnionElement : rhsUnionElements) {
-        if (rhsUnionElement instanceof Types.FixedLengthTupleType rhsTuple) {
-          rhsElementTypes.add(rhsTuple.getElementTypes().get(i));
-        } else if (rhsUnionElement instanceof Types.AbstractCollectionType rhsCollection) {
-          rhsElementTypes.add(rhsCollection.getElementType());
-        } else if (rhsUnionElement.equals(Types.ANY)) {
-          rhsElementTypes.add(Types.ANY);
-        }
-      }
-      assign(lhs.getElements().get(i), Types.union(rhsElementTypes));
-    }
-  }
-
-  private void visitProgram(Program prog) {
-    checkState(
-        functionStack.isEmpty(),
-        "When type-checkings a Program, functionStack is expected to be initially empty");
-    Resolver.Function toplevel = prog.getResolvedFunction();
-    this.functionStack.push(toplevel);
-    visitBlock(toplevel.getBody());
-    checkState(functionStack.pop().equals(toplevel));
-  }
-
-  @Override
-  public void visit(StarlarkFile file) {
-    checkState(
-        functionStack.isEmpty(),
-        "When type-checkings a StarlarkFile, functionStack is expected to be initially empty");
-    Resolver.Function toplevel = file.getResolvedFunction();
-    this.functionStack.push(toplevel);
-    super.visit(file);
-    checkState(functionStack.pop().equals(toplevel));
-  }
-
-  // Expressions should only be visited via infer(), not the visit() dispatch mechanism.
-  // Override visit(Identifier) as a poison pill.
-  @Override
-  public void visit(Identifier id) {
-    throw new AssertionError(
-        String.format(
-            "TypeChecker#visit should not have reached Identifier node '%s'", id.getName()));
-  }
-
-  @Override
-  public void visit(AssignmentStatement assignment) {
-    if (!usesTypeSyntax()) {
-      return;
-    }
-
-    if (assignment.isAugmented()) {
-      TokenKind operator = assignment.getOperator();
-      Location operatorLocation = assignment.getOperatorLocation();
-      Expression lhs = assignment.getLHS();
-      Expression rhs = assignment.getRHS();
-      ImmutableList<StarlarkType> lhsMeet = inferIndividualAssignmentTarget(lhs);
-      StarlarkType rhsType = infer(assignment.getRHS());
-      for (StarlarkType lhsType : lhsMeet) {
-        // TODO(b/141263526): if we decide to support list += sequence, we'd need to special-case it
-        // here (since list + tuple is an error per inferBinaryOperator()).
-        StarlarkType resultType =
-            inferBinaryOperator(
-                lhs,
-                lhsType,
-                operator,
-                operatorLocation,
-                rhs,
-                rhsType,
-                /* augmentedAssignment= */ true);
-        if (!StarlarkType.assignableFrom(lhsType, resultType)) {
-          binaryOperatorError(
-              lhsType,
-              operator,
-              operatorLocation,
-              rhsType,
-              /* augmentedAssignment= */ true,
-              String.format(
-                  "cannot update %s with a result value of type '%s'",
-                  formatExprWithMeetType(lhs, lhsMeet), resultType));
-        }
-      }
-    } else {
-
-      var rhsType = infer(assignment.getRHS());
-
-      assign(assignment.getLHS(), rhsType);
-    }
-  }
-
-  @Override
-  public void visit(ForStatement node) {
-    if (usesTypeSyntax()) {
-      checkForClause(node.getVars(), node.getCollection(), "'for' loop");
-    }
-    // Visit the for loop body even in untyped code; it may contain nested typed def statements.
-    visitBlock(node.getBody());
-  }
-
-  @Override
-  public void visit(DefStatement def) {
-    Resolver.Function function = def.getResolvedFunction();
-    functionStack.push(function);
-    if (typeTable.usesTypeSyntax(function)) {
-      Types.CallableType callableType =
-          checkNotNull(
-              typeTable.getType(function),
-              "type tagger should have set type for def statement '%s'",
-              def);
-      int numOrdinaryParams = callableType.getParameterTypes().size();
-      for (int i = 0; i < numOrdinaryParams; i++) {
-        Parameter param = def.getParameters().get(i);
-        if (param.getDefaultValue() != null) {
-          StarlarkType defaultValueType = infer(param.getDefaultValue());
-          if (!StarlarkType.assignableFrom(
-              callableType.getParameterTypeByPos(i), defaultValueType)) {
+    /**
+     * Returns true if the call's residual named arguments (if any) satisfy the type checker.
+     * Otherwise, reports an error and returns false.
+     */
+    private fun checkCallResidualNamed(
+        residualNamed: MutableList<Int?>,
+        call: CallExpression,
+        callable: Types.CallableType,
+        argTypes: MutableList<StarlarkType?>
+    ): Boolean {
+        if (residualNamed.isEmpty()) {
+            return true
+        } else if (callable.getKwargsType() == null) {
+            // callable cannot accept residual named args
+            val residualNamedArgs =
+                residualNamed.stream().map<Argument?>(Function { i: Int? -> call.getArguments().get(i!!) }).collect(
+                    ImmutableList.toImmutableList<Argument?>()
+                )
             errorf(
-                param.getDefaultValue().getStartLocation(),
-                "%s(): parameter '%s' has default value of type '%s', declares '%s'",
-                def.getIdentifier().getName(),
-                param.getName(),
-                defaultValueType,
-                callableType.getParameterTypeByPos(i));
-          }
+                residualNamedArgs.getFirst(),
+                "'%s()' got unexpected keyword argument%s: %s%s",
+                call.getFunction(),
+                plural(residualNamedArgs.size()),
+                residualNamedArgs.stream().map<kotlin.String?>(Function { obj: Argument? -> obj!!.getName() })
+                    .collect(Collectors.joining(", ")),  // If there are multiple residual named args, it's likely due to calling the wrong
+                // function or misunderstanding the API, so arg spelling suggestions would not help.
+                if (residualNamedArgs.size() == 1)
+                    didYouMean(
+                        residualNamedArgs.getFirst().getName(),
+                        callable
+                            .getParameterNames()
+                            .subList(
+                                callable.getNumPositionalOnlyParameters(),
+                                callable.getParameterNames().size()
+                            )
+                    )
+                else
+                    ""
+            )
+            return false
+        } else {
+            // residual named args go into callable's kwargs
+            for (argIndex in residualNamed) {
+                val arg = call.getArguments().get(argIndex!!)
+                val argType = argTypes.get(argIndex)
+                if (!checkAssignable(
+                        callable.getKwargsType(), argType, call, arg, "residual keyword arguments"
+                    )
+                ) {
+                    return false
+                }
+            }
         }
-      }
-
-      @Nullable Statement implicitNoneReturn = getImplicitNoneReturn(def.getBody());
-      if (implicitNoneReturn != null
-          && !StarlarkType.assignableFrom(callableType.getReturnType(), Types.NONE)) {
-        errorf(
-            implicitNoneReturn,
-            "%s() declares return type '%s' but may exit without an explicit 'return'",
-            def.getIdentifier().getName(),
-            callableType.getReturnType());
-      }
+        return true
     }
 
-    // Visit body even in untyped code; it may contain nested typed def statements.
-    visitBlock(def.getBody());
-    checkState(functionStack.poll() == function);
-  }
-
-  @Override
-  public void visit(IfStatement node) {
-    if (usesTypeSyntax()) {
-      // Check type constraints in the condition.
-      infer(node.getCondition());
+    /**
+     * Returns true if all mandatory parameters were explicitly supplied by the call or potentially
+     * supplied through *args or **kwargs. Otherwise, reports an error and returns false.
+     */
+    private fun checkCallMissingMandatoryArgs(
+        seenMandatoryParameters: MutableList<kotlin.String?>,
+        callHasVarargs: Boolean,
+        callHasKwargs: Boolean,
+        call: CallExpression,
+        callable: Types.CallableType
+    ): Boolean {
+        if (seenMandatoryParameters.size() < callable.getMandatoryParameters().size()) {
+            val seenMandatorySet = ImmutableSet.copyOf<kotlin.String?>(seenMandatoryParameters)
+            // Identify mandatory parameters which were not seen and which cannot be possibly supplied
+            // from the call's *args or **kwargs.
+            // TODO: #28037 - Perhaps report an error if no element of varargsElementTypes /
+            // kwargsValueTypes is assignable to a missing parameter's type.
+            val missingMandatory = ArrayList<kotlin.String?>(0)
+            for (i in callable.getParameterNames().indices) {
+                val name = callable.getParameterNames().get(i)
+                if (!callable.getMandatoryParameters().contains(name)) {
+                    continue
+                }
+                if (!seenMandatorySet.contains(name)) {
+                    if (i < callable.getNumPositionalOnlyParameters() && !callHasVarargs) {
+                        missingMandatory.add(name)
+                    } else if (i < callable.getNumPositionalParameters() && !callHasVarargs && !callHasKwargs) {
+                        missingMandatory.add(name)
+                    } else if (i >= callable.getNumPositionalParameters() && !callHasKwargs) {
+                        missingMandatory.add(name)
+                    }
+                }
+            }
+            if (!missingMandatory.isEmpty()) {
+                errorf(
+                    call.getLparenLocation(),
+                    "'%s()' missing %d required argument%s: %s",
+                    call.getFunction(),
+                    missingMandatory.size(),
+                    plural(missingMandatory.size()),
+                    Joiner.on(", ").join(missingMandatory)
+                )
+                return false
+            }
+        }
+        return true
     }
-    // Visit then/else blocks even in untyped code; they may contain nested typed def statements.
-    visitBlock(node.getThenBlock());
-    if (node.getElseBlock() != null) {
-      visitBlock(node.getElseBlock());
+
+    private fun inferComprehension(comp: Comprehension): StarlarkType {
+        for (clause in comp.getClauses()) {
+            when (clause) {
+                -> {
+                    checkForClause(
+                        forClause.getVars(), forClause.getIterable(), "comprehension 'for' clause"
+                    )
+                }
+
+                -> {
+                    // Infer only to type-check. Condition is evaluated as truthy/falsy, which is valid for
+                    // every type.
+                    val unused = infer(ifClause.getCondition())
+                }
+            }
+        }
+        if (comp.isDict()) {
+            val bodyEntry = comp.getBody() as DictExpression.Entry
+            return Types.dict(infer(bodyEntry.getKey()), infer(bodyEntry.getValue()))
+        } else {
+            val bodyElement = comp.getBody() as Expression
+            return Types.list(infer(bodyElement))
+        }
     }
-  }
 
-  @Override
-  public void visit(ExpressionStatement expr) {
-    if (!usesTypeSyntax()) {
-      return;
+    /** Recursively type-checks the vars and the iterable, and assigns the vars to the iterable.  */
+    private fun checkForClause(vars: Expression, iterable: Expression, what: kotlin.String?) {
+        val iterableType = infer(iterable)
+        val varsRhsType: StarlarkType // The type of the value assigned to the vars expression.
+        if (iterableType == Types.ANY) {
+            varsRhsType = Types.ANY
+        } else {
+            val varUnionElements = ArrayList<StarlarkType>()
+            for (iterableUnionElement in Types.unfoldUnion(iterableType)) {
+                // TODO: #28037 - Replace with inferring T when assigning iterableType to Collection[T]
+                // TODO: #28037 - Introduce an Iterable type and use it here to match language spec.
+                if (iterableUnionElement == Types.ANY) {
+                    varUnionElements.add(Types.ANY)
+                } else if (iterableUnionElement is Types.AbstractCollectionType) {
+                    varUnionElements.add(iterableUnionElement.getElementType())
+                } else {
+                    errorf(iterable, "%s operand must be an iterable, got '%s'", what, iterableType)
+                }
+            }
+            varsRhsType = Types.union(varUnionElements)
+        }
+        assign(vars, varsRhsType)
     }
-    // Check constraints in the expression, but ignore the resulting type.
-    // Don't dispatch to it via visit().
-    infer(expr.getExpression());
-  }
 
-  // No need to override visit() for FlowStatement.
-
-  @Override
-  public void visit(LoadStatement load) {
-    // Don't descend into children.
-  }
-
-  @Override
-  public void visit(ReturnStatement ret) {
-    if (!usesTypeSyntax()) {
-      return;
+    private fun checkAssignable(
+        lhs: StarlarkType?,
+        rhs: StarlarkType?,
+        call: CallExpression,
+        node: Node,
+        nodeDescription: kotlin.String?
+    ): Boolean {
+        if (lhs != null && rhs != null) {
+            if (!StarlarkType.Companion.assignableFrom(lhs, rhs)) {
+                errorf(
+                    node,
+                    "in call to '%s()', %s must be '%s', not '%s'",
+                    call.getFunction(),
+                    nodeDescription,
+                    lhs,
+                    rhs
+                )
+                return false
+            }
+        }
+        return true
     }
-    StarlarkType returnType = ret.getResult() == null ? Types.NONE : infer(ret.getResult());
-    checkState(!functionStack.isEmpty());
-    Resolver.Function function = functionStack.peek();
-    // May be null if function is the toplevel
-    @Nullable Types.CallableType callableType = typeTable.getType(function);
-    if (callableType != null
-        && !StarlarkType.assignableFrom(callableType.getReturnType(), returnType)) {
-      errorf(
-          ret.getResult().getStartLocation(),
-          "%s() declares return type '%s' but may return '%s'",
-          function.getName(),
-          callableType.getReturnType(),
-          returnType);
+
+    /**
+     * Recursively typechecks the assignment of type `rhsType` to the target expression `lhs`.
+     * 
+     * 
+     * Mutates the types on the [Resolver.Binding] objects of untyped variables by setting
+     * them to their inferred type (if this is the first assignment to that variable in typed code).
+     * 
+     * 
+     * The asymmetry of the parameter types comes from the fact that this helper recursively
+     * decomposes the LHS syntactically, whereas the RHS has already been fully evaluated to a type.
+     * For instance, `x, y = (1, 2)` and `x, y = my_pair` both trigger the same behavior
+     * in this method. Decomposing the LHS syntactically rather than by type is what allows `(x, y) = [1, 2]` to succeed, even though assignment of a list to a tuple type is illegal (as in
+     * `t : Tuple[int, int] = [1, 2]`).
+     */
+    private fun assign(lhs: Expression, rhsType: StarlarkType) {
+        Preconditions.checkState(usesTypeSyntax())
+
+        if (lhs.kind() == Expression.Kind.LIST_EXPR) {
+            assignSequence(lhs as ListExpression, rhsType)
+            return
+        }
+
+        val lhsMeet = inferIndividualAssignmentTarget(lhs)
+        for (lhsType in lhsMeet) {
+            if (!StarlarkType.Companion.assignableFrom(lhsType, rhsType)) {
+                errorf(lhs, "cannot assign type '%s' to %s", rhsType, formatExprWithMeetType(lhs, lhsMeet))
+                break
+            }
+        }
+
+        if (lhs is Identifier && typeTable.getType(lhs.getBinding()) == null) {
+            // If a variable has not been typed, infer its type from the rhs of the first assignment.
+            typeTable.setInferredType(lhs.getBinding(), rhsType.toLvalue())
+        }
     }
-  }
 
-  @Override
-  public void visit(TypeAliasStatement alias) {
-    // Don't descend into children.
-  }
+    /**
+     * Verifies that the expression can be used as the target of a non-sequence assignment (or
+     * augmented assignment). Returns a non-flattened unfolded list of LHS acceptor types, each of
+     * which must be checked for being assignable by the assignment's RHS type.
+     * 
+     * 
+     * In type theory terms, the returned list represents the meet of its type elements; however,
+     * meet types don't (yet) exist in the Starlark type system.
+     * 
+     * 
+     * If the LHS is an index or dot expression whose object is of a union type, then each of the
+     * possible acceptor types must be assignable. We want to distinguish between the valid case
+     * `x: list[int|str]; x[0] = 1` (where there is a single LHS acceptor type, int|str) and the
+     * invalid case `y: list[int] | list[str]; y[0] = 1` (which has a pair of LHS acceptor
+     * types, int and str, the latter of which is not assignable from 1).
+     */
+    private fun inferIndividualAssignmentTarget(lhs: Expression): ImmutableList<StarlarkType> {
+        when (lhs.kind()) {
+            Expression.Kind.INDEX -> {
+                val indexExpr = lhs as IndexExpression
+                val objectType = infer(indexExpr.getObject())
+                val keyType = infer(indexExpr.getKey())
+                if (!objectType!!.hasSetIndex()) {
+                    errorf(
+                        lhs,
+                        "%s of type '%s' does not support item assignment",
+                        indexExpr.getObject(),
+                        objectType
+                    )
+                }
+                return inferIndexUnfolded(indexExpr, objectType, keyType)
+            }
 
-  @Override
-  public void visit(VarStatement var) {
-    // Don't descend into children.
-  }
+            Expression.Kind.DOT -> {
+                val dotExpr = lhs as DotExpression
+                val objectType = infer(dotExpr.getObject())
+                if (!objectType!!.hasSetField()) {
+                    errorf(
+                        lhs,
+                        "%s of type '%s' does not support field assignment",
+                        dotExpr.getObject(),
+                        objectType
+                    )
+                }
+                return inferDotUnfolded(dotExpr, objectType)
+            }
 
-  /**
-   * Heuristically checks whether a function body ends with an implicit {@code None} return, i.e. a
-   * non-return statement, and if so, retrieves the statement after which the implicit {@code None}
-   * return occurs. Recurses into if statement bodies.
-   *
-   * <p>This check doesn't attempt to detect unreachable code within the body, so e.g.
-   *
-   * <pre>
-   * def f() -> int:
-   *     return 1
-   *     pass
-   * </pre>
-   *
-   * will be flagged as implicitly returning {@code None} on the unreachable last line.
-   *
-   * @return the first statement after which the function exits and the implicit {@code None} return
-   *     occurs, or {@code null} if none was found
-   */
-  @Nullable
-  private static Statement getImplicitNoneReturn(ImmutableList<Statement> body) {
-    Statement last = body.getLast();
-    if (last instanceof ReturnStatement) {
-      return null;
-    } else if (last instanceof IfStatement ifStmt) {
-      // An if statement is considered to have an explicit return if it has both `then` and `else`
-      // branches, and both branches end with an explicit return.
-      if (ifStmt.getElseBlock() == null) {
-        return ifStmt;
-      }
-      @Nullable Statement thenImplicitNoneReturn = getImplicitNoneReturn(ifStmt.getThenBlock());
-      return thenImplicitNoneReturn != null
-          ? thenImplicitNoneReturn
-          : getImplicitNoneReturn(ifStmt.getElseBlock());
+            Expression.Kind.IDENTIFIER -> {
+                return ImmutableList.of<StarlarkType?>(infer(lhs))
+            }
+
+            else -> {
+                val lhsType = infer(lhs)
+                errorf(lhs, "%s of type '%s' is not a valid target for assignment", lhs, lhsType)
+                return ImmutableList.of<StarlarkType?>(Types.ANY)
+            }
+        }
     }
-    return last;
-  }
 
-  /**
-   * Returns true if the current function is considered to use type syntax, or if we were invoked
-   * via {@link #inferTypeOf}. If false, the current node must not be type-checked.
-   */
-  private boolean usesTypeSyntax() {
-    return functionStack.isEmpty() || typeTable.usesTypeSyntax(functionStack.peek());
-  }
+    private fun assignSequence(lhs: ListExpression, rhsType: StarlarkType) {
+        if (rhsType == Types.ANY) {
+            for (element in lhs.getElements()) {
+                assign(element, Types.ANY)
+            }
+            return
+        }
 
-  private static void checkFileOptions(FileOptions options) {
-    checkArgument(
-        options.resolveTypeSyntax(), "static type checking requires that resolveTypeSyntax is set");
-    checkArgument(
-        !options.tolerateInvalidTypeExpressions(),
-        "static type checking requires that tolerateInvalidTypeExpressions is not set");
-  }
+        // We effectively need to transform what may be a union of iterables into a fixed-length tuple
+        // of unions; e.g. list[int] | tuple[str, bool] => tuple[int | str, int | bool].
+        // (Of course, any tuples in the rhsType union must be of the expected length.)
+        val rhsUnionElements = Types.unfoldUnion(rhsType)
+        for (rhsUnionElement in rhsUnionElements) {
+            if (rhsUnionElement is Types.FixedLengthTupleType) {
+                if (lhs.getElements().size() != rhsUnionElement.getElementTypes().size()) {
+                    errorf(
+                        lhs,
+                        "cannot assign type '%s' to '%s'; want %d-element sequence",
+                        rhsType,
+                        lhs,
+                        lhs.getElements().size()
+                    )
+                    return
+                }
+            } else if (!Types.isCollection(rhsType)) {
+                // TODO: #28043 - consider checking for an Iterable type (as it is in the eval layer)
+                errorf(lhs, "cannot assign non-iterable type '%s' to '%s'", rhsType, lhs)
+                return
+            }
+        }
+        for (i in lhs.getElements().indices) {
+            val rhsElementTypes: ArrayList<StarlarkType> = ArrayList<StarlarkType>(rhsUnionElements.size())
+            for (rhsUnionElement in rhsUnionElements) {
+                if (rhsUnionElement is Types.FixedLengthTupleType) {
+                    rhsElementTypes.add(rhsUnionElement.getElementTypes().get(i))
+                } else if (rhsUnionElement is Types.AbstractCollectionType) {
+                    rhsElementTypes.add(rhsUnionElement.getElementType())
+                } else if (rhsUnionElement == Types.ANY) {
+                    rhsElementTypes.add(Types.ANY)
+                }
+            }
+            assign(lhs.getElements().get(i), Types.union(rhsElementTypes))
+        }
+    }
 
-  /**
-   * Checks that the given file's AST satisfies the types in the bindings of its identifiers.
-   *
-   * <p>The file must have already been passed through the {@link TypeTagger} without error
-   *
-   * <p>Any type checking errors are appended to the type table's errors list.
-   *
-   * @throws IllegalArgumentException if the file's {@link FileOptions} don't contain {@link
-   *     FileOptions#resolveTypeSyntax()} or do contain {@link
-   *     FileOptions#tolerateInvalidTypeExpressions()}.
-   */
-  public static void checkFile(StarlarkFile file, TypeTable typeTable, TypeContext typeContext) {
-    checkFileOptions(file.getOptions());
-    TypeChecker checker = new TypeChecker(typeTable, typeContext);
-    checker.visit(file);
-  }
+    private fun visitProgram(prog: Program) {
+        Preconditions.checkState(
+            functionStack.isEmpty(),
+            "When type-checkings a Program, functionStack is expected to be initially empty"
+        )
+        val toplevel = prog.getResolvedFunction()
+        this.functionStack.push(toplevel)
+        visitBlock(toplevel.getBody())
+        Preconditions.checkState(functionStack.pop() == toplevel)
+    }
 
-  /**
-   * Like {@link #checkFile}, but on an already-compiled {@link Program}.
-   *
-   * <p>The program is *not* mutated. Any errors are appended to the type table's errors list.
-   *
-   * @throws IllegalArgumentException if the program's {@link FileOptions} don't contain {@link
-   *     FileOptions#resolveTypeSyntax()} or do contain {@link
-   *     FileOptions#tolerateInvalidTypeExpressions()}.
-   */
-  public static void checkProgram(Program prog, TypeTable typeTable, TypeContext typeContext) {
-    checkFileOptions(prog.getOptions());
-    TypeChecker checker = new TypeChecker(typeTable, typeContext);
-    checker.visitProgram(prog);
-  }
+    override fun visit(file: StarlarkFile) {
+        Preconditions.checkState(
+            functionStack.isEmpty(),
+            "When type-checkings a StarlarkFile, functionStack is expected to be initially empty"
+        )
+        val toplevel = file.getResolvedFunction()
+        this.functionStack.push(toplevel)
+        super.visit(file)
+        Preconditions.checkState(functionStack.pop() == toplevel)
+    }
+
+    // Expressions should only be visited via infer(), not the visit() dispatch mechanism.
+    // Override visit(Identifier) as a poison pill.
+    override fun visit(id: Identifier) {
+        throw AssertionError(
+            String.format(
+                "TypeChecker#visit should not have reached Identifier node '%s'", id.getName()
+            )
+        )
+    }
+
+    override fun visit(assignment: AssignmentStatement) {
+        if (!usesTypeSyntax()) {
+            return
+        }
+
+        if (assignment.isAugmented()) {
+            val operator = assignment.getOperator()
+            val operatorLocation = assignment.getOperatorLocation()
+            val lhs = assignment.getLHS()
+            val rhs = assignment.getRHS()
+            val lhsMeet = inferIndividualAssignmentTarget(lhs)
+            val rhsType = infer(assignment.getRHS())
+            for (lhsType in lhsMeet) {
+                // TODO(b/141263526): if we decide to support list += sequence, we'd need to special-case it
+                // here (since list + tuple is an error per inferBinaryOperator()).
+                val resultType =
+                    inferBinaryOperator(
+                        lhs,
+                        lhsType,
+                        operator!!,
+                        operatorLocation,
+                        rhs,
+                        rhsType,  /* augmentedAssignment= */
+                        true
+                    )
+                if (!StarlarkType.Companion.assignableFrom(lhsType, resultType)) {
+                    binaryOperatorError(
+                        lhsType,
+                        operator,
+                        operatorLocation,
+                        rhsType,  /* augmentedAssignment= */
+                        true,
+                        String.format(
+                            "cannot update %s with a result value of type '%s'",
+                            formatExprWithMeetType(lhs, lhsMeet), resultType
+                        )
+                    )
+                }
+            }
+        } else {
+            val rhsType = infer(assignment.getRHS())
+
+            assign(assignment.getLHS(), rhsType!!)
+        }
+    }
+
+    override fun visit(node: ForStatement) {
+        if (usesTypeSyntax()) {
+            checkForClause(node.getVars(), node.getCollection(), "'for' loop")
+        }
+        // Visit the for loop body even in untyped code; it may contain nested typed def statements.
+        visitBlock(node.getBody())
+    }
+
+    override fun visit(def: DefStatement) {
+        val function = def.getResolvedFunction()
+        functionStack.push(function)
+        if (typeTable.usesTypeSyntax(function)) {
+            val callableType =
+                Preconditions.checkNotNull<Types.CallableType>(
+                    typeTable.getType(function),
+                    "type tagger should have set type for def statement '%s'",
+                    def
+                )
+            val numOrdinaryParams: Int = callableType.getParameterTypes().size()
+            for (i in 0..<numOrdinaryParams) {
+                val param = def.getParameters().get(i)
+                if (param.getDefaultValue() != null) {
+                    val defaultValueType = infer(param.getDefaultValue()!!)
+                    if (!StarlarkType.Companion.assignableFrom(
+                            callableType.getParameterTypeByPos(i), defaultValueType
+                        )
+                    ) {
+                        errorf(
+                            param.getDefaultValue()!!.getStartLocation(),
+                            "%s(): parameter '%s' has default value of type '%s', declares '%s'",
+                            def.getIdentifier().getName(),
+                            param.getName(),
+                            defaultValueType,
+                            callableType.getParameterTypeByPos(i)
+                        )
+                    }
+                }
+            }
+
+            val implicitNoneReturn: Statement? = getImplicitNoneReturn(def.getBody())
+            if (implicitNoneReturn != null
+                && !StarlarkType.Companion.assignableFrom(callableType.getReturnType(), Types.NONE)
+            ) {
+                errorf(
+                    implicitNoneReturn,
+                    "%s() declares return type '%s' but may exit without an explicit 'return'",
+                    def.getIdentifier().getName(),
+                    callableType.getReturnType()
+                )
+            }
+        }
+
+        // Visit body even in untyped code; it may contain nested typed def statements.
+        visitBlock(def.getBody())
+        Preconditions.checkState(functionStack.poll() == function)
+    }
+
+    override fun visit(node: IfStatement) {
+        if (usesTypeSyntax()) {
+            // Check type constraints in the condition.
+            infer(node.getCondition())
+        }
+        // Visit then/else blocks even in untyped code; they may contain nested typed def statements.
+        visitBlock(node.getThenBlock())
+        if (node.getElseBlock() != null) {
+            visitBlock(node.getElseBlock())
+        }
+    }
+
+    override fun visit(expr: ExpressionStatement) {
+        if (!usesTypeSyntax()) {
+            return
+        }
+        // Check constraints in the expression, but ignore the resulting type.
+        // Don't dispatch to it via visit().
+        infer(expr.getExpression())
+    }
+
+    // No need to override visit() for FlowStatement.
+    override fun visit(load: LoadStatement?) {
+        // Don't descend into children.
+    }
+
+    override fun visit(ret: ReturnStatement) {
+        if (!usesTypeSyntax()) {
+            return
+        }
+        val returnType = if (ret.getResult() == null) Types.NONE else infer(ret.getResult()!!)
+        Preconditions.checkState(!functionStack.isEmpty())
+        val function = functionStack.peek()
+        // May be null if function is the toplevel
+        val callableType = typeTable.getType(function)
+        if (callableType != null
+            && !StarlarkType.Companion.assignableFrom(callableType.getReturnType(), returnType)
+        ) {
+            errorf(
+                ret.getResult()!!.getStartLocation(),
+                "%s() declares return type '%s' but may return '%s'",
+                function.getName(),
+                callableType.getReturnType(),
+                returnType
+            )
+        }
+    }
+
+    override fun visit(alias: TypeAliasStatement?) {
+        // Don't descend into children.
+    }
+
+    override fun visit(`var`: VarStatement?) {
+        // Don't descend into children.
+    }
+
+    /**
+     * Returns true if the current function is considered to use type syntax, or if we were invoked
+     * via [.inferTypeOf]. If false, the current node must not be type-checked.
+     */
+    private fun usesTypeSyntax(): Boolean {
+        return functionStack.isEmpty() || typeTable.usesTypeSyntax(functionStack.peek())
+    }
+
+    companion object {
+        private fun plural(n: Int): kotlin.String {
+            return if (n == 1) "" else "s"
+        }
+
+        /**
+         * Returns the integer value of an expression if it's an integer value which can be exactly
+         * represented as a Java integer, or null otherwise (in particular, if the expression itself is
+         * null).
+         */
+        private fun getIntValueExact(expr: Expression?): Int? {
+            if (expr is IntLiteral) {
+                return expr.getIntValueExact()
+            }
+            return null
+        }
+
+        private fun haveExactSliceBound(
+            expr: Expression?, exprIntValueExact: Int?
+        ): Boolean {
+            if (expr == null) {
+                // Bound not specified, so we know its exact value (the default value)
+                return true
+            }
+            if (exprIntValueExact != null) {
+                // Bound is specified and is a 32-bit integer literal (or negation)
+                return true
+            }
+            return false
+        }
+
+        private fun inferTupleRepetition(tuple: Types.TupleType, timesExpr: Expression?): StarlarkType? {
+            val times: Int? = getIntValueExact(timesExpr)
+            if (times != null) {
+                return tuple.repeat(times)
+            }
+            return tuple.toHomogeneous()
+        }
+
+        /**
+         * Returns the inferred type of an expression.
+         * 
+         * 
+         * The expression must have already been resolved and successfully type-tagged, i.e.
+         * identifiers must have their bindings set and these bindings must contain type information.
+         * 
+         * @throws SyntaxError.Exception if a static type error is present in the expression.
+         */
+        @kotlin.jvm.JvmStatic
+        @Throws(SyntaxError.Exception::class)
+        fun inferTypeOf(expr: Expression, typeTable: TypeTable, typeContext: TypeContext): StarlarkType? {
+            val tc = TypeChecker(typeTable, typeContext)
+            val result = tc.infer(expr)
+            if (!typeTable.ok()) {
+                throw SyntaxError.Exception(typeTable.errors())
+            }
+            return result
+        }
+
+        private fun formatExprWithMeetType(expr: Expression?, types: ImmutableList<StarlarkType>): kotlin.String? {
+            if (types.size() == 1) {
+                return String.format("'%s' of type '%s'", expr, types.getFirst())
+            } else {
+                return String.format(
+                    "'%s' which expects a value satisfying all of the %d types [%s]",
+                    expr,
+                    types.size(),
+                    types.stream().map<kotlin.String?>(Function { t: StarlarkType? -> String.format("'%s'", t) })
+                        .collect(Collectors.joining(", "))
+                )
+            }
+        }
+
+        /**
+         * Heuristically checks whether a function body ends with an implicit `None` return, i.e. a
+         * non-return statement, and if so, retrieves the statement after which the implicit `None`
+         * return occurs. Recurses into if statement bodies.
+         * 
+         * 
+         * This check doesn't attempt to detect unreachable code within the body, so e.g.
+         * 
+         * <pre>
+         * def f() -> int:
+         * return 1
+         * pass
+        </pre> * 
+         * 
+         * will be flagged as implicitly returning `None` on the unreachable last line.
+         * 
+         * @return the first statement after which the function exits and the implicit `None` return
+         * occurs, or `null` if none was found
+         */
+        private fun getImplicitNoneReturn(body: ImmutableList<Statement?>): Statement? {
+            val last: Statement? = body.getLast()
+            if (last is ReturnStatement) {
+                return null
+            } else if (last is IfStatement) {
+                // An if statement is considered to have an explicit return if it has both `then` and `else`
+                // branches, and both branches end with an explicit return.
+                if (last.getElseBlock() == null) {
+                    return last
+                }
+                val thenImplicitNoneReturn: Statement? = getImplicitNoneReturn(last.getThenBlock())
+                return if (thenImplicitNoneReturn != null)
+                    thenImplicitNoneReturn
+                else
+                    Companion.getImplicitNoneReturn(last.getElseBlock()!!)
+            }
+            return last
+        }
+
+        private fun checkFileOptions(options: FileOptions) {
+            Preconditions.checkArgument(
+                options.resolveTypeSyntax(), "static type checking requires that resolveTypeSyntax is set"
+            )
+            Preconditions.checkArgument(
+                !options.tolerateInvalidTypeExpressions(),
+                "static type checking requires that tolerateInvalidTypeExpressions is not set"
+            )
+        }
+
+        /**
+         * Checks that the given file's AST satisfies the types in the bindings of its identifiers.
+         * 
+         * 
+         * The file must have already been passed through the [TypeTagger] without error
+         * 
+         * 
+         * Any type checking errors are appended to the type table's errors list.
+         * 
+         * @throws IllegalArgumentException if the file's [FileOptions] don't contain [     ][FileOptions.resolveTypeSyntax] or do contain [     ][FileOptions.tolerateInvalidTypeExpressions].
+         */
+        @kotlin.jvm.JvmStatic
+        fun checkFile(file: StarlarkFile, typeTable: TypeTable, typeContext: TypeContext) {
+            checkFileOptions(file.getOptions())
+            val checker = TypeChecker(typeTable, typeContext)
+            checker.visit(file)
+        }
+
+        /**
+         * Like [.checkFile], but on an already-compiled [Program].
+         * 
+         * 
+         * The program is *not* mutated. Any errors are appended to the type table's errors list.
+         * 
+         * @throws IllegalArgumentException if the program's [FileOptions] don't contain [     ][FileOptions.resolveTypeSyntax] or do contain [     ][FileOptions.tolerateInvalidTypeExpressions].
+         */
+        @kotlin.jvm.JvmStatic
+        fun checkProgram(prog: Program, typeTable: TypeTable, typeContext: TypeContext) {
+            checkFileOptions(prog.getOptions())
+            val checker = TypeChecker(typeTable, typeContext)
+            checker.visitProgram(prog)
+        }
+    }
 }

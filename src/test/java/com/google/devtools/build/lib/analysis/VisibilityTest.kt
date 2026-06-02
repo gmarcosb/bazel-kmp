@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.AnalysisTestCase
+import com.google.devtools.build.lib.testutil.FoundationTestCase
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Test for visibility of targets. */
-@RunWith(JUnit4.class)
-public class VisibilityTest extends AnalysisTestCase {
-
-  void setupArgsScenario() throws Exception {
-    scratch.file("tool/tool.sh", "#!/bin/sh", "echo Hello > $2", "cat $1 >> $2");
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/rule.bzl",
-        """
+/** Test for visibility of targets.  */
+@RunWith(JUnit4::class)
+class VisibilityTest : AnalysisTestCase() {
+    @Throws(java.lang.Exception::class)
+    fun setupArgsScenario() {
+        scratch.file("tool/tool.sh", "#!/bin/sh", "echo Hello > $2", "cat $1 >> $2")
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/rule.bzl",
+            """
         def _impl(ctx):
             output = ctx.actions.declare_file(ctx.label.name + ".out")
             ctx.actions.run(
@@ -53,104 +50,123 @@ public class VisibilityTest extends AnalysisTestCase {
             },
             outputs = {"out": "%{name}.out"},
         )
-        """);
-    scratch.file("data/data.txt", "World");
-    scratch.file(
-        "use/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("data/data.txt", "World")
+        scratch.file(
+            "use/BUILD",
+            """
         load("//rule:rule.bzl", "greet")
 
         greet(
             name = "world",
             data = "//data:data.txt",
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testToolVisibilityRuleCheckAtRule() throws Exception {
-    setupArgsScenario();
-    scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])");
-    scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//rule:__pkg__'])");
-    update("//use:world");
-    assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolVisibilityRuleCheckAtRule() {
+        setupArgsScenario()
+        scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])")
+        scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//rule:__pkg__'])")
+        update("//use:world")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse()
+    }
 
-  @Test
-  public void testToolVisibilityUseCheckAtUse() throws Exception {
-    setupArgsScenario();
-    scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])");
-    scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//use:__pkg__'])");
-    update("//use:world");
-    assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolVisibilityUseCheckAtUse() {
+        setupArgsScenario()
+        scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])")
+        scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//use:__pkg__'])")
+        update("//use:world")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse()
+    }
 
-  @Test
-  public void testToolVisibilityUseCheckAtRule_fallbackToUse() throws Exception {
-    setupArgsScenario();
-    scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])");
-    scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//use:__pkg__'])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolVisibilityUseCheckAtRule_fallbackToUse() {
+        setupArgsScenario()
+        scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])")
+        scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//use:__pkg__'])")
 
-    update("//use:world");
+        update("//use:world")
 
-    assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse();
-  }
+        Truth.assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse()
+    }
 
-  @Test
-  public void testToolVisibilityPrivateCheckAtUse() throws Exception {
-    setupArgsScenario();
-    scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])");
-    scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:private'])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolVisibilityPrivateCheckAtUse() {
+        setupArgsScenario()
+        scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])")
+        scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:private'])")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//use:world"));
-  }
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//use:world") })
+    }
 
-  @Test
-  public void testToolVisibilityPrivate() throws Exception {
-    setupArgsScenario();
-    scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])");
-    scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:private'])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolVisibilityPrivate() {
+        setupArgsScenario()
+        scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:public'])")
+        scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:private'])")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//use:world"));
-  }
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//use:world") })
+    }
 
-  @Test
-  public void testDataVisibilityUseCheckPrivateAtRule() throws Exception {
-    setupArgsScenario();
-    scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//use:__pkg__'])");
-    scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:public'])");
-    update("//use:world");
-    assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDataVisibilityUseCheckPrivateAtRule() {
+        setupArgsScenario()
+        scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//use:__pkg__'])")
+        scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:public'])")
+        update("//use:world")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//use:world"))).isFalse()
+    }
 
-  @Test
-  public void testDataVisibilityPrivate() throws Exception {
-    setupArgsScenario();
-    scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:private'])");
-    scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:public'])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDataVisibilityPrivate() {
+        setupArgsScenario()
+        scratch.file("data/BUILD", "exports_files(['data.txt'], visibility=['//visibility:private'])")
+        scratch.file("tool/BUILD", "exports_files(['tool.sh'], visibility=['//visibility:public'])")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//use:world"));
-  }
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//use:world") })
+    }
 
-  @Test
-  public void testConfigSettingVisibilityAlwaysCheckedAtUse() throws Exception {
-    scratch.file(
-        "BUILD",
-        "load('//build_defs:defs.bzl', 'my_rule')",
-        "my_rule(",
-        "    name = 'my_target',",
-        "    value = select({",
-        "        '//config_setting:my_setting': 'foo',",
-        "        '//conditions:default': 'bar',",
-        "    }),",
-        ")");
-    scratch.file("build_defs/BUILD");
-    scratch.file(
-        "build_defs/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigSettingVisibilityAlwaysCheckedAtUse() {
+        scratch.file(
+            "BUILD",
+            "load('//build_defs:defs.bzl', 'my_rule')",
+            "my_rule(",
+            "    name = 'my_target',",
+            "    value = select({",
+            "        '//config_setting:my_setting': 'foo',",
+            "        '//conditions:default': 'bar',",
+            "    }),",
+            ")"
+        )
+        scratch.file("build_defs/BUILD")
+        scratch.file(
+            "build_defs/defs.bzl",
+            """
         def _my_rule_impl(ctx):
             pass
 
@@ -160,36 +176,43 @@ public class VisibilityTest extends AnalysisTestCase {
                 "value": attr.string(mandatory = True),
             },
         )
-        """);
-    scratch.file(
-        "config_setting/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "config_setting/BUILD",
+            """
         config_setting(
             name = "my_setting",
             values = {"compilation_mode": "dbg"},
             visibility = ["//:__pkg__"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update("//:my_target");
-    assertThat(hasErrors(getConfiguredTarget("//:my_target"))).isFalse();
-  }
+        update("//:my_target")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//:my_target"))).isFalse()
+    }
 
-  @Test
-  public void testImplicitDependency_samePackageAsDefinition_visible() throws Exception {
-    scratch.file(
-        "aspect_def/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImplicitDependency_samePackageAsDefinition_visible() {
+        scratch.file(
+            "aspect_def/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "aspect_tool",
             srcs = ["a.sh"],
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file(
-        "aspect_def/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "aspect_def/lib.bzl",
+            """
         def _impl_my_aspect(ctx, target):
             return []
 
@@ -197,20 +220,24 @@ public class VisibilityTest extends AnalysisTestCase {
             _impl_my_aspect,
             attrs = {"_aspect_tool": attr.label(default = "//aspect_def:aspect_tool")},
         )
-        """);
-    scratch.file(
-        "rule_def/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "rule_def/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "rule_tool",
             srcs = ["a.sh"],
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file(
-        "rule_def/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "rule_def/lib.bzl",
+            """
         load("//aspect_def:lib.bzl", "my_aspect")
 
         def _impl(ctx):
@@ -226,10 +253,12 @@ public class VisibilityTest extends AnalysisTestCase {
         simple_starlark_rule = rule(
             _impl,
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rule_def:lib.bzl", "my_rule", "simple_starlark_rule")
 
         simple_starlark_rule(name = "simple_dep")
@@ -238,19 +267,22 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "my_target",
             dep = ":simple_dep",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update("//foo:my_target");
+        update("//foo:my_target")
 
-    assertThat(hasErrors(getConfiguredTarget("//foo:my_target"))).isFalse();
-  }
+        Truth.assertThat(hasErrors(getConfiguredTarget("//foo:my_target"))).isFalse()
+    }
 
-  @Test
-  public void testAspectImplicitDependencyCheckedAtDefinition_visible() throws Exception {
-    scratch.file("inner_aspect/BUILD");
-    scratch.file(
-        "inner_aspect/lib.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectImplicitDependencyCheckedAtDefinition_visible() {
+        scratch.file("inner_aspect/BUILD")
+        scratch.file(
+            "inner_aspect/lib.bzl",
+            """
         InnerAspectInfo = provider()
 
         def _impl_inner_aspect(ctx, target):
@@ -261,11 +293,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_inner_aspect_tool": attr.label(default = "//tool:inner_aspect_tool")},
             provides = [InnerAspectInfo],
         )
-        """);
-    scratch.file("outer_aspect/BUILD");
-    scratch.file(
-        "outer_aspect/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("outer_aspect/BUILD")
+        scratch.file(
+            "outer_aspect/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "InnerAspectInfo")
 
         def _impl_outer_aspect(ctx, target):
@@ -276,11 +310,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_outer_aspect_tool": attr.label(default = "//tool:outer_aspect_tool")},
             required_aspect_providers = [InnerAspectInfo],
         )
-        """);
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "inner_aspect")
         load("//outer_aspect:lib.bzl", "outer_aspect")
 
@@ -297,10 +333,12 @@ public class VisibilityTest extends AnalysisTestCase {
         simple_starlark_rule = rule(
             _impl,
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rule:lib.bzl", "my_rule", "simple_starlark_rule")
 
         simple_starlark_rule(name = "simple_dep")
@@ -309,10 +347,12 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "target_with_aspects",
             dep = ":simple_dep",
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "outer_aspect_tool",
@@ -331,20 +371,22 @@ public class VisibilityTest extends AnalysisTestCase {
             srcs = ["a.sh"],
             visibility = ["//rule:__pkg__"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update("//foo:target_with_aspects");
+        update("//foo:target_with_aspects")
 
-    assertThat(hasErrors(getConfiguredTarget("//foo:target_with_aspects"))).isFalse();
-  }
+        Truth.assertThat(hasErrors(getConfiguredTarget("//foo:target_with_aspects"))).isFalse()
+    }
 
-  @Test
-  public void testAspectImplicitDependencyCheckedAtDefinition_visibleWithNameCollision()
-      throws Exception {
-    scratch.file("inner_aspect/BUILD");
-    scratch.file(
-        "inner_aspect/lib.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectImplicitDependencyCheckedAtDefinition_visibleWithNameCollision() {
+        scratch.file("inner_aspect/BUILD")
+        scratch.file(
+            "inner_aspect/lib.bzl",
+            """
         InnerAspectInfo = provider()
 
         def _impl_inner_aspect(ctx, target):
@@ -355,11 +397,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_tool": attr.label(default = "//tool:inner_aspect_tool")},
             provides = [InnerAspectInfo],
         )
-        """);
-    scratch.file("outer_aspect/BUILD");
-    scratch.file(
-        "outer_aspect/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("outer_aspect/BUILD")
+        scratch.file(
+            "outer_aspect/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "InnerAspectInfo")
 
         def _impl_outer_aspect(ctx, target):
@@ -370,11 +414,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_tool": attr.label(default = "//tool:outer_aspect_tool")},
             required_aspect_providers = [InnerAspectInfo],
         )
-        """);
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "inner_aspect")
         load("//outer_aspect:lib.bzl", "outer_aspect")
 
@@ -391,10 +437,12 @@ public class VisibilityTest extends AnalysisTestCase {
         simple_starlark_rule = rule(
             _impl,
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rule:lib.bzl", "my_rule", "simple_starlark_rule")
 
         simple_starlark_rule(name = "simple_dep")
@@ -403,10 +451,12 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "target_with_aspects",
             dep = ":simple_dep",
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "outer_aspect_tool",
@@ -425,20 +475,22 @@ public class VisibilityTest extends AnalysisTestCase {
             srcs = ["a.sh"],
             visibility = ["//rule:__pkg__"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    update("//foo:target_with_aspects");
+        update("//foo:target_with_aspects")
 
-    assertThat(hasErrors(getConfiguredTarget("//foo:target_with_aspects"))).isFalse();
-  }
+        Truth.assertThat(hasErrors(getConfiguredTarget("//foo:target_with_aspects"))).isFalse()
+    }
 
-  @Test
-  public void testAspectImplicitDependencyCheckedAtDefinition_outerAspectToolNotVisible()
-      throws Exception {
-    scratch.file("inner_aspect/BUILD");
-    scratch.file(
-        "inner_aspect/lib.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectImplicitDependencyCheckedAtDefinition_outerAspectToolNotVisible() {
+        scratch.file("inner_aspect/BUILD")
+        scratch.file(
+            "inner_aspect/lib.bzl",
+            """
         InnerAspectInfo = provider()
 
         def _impl_inner_aspect(ctx, target):
@@ -449,11 +501,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_inner_aspect_tool": attr.label(default = "//tool:inner_aspect_tool")},
             provides = [InnerAspectInfo],
         )
-        """);
-    scratch.file("outer_aspect/BUILD");
-    scratch.file(
-        "outer_aspect/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("outer_aspect/BUILD")
+        scratch.file(
+            "outer_aspect/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "InnerAspectInfo")
 
         def _impl_outer_aspect(ctx, target):
@@ -464,11 +518,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_outer_aspect_tool": attr.label(default = "//tool:outer_aspect_tool")},
             required_aspect_providers = [InnerAspectInfo],
         )
-        """);
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "inner_aspect")
         load("//outer_aspect:lib.bzl", "outer_aspect")
 
@@ -485,10 +541,12 @@ public class VisibilityTest extends AnalysisTestCase {
         simple_starlark_rule = rule(
             _impl,
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rule:lib.bzl", "my_rule", "simple_starlark_rule")
 
         simple_starlark_rule(name = "simple_dep")
@@ -497,10 +555,12 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "target_with_aspects",
             dep = ":simple_dep",
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "outer_aspect_tool",
@@ -522,24 +582,29 @@ public class VisibilityTest extends AnalysisTestCase {
             srcs = ["a.sh"],
             visibility = ["//rule:__pkg__"],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//foo:target_with_aspects"));
-    assertContainsEvent(
-        "in //inner_aspect:lib.bzl%inner_aspect,//outer_aspect:lib.bzl%outer_aspect "
-            + "aspect on simple_starlark_rule rule //foo:simple_dep: Visibility error:\n"
-            + "target '//tool:outer_aspect_tool' is not visible from\n"
-            + "target '//outer_aspect:lib.bzl'");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//foo:target_with_aspects") })
+        assertContainsEvent(
+            ("in //inner_aspect:lib.bzl%inner_aspect,//outer_aspect:lib.bzl%outer_aspect "
+                    + "aspect on simple_starlark_rule rule //foo:simple_dep: Visibility error:\n"
+                    + "target '//tool:outer_aspect_tool' is not visible from\n"
+                    + "target '//outer_aspect:lib.bzl'")
+        )
+    }
 
-  @Test
-  public void testAspectImplicitDependencyCheckedAtDefinition_innerAspectToolNotVisible()
-      throws Exception {
-    scratch.file("inner_aspect/BUILD");
-    scratch.file(
-        "inner_aspect/lib.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectImplicitDependencyCheckedAtDefinition_innerAspectToolNotVisible() {
+        scratch.file("inner_aspect/BUILD")
+        scratch.file(
+            "inner_aspect/lib.bzl",
+            """
         InnerAspectInfo = provider()
 
         def _impl_inner_aspect(ctx, target):
@@ -550,11 +615,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_inner_aspect_tool": attr.label(default = "//tool:inner_aspect_tool")},
             provides = [InnerAspectInfo],
         )
-        """);
-    scratch.file("outer_aspect/BUILD");
-    scratch.file(
-        "outer_aspect/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("outer_aspect/BUILD")
+        scratch.file(
+            "outer_aspect/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "InnerAspectInfo")
 
         def _impl_outer_aspect(ctx, target):
@@ -565,11 +632,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_outer_aspect_tool": attr.label(default = "//tool:outer_aspect_tool")},
             required_aspect_providers = [InnerAspectInfo],
         )
-        """);
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "inner_aspect")
         load("//outer_aspect:lib.bzl", "outer_aspect")
 
@@ -586,10 +655,12 @@ public class VisibilityTest extends AnalysisTestCase {
         simple_starlark_rule = rule(
             _impl,
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rule:lib.bzl", "my_rule", "simple_starlark_rule")
 
         simple_starlark_rule(name = "simple_dep")
@@ -598,10 +669,12 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "target_with_aspects",
             dep = ":simple_dep",
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "outer_aspect_tool",
@@ -623,24 +696,29 @@ public class VisibilityTest extends AnalysisTestCase {
             srcs = ["a.sh"],
             visibility = ["//rule:__pkg__"],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//foo:target_with_aspects"));
-    assertContainsEvent(
-        "in //inner_aspect:lib.bzl%inner_aspect aspect on simple_starlark_rule "
-            + "rule //foo:simple_dep: Visibility error:\n"
-            + "target '//tool:inner_aspect_tool' is not visible from\n"
-            + "target '//inner_aspect:lib.bzl'");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//foo:target_with_aspects") })
+        assertContainsEvent(
+            ("in //inner_aspect:lib.bzl%inner_aspect aspect on simple_starlark_rule "
+                    + "rule //foo:simple_dep: Visibility error:\n"
+                    + "target '//tool:inner_aspect_tool' is not visible from\n"
+                    + "target '//inner_aspect:lib.bzl'")
+        )
+    }
 
-  @Test
-  public void testAspectImplicitDependencyCheckedAtDefinition_ruleToolNotVisible()
-      throws Exception {
-    scratch.file("inner_aspect/BUILD");
-    scratch.file(
-        "inner_aspect/lib.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectImplicitDependencyCheckedAtDefinition_ruleToolNotVisible() {
+        scratch.file("inner_aspect/BUILD")
+        scratch.file(
+            "inner_aspect/lib.bzl",
+            """
         InnerAspectInfo = provider()
 
         def _impl_inner_aspect(ctx, target):
@@ -651,11 +729,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_inner_aspect_tool": attr.label(default = "//tool:inner_aspect_tool")},
             provides = [InnerAspectInfo],
         )
-        """);
-    scratch.file("outer_aspect/BUILD");
-    scratch.file(
-        "outer_aspect/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("outer_aspect/BUILD")
+        scratch.file(
+            "outer_aspect/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "InnerAspectInfo")
 
         def _impl_outer_aspect(ctx, target):
@@ -666,11 +746,13 @@ public class VisibilityTest extends AnalysisTestCase {
             attrs = {"_outer_aspect_tool": attr.label(default = "//tool:outer_aspect_tool")},
             required_aspect_providers = [InnerAspectInfo],
         )
-        """);
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/lib.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/lib.bzl",
+            """
         load("//inner_aspect:lib.bzl", "inner_aspect")
         load("//outer_aspect:lib.bzl", "outer_aspect")
 
@@ -687,10 +769,12 @@ public class VisibilityTest extends AnalysisTestCase {
         simple_starlark_rule = rule(
             _impl,
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rule:lib.bzl", "my_rule", "simple_starlark_rule")
 
         simple_starlark_rule(name = "simple_dep")
@@ -699,10 +783,12 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "target_with_aspects",
             dep = ":simple_dep",
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "outer_aspect_tool",
@@ -724,27 +810,33 @@ public class VisibilityTest extends AnalysisTestCase {
                 "//outer_aspect:__pkg__",
             ],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//foo:target_with_aspects"));
-    assertContainsEvent(
-        "in my_rule rule //foo:target_with_aspects: Visibility error:\n"
-            + "target '//tool:rule_tool' is not visible from\n"
-            + "target '//rule:lib.bzl'");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//foo:target_with_aspects") })
+        assertContainsEvent(
+            ("in my_rule rule //foo:target_with_aspects: Visibility error:\n"
+                    + "target '//tool:rule_tool' is not visible from\n"
+                    + "target '//rule:lib.bzl'")
+        )
+    }
 
-  void setupFilesScenario(String wantRead) throws Exception {
-    scratch.file("src/source.txt", "source");
-    scratch.file("src/BUILD", "exports_files(['source.txt'], visibility=['//pkg:__pkg__'])");
-    scratch.file("pkg/foo.txt", "foo");
-    scratch.file("pkg/bar.txt", "bar");
-    scratch.file("pkg/groupfile.txt", "groupfile");
-    scratch.file("pkg/unused.txt", "unused");
-    scratch.file("pkg/exported.txt", "exported");
-    scratch.file(
-        "pkg/BUILD",
-        """
+    @Throws(java.lang.Exception::class)
+    fun setupFilesScenario(wantRead: String?) {
+        scratch.file("src/source.txt", "source")
+        scratch.file("src/BUILD", "exports_files(['source.txt'], visibility=['//pkg:__pkg__'])")
+        scratch.file("pkg/foo.txt", "foo")
+        scratch.file("pkg/bar.txt", "bar")
+        scratch.file("pkg/groupfile.txt", "groupfile")
+        scratch.file("pkg/unused.txt", "unused")
+        scratch.file("pkg/exported.txt", "exported")
+        scratch.file(
+            "pkg/BUILD",
+            """
         package(default_visibility = ["//visibility:public"])
 
         exports_files(["exported.txt"])
@@ -756,7 +848,7 @@ public class VisibilityTest extends AnalysisTestCase {
                 "bar.txt",
             ],
             outs = ["foobar.txt"],
-            cmd = "cat $(SRCS) > $@",
+            cmd = "cat ${'$'}(SRCS) > ${'$'}@",
         )
 
         filegroup(
@@ -768,134 +860,158 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "localgroup",
             srcs = [":groupfile.txt"],
         )
-        """);
-    scratch.file(
-        "otherpkg/BUILD",
-        "genrule(",
-        "  name = 'it',",
-        "  srcs = ['//pkg:" + wantRead + "'],",
-        "  outs = ['it.xt'],",
-        "  cmd = 'cp $< $@',",
-        ")");
-  }
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "otherpkg/BUILD",
+            "genrule(",
+            "  name = 'it',",
+            "  srcs = ['//pkg:" + wantRead + "'],",
+            "  outs = ['it.xt'],",
+            "  cmd = 'cp $< $@',",
+            ")"
+        )
+    }
 
-  @Test
-  public void testTargetImplicitExport() throws Exception {
-    setupFilesScenario("foobar");
-    useConfiguration("--noincompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTargetImplicitExport() {
+        setupFilesScenario("foobar")
+        useConfiguration("--noincompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testTargetNoImplicitExport() throws Exception {
-    setupFilesScenario("foobar");
-    useConfiguration("--incompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTargetNoImplicitExport() {
+        setupFilesScenario("foobar")
+        useConfiguration("--incompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testLocalFilegroupImplicitExport() throws Exception {
-    setupFilesScenario("localgroup");
-    useConfiguration("--noincompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLocalFilegroupImplicitExport() {
+        setupFilesScenario("localgroup")
+        useConfiguration("--noincompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testLocalFilegroupNoImplicitExport() throws Exception {
-    setupFilesScenario("localgroup");
-    useConfiguration("--incompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLocalFilegroupNoImplicitExport() {
+        setupFilesScenario("localgroup")
+        useConfiguration("--incompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testRemoteFilegroupImplicitExport() throws Exception {
-    setupFilesScenario("remotegroup");
-    useConfiguration("--noincompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteFilegroupImplicitExport() {
+        setupFilesScenario("remotegroup")
+        useConfiguration("--noincompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testRemoteFilegroupNoImplicitExport() throws Exception {
-    setupFilesScenario("remotegroup");
-    useConfiguration("--incompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteFilegroupNoImplicitExport() {
+        setupFilesScenario("remotegroup")
+        useConfiguration("--incompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testExportedImplicitExport() throws Exception {
-    setupFilesScenario("exported.txt");
-    useConfiguration("--noincompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExportedImplicitExport() {
+        setupFilesScenario("exported.txt")
+        useConfiguration("--noincompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testExportedNoImplicitExport() throws Exception {
-    setupFilesScenario("exported.txt");
-    useConfiguration("--incompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExportedNoImplicitExport() {
+        setupFilesScenario("exported.txt")
+        useConfiguration("--incompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testUnusedImplicitExport() throws Exception {
-    setupFilesScenario("unused.txt");
-    useConfiguration("--noincompatible_no_implicit_file_export");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUnusedImplicitExport() {
+        setupFilesScenario("unused.txt")
+        useConfiguration("--noincompatible_no_implicit_file_export")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//otherpkg:it"));
-  }
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//otherpkg:it") })
+    }
 
-  @Test
-  public void testUnusedNoImplicitExport() throws Exception {
-    setupFilesScenario("unused.txt");
-    useConfiguration("--incompatible_no_implicit_file_export");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUnusedNoImplicitExport() {
+        setupFilesScenario("unused.txt")
+        useConfiguration("--incompatible_no_implicit_file_export")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//otherpkg:it"));
-  }
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//otherpkg:it") })
+    }
 
-  @Test
-  public void testSourcefileImplicitExport() throws Exception {
-    setupFilesScenario("foo.txt");
-    useConfiguration("--noincompatible_no_implicit_file_export");
-    update("//otherpkg:it");
-    assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSourcefileImplicitExport() {
+        setupFilesScenario("foo.txt")
+        useConfiguration("--noincompatible_no_implicit_file_export")
+        update("//otherpkg:it")
+        Truth.assertThat(hasErrors(getConfiguredTarget("//otherpkg:it"))).isFalse()
+    }
 
-  @Test
-  public void testSourcefileNoImplicitExport() throws Exception {
-    setupFilesScenario("foo.txt");
-    useConfiguration("--incompatible_no_implicit_file_export");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSourcefileNoImplicitExport() {
+        setupFilesScenario("foo.txt")
+        useConfiguration("--incompatible_no_implicit_file_export")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(ViewCreationFailedException.class, () -> update("//otherpkg:it"));
-  }
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//otherpkg:it") })
+    }
 
-  @Test
-  public void testVerboseDiagnostics_ruleImplicitDep() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_ruleImplicitDep() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/defs.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -903,41 +1019,50 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"_implicit_dep": attr.label(default="//tool:tool")},
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//rule:defs.bzl", "my_rule")
 
         my_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * The dependency is an implicit dependency of the consuming target's rule, my_rule, which \
-        is defined in //rule:defs.bzl. Since that file's package, //rule, does not match\
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * The dependency is an implicit dependency of the consuming target's rule, my_rule, which is defined in //rule:defs.bzl. Since that file's package, //rule, does not match
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_aspectImplicitDep() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_aspectImplicitDep() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file("aspect/BUILD");
-    scratch.file(
-        "aspect/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("aspect/BUILD")
+        scratch.file(
+            "aspect/defs.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -945,11 +1070,13 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"_implicit_dep": attr.label(default="//tool:tool")},
         )
-        """);
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/defs.bzl",
+            """
         load("//aspect:defs.bzl", "my_aspect")
 
         def _impl(ctx):
@@ -959,10 +1086,12 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"deps": attr.label_list(aspects=[my_aspect])},
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//rule:defs.bzl", "my_rule")
 
@@ -972,65 +1101,80 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "foo",
             deps = [":dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * The dependency is an implicit dependency of the consuming target's aspect, my_aspect, \
-        which is defined in //aspect:defs.bzl. Since that file's package, //aspect, does not\
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * The dependency is an implicit dependency of the consuming target's aspect, my_aspect, which is defined in //aspect:defs.bzl. Since that file's package, //aspect, does not
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_consumingLocation_isNotInMacro() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_consumingLocation_isNotInMacro() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "foo",
             deps = ["//tool:tool"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * The location being checked is the package where the consuming target lives, //pkg.\
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * The location being checked is the package where the consuming target lives, //pkg.
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_consumingLocation_isInMacro() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_consumingLocation_isInMacro() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility):
             cc_library(
@@ -1039,41 +1183,50 @@ public class VisibilityTest extends AnalysisTestCase {
             )
 
         my_macro = macro(implementation = _impl)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//macro:defs.bzl", "my_macro")
 
         my_macro(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo_bar"));
-    assertContainsEvent(
-        """
-        * Because the consuming target was declared in the body of the symbolic macro my_macro \
-        defined in //macro:defs.bzl, the location being checked is this file's package, //macro.\
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo_bar") })
+        assertContainsEvent(
+            """
+        * Because the consuming target was declared in the body of the symbolic macro my_macro defined in //macro:defs.bzl, the location being checked is this file's package, //macro.
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_consumingLocation_isDelegatedFromPackage() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_consumingLocation_isDelegatedFromPackage() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file("submacro/BUILD");
-    scratch.file(
-        "submacro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("submacro/BUILD")
+        scratch.file(
+            "submacro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility, deps):
             cc_library(
@@ -1085,11 +1238,13 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"deps": attr.label_list()},
         )
-        """);
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//submacro:defs.bzl", "my_submacro")
 
@@ -1107,10 +1262,12 @@ public class VisibilityTest extends AnalysisTestCase {
                 "use_submacro": attr.bool(configurable=False),
             },
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//macro:defs.bzl", "my_macro")
 
         my_macro(
@@ -1124,46 +1281,53 @@ public class VisibilityTest extends AnalysisTestCase {
             deps = ["//tool:tool"],
             use_submacro = True,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo_bar"));
-    assertContainsEvent(
-        """
-        * Because the dependency was passed to the consuming target from an attribute of the \
-        symbolic macro //pkg:foo, the location being checked is the place where this macro is \
-        declared: package //pkg.\
-        """);
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo_bar") })
+        assertContainsEvent(
+            """
+        * Because the dependency was passed to the consuming target from an attribute of the symbolic macro //pkg:foo, the location being checked is the place where this macro is declared: package //pkg.
+        """.trimIndent()
+        )
 
-    eventCollector.clear();
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo2_bar_baz"));
-    // Should say "transitive", and should still identify outer macro (foo2), not inner macro
-    // (foo2_bar).
-    assertContainsEvent(
-        """
-        * Because the dependency was transitively passed to the consuming target from an attribute \
-        of the symbolic macro //pkg:foo2, the location being checked is the place where this macro \
-        is declared: package //pkg.\
-        """);
-  }
+        eventCollector.clear()
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo2_bar_baz") })
+        // Should say "transitive", and should still identify outer macro (foo2), not inner macro
+        // (foo2_bar).
+        assertContainsEvent(
+            """
+        * Because the dependency was transitively passed to the consuming target from an attribute of the symbolic macro //pkg:foo2, the location being checked is the place where this macro is declared: package //pkg.
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_consumingLocation_isDelegatedFromMacro() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_consumingLocation_isDelegatedFromMacro() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file("subsubmacro/BUILD");
-    scratch.file(
-        "subsubmacro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("subsubmacro/BUILD")
+        scratch.file(
+            "subsubmacro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility, deps):
             cc_library(
@@ -1175,11 +1339,13 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"deps": attr.label_list()},
         )
-        """);
-    scratch.file("submacro/BUILD");
-    scratch.file(
-        "submacro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("submacro/BUILD")
+        scratch.file(
+            "submacro/defs.bzl",
+            """
         load("//subsubmacro:defs.bzl", "my_subsubmacro")
 
         def _impl(name, visibility, deps):
@@ -1192,11 +1358,13 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"deps": attr.label_list()},
         )
-        """);
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("//submacro:defs.bzl", "my_submacro")
         load("//subsubmacro:defs.bzl", "my_subsubmacro")
 
@@ -1211,10 +1379,12 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"extra_level_deep": attr.bool(configurable=False)},
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//macro:defs.bzl", "my_macro")
 
         my_macro(
@@ -1226,38 +1396,41 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "foo2",
             extra_level_deep = True,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo_bar_qux"));
-    assertContainsEvent(
-        """
-        * Because the dependency was passed to the consuming target from an attribute of the \
-        symbolic macro //pkg:foo_bar, the location being checked is the place where this macro is \
-        declared: the body of the calling macro my_macro, defined in //macro:defs.bzl of package \
-        //macro.\
-        """);
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo_bar_qux") })
+        assertContainsEvent(
+            """
+        * Because the dependency was passed to the consuming target from an attribute of the symbolic macro //pkg:foo_bar, the location being checked is the place where this macro is declared: the body of the calling macro my_macro, defined in //macro:defs.bzl of package //macro.
+        """.trimIndent()
+        )
 
-    eventCollector.clear();
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo2_bar_baz_qux"));
-    // Should say "transitive", and should still identify outer macro (foo2_bar), not inner macro
-    // (foo2_bar_baz).
-    assertContainsEvent(
-        """
-        * Because the dependency was transitively passed to the consuming target from an attribute \
-        of the symbolic macro //pkg:foo2_bar, the location being checked is the place where this \
-        macro is declared: the body of the calling macro my_macro, defined in //macro:defs.bzl of \
-        package //macro.\
-        """);
-  }
+        eventCollector.clear()
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo2_bar_baz_qux") })
+        // Should say "transitive", and should still identify outer macro (foo2_bar), not inner macro
+        // (foo2_bar_baz).
+        assertContainsEvent(
+            """
+        * Because the dependency was transitively passed to the consuming target from an attribute of the symbolic macro //pkg:foo2_bar, the location being checked is the place where this macro is declared: the body of the calling macro my_macro, defined in //macro:defs.bzl of package //macro.
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_aliasDisclaimer_shownForAlias() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_aliasDisclaimer_shownForAlias() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
@@ -1269,62 +1442,77 @@ public class VisibilityTest extends AnalysisTestCase {
             actual = ":tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "foo",
             deps = ["//tool:indirect"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * The dependency is an alias target. Note that it is the visibility of the alias we care \
-        about, not the visibility of the underlying target it refers to.
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * The dependency is an alias target. Note that it is the visibility of the alias we care about, not the visibility of the underlying target it refers to.
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_aliasDisclaimer_notShownForNonAlias() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_aliasDisclaimer_notShownForNonAlias() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "foo",
             deps = ["//tool:tool"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertDoesNotContainEvent("The dependency is an alias");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertDoesNotContainEvent("The dependency is an alias")
+    }
 
-  @Test
-  public void testVerboseDiagnostics_samePackageDisclaimer() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_samePackageDisclaimer() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility):
             cc_library(
@@ -1333,10 +1521,12 @@ public class VisibilityTest extends AnalysisTestCase {
             )
 
         my_macro = macro(implementation = _impl)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//macro:defs.bzl", "my_macro")
 
@@ -1348,39 +1538,47 @@ public class VisibilityTest extends AnalysisTestCase {
         my_macro(
             name = "foo",
         )
-        """);
-    scratch.file(
-        "pkg2/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg2/BUILD",
+            """
         load("//macro:defs.bzl", "my_macro")
 
         my_macro(
             name = "foo",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * Although both targets live in the same package, they cannot automatically see each other \
-        because they are declared by different symbolic macros.\
-        """);
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * Although both targets live in the same package, they cannot automatically see each other because they are declared by different symbolic macros.
+        """.trimIndent()
+        )
 
-    eventCollector.clear();
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg2:foo"));
-    assertDoesNotContainEvent("both targets live in the same package");
-  }
+        eventCollector.clear()
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg2:foo") })
+        assertDoesNotContainEvent("both targets live in the same package")
+    }
 
-  @Test
-  public void testVerboseDiagnostics_samePackageDisclaimer_shownForImplicitDepOfMacro()
-      throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_samePackageDisclaimer_shownForImplicitDepOfMacro() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility, _implicit_dep):
             cc_library(
@@ -1392,10 +1590,12 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"_implicit_dep": attr.label(default="//pkg:tool", configurable=False)},
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//macro:defs.bzl", "my_macro")
 
@@ -1407,26 +1607,30 @@ public class VisibilityTest extends AnalysisTestCase {
         my_macro(
             name = "foo",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * Although both targets live in the same package, they cannot automatically see each other \
-        because they are declared by different symbolic macros.\
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * Although both targets live in the same package, they cannot automatically see each other because they are declared by different symbolic macros.
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_samePackageDisclaimer_notShownForImplicitDepOfRule()
-      throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_samePackageDisclaimer_notShownForImplicitDepOfRule() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file("rule/BUILD");
-    scratch.file(
-        "rule/defs.bzl",
-        """
+        scratch.file("rule/BUILD")
+        scratch.file(
+            "rule/defs.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -1434,21 +1638,25 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"_implicit_dep": attr.label(default="//pkg:tool")},
         )
-        """);
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("//rule:defs.bzl", "my_rule")
 
         def _impl(name, visibility):
             my_rule(name = name)
 
         my_macro = macro(implementation = _impl)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//macro:defs.bzl", "my_macro")
 
@@ -1458,30 +1666,37 @@ public class VisibilityTest extends AnalysisTestCase {
         )
 
         my_macro(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertDoesNotContainEvent("both targets live in the same package");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertDoesNotContainEvent("both targets live in the same package")
+    }
 
-  @Test
-  public void testVerboseDiagnostics_moreDelegationNeeded_fromAncestorMacro() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_moreDelegationNeeded_fromAncestorMacro() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//macro:__pkg__"],
         )
-        """);
-    scratch.file("subsubmacro/BUILD");
-    scratch.file(
-        "subsubmacro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("subsubmacro/BUILD")
+        scratch.file(
+            "subsubmacro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility):
             cc_library(
@@ -1490,22 +1705,26 @@ public class VisibilityTest extends AnalysisTestCase {
             )
 
         my_subsubmacro = macro(implementation = _impl)
-        """);
-    scratch.file("submacro/BUILD");
-    scratch.file(
-        "submacro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("submacro/BUILD")
+        scratch.file(
+            "submacro/defs.bzl",
+            """
         load("//subsubmacro:defs.bzl", "my_subsubmacro")
 
         def _impl(name, visibility):
             my_subsubmacro(name = name + "_baz")
 
         my_submacro = macro(implementation = _impl)
-        """);
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("//submacro:defs.bzl", "my_submacro")
         load("//subsubmacro:defs.bzl", "my_subsubmacro")
 
@@ -1517,10 +1736,12 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"extra_level_deep": attr.bool(configurable=False)},
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//macro:defs.bzl", "my_macro")
 
         my_macro(
@@ -1532,47 +1753,53 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "foo2",
             extra_level_deep = True,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo_bar_qux"));
-    assertContainsEvent(
-        """
-        * Although the dependency is not visible to the location being checked, it is visible to \
-        this location's caller, //pkg:foo, a my_macro macro defined in //macro. (Perhaps the \
-        caller needs to pass in the dependency as an argument?)\
-        """);
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo_bar_qux") })
+        assertContainsEvent(
+            """
+        * Although the dependency is not visible to the location being checked, it is visible to this location's caller, //pkg:foo, a my_macro macro defined in //macro. (Perhaps the caller needs to pass in the dependency as an argument?)
+        """.trimIndent()
+        )
 
-    eventCollector.clear();
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo2_bar_baz_qux"));
-    // Should say "transitive", and should still identify outer macro (foo2_bar), not inner macro
-    // (foo2_bar_baz).
-    assertContainsEvent(
-        """
-        * Although the dependency is not visible to the location being checked, it is visible to \
-        this location's transitive caller, //pkg:foo2, a my_macro macro defined in //macro. \
-        (Perhaps this caller, or an intermediate caller, needs to pass in the dependency as an \
-        argument?)\
-        """);
-  }
+        eventCollector.clear()
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo2_bar_baz_qux") })
+        // Should say "transitive", and should still identify outer macro (foo2_bar), not inner macro
+        // (foo2_bar_baz).
+        assertContainsEvent(
+            """
+        * Although the dependency is not visible to the location being checked, it is visible to this location's transitive caller, //pkg:foo2, a my_macro macro defined in //macro. (Perhaps this caller, or an intermediate caller, needs to pass in the dependency as an argument?)
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_moreDelegationNeeded_fromBuildFile() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_moreDelegationNeeded_fromBuildFile() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//pkg:__pkg__"],
         )
-        """);
-    scratch.file("submacro/BUILD");
-    scratch.file(
-        "submacro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("submacro/BUILD")
+        scratch.file(
+            "submacro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility):
             cc_library(
@@ -1581,11 +1808,13 @@ public class VisibilityTest extends AnalysisTestCase {
             )
 
         my_submacro = macro(implementation = _impl)
-        """);
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//submacro:defs.bzl", "my_submacro")
 
@@ -1602,10 +1831,12 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"extra_level_deep": attr.bool(configurable=False)},
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//macro:defs.bzl", "my_macro")
 
         my_macro(
@@ -1617,45 +1848,52 @@ public class VisibilityTest extends AnalysisTestCase {
             name = "foo2",
             extra_level_deep = True,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo_bar"));
-    assertContainsEvent(
-        """
-        * Although the dependency is not visible to the location being checked, it is visible to \
-        this location's caller, the BUILD file of package //pkg. (Perhaps the caller needs to pass \
-        in the dependency as an argument?)\
-        """);
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo_bar") })
+        assertContainsEvent(
+            """
+        * Although the dependency is not visible to the location being checked, it is visible to this location's caller, the BUILD file of package //pkg. (Perhaps the caller needs to pass in the dependency as an argument?)
+        """.trimIndent()
+        )
 
-    eventCollector.clear();
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo2_bar_baz"));
-    // Should say "transitive".
-    assertContainsEvent(
-        """
-        * Although the dependency is not visible to the location being checked, it is visible to \
-        this location's transitive caller, the BUILD file of package //pkg. (Perhaps this caller, \
-        or an intermediate caller, needs to pass in the dependency as an argument?)\
-        """);
-  }
+        eventCollector.clear()
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo2_bar_baz") })
+        // Should say "transitive".
+        assertContainsEvent(
+            """
+        * Although the dependency is not visible to the location being checked, it is visible to this location's transitive caller, the BUILD file of package //pkg. (Perhaps this caller, or an intermediate caller, needs to pass in the dependency as an argument?)
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_moreDelegationNeeded_incompleteDelegation() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_moreDelegationNeeded_incompleteDelegation() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "tool/BUILD",
-        """
+        scratch.file(
+            "tool/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "tool",
             visibility = ["//pkg:__pkg__"],
         )
-        """);
-    scratch.file("submacro/BUILD");
-    scratch.file(
-        "submacro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("submacro/BUILD")
+        scratch.file(
+            "submacro/defs.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def _impl(name, visibility, deps):
             if not deps:
@@ -1669,11 +1907,13 @@ public class VisibilityTest extends AnalysisTestCase {
             implementation = _impl,
             attrs = {"deps": attr.label_list(configurable=False)},
         )
-        """);
-    scratch.file("macro/BUILD");
-    scratch.file(
-        "macro/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("macro/BUILD")
+        scratch.file(
+            "macro/defs.bzl",
+            """
         load("//submacro:defs.bzl", "my_submacro")
 
         def _impl(name, visibility, deps, pass_in_tool):
@@ -1689,10 +1929,12 @@ public class VisibilityTest extends AnalysisTestCase {
                 "pass_in_tool": attr.bool(configurable=False),
             },
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//macro:defs.bzl", "my_macro")
 
         my_macro(
@@ -1705,87 +1947,106 @@ public class VisibilityTest extends AnalysisTestCase {
             deps = ["//tool:tool"],
             pass_in_tool = False,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo_bar_baz"));
-    // my_macro passed it to my_submacro, but BUILD didn't pass it to my_macro.
-    assertContainsEvent(
-        """
-        * Although the dependency is not visible to the location being checked, it is visible to \
-        this location's caller, the BUILD file of package //pkg. (Perhaps the caller needs to pass \
-        in the dependency as an argument?)\
-        """);
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo_bar_baz") })
+        // my_macro passed it to my_submacro, but BUILD didn't pass it to my_macro.
+        assertContainsEvent(
+            """
+        * Although the dependency is not visible to the location being checked, it is visible to this location's caller, the BUILD file of package //pkg. (Perhaps the caller needs to pass in the dependency as an argument?)
+        """.trimIndent()
+        )
 
-    eventCollector.clear();
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo2_bar_baz"));
-    // BUILD passed it to my_macro, but my_macro didn't pass it to my_submacro.
-    assertContainsEvent(
-        """
-        * Although the dependency is not visible to the location being checked, it is visible to \
-        this location's transitive caller, the BUILD file of package //pkg. (Perhaps this caller, \
-        or an intermediate caller, needs to pass in the dependency as an argument?)\
-        """);
-  }
+        eventCollector.clear()
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo2_bar_baz") })
+        // BUILD passed it to my_macro, but my_macro didn't pass it to my_submacro.
+        assertContainsEvent(
+            """
+        * Although the dependency is not visible to the location being checked, it is visible to this location's transitive caller, the BUILD file of package //pkg. (Perhaps this caller, or an intermediate caller, needs to pass in the dependency as an argument?)
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_editVisibilitySuggestion_forRuleTarget() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_editVisibilitySuggestion_forRuleTarget() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "dep/BUILD",
-        """
+        scratch.file(
+            "dep/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "dep",
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "foo",
             deps = ["//dep:dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * If you think the dependency is legitimate, consider updating its visibility declaration.\
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * If you think the dependency is legitimate, consider updating its visibility declaration.
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testVerboseDiagnostics_editVisibilitySuggestion_forFileTarget() throws Exception {
-    useConfiguration("--verbose_visibility_errors");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerboseDiagnostics_editVisibilitySuggestion_forFileTarget() {
+        useConfiguration("--verbose_visibility_errors")
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
 
-    scratch.file(
-        "dep/BUILD",
-        """
+        scratch.file(
+            "dep/BUILD",
+            """
         exports_files(
             ["dep"],
             visibility = ["//visibility:private"],
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "foo",
             deps = ["//dep:dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> update("//pkg:foo"));
-    assertContainsEvent(
-        """
-        * If you think the dependency on this source file is legitimate, consider updating its \
-        visibility declaration using exports_files().\
-        """);
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { update("//pkg:foo") })
+        assertContainsEvent(
+            """
+        * If you think the dependency on this source file is legitimate, consider updating its visibility declaration using exports_files().
+        """.trimIndent()
+        )
+    }
 }

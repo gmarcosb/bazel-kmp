@@ -11,140 +11,136 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.analysis.LocationExpander.LocationFunction
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit tests for [LocationExpander].  */
+@RunWith(JUnit4::class)
+class LocationExpanderTest {
+    private class Capture : RuleErrorConsumer {
+        private val warnsOrErrors: MutableList<String?> = java.util.ArrayList<String?>()
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.LocationExpander.LocationFunction;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import java.util.ArrayList;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        public override fun ruleWarning(message: String?) {
+            warnsOrErrors.add("WARN: " + message)
+        }
 
-/** Unit tests for {@link LocationExpander}. */
-@RunWith(JUnit4.class)
-public class LocationExpanderTest {
-  private static final class Capture implements RuleErrorConsumer {
-    private final List<String> warnsOrErrors = new ArrayList<>();
+        public override fun ruleError(message: String?) {
+            warnsOrErrors.add("ERROR: " + message)
+        }
 
-    @Override
-    public void ruleWarning(String message) {
-      warnsOrErrors.add("WARN: " + message);
+        public override fun attributeWarning(attrName: String?, message: String?) {
+            warnsOrErrors.add("WARN-" + attrName + ": " + message)
+        }
+
+        public override fun attributeError(attrName: String?, message: String?) {
+            warnsOrErrors.add("ERROR-" + attrName + ": " + message)
+        }
+
+        public override fun hasErrors(): Boolean {
+            return !warnsOrErrors.isEmpty()
+        }
     }
 
-    @Override
-    public void ruleError(String message) {
-      warnsOrErrors.add("ERROR: " + message);
+    @Throws(java.lang.Exception::class)
+    private fun makeExpander(ruleErrorConsumer: RuleErrorConsumer?): LocationExpander {
+        val f1: LocationFunction =
+            LocationFunctionBuilder("//a", false)
+                .setPathType(LocationFunction.PathType.LOCATION)
+                .add("//a", "/exec/src/a")
+                .build()
+
+        val f2: LocationFunction =
+            LocationFunctionBuilder("//b", true)
+                .setPathType(LocationFunction.PathType.LOCATION)
+                .add("//b", "/exec/src/b")
+                .build()
+
+        return LocationExpander(
+            ruleErrorConsumer,
+            com.google.common.collect.ImmutableMap.of<String?, LocationFunction?>(
+                "location", f1,
+                "locations", f2
+            ),
+            RepositoryMapping.EMPTY,
+            "workspace"
+        )
     }
 
-    @Override
-    public void attributeWarning(String attrName, String message) {
-      warnsOrErrors.add("WARN-" + attrName + ": " + message);
+    @Throws(java.lang.Exception::class)
+    private fun expand(input: String?): String {
+        return makeExpander(Capture()).expand(input)
     }
 
-    @Override
-    public void attributeError(String attrName, String message) {
-      warnsOrErrors.add("ERROR-" + attrName + ": " + message);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noExpansion() {
+        Truth.assertThat(expand("abc")).isEqualTo("abc")
     }
 
-    @Override
-    public boolean hasErrors() {
-      return !warnsOrErrors.isEmpty();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun oneOrMore() {
+        Truth.assertThat(expand("$(location a)")).isEqualTo("src/a")
+        Truth.assertThat(expand("$(locations b)")).isEqualTo("src/b")
+        Truth.assertThat(expand("---$(location a)---")).isEqualTo("---src/a---")
     }
-  }
 
-  private LocationExpander makeExpander(RuleErrorConsumer ruleErrorConsumer) throws Exception {
-    LocationFunction f1 =
-        new LocationFunctionBuilder("//a", false)
-            .setPathType(LocationFunction.PathType.LOCATION)
-            .add("//a", "/exec/src/a")
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun twoInOne() {
+        Truth.assertThat(expand("$(location a) $(locations b)")).isEqualTo("src/a src/b")
+    }
 
-    LocationFunction f2 =
-        new LocationFunctionBuilder("//b", true)
-            .setPathType(LocationFunction.PathType.LOCATION)
-            .add("//b", "/exec/src/b")
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun notAFunction() {
+        Truth.assertThat(expand("$(locationz a)")).isEqualTo("$(locationz a)")
+    }
 
-    return new LocationExpander(
-        ruleErrorConsumer,
-        ImmutableMap.<String, LocationFunction>of(
-            "location", f1,
-            "locations", f2),
-        RepositoryMapping.EMPTY,
-        "workspace");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun missingClosingParen() {
+        val capture = Capture()
+        val value: String? = makeExpander(capture).expand("foo $(location a")
+        // In case of an error, no location expansion is performed.
+        Truth.assertThat(value).isEqualTo("foo $(location a")
+        Truth.assertThat(capture.warnsOrErrors).containsExactly("ERROR: unterminated $(location) expression")
+    }
 
-  private String expand(String input) throws Exception {
-    return makeExpander(new Capture()).expand(input);
-  }
+    // In case of errors, the exact return value is unspecified. However, we don't want to
+    // accidentally change the behavior even in this unspecified case - that's why I added a test
+    // here.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noExpansionOnError() {
+        val capture = Capture()
+        val value: String? = makeExpander(capture).expand("foo $(location a) $(location a")
+        Truth.assertThat(value).isEqualTo("foo $(location a) $(location a")
+        Truth.assertThat(capture.warnsOrErrors).containsExactly("ERROR: unterminated $(location) expression")
+    }
 
-  @Test
-  public void noExpansion() throws Exception {
-    assertThat(expand("abc")).isEqualTo("abc");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun expansionWithRepositoryMapping() {
+        val f1: LocationFunction =
+            LocationFunctionBuilder("//a", false)
+                .setPathType(LocationFunction.PathType.LOCATION)
+                .add("@bar//a", "/exec/src/a")
+                .build()
 
-  @Test
-  public void oneOrMore() throws Exception {
-    assertThat(expand("$(location a)")).isEqualTo("src/a");
-    assertThat(expand("$(locations b)")).isEqualTo("src/b");
-    assertThat(expand("---$(location a)---")).isEqualTo("---src/a---");
-  }
+        val repositoryMapping: com.google.common.collect.ImmutableMap<String?, RepositoryName?> =
+            com.google.common.collect.ImmutableMap.of<K?, V?>("foo", RepositoryName.create("bar"))
 
-  @Test
-  public void twoInOne() throws Exception {
-    assertThat(expand("$(location a) $(locations b)")).isEqualTo("src/a src/b");
-  }
+        val locationExpander: LocationExpander =
+            LocationExpander(
+                Capture(),
+                com.google.common.collect.ImmutableMap.of<String?, LocationFunction?>("location", f1),
+                RepositoryMapping.create(repositoryMapping, RepositoryName.MAIN),
+                "workspace"
+            )
 
-  @Test
-  public void notAFunction() throws Exception {
-    assertThat(expand("$(locationz a)")).isEqualTo("$(locationz a)");
-  }
-
-  @Test
-  public void missingClosingParen() throws Exception {
-    Capture capture = new Capture();
-    String value = makeExpander(capture).expand("foo $(location a");
-    // In case of an error, no location expansion is performed.
-    assertThat(value).isEqualTo("foo $(location a");
-    assertThat(capture.warnsOrErrors).containsExactly("ERROR: unterminated $(location) expression");
-  }
-
-  // In case of errors, the exact return value is unspecified. However, we don't want to
-  // accidentally change the behavior even in this unspecified case - that's why I added a test
-  // here.
-  @Test
-  public void noExpansionOnError() throws Exception {
-    Capture capture = new Capture();
-    String value = makeExpander(capture).expand("foo $(location a) $(location a");
-    assertThat(value).isEqualTo("foo $(location a) $(location a");
-    assertThat(capture.warnsOrErrors).containsExactly("ERROR: unterminated $(location) expression");
-  }
-
-  @Test
-  public void expansionWithRepositoryMapping() throws Exception {
-    LocationFunction f1 =
-        new LocationFunctionBuilder("//a", false)
-            .setPathType(LocationFunction.PathType.LOCATION)
-            .add("@bar//a", "/exec/src/a")
-            .build();
-
-    ImmutableMap<String, RepositoryName> repositoryMapping =
-        ImmutableMap.of("foo", RepositoryName.create("bar"));
-
-    LocationExpander locationExpander =
-        new LocationExpander(
-            new Capture(),
-            ImmutableMap.<String, LocationFunction>of("location", f1),
-            RepositoryMapping.create(repositoryMapping, RepositoryName.MAIN),
-            "workspace");
-
-    String value = locationExpander.expand("$(location @foo//a)");
-    assertThat(value).isEqualTo("src/a");
-  }
+        val value: String? = locationExpander.expand("$(location @foo//a)")
+        Truth.assertThat(value).isEqualTo("src/a")
+    }
 }

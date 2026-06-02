@@ -11,74 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.bazel
 
-package com.google.devtools.build.lib.blackbox.bazel;
+import com.google.devtools.build.lib.bazel.repository.decompressor.DecompressorDescriptor.Builder.build
+import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext
+import com.google.devtools.build.lib.blackbox.framework.ToolsSetup
+import com.google.devtools.build.lib.vfs.Path
+import java.io.BufferedReader
+import java.io.IOException
+import java.nio.file.Path
 
-import com.google.devtools.build.lib.blackbox.framework.BlackBoxTestContext;
-import com.google.devtools.build.lib.blackbox.framework.ToolsSetup;
-import com.google.devtools.build.lib.util.OS;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
+/** Setup for Bazel default tools  */
+class DefaultToolsSetup : ToolsSetup {
+    @Throws(IOException::class)
+    override fun setup(context: BlackBoxTestContext) {
+        val outputRoot: Path = java.nio.file.Files.createTempDirectory(context.getTmpDir(), "root").toAbsolutePath()
+        val lines: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
+        lines.add("startup --output_user_root=" + outputRoot.toString().replace('\\', '/'))
 
-/** Setup for Bazel default tools */
-public class DefaultToolsSetup implements ToolsSetup {
-
-  @Override
-  public void setup(BlackBoxTestContext context) throws IOException {
-    Path outputRoot = Files.createTempDirectory(context.getTmpDir(), "root").toAbsolutePath();
-    ArrayList<String> lines = new ArrayList<>();
-    lines.add("startup --output_user_root=" + outputRoot.toString().replace('\\', '/'));
-
-    String sharedInstallBase = System.getenv("TEST_INSTALL_BASE");
-    if (sharedInstallBase != null) {
-      lines.add("startup --install_base=" + sharedInstallBase);
-    }
-
-    String sharedRepoCache = System.getenv("REPOSITORY_CACHE");
-    if (sharedRepoCache != null) {
-      lines.add("common --repository_cache=" + sharedRepoCache);
-      // TODO: Remove this flag once all dependencies are mirrored.
-      // See https://github.com/bazelbuild/bazel/pull/19549 for more context.
-      lines.add("common --repo_env=BAZEL_HTTP_RULES_URLS_AS_DEFAULT_CANONICAL_ID=0");
-      if (OS.getCurrent() == OS.DARWIN) {
-        // For reducing SSD usage on our physical Mac machines.
-        lines.add("common --experimental_repository_cache_hardlinks");
-      }
-    }
-
-    if (OS.getCurrent() == OS.DARWIN && hasIpv6DefaultRouteOnDarwin()) {
-      // Prefer IPv6 network on macOS only when an IPv6 default route exists.
-      lines.add("startup --host_jvm_args=-Djava.net.preferIPv6Addresses=true");
-      lines.add("build --jvmopt=-Djava.net.preferIPv6Addresses");
-    }
-
-    context.write(".bazelrc", lines);
-  }
-
-  private static boolean hasIpv6DefaultRouteOnDarwin() {
-    if (OS.getCurrent() != OS.DARWIN) {
-      return false;
-    }
-    try {
-      Process p =
-          new ProcessBuilder("netstat", "-rn", "-f", "inet6").redirectErrorStream(true).start();
-      try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-        String line;
-        while ((line = r.readLine()) != null) {
-          if (line.trim().startsWith("default")) {
-            p.destroy();
-            return true;
-          }
+        val sharedInstallBase: String? = java.lang.System.getenv("TEST_INSTALL_BASE")
+        if (sharedInstallBase != null) {
+            lines.add("startup --install_base=" + sharedInstallBase)
         }
-      }
-      p.waitFor();
-    } catch (Exception e) {
-      // netstat not found or failed; assume no IPv6 default route.
+
+        val sharedRepoCache: String? = java.lang.System.getenv("REPOSITORY_CACHE")
+        if (sharedRepoCache != null) {
+            lines.add("common --repository_cache=" + sharedRepoCache)
+            // TODO: Remove this flag once all dependencies are mirrored.
+            // See https://github.com/bazelbuild/bazel/pull/19549 for more context.
+            lines.add("common --repo_env=BAZEL_HTTP_RULES_URLS_AS_DEFAULT_CANONICAL_ID=0")
+            if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.DARWIN) {
+                // For reducing SSD usage on our physical Mac machines.
+                lines.add("common --experimental_repository_cache_hardlinks")
+            }
+        }
+
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.DARWIN && hasIpv6DefaultRouteOnDarwin()) {
+            // Prefer IPv6 network on macOS only when an IPv6 default route exists.
+            lines.add("startup --host_jvm_args=-Djava.net.preferIPv6Addresses=true")
+            lines.add("build --jvmopt=-Djava.net.preferIPv6Addresses")
+        }
+
+        context.write(".bazelrc", lines)
     }
-    return false;
-  }
+
+    companion object {
+        private fun hasIpv6DefaultRouteOnDarwin(): Boolean {
+            if (com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.DARWIN) {
+                return false
+            }
+            try {
+                val p: java.lang.Process =
+                    java.lang.ProcessBuilder("netstat", "-rn", "-f", "inet6").redirectErrorStream(true).start()
+                BufferedReader(java.io.InputStreamReader(p.getInputStream())).use { r ->
+                    var line: String?
+                    while ((r.readLine().also { line = it }) != null) {
+                        if (line.trim { it <= ' ' }.startsWith("default")) {
+                            p.destroy()
+                            return true
+                        }
+                    }
+                }
+                p.waitFor()
+            } catch (e: java.lang.Exception) {
+                // netstat not found or failed; assume no IPv6 default route.
+            }
+            return false
+        }
+    }
 }

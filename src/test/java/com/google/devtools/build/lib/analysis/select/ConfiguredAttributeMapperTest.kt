@@ -11,45 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.select;
+package com.google.devtools.build.lib.analysis.select
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.analysis.config.CompilationMode;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.ConfiguredAttributeMapper;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Pattern;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.config.CompilationMode
+import org.junit.Test
+import java.util.regex.Pattern
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
 
 /**
- * Unit tests for {@link ConfiguredAttributeMapper}.
- *
- * <p>This is distinct from {@link ConfiguredAttributeMapperCommonTest} because the latter needs to
- * inherit from {@link AbstractAttributeMapperTest} to run tests common to all attribute mappers.
+ * Unit tests for [ConfiguredAttributeMapper].
+ * 
+ * 
+ * This is distinct from [ConfiguredAttributeMapperCommonTest] because the latter needs to
+ * inherit from [AbstractAttributeMapperTest] to run tests common to all attribute mappers.
  */
-@RunWith(JUnit4.class)
-public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
+@RunWith(JUnit4::class)
+class ConfiguredAttributeMapperTest : BuildViewTestCase() {
+    /**
+     * Returns a ConfiguredAttributeMapper bound to the given rule with the target configuration.
+     */
+    @Throws(Exception::class)
+    private fun getMapper(label: String?): ConfiguredAttributeMapper? {
+        val ctad: ConfiguredTargetAndData = getConfiguredTargetAndData(label)
+        return BuildViewTestCase.Companion.getMapperFromConfiguredTargetAndTarget(ctad)
+    }
 
-  /**
-   * Returns a ConfiguredAttributeMapper bound to the given rule with the target configuration.
-   */
-  private ConfiguredAttributeMapper getMapper(String label) throws Exception {
-    ConfiguredTargetAndData ctad = getConfiguredTargetAndData(label);
-    return getMapperFromConfiguredTargetAndTarget(ctad);
-  }
-
-  private void writeConfigRules() throws Exception {
-    scratch.file(
-        "conditions/BUILD",
-        """
+    @Throws(Exception::class)
+    private fun writeConfigRules() {
+        scratch.file(
+            "conditions/BUILD",
+            """
         config_setting(
             name = "a",
             values = {"define": "mode=a"},
@@ -59,146 +51,147 @@ public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
             name = "b",
             values = {"define": "mode=b"},
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  /**
-   * Tests that {@link ConfiguredAttributeMapper#get} only gets the configuration-appropriate
-   * value.
-   */
-  @Test
-  public void testGetAttribute() throws Exception {
-    writeConfigRules();
-    scratch.file("a/BUILD",
-        "genrule(",
-        "    name = 'gen',",
-        "    srcs = [],",
-        "    outs = ['out'],",
-        "    cmd = select({",
-        "        '//conditions:a': 'a command',",
-        "        '//conditions:b': 'b command',",
-        "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': 'default command',",
-        "    }))");
+    /**
+     * Tests that [ConfiguredAttributeMapper.get] only gets the configuration-appropriate
+     * value.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testGetAttribute() {
+        writeConfigRules()
+        scratch.file(
+            "a/BUILD",
+            "genrule(",
+            "    name = 'gen',",
+            "    srcs = [],",
+            "    outs = ['out'],",
+            "    cmd = select({",
+            "        '//conditions:a': 'a command',",
+            "        '//conditions:b': 'b command',",
+            "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': 'default command',",
+            "    }))"
+        )
 
-    useConfiguration("--define", "mode=a");
-    assertThat(getMapper("//a:gen").get("cmd", Type.STRING)).isEqualTo("a command");
+        useConfiguration("--define", "mode=a")
+        assertThat(getMapper("//a:gen").get("cmd", Type.STRING)).isEqualTo("a command")
 
-    useConfiguration("--define", "mode=b");
-    assertThat(getMapper("//a:gen").get("cmd", Type.STRING)).isEqualTo("b command");
+        useConfiguration("--define", "mode=b")
+        assertThat(getMapper("//a:gen").get("cmd", Type.STRING)).isEqualTo("b command")
 
-    useConfiguration("--define", "mode=c");
-    assertThat(getMapper("//a:gen").get("cmd", Type.STRING)).isEqualTo("default command");
-  }
+        useConfiguration("--define", "mode=c")
+        assertThat(getMapper("//a:gen").get("cmd", Type.STRING)).isEqualTo("default command")
+    }
 
-  /**
-   * Tests that label visitation only travels down configuration-appropriate paths.
-   */
-  @Test
-  public void testLabelVisitation() throws Exception {
-    writeConfigRules();
-    scratch.file(
-        "a/BUILD",
-        "load('//test_defs:foo_binary.bzl', 'foo_binary')",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_binary(",
-        "    name = 'bin',",
-        "    srcs = ['bin.sh'],",
-        "    deps = select({",
-        "        '//conditions:a': [':adep'],",
-        "        '//conditions:b': [':bdep'],",
-        "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': [':defaultdep'],",
-        "    }))",
-        "foo_library(",
-        "    name = 'adep',",
-        "    srcs = ['adep.sh'])",
-        "foo_library(",
-        "    name = 'bdep',",
-        "    srcs = ['bdep.sh'])",
-        "foo_library(",
-        "    name = 'defaultdep',",
-        "    srcs = ['defaultdep.sh'])");
+    /**
+     * Tests that label visitation only travels down configuration-appropriate paths.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testLabelVisitation() {
+        writeConfigRules()
+        scratch.file(
+            "a/BUILD",
+            "load('//test_defs:foo_binary.bzl', 'foo_binary')",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_binary(",
+            "    name = 'bin',",
+            "    srcs = ['bin.sh'],",
+            "    deps = select({",
+            "        '//conditions:a': [':adep'],",
+            "        '//conditions:b': [':bdep'],",
+            "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': [':defaultdep'],",
+            "    }))",
+            "foo_library(",
+            "    name = 'adep',",
+            "    srcs = ['adep.sh'])",
+            "foo_library(",
+            "    name = 'bdep',",
+            "    srcs = ['bdep.sh'])",
+            "foo_library(",
+            "    name = 'defaultdep',",
+            "    srcs = ['defaultdep.sh'])"
+        )
 
-    List<Label> visitedLabels = new ArrayList<>();
-    Label binSrc = Label.parseCanonical("//a:bin.sh");
+        val visitedLabels: MutableList<Label?> = ArrayList<Label?>()
+        val binSrc: Label? = Label.parseCanonical("//a:bin.sh")
 
-    useConfiguration("--define", "mode=a");
-    addRelevantLabels(getMapper("//a:bin"), visitedLabels);
-    assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical("//a:adep"));
+        useConfiguration("--define", "mode=a")
+        addRelevantLabels(getMapper("//a:bin"), visitedLabels)
+        Truth.assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical("//a:adep"))
 
-    visitedLabels.clear();
-    useConfiguration("--define", "mode=b");
-    addRelevantLabels(getMapper("//a:bin"), visitedLabels);
-    assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical("//a:bdep"));
+        visitedLabels.clear()
+        useConfiguration("--define", "mode=b")
+        addRelevantLabels(getMapper("//a:bin"), visitedLabels)
+        Truth.assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical("//a:bdep"))
 
-    visitedLabels.clear();
-    useConfiguration("--define", "mode=c");
-    addRelevantLabels(getMapper("//a:bin"), visitedLabels);
-    assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical("//a:defaultdep"));
-  }
+        visitedLabels.clear()
+        useConfiguration("--define", "mode=c")
+        addRelevantLabels(getMapper("//a:bin"), visitedLabels)
+        Truth.assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical("//a:defaultdep"))
+    }
 
-  private static void addRelevantLabels(
-      ConfiguredAttributeMapper mapper, List<Label> visitedLabels) {
-    mapper.visitAllLabels(
-        (attribute, label) -> {
-          if (label.getPackageIdentifier().getPackageFragment().toString().equals("a")) {
-            visitedLabels.add(label);
-          }
-        });
-  }
+    /**
+     * Tests that for configurable attributes where the *values* are evaluated in different
+     * configurations, the configuration checking still uses the original configuration.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testConfigurationTransitions() {
+        writeConfigRules()
+        scratch.file(
+            "a/BUILD",
+            "load('//test_defs:foo_binary.bzl', 'foo_binary')",
+            "genrule(",
+            "    name = 'gen',",
+            "    srcs = [],",
+            "    outs = ['out'],",
+            "    cmd = 'nothing',",
+            "    tools = select({",
+            "        '//conditions:a': [':adep'],",
+            "        '//conditions:b': [':bdep'],",
+            "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': [':defaultdep'],",
+            "    }))",
+            "foo_binary(",
+            "    name = 'adep',",
+            "    srcs = ['adep.sh'])",
+            "foo_binary(",
+            "    name = 'bdep',",
+            "    srcs = ['bdep.sh'])",
+            "foo_binary(",
+            "    name = 'defaultdep',",
+            "    srcs = ['defaultdep.sh'])"
+        )
+        useConfiguration("--define", "mode=b")
 
-  /**
-   * Tests that for configurable attributes where the *values* are evaluated in different
-   * configurations, the configuration checking still uses the original configuration.
-   */
-  @Test
-  public void testConfigurationTransitions() throws Exception {
-    writeConfigRules();
-    scratch.file(
-        "a/BUILD",
-        "load('//test_defs:foo_binary.bzl', 'foo_binary')",
-        "genrule(",
-        "    name = 'gen',",
-        "    srcs = [],",
-        "    outs = ['out'],",
-        "    cmd = 'nothing',",
-        "    tools = select({",
-        "        '//conditions:a': [':adep'],",
-        "        '//conditions:b': [':bdep'],",
-        "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': [':defaultdep'],",
-        "    }))",
-        "foo_binary(",
-        "    name = 'adep',",
-        "    srcs = ['adep.sh'])",
-        "foo_binary(",
-        "    name = 'bdep',",
-        "    srcs = ['bdep.sh'])",
-        "foo_binary(",
-        "    name = 'defaultdep',",
-        "    srcs = ['defaultdep.sh'])");
-    useConfiguration("--define", "mode=b");
+        // Target configuration is in dbg mode, so we should match //conditions:b:
+        assertThat(getMapper("//a:gen").get("tools", BuildType.LABEL_LIST))
+            .containsExactly(Label.parseCanonical("//a:bdep"))
 
-    // Target configuration is in dbg mode, so we should match //conditions:b:
-    assertThat(getMapper("//a:gen").get("tools", BuildType.LABEL_LIST))
-        .containsExactly(Label.parseCanonical("//a:bdep"));
-
-    // Verify the "tools" dep uses a different configuration that's not also in "dbg":
-    assertThat(
+        // Verify the "tools" dep uses a different configuration that's not also in "dbg":
+        assertThat(
             getTarget("//a:gen")
                 .getAssociatedRule()
                 .getRuleClassObject()
                 .getAttributeProvider()
                 .getAttributeByName("tools")
                 .getTransitionFactory()
-                .isTool())
-        .isTrue();
-    assertThat(getExecConfiguration().getCompilationMode()).isEqualTo(CompilationMode.OPT);
-  }
+                .isTool()
+        )
+            .isTrue()
+        assertThat(getExecConfiguration().getCompilationMode()).isEqualTo(CompilationMode.OPT)
+    }
 
-  @Test
-  public void testConcatenatedSelects() throws Exception {
-    scratch.file(
-        "hello/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testConcatenatedSelects() {
+        scratch.file(
+            "hello/BUILD",
+            """
         config_setting(
             name = "a",
             values = {"define": "foo=a"},
@@ -232,19 +225,23 @@ public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
             outs = ["out"],
             cmd = "nothing",
         )
-        """);
-    useConfiguration("--define", "foo=a", "--define", "bar=d");
-    assertThat(getMapper("//hello:gen").get("srcs", BuildType.LABEL_LIST))
-        .containsExactly(
-            Label.parseCanonical("//hello:a.in"), Label.parseCanonical("//hello:d.in"));
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--define", "foo=a", "--define", "bar=d")
+        assertThat(getMapper("//hello:gen").get("srcs", BuildType.LABEL_LIST))
+            .containsExactly(
+                Label.parseCanonical("//hello:a.in"), Label.parseCanonical("//hello:d.in")
+            )
+    }
 
-  @Test
-  public void testNoneValuesMeansAttributeIsNotExplicitlySet() throws Exception {
-    writeConfigRules();
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNoneValuesMeansAttributeIsNotExplicitlySet() {
+        writeConfigRules()
+        scratch.file(
+            "a/BUILD",
+            """
         genrule(
             name = "gen",
             srcs = [],
@@ -255,21 +252,24 @@ public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
                 "//conditions:b": None,
             }),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--define", "mode=a");
-    assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isTrue();
+        useConfiguration("--define", "mode=a")
+        assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isTrue()
 
-    useConfiguration("--define", "mode=b");
-    assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isFalse();
-  }
+        useConfiguration("--define", "mode=b")
+        assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isFalse()
+    }
 
-  @Test
-  public void testNoneValuesWithMultipleSelectsAllNone() throws Exception {
-    writeConfigRules();
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNoneValuesWithMultipleSelectsAllNone() {
+        writeConfigRules()
+        scratch.file(
+            "a/BUILD",
+            """
         genrule(
             name = "gen",
             srcs = [],
@@ -283,40 +283,45 @@ public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
                 "//conditions:b": None,
             }),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--define", "mode=a");
-    assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isTrue();
+        useConfiguration("--define", "mode=a")
+        assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isTrue()
 
-    useConfiguration("--define", "mode=b");
-    assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isFalse();
-  }
+        useConfiguration("--define", "mode=b")
+        assertThat(getMapper("//a:gen").isAttributeValueExplicitlySpecified("message")).isFalse()
+    }
 
-  @Test
-  public void testNoneValueOnDefaultConditionWithNullDefault() throws Exception {
-    writeConfigRules();
-    scratch.file(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(",
-        "    name = 'lib',",
-        "    srcs = ['lib.cc'],",
-        "    linkstamp = select({",
-        "        '//conditions:a': 'notused_linkstamp.cc',",
-        "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': None,",
-        "    }),",
-        ")");
+    @Test
+    @Throws(Exception::class)
+    fun testNoneValueOnDefaultConditionWithNullDefault() {
+        writeConfigRules()
+        scratch.file(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(",
+            "    name = 'lib',",
+            "    srcs = ['lib.cc'],",
+            "    linkstamp = select({",
+            "        '//conditions:a': 'notused_linkstamp.cc',",
+            "        '" + BuildType.Selector.DEFAULT_CONDITION_KEY + "': None,",
+            "    }),",
+            ")"
+        )
 
-    useConfiguration();
-    assertThat(getMapper("//a:lib").isAttributeValueExplicitlySpecified("linkstamp")).isFalse();
-    assertThat(getMapper("//a:lib").get("linkstamp", BuildType.LABEL)).isNull();
-  }
+        useConfiguration()
+        assertThat(getMapper("//a:lib").isAttributeValueExplicitlySpecified("linkstamp")).isFalse()
+        assertThat(getMapper("//a:lib").get("linkstamp", BuildType.LABEL)).isNull()
+    }
 
-  @Test
-  public void testNoneValueOnMandatoryAttribute() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNoneValueOnMandatoryAttribute() {
+        scratch.file(
+            "a/BUILD",
+            """
         # Needed to avoid select() being eliminated as trivial.
         config_setting(
             name = "config",
@@ -327,18 +332,21 @@ public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
             name = "a",
             actual = select({":config": None, "//conditions:default": None}),
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//a:a");
-    assertContainsEvent("Mandatory attribute 'actual' resolved to 'None'");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        getConfiguredTarget("//a:a")
+        assertContainsEvent("Mandatory attribute 'actual' resolved to 'None'")
+    }
 
-  @Test
-  public void testAliasedConfigSetting() throws Exception {
-    writeConfigRules();
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testAliasedConfigSetting() {
+        writeConfigRules()
+        scratch.file(
+            "a/BUILD",
+            """
         alias(
             name = "aliased_a",
             actual = "//conditions:a",
@@ -354,16 +362,19 @@ public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
                 "//conditions:default": None,
             }),
         )
-        """);
-    useConfiguration("--define", "mode=a");
-    assertThat(getMapper("//a:gen").get("message", Type.STRING)).isEqualTo("defined message");
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--define", "mode=a")
+        assertThat(getMapper("//a:gen").get("message", Type.STRING)).isEqualTo("defined message")
+    }
 
-  @Test
-  public void noMatchErrorFormat() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun noMatchErrorFormat() {
+        scratch.file(
+            "a/BUILD",
+            """
         config_setting(
             name = "a",
             values = {"define": "mode=a"},
@@ -384,28 +395,45 @@ public class ConfiguredAttributeMapperTest extends BuildViewTestCase {
                 ":b": "not chosen",
             }),
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//a:g");
-    // Match with a regex pattern because the error message includes the failing target's
-    // configuration ID, which can vary among builds.
-    assertContainsEvent(
-        Pattern.compile(
-            ".*configurable attribute \"message\" in //a:g doesn't match this configuration. Would"
-                + " a default condition help\\?\n"
-                + "\n"
-                + "Conditions checked:\n"
-                + " //a:a\n"
-                + " //a:b\n"
-                + "\n"
-                + "To see a condition's definition, run: bazel query --output=build <condition"
-                + " label>.\n"
-                + "\n"
-                + "This instance of //a:g has configuration identifier .*. To inspect its"
-                + " configuration, run: bazel config .*.\n"
-                + "\n"
-                + "For more help, see"
-                + " https://bazel.build/docs/configurable-attributes"
-                + "#faq-select-choose-condition.*"));
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        getConfiguredTarget("//a:g")
+        // Match with a regex pattern because the error message includes the failing target's
+        // configuration ID, which can vary among builds.
+        assertContainsEvent(
+            Pattern.compile(
+                (".*configurable attribute \"message\" in //a:g doesn't match this configuration. Would"
+                        + " a default condition help\\?\n"
+                        + "\n"
+                        + "Conditions checked:\n"
+                        + " //a:a\n"
+                        + " //a:b\n"
+                        + "\n"
+                        + "To see a condition's definition, run: bazel query --output=build <condition"
+                        + " label>.\n"
+                        + "\n"
+                        + "This instance of //a:g has configuration identifier .*. To inspect its"
+                        + " configuration, run: bazel config .*.\n"
+                        + "\n"
+                        + "For more help, see"
+                        + " https://bazel.build/docs/configurable-attributes"
+                        + "#faq-select-choose-condition.*")
+            )
+        )
+    }
+
+    companion object {
+        private fun addRelevantLabels(
+            mapper: ConfiguredAttributeMapper, visitedLabels: MutableList<Label?>
+        ) {
+            mapper.visitAllLabels(
+                { attribute, label ->
+                    if (label.getPackageIdentifier().getPackageFragment().toString().equals("a")) {
+                        visitedLabels.add(label)
+                    }
+                })
+        }
+    }
 }

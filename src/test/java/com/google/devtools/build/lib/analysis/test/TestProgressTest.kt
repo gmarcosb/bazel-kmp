@@ -11,65 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.test;
+package com.google.devtools.build.lib.analysis.test
 
-import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ConfigurationId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.TestProgressId;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class TestProgressTest {
+    @org.junit.Test
+    fun testTestProgress_convertsToEventId() {
+        val progress: TestProgress =
+            TestProgress(
+                "alabel", ConfigurationId.newBuilder().setId("configid").build(), 1, 2, 3, 4, "auri"
+            )
 
-@RunWith(JUnit4.class)
-public class TestProgressTest {
-  @Test
-  public void testTestProgress_convertsToEventId() {
-    TestProgress progress =
-        new TestProgress(
-            "alabel", ConfigurationId.newBuilder().setId("configid").build(), 1, 2, 3, 4, "auri");
+        val id: BuildEventId? = progress.getEventId()
 
-    BuildEventId id = progress.getEventId();
+        assertThat(id)
+            .isEqualTo(
+                BuildEventId.newBuilder()
+                    .setTestProgress(
+                        TestProgressId.newBuilder()
+                            .setLabel("alabel")
+                            .setConfiguration(ConfigurationId.newBuilder().setId("configid"))
+                            .setRun(1)
+                            .setShard(2)
+                            .setAttempt(3)
+                            .setOpaqueCount(4)
+                    )
+                    .build()
+            )
+    }
 
-    assertThat(id)
-        .isEqualTo(
-            BuildEventId.newBuilder()
-                .setTestProgress(
-                    TestProgressId.newBuilder()
-                        .setLabel("alabel")
-                        .setConfiguration(ConfigurationId.newBuilder().setId("configid"))
-                        .setRun(1)
-                        .setShard(2)
-                        .setAttempt(3)
-                        .setOpaqueCount(4))
-                .build());
-  }
+    @org.junit.Test
+    fun testTestProgress_convertsToEvent() {
+        val progress: TestProgress =
+            TestProgress(
+                "alabel", ConfigurationId.newBuilder().setId("configid").build(), 1, 2, 3, 4, "auri"
+            )
 
-  @Test
-  public void testTestProgress_convertsToEvent() {
-    TestProgress progress =
-        new TestProgress(
-            "alabel", ConfigurationId.newBuilder().setId("configid").build(), 1, 2, 3, 4, "auri");
+        val event: BuildEvent? = progress.asStreamProto(null)
 
-    BuildEvent event = progress.asStreamProto(null);
-
-    assertThat(event)
-        .isEqualTo(
-            BuildEvent.newBuilder()
-                .setId(
-                    BuildEventId.newBuilder()
-                        .setTestProgress(
-                            TestProgressId.newBuilder()
-                                .setLabel("alabel")
-                                .setConfiguration(ConfigurationId.newBuilder().setId("configid"))
-                                .setRun(1)
-                                .setShard(2)
-                                .setAttempt(3)
-                                .setOpaqueCount(4)))
-                .setTestProgress(BuildEventStreamProtos.TestProgress.newBuilder().setUri("auri"))
-                .build());
-  }
+        assertThat(event)
+            .isEqualTo(
+                BuildEvent.newBuilder()
+                    .setId(
+                        BuildEventId.newBuilder()
+                            .setTestProgress(
+                                TestProgressId.newBuilder()
+                                    .setLabel("alabel")
+                                    .setConfiguration(ConfigurationId.newBuilder().setId("configid"))
+                                    .setRun(1)
+                                    .setShard(2)
+                                    .setAttempt(3)
+                                    .setOpaqueCount(4)
+                            )
+                    )
+                    .setTestProgress(BuildEventStreamProtos.TestProgress.newBuilder().setUri("auri"))
+                    .build()
+            )
+    }
 }

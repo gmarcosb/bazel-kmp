@@ -11,39 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.platform
 
-package com.google.devtools.build.lib.analysis.platform;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.TemplateVariableInfo;
-import com.google.devtools.build.lib.analysis.actions.SpawnAction;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests of {@link TemplateVariableInfo}. */
-@RunWith(JUnit4.class)
-public class TemplateVariableInfoTest extends BuildViewTestCase {
-
-  @Test
-  public void proxyTemplateVariableInfo() throws Exception {
-    scratch.file(
-        "a/rule.bzl",
-        """
+/** Tests of [TemplateVariableInfo].  */
+@RunWith(JUnit4::class)
+class TemplateVariableInfoTest : BuildViewTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun proxyTemplateVariableInfo() {
+        scratch.file(
+            "a/rule.bzl",
+            """
         def _impl(ctx):
             return [ctx.attr._cc_toolchain[platform_common.TemplateVariableInfo]]
 
         crule = rule(_impl, attrs = {"_cc_toolchain": attr.label(default = Label("//a:a"))})
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
@@ -55,20 +47,23 @@ public class TemplateVariableInfoTest extends BuildViewTestCase {
             name = "g",
             srcs = [],
             outs = ["go"],
-            cmd = "VAR $(CC)",
+            cmd = "VAR ${'$'}(CC)",
             toolchains = [":r"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    SpawnAction action = (SpawnAction) getGeneratingAction(getConfiguredTarget("//a:g"), "a/go");
-    assertThat(action.getArguments().get(2)).containsMatch("VAR .*gcc");
-  }
+        val action: SpawnAction = getGeneratingAction(getConfiguredTarget("//a:g"), "a/go") as SpawnAction
+        assertThat(action.getArguments().get(2)).containsMatch("VAR .*gcc")
+    }
 
-  @Test
-  public void templateVariableInfo() throws Exception {
-    scratch.file(
-        "a/rule.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun templateVariableInfo() {
+        scratch.file(
+            "a/rule.bzl",
+            """
         Info = provider()
         def _impl(ctx):
             return Info(
@@ -76,31 +71,35 @@ public class TemplateVariableInfoTest extends BuildViewTestCase {
             )
 
         crule = rule(_impl, attrs = {"_cc_toolchain": attr.label(default = Label("//a:a"))})
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "a")
 
         crule(name = "r")
-        """);
-    ConfiguredTarget ct = getConfiguredTarget("//a:r");
+        
+        """.trimIndent()
+        )
+        val ct: ConfiguredTarget? = getConfiguredTarget("//a:r")
 
-    StarlarkInfo info = getStarlarkProvider(ct, "Info");
-    @SuppressWarnings("unchecked")
-    Map<String, String> makeVariables = (Map<String, String>) info.getValue("variables");
-    assertThat(makeVariables).containsKey("CC");
-  }
+        val info: StarlarkInfo = getStarlarkProvider(ct, "Info")
+        val makeVariables = info.getValue("variables") as MutableMap<String?, String?>?
+        Truth.assertThat(makeVariables).containsKey("CC")
+    }
 
-  @Test
-  public void templateVariableInfoConstructor() throws Exception {
-    scratch.file(
-        "a/rule.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun templateVariableInfoConstructor() {
+        scratch.file(
+            "a/rule.bzl",
+            """
         Info = provider()
         def _consumer_impl(ctx):
             return Info(
@@ -119,11 +118,13 @@ public class TemplateVariableInfoTest extends BuildViewTestCase {
             _supplier_impl,
             attrs = {"var": attr.string(), "value": attr.string()},
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load(":rule.bzl", "consumer", "supplier")
 
         consumer(
@@ -137,15 +138,17 @@ public class TemplateVariableInfoTest extends BuildViewTestCase {
             value = "ontop",
             var = "cherry",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget consumer = getConfiguredTarget("//a:consumer");
-    StarlarkInfo info = getStarlarkProvider(consumer, "Info");
-    String value = info.getValue("var", String.class);
-    assertThat(value).isEqualTo("ontop");
+        val consumer: ConfiguredTarget? = getConfiguredTarget("//a:consumer")
+        val info: StarlarkInfo = getStarlarkProvider(consumer, "Info")
+        val value: String? = info.getValue("var", String::class.java)
+        Truth.assertThat(value).isEqualTo("ontop")
 
-    ConfiguredTarget supplier = getConfiguredTarget("//a:supplier");
-    assertThat(supplier.get(TemplateVariableInfo.PROVIDER).getVariables())
-        .containsExactly("cherry", "ontop");
-  }
+        val supplier: ConfiguredTarget? = getConfiguredTarget("//a:supplier")
+        assertThat(supplier.get(TemplateVariableInfo.PROVIDER).getVariables())
+            .containsExactly("cherry", "ontop")
+    }
 }

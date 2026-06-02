@@ -11,85 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.blackbox.framework
 
-package com.google.devtools.build.lib.blackbox.framework;
+import com.google.auto.value.AutoValue
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import java.io.File
+import java.nio.file.Path
+import java.util.*
 
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import java.io.File;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
-/** {@link ProcessRunner} parameters */
+/** [ProcessRunner] parameters  */
 @AutoValue
-public abstract class ProcessParameters {
-  abstract String name();
+abstract class ProcessParameters {
+    abstract fun name(): String?
 
-  abstract ImmutableList<String> arguments();
+    abstract fun arguments(): ImmutableList<String?>?
 
-  abstract File workingDirectory();
+    abstract fun workingDirectory(): File?
 
-  abstract int expectedExitCode();
+    abstract fun expectedExitCode(): Int
 
-  abstract boolean expectedToFail();
+    abstract fun expectedToFail(): Boolean
 
-  abstract boolean expectedEmptyError();
+    abstract fun expectedEmptyError(): Boolean
 
-  abstract Optional<ImmutableMap<String, String>> environment();
+    abstract fun environment(): Optional<ImmutableMap<String?, String?>?>?
 
-  abstract long timeoutMillis();
+    abstract fun timeoutMillis(): Long
 
-  abstract Optional<Path> redirectOutput();
+    abstract fun redirectOutput(): Optional<Path?>?
 
-  abstract Optional<Path> redirectError();
+    abstract fun redirectError(): Optional<Path?>?
 
-  public static Builder builder() {
-    return new AutoValue_ProcessParameters.Builder()
-        .setExpectedExitCode(0)
-        .setExpectedEmptyError(true)
-        .setExpectedToFail(false)
-        .setTimeoutMillis(30 * 1000)
-        .setArguments();
-  }
+    /** Builder class  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun setName(value: String?): Builder?
 
-  /** Builder class */
-  @AutoValue.Builder
-  public abstract static class Builder {
-    public abstract Builder setName(String value);
+        abstract fun setArguments(vararg args: String?): Builder?
 
-    public abstract Builder setArguments(String... args);
+        abstract fun setArguments(args: ImmutableList<String?>?): Builder?
 
-    public abstract Builder setArguments(ImmutableList<String> args);
+        fun setArguments(args: MutableList<String?>): Builder {
+            setArguments(ImmutableList.copyOf<String?>(args))
+            return this
+        }
 
-    public Builder setArguments(List<String> args) {
-      setArguments(ImmutableList.copyOf(args));
-      return this;
+        abstract fun setWorkingDirectory(value: File?): Builder?
+
+        abstract fun setExpectedExitCode(value: Int): Builder?
+
+        abstract fun setExpectedToFail(value: Boolean): Builder?
+
+        abstract fun setExpectedEmptyError(value: Boolean): Builder?
+
+        abstract fun setEnvironment(map: ImmutableMap<String?, String?>?): Builder?
+
+        fun setEnvironment(map: MutableMap<String?, String?>): Builder {
+            setEnvironment(ImmutableMap.copyOf<String?, String?>(map))
+            return this
+        }
+
+        abstract fun setTimeoutMillis(millis: Long): Builder?
+
+        abstract fun setRedirectOutput(path: Path?): Builder?
+
+        abstract fun setRedirectError(path: Path?): Builder?
+
+        abstract fun build(): ProcessParameters?
     }
 
-    public abstract Builder setWorkingDirectory(File value);
-
-    public abstract Builder setExpectedExitCode(int value);
-
-    public abstract Builder setExpectedToFail(boolean value);
-
-    public abstract Builder setExpectedEmptyError(boolean value);
-
-    public abstract Builder setEnvironment(ImmutableMap<String, String> map);
-
-    public Builder setEnvironment(Map<String, String> map) {
-      setEnvironment(ImmutableMap.copyOf(map));
-      return this;
+    companion object {
+        fun builder(): Builder {
+            return Builder()
+                .setExpectedExitCode(0)
+                .setExpectedEmptyError(true)
+                .setExpectedToFail(false)
+                .setTimeoutMillis(30 * 1000)
+                .setArguments()!!
+        }
     }
-
-    public abstract Builder setTimeoutMillis(long millis);
-
-    public abstract Builder setRedirectOutput(Path path);
-
-    public abstract Builder setRedirectError(Path path);
-
-    public abstract ProcessParameters build();
-  }
 }
